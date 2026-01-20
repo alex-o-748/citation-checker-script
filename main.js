@@ -1,6 +1,6 @@
 // {{Wikipedia:USync |repo=https://github.com/alex-o-748/citation-checker-script |ref=refs/heads/main|path=main.js}}
-//Inspired by User:Polygnotus/Scripts/AI_Source_Verification.js
-//Inspired by User:Phlsph7/SourceVerificationAIAssistant.js
+//Inspired by  User:Polygnotus/Scripts/AI_Source_Verification.js
+//Inspired by  User:Phlsph7/SourceVerificationAIAssistant.js
 
 (function() {
     'use strict';
