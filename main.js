@@ -12,7 +12,7 @@
                     name: 'PublicAI (Free)',
                     storageKey: null, // No key needed - uses built-in key
                     color: '#6B21A8', // Purple for PublicAI
-                    model: 'aisingapore/Qwen-SEA-LION-v4-32B-IT',
+                    model: 'swiss-ai/apertus-70b-instruct',
                     requiresKey: false
                 },
                 claude: {
