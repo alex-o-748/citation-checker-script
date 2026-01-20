@@ -12,7 +12,7 @@
                     name: 'PublicAI (Free)',
                     storageKey: null, // No key needed - uses built-in key
                     color: '#6B21A8', // Purple for PublicAI
-                    model: 'swiss-ai/apertus-70b-instruct',
+                    model: 'swiss-ai/apertus-70b-instruct', //70b swiss model
                     requiresKey: false
                 },
                 claude: {
