@@ -26,8 +26,13 @@ const PROXY_URL = 'https://publicai-proxy.alaexis.workers.dev/';
 // Parse command line arguments
 const args = process.argv.slice(2);
 const DRY_RUN = args.includes('--dry-run');
+const VERBOSE = args.includes('--verbose') || args.includes('-v');
 const limitIndex = args.indexOf('--limit');
 const LIMIT = limitIndex !== -1 ? parseInt(args[limitIndex + 1], 10) : null;
+
+function log(msg) {
+    if (VERBOSE) console.log(msg);
+}
 
 /**
  * Parse CSV content into array of objects
@@ -121,22 +126,56 @@ function fetchURL(url) {
 }
 
 /**
- * Fetch source content via proxy
+ * Fetch source content via proxy, with direct fetch fallback
  */
 async function fetchSourceContent(url) {
+    // Try proxy first
     try {
+        log(`    Trying proxy fetch...`);
         const proxyUrl = `${PROXY_URL}?fetch=${encodeURIComponent(url)}`;
         const response = await fetchWithRetry(proxyUrl);
         const data = JSON.parse(response);
 
         if (data.content && data.content.length > 100) {
+            log(`    Proxy success: ${data.content.length} chars`);
             return data.content;
         }
-        return null;
+        log(`    Proxy returned insufficient content: ${data.content?.length || 0} chars`);
     } catch (error) {
-        console.log(`  Source fetch failed: ${error.message}`);
-        return null;
+        log(`    Proxy fetch failed: ${error.message}`);
     }
+
+    // Try direct fetch as fallback
+    try {
+        log(`    Trying direct fetch...`);
+        const html = await fetchWithRetry(url);
+
+        // Basic HTML text extraction
+        const textMatch = html.match(/<article[^>]*>([\s\S]*?)<\/article>/i) ||
+                          html.match(/<main[^>]*>([\s\S]*?)<\/main>/i) ||
+                          html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+
+        if (textMatch) {
+            // Strip HTML tags
+            let text = textMatch[1]
+                .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+                .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+                .replace(/<[^>]+>/g, ' ')
+                .replace(/\s+/g, ' ')
+                .trim();
+
+            if (text.length > 100) {
+                log(`    Direct fetch success: ${text.length} chars`);
+                return text.substring(0, 50000); // Limit size
+            }
+        }
+        log(`    Direct fetch: insufficient content`);
+    } catch (error) {
+        log(`    Direct fetch failed: ${error.message}`);
+    }
+
+    console.log(`    Source fetch failed for: ${url.substring(0, 60)}...`);
+    return null;
 }
 
 /**
@@ -266,23 +305,30 @@ function isAfterElement(node, element) {
  */
 function extractReferenceUrl(document, citationNumber) {
     // Find the reference definition (cite_note)
+    // Wikipedia uses formats like: cite_note-5, cite_note-:0-5, cite_note-SomeName-5
     const refId = `cite_note-${citationNumber}`;
     let refTarget = document.getElementById(refId);
 
+    log(`    Looking for ref: ${refId}, found: ${!!refTarget}`);
+
     // Try alternative formats
     if (!refTarget) {
-        // Sometimes refs have names like cite_note-Name-N
         const allCiteNotes = document.querySelectorAll('[id^="cite_note-"]');
+        log(`    Checking ${allCiteNotes.length} cite_note elements`);
+
         for (const note of allCiteNotes) {
-            const match = note.id.match(/cite_note-.*?-?(\d+)$/);
+            // Match cite_note-NAME-NUMBER or cite_note-NUMBER
+            const match = note.id.match(/cite_note-(?:.*-)?(\d+)$/);
             if (match && parseInt(match[1], 10) === citationNumber) {
                 refTarget = note;
+                log(`    Found matching ref: ${note.id}`);
                 break;
             }
         }
     }
 
     if (!refTarget) {
+        log(`    No cite_note found for citation ${citationNumber}`);
         return null;
     }
 
@@ -290,10 +336,14 @@ function extractReferenceUrl(document, citationNumber) {
     const archiveLink = refTarget.querySelector(
         'a[href*="web.archive.org"], a[href*="archive.today"], a[href*="archive.is"], a[href*="archive.ph"], a[href*="webcitation.org"]'
     );
-    if (archiveLink) return archiveLink.href;
+    if (archiveLink) {
+        log(`    Found archive link: ${archiveLink.href.substring(0, 60)}...`);
+        return archiveLink.href;
+    }
 
     // Fall back to any http link
     const links = refTarget.querySelectorAll('a[href^="http"]');
+    log(`    Found ${links.length} http links in ref`);
     if (links.length === 0) return null;
 
     // Skip Wikipedia internal links

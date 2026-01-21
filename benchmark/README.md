@@ -28,6 +28,9 @@ npm run extract:dry
 
 # Extract full dataset
 npm run extract
+
+# Verbose mode to see detailed logging
+node extract_dataset.js --verbose
 ```
 
 This creates:
