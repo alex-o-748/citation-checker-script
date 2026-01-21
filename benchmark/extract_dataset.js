@@ -306,12 +306,14 @@ function isAfterElement(node, element) {
 function extractReferenceUrl(document, citationNumber) {
     // Find the reference definition (cite_note)
     // Wikipedia uses formats like: cite_note-5, cite_note-:0-5, cite_note-SomeName-5
-    const refId = `cite_note-${citationNumber}`;
-    let refTarget = document.getElementById(refId);
+    let refTarget = null;
 
+    // Method 1: Direct ID lookup
+    const refId = `cite_note-${citationNumber}`;
+    refTarget = document.getElementById(refId);
     log(`    Looking for ref: ${refId}, found: ${!!refTarget}`);
 
-    // Try alternative formats
+    // Method 2: Search all cite_note elements
     if (!refTarget) {
         const allCiteNotes = document.querySelectorAll('[id^="cite_note-"]');
         log(`    Checking ${allCiteNotes.length} cite_note elements`);
@@ -327,8 +329,32 @@ function extractReferenceUrl(document, citationNumber) {
         }
     }
 
+    // Method 3: Try reflist items (alternative Wikipedia format)
     if (!refTarget) {
-        log(`    No cite_note found for citation ${citationNumber}`);
+        const reflistItems = document.querySelectorAll('.reflist li, .references li, .mw-references-wrap li');
+        log(`    Checking ${reflistItems.length} reflist items`);
+
+        // References in reflist are usually in order, so item N-1 = citation N
+        if (reflistItems.length >= citationNumber) {
+            refTarget = reflistItems[citationNumber - 1];
+            log(`    Using reflist item ${citationNumber - 1}: ${refTarget?.id || '(no id)'}`);
+        }
+    }
+
+    // Method 4: Look for cite_ref and follow to cite_note
+    if (!refTarget) {
+        const citeRef = document.querySelector(`[id^="cite_ref-"][id$="-${citationNumber}"], [id="cite_ref-${citationNumber}"]`);
+        if (citeRef) {
+            const href = citeRef.querySelector('a')?.getAttribute('href');
+            if (href && href.startsWith('#')) {
+                refTarget = document.getElementById(href.substring(1));
+                log(`    Found via cite_ref: ${refTarget?.id || 'not found'}`);
+            }
+        }
+    }
+
+    if (!refTarget) {
+        log(`    No reference found for citation ${citationNumber}`);
         return null;
     }
 
@@ -430,6 +456,20 @@ async function main() {
                 const dom = new JSDOM(html);
                 document = dom.window.document;
                 articleCache.set(articleUrl, document);
+
+                // Diagnostic: show what we found
+                const citeNotes = document.querySelectorAll('[id^="cite_note"]');
+                const citeRefs = document.querySelectorAll('[id^="cite_ref"]');
+                const references = document.querySelectorAll('.reference');
+                const reflist = document.querySelectorAll('.reflist li, .references li');
+                log(`  Found: ${citeNotes.length} cite_note, ${citeRefs.length} cite_ref, ${references.length} .reference, ${reflist.length} reflist items`);
+
+                if (VERBOSE && citeNotes.length === 0 && reflist.length > 0) {
+                    // Show first few reflist item IDs
+                    const ids = Array.from(reflist).slice(0, 5).map(el => el.id || '(no id)');
+                    log(`  Reflist sample IDs: ${ids.join(', ')}`);
+                }
+
                 await sleep(1000); // Rate limiting
             } catch (error) {
                 console.log(`  ERROR fetching article: ${error.message}`);
