@@ -1,0 +1,70 @@
+Citation number,Verdict,Correct,Artice,Model,Ground truth
+1,Supported,Yes,https://en.wikipedia.org/w/index.php?title=Immigration_to_the_United_States&oldid=1331476438,Apertus8,Supported
+2,Supported,Yes,https://en.wikipedia.org/w/index.php?title=Immigration_to_the_United_States&oldid=1331476438,Apertus8,Supported
+3,Supported,Yes,https://en.wikipedia.org/w/index.php?title=Immigration_to_the_United_States&oldid=1331476438,Apertus8,Supported
+2,Supported,Yes,https://en.wikipedia.org/w/index.php?title=Immigration_to_the_United_States&oldid=1331476438,Apertus8,Supported
+4,Supported,Yes,https://en.wikipedia.org/w/index.php?title=Immigration_to_the_United_States&oldid=1331476438,Apertus8,Supported
+4,Error,No,https://en.wikipedia.org/w/index.php?title=Immigration_to_the_United_States&oldid=1331476438,Apertus8,Supported
+4,Supported,Yes,https://en.wikipedia.org/w/index.php?title=Immigration_to_the_United_States&oldid=1331476438,Apertus8,Supported
+8,Supported,Yes,https://en.wikipedia.org/w/index.php?title=Immigration_to_the_United_States&oldid=1331476438,Apertus8,Supported
+11,Partially supported,Yes,https://en.wikipedia.org/w/index.php?title=Immigration_to_the_United_States&oldid=1331476438,Apertus8,Partially supported
+12,Supported,Yes,https://en.wikipedia.org/w/index.php?title=Immigration_to_the_United_States&oldid=1331476438,Apertus8,Supported
+13,Supported,Yes,https://en.wikipedia.org/w/index.php?title=Immigration_to_the_United_States&oldid=1331476438,Apertus8,Supported
+14,Supported,Yes,https://en.wikipedia.org/w/index.php?title=Immigration_to_the_United_States&oldid=1331476438,Apertus8,Supported
+15,Supported,Yes,https://en.wikipedia.org/w/index.php?title=Immigration_to_the_United_States&oldid=1331476438,Apertus8,Supported
+20,Supported,Yes,https://en.wikipedia.org/w/index.php?title=Immigration_to_the_United_States&oldid=1331476438,Apertus8,Supported
+25,Supported,Yes,https://en.wikipedia.org/w/index.php?title=Immigration_to_the_United_States&oldid=1331476438,Apertus8,Supported
+29,Supported,Yes,https://en.wikipedia.org/w/index.php?title=Immigration_to_the_United_States&oldid=1331476438,Apertus8,Supported
+33,Partially supported,Yes,https://en.wikipedia.org/w/index.php?title=Immigration_to_the_United_States&oldid=1331476438,Apertus8,Partially supported
+34,Supported,Yes,https://en.wikipedia.org/w/index.php?title=Immigration_to_the_United_States&oldid=1331476438,Apertus8,Supported
+42,Error,,https://en.wikipedia.org/w/index.php?title=Immigration_to_the_United_States&oldid=1331476438,Apertus8,Not supported
+43,Supported,Yes,https://en.wikipedia.org/w/index.php?title=Immigration_to_the_United_States&oldid=1331476438,Apertus8,Supported
+46,Supported,Partially,https://en.wikipedia.org/w/index.php?title=Immigration_to_the_United_States&oldid=1331476438,Apertus8,Partially supported
+33,Supported,Yes,https://en.wikipedia.org/w/index.php?title=Immigration_to_the_United_States&oldid=1331476438,Apertus8,Supported
+1,Supported,Yes,https://en.wikipedia.org/w/index.php?title=Fall_of_Aden_(2026)&oldid=1333565519,Qwen,Supported
+3,Supported,Yes,https://en.wikipedia.org/w/index.php?title=Fall_of_Aden_(2026)&oldid=1333565521,Qwen,Supported
+4,Supported,Yes,https://en.wikipedia.org/w/index.php?title=Fall_of_Aden_(2026)&oldid=1333565522,Qwen,Supported
+5,Supported,Yes,https://en.wikipedia.org/w/index.php?title=Fall_of_Aden_(2026)&oldid=1333565523,Qwen,Supported
+1,Supported,yes,https://en.wikipedia.org/w/index.php?title=Fall_of_Aden_(2026)&oldid=1333565529,Qwen,Supported
+11,Supported,yes,https://en.wikipedia.org/w/index.php?title=Fall_of_Aden_(2026)&oldid=1333565530,Qwen,Supported
+1,Supported,yes,https://en.wikipedia.org/w/index.php?title=Fall_of_Aden_(2026)&oldid=1333565531,Qwen,Supported
+1,Supported,yes,https://en.wikipedia.org/w/index.php?title=Fall_of_Aden_(2026)&oldid=1333565532,Qwen,Supported
+11,Partially,no,https://en.wikipedia.org/w/index.php?title=Fall_of_Aden_(2026)&oldid=1333565533,Qwen,Supported
+13,Supported,yes,https://en.wikipedia.org/w/index.php?title=Fall_of_Aden_(2026)&oldid=1333565534,Qwen,Supported
+11,Partially supported,Yes,https://en.wikipedia.org/w/index.php?title=Battle_of_Sanaa_(2014)&oldid=1332969229,Qwen,Partially supported
+16,Supported,Yes,https://en.wikipedia.org/w/index.php?title=Battle_of_Sanaa_(2014)&oldid=1332969230,Qwen,Supported
+17,Supported,Yes,https://en.wikipedia.org/w/index.php?title=Battle_of_Sanaa_(2014)&oldid=1332969231,Qwen,Supported
+18,Supported,Yes,https://en.wikipedia.org/w/index.php?title=Battle_of_Sanaa_(2014)&oldid=1332969233,Qwen,Supported
+8,Supported,Yes,https://en.wikipedia.org/w/index.php?title=Battle_of_Sanaa_(2014)&oldid=1332969234,Qwen,Supported
+17,Supported,Yes,https://en.wikipedia.org/w/index.php?title=Battle_of_Sanaa_(2014)&oldid=1332969235,Qwen,Supported
+20,Supported,Yes,https://en.wikipedia.org/w/index.php?title=Battle_of_Sanaa_(2014)&oldid=1332969236,Qwen,Supported
+20,Supported,Yes,https://en.wikipedia.org/w/index.php?title=Battle_of_Sanaa_(2014)&oldid=1332969237,Qwen,Supported
+21,Supported,Yes,https://en.wikipedia.org/w/index.php?title=Battle_of_Sanaa_(2014)&oldid=1332969238,Qwen,Supported
+22,Supported,Yes,https://en.wikipedia.org/w/index.php?title=Battle_of_Sanaa_(2014)&oldid=1332969239,Qwen,Supported
+23,Supported,Yes,https://en.wikipedia.org/w/index.php?title=Battle_of_Sanaa_(2014)&oldid=1332969241,Qwen,Supported
+24,Supported,Yes,https://en.wikipedia.org/w/index.php?title=Battle_of_Sanaa_(2014)&oldid=1332969242,Qwen,Supported
+25,Supported,Yes,https://en.wikipedia.org/w/index.php?title=Battle_of_Sanaa_(2014)&oldid=1332969243,Qwen,Supported
+26,Supported,Yes,https://en.wikipedia.org/w/index.php?title=Battle_of_Sanaa_(2014)&oldid=1332969244,Qwen,Supported
+27,Partially,No,https://en.wikipedia.org/w/index.php?title=Battle_of_Sanaa_(2014)&oldid=1332969245,Qwen,Supported
+76,Partially supported,Yes,https://en.wikipedia.org/w/index.php?title=History_of_Chechnya&oldid=1333083938,Qwen,Partially supported
+123,Supported,Yes,https://en.wikipedia.org/w/index.php?title=History_of_Chechnya&oldid=1333083946,Qwen,Supported
+162,Supported,Yes,https://en.wikipedia.org/w/index.php?title=History_of_Chechnya&oldid=1333083950,Qwen,Supported
+165,Supported,Yes,https://en.wikipedia.org/w/index.php?title=History_of_Chechnya&oldid=1333083953,Qwen,Supported
+167,Supported,Yes,https://en.wikipedia.org/w/index.php?title=History_of_Chechnya&oldid=1333083954,Qwen,Supported
+170,Supported,Yes,https://en.wikipedia.org/w/index.php?title=History_of_Chechnya&oldid=1333083955,Qwen,Supported
+1,Supported,Yes,https://en.wikipedia.org/w/index.php?title=Dancing_House&oldid=1331358792,Qwen,Supported
+2,Supported,Yes,https://en.wikipedia.org/w/index.php?title=Dancing_House&oldid=1331358793,Qwen,Supported
+3,Supported,Yes,https://en.wikipedia.org/w/index.php?title=Dancing_House&oldid=1331358794,Qwen,Supported
+5,Supported,Yes,https://en.wikipedia.org/w/index.php?title=Dancing_House&oldid=1331358796,Qwen,Supported
+8,Supported,Yes,https://en.wikipedia.org/w/index.php?title=Dancing_House&oldid=1331358799,Qwen,Supported
+112,SUPPORTED,Partial,https://en.wikipedia.org/w/index.php?title=Al_Jazeera_Media_Network&oldid=1330605065,Apertus8,Partially supported
+113,Partially supported,Yes,https://en.wikipedia.org/w/index.php?title=Al_Jazeera_Media_Network&oldid=1330605065,Apertus8,Partially supported
+114,SUPPORTED,Yes,https://en.wikipedia.org/w/index.php?title=Al_Jazeera_Media_Network&oldid=1330605065,Apertus8,Supported
+116,SUPPORTED,Yes,https://en.wikipedia.org/w/index.php?title=Al_Jazeera_Media_Network&oldid=1330605065,Apertus8,Supported
+117,SUPPORTED,Yes,https://en.wikipedia.org/w/index.php?title=Al_Jazeera_Media_Network&oldid=1330605065,Apertus8,Supported
+18,SUPPORTED,Yes,https://en.wikipedia.org/w/index.php?title=Al_Jazeera_Media_Network&oldid=1330605065,Apertus8,Supported
+27,SUPPORTED,Yes,https://en.wikipedia.org/w/index.php?title=Al_Jazeera_Media_Network&oldid=1330605065,Apertus8,Supported
+30,NOT SUPPORTED,No,https://en.wikipedia.org/w/index.php?title=Al_Jazeera_Media_Network&oldid=1330605065,Apertus8,Supported
+28,SUPPORTED,Yes,"https://en.wikipedia.org/w/index.php?title=Hartford,_Connecticut&oldid=1329287988",Apertus8,Supported
+29,SUPPORTED,Yes,"https://en.wikipedia.org/w/index.php?title=Hartford,_Connecticut&oldid=1329287989",Apertus8,Supported
+30,SUPPORTED,Yes,"https://en.wikipedia.org/w/index.php?title=Hartford,_Connecticut&oldid=1329287990",Apertus8,Supported
