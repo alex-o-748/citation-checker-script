@@ -304,60 +304,31 @@ function isAfterElement(node, element) {
  * Extract reference URL from Wikipedia reference section
  */
 function extractReferenceUrl(document, citationNumber) {
-    // Find the reference definition (cite_note)
-    // Wikipedia uses formats like: cite_note-5, cite_note-:0-5, cite_note-SomeName-5
-    let refTarget = null;
-
-    // Method 1: Direct ID lookup
-    const refId = `cite_note-${citationNumber}`;
-    refTarget = document.getElementById(refId);
-    log(`    Looking for ref: ${refId}, found: ${!!refTarget}`);
-
-    // Method 2: Search all cite_note elements
-    if (!refTarget) {
-        const allCiteNotes = document.querySelectorAll('[id^="cite_note-"]');
-        log(`    Checking ${allCiteNotes.length} cite_note elements`);
-
-        for (const note of allCiteNotes) {
-            // Match cite_note-NAME-NUMBER or cite_note-NUMBER
-            const match = note.id.match(/cite_note-(?:.*-)?(\d+)$/);
-            if (match && parseInt(match[1], 10) === citationNumber) {
-                refTarget = note;
-                log(`    Found matching ref: ${note.id}`);
-                break;
-            }
-        }
-    }
-
-    // Method 3: Try reflist items (alternative Wikipedia format)
-    if (!refTarget) {
-        const reflistItems = document.querySelectorAll('.reflist li, .references li, .mw-references-wrap li');
-        log(`    Checking ${reflistItems.length} reflist items`);
-
-        // References in reflist are usually in order, so item N-1 = citation N
-        if (reflistItems.length >= citationNumber) {
-            refTarget = reflistItems[citationNumber - 1];
-            log(`    Using reflist item ${citationNumber - 1}: ${refTarget?.id || '(no id)'}`);
-        }
-    }
-
-    // Method 4: Look for cite_ref and follow to cite_note
-    if (!refTarget) {
-        const citeRef = document.querySelector(`[id^="cite_ref-"][id$="-${citationNumber}"], [id="cite_ref-${citationNumber}"]`);
-        if (citeRef) {
-            const href = citeRef.querySelector('a')?.getAttribute('href');
+    // Best method: Find the [N] reference link and follow its href to the cite_note
+    const allRefs = document.querySelectorAll('.reference a');
+    for (const link of allRefs) {
+        const text = link.textContent.trim();
+        const match = text.match(/^\[(\d+)\]$/);
+        if (match && parseInt(match[1], 10) === citationNumber) {
+            const href = link.getAttribute('href');
             if (href && href.startsWith('#')) {
-                refTarget = document.getElementById(href.substring(1));
-                log(`    Found via cite_ref: ${refTarget?.id || 'not found'}`);
+                const refTarget = document.getElementById(href.substring(1));
+                if (refTarget) {
+                    log(`    Found cite_note via reference link: ${href.substring(1)}`);
+                    return extractUrlFromRef(refTarget);
+                }
             }
         }
     }
 
-    if (!refTarget) {
-        log(`    No reference found for citation ${citationNumber}`);
-        return null;
-    }
+    log(`    No reference link found for citation [${citationNumber}]`);
+    return null;
+}
 
+/**
+ * Extract the source URL from a reference element
+ */
+function extractUrlFromRef(refTarget) {
     // Prioritize archive links
     const archiveLink = refTarget.querySelector(
         'a[href*="web.archive.org"], a[href*="archive.today"], a[href*="archive.is"], a[href*="archive.ph"], a[href*="webcitation.org"]'
