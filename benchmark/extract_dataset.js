@@ -393,7 +393,7 @@ async function main() {
     // Group by article URL to minimize fetches
     const articleGroups = new Map();
     rows.forEach(row => {
-        const url = row['Artice'] || row['Article']; // Handle typo in header
+        const url = row['Article'] || row['Artice']; // Support both column names
         if (!articleGroups.has(url)) {
             articleGroups.set(url, []);
         }
@@ -404,9 +404,6 @@ async function main() {
 
     const dataset = [];
     const articleCache = new Map();
-
-    // Track occurrences per (article, citation) pair
-    const occurrenceCounters = new Map();
 
     for (const [articleUrl, articleRows] of articleGroups) {
         console.log(`\nArticle: ${articleUrl.split('title=')[1]?.split('&')[0] || articleUrl}`);
@@ -466,16 +463,10 @@ async function main() {
         // Process each citation in this article
         for (const row of articleRows) {
             const citationNumber = parseInt(row['Citation number'], 10);
-            const key = `${articleUrl}|${citationNumber}`;
+            // Use explicit "Citation instance" from CSV instead of auto-counting
+            const occurrence = parseInt(row['Citation instance'], 10) || 1;
 
-            // Track occurrence
-            if (!occurrenceCounters.has(key)) {
-                occurrenceCounters.set(key, 0);
-            }
-            const occurrence = occurrenceCounters.get(key) + 1;
-            occurrenceCounters.set(key, occurrence);
-
-            console.log(`  Citation [${citationNumber}] (occurrence ${occurrence})...`);
+            console.log(`  Citation [${citationNumber}] (instance ${occurrence})...`);
 
             // Extract claim text
             const claims = extractClaimText(document, citationNumber);
@@ -504,9 +495,6 @@ async function main() {
                 source_url: sourceUrl || '',
                 source_text: sourceText,
                 ground_truth: normalizeVerdict(row['Ground truth']),
-                original_verdict: row['Verdict'],
-                original_correct: row['Correct'],
-                original_model: row['Model'],
                 extraction_status: determineStatus(claimData.text, sourceUrl, sourceText),
                 needs_manual_review: !claimData.text || !sourceText
             };
