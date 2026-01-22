@@ -28,16 +28,16 @@ const PROVIDERS = {
     // Gemini models
     'gemini-2.5-pro': {
         name: 'Gemini 2.5 Pro',
-        model: 'gemini-2.5-pro-preview-05-06',
-        endpoint: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro-preview-05-06:generateContent',
+        model: 'gemini-2.5-pro',
+        endpoint: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent',
         requiresKey: true,
         keyEnv: 'GEMINI_API_KEY',
         type: 'gemini'
     },
     'gemini-2.5-flash': {
         name: 'Gemini 2.5 Flash',
-        model: 'gemini-2.5-flash-preview-05-20',
-        endpoint: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent',
+        model: 'gemini-2.5-flash',
+        endpoint: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent',
         requiresKey: true,
         keyEnv: 'GEMINI_API_KEY',
         type: 'gemini'
