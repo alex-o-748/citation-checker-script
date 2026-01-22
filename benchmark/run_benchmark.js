@@ -25,32 +25,6 @@ const RESULTS_PATH = path.join(__dirname, 'results.json');
 
 // Provider configurations
 const PROVIDERS = {
-    // Gemini models
-    'gemini-2.5-pro': {
-        name: 'Gemini 2.5 Pro',
-        model: 'gemini-2.5-pro',
-        endpoint: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent',
-        requiresKey: true,
-        keyEnv: 'GEMINI_API_KEY',
-        type: 'gemini'
-    },
-    'gemini-2.5-flash': {
-        name: 'Gemini 2.5 Flash',
-        model: 'gemini-2.5-flash',
-        endpoint: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent',
-        requiresKey: true,
-        keyEnv: 'GEMINI_API_KEY',
-        type: 'gemini'
-    },
-    // Claude
-    'claude-sonnet': {
-        name: 'Claude Sonnet 4.5',
-        model: 'claude-sonnet-4-5-20250929',
-        endpoint: 'https://api.anthropic.com/v1/messages',
-        requiresKey: true,
-        keyEnv: 'ANTHROPIC_API_KEY',
-        type: 'claude'
-    },
     // Open-source models via PublicAI
     'apertus-70b': {
         name: 'Apertus 70B',
