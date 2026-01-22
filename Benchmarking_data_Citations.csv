@@ -36,7 +36,7 @@ Citation number,Citation instance,Article,Ground truth
 16,1,https://en.wikipedia.org/w/index.php?title=Battle_of_Sanaa_(2014)&oldid=1332969229,Supported
 17,1,https://en.wikipedia.org/w/index.php?title=Battle_of_Sanaa_(2014)&oldid=1332969229,Supported
 18,1,https://en.wikipedia.org/w/index.php?title=Battle_of_Sanaa_(2014)&oldid=1332969229,Supported
-8,1,https://en.wikipedia.org/w/index.php?title=Battle_of_Sanaa_(2014)&oldid=1332969229,Supported
+8,2,https://en.wikipedia.org/w/index.php?title=Battle_of_Sanaa_(2014)&oldid=1332969229,Supported
 17,2,https://en.wikipedia.org/w/index.php?title=Battle_of_Sanaa_(2014)&oldid=1332969229,Supported
 20,1,https://en.wikipedia.org/w/index.php?title=Battle_of_Sanaa_(2014)&oldid=1332969229,Supported
 20,2,https://en.wikipedia.org/w/index.php?title=Battle_of_Sanaa_(2014)&oldid=1332969229,Supported
@@ -76,3 +76,4 @@ Citation number,Citation instance,Article,Ground truth
 64,1,https://en.wikipedia.org/w/index.php?title=Second_Congo_War&oldid=1324841474,Not supported
 
 739,1,https://en.wikipedia.org/w/index.php?title=Gaza_war&oldid=1324234133,Not supported
+
