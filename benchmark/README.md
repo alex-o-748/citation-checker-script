@@ -57,6 +57,7 @@ Before running benchmarks, review `dataset_review.csv`:
 Set API keys as environment variables:
 
 ```bash
+export PUBLICAI_API_KEY="..."   # Required for PublicAI models
 export ANTHROPIC_API_KEY="sk-ant-..."
 export OPENAI_API_KEY="sk-..."
 export GEMINI_API_KEY="..."

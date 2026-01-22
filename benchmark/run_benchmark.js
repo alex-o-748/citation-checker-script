@@ -25,26 +25,29 @@ const RESULTS_PATH = path.join(__dirname, 'results.json');
 
 // Provider configurations
 const PROVIDERS = {
-    // Open-source models via PublicAI
+    // Open-source models via PublicAI (direct API)
     'apertus-70b': {
         name: 'Apertus 70B',
         model: 'swiss-ai/apertus-70b-instruct',
-        endpoint: 'https://publicai-api.alaexis.workers.dev/api/chat',
-        requiresKey: false,
+        endpoint: 'https://api.publicai.co/v1/chat/completions',
+        requiresKey: true,
+        keyEnv: 'PUBLICAI_API_KEY',
         type: 'publicai'
     },
     'qwen-sealion': {
         name: 'Qwen SEA-LION v4',
         model: 'aisingapore/Qwen-SEA-LION-v4-32B-IT',
-        endpoint: 'https://publicai-api.alaexis.workers.dev/api/chat',
-        requiresKey: false,
+        endpoint: 'https://api.publicai.co/v1/chat/completions',
+        requiresKey: true,
+        keyEnv: 'PUBLICAI_API_KEY',
         type: 'publicai'
     },
     'olmo-32b': {
         name: 'OLMo 3.1 32B',
         model: 'allenai/Olmo-3.1-32B-Instruct',
-        endpoint: 'https://publicai-api.alaexis.workers.dev/api/chat',
-        requiresKey: false,
+        endpoint: 'https://api.publicai.co/v1/chat/completions',
+        requiresKey: true,
+        keyEnv: 'PUBLICAI_API_KEY',
         type: 'publicai'
     }
 };
@@ -193,6 +196,9 @@ async function callProvider(provider, systemPrompt, userPrompt) {
  * Call PublicAI API
  */
 async function callPublicAI(config, systemPrompt, userPrompt) {
+    const apiKey = process.env[config.keyEnv];
+    if (!apiKey) throw new Error(`Missing ${config.keyEnv}`);
+
     const response = await httpPost(config.endpoint, {
         model: config.model,
         messages: [
@@ -201,6 +207,8 @@ async function callPublicAI(config, systemPrompt, userPrompt) {
         ],
         temperature: 0.1,
         max_tokens: 1000
+    }, {
+        'Authorization': `Bearer ${apiKey}`
     });
 
     const content = response.choices?.[0]?.message?.content || '';
