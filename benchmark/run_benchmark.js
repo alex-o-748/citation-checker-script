@@ -25,32 +25,53 @@ const RESULTS_PATH = path.join(__dirname, 'results.json');
 
 // Provider configurations
 const PROVIDERS = {
-    publicai: {
-        name: 'PublicAI',
-        model: 'Qwen-SEA-LION-v4-32B-IT',
-        endpoint: 'https://publicai-api.alaexis.workers.dev/api/chat',
-        requiresKey: false
+    // Gemini models
+    'gemini-2.5-pro': {
+        name: 'Gemini 2.5 Pro',
+        model: 'gemini-2.5-pro-preview-05-06',
+        endpoint: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro-preview-05-06:generateContent',
+        requiresKey: true,
+        keyEnv: 'GEMINI_API_KEY',
+        type: 'gemini'
     },
-    claude: {
-        name: 'Claude',
-        model: 'claude-sonnet-4-20250514',
+    'gemini-2.5-flash': {
+        name: 'Gemini 2.5 Flash',
+        model: 'gemini-2.5-flash-preview-05-20',
+        endpoint: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent',
+        requiresKey: true,
+        keyEnv: 'GEMINI_API_KEY',
+        type: 'gemini'
+    },
+    // Claude
+    'claude-sonnet': {
+        name: 'Claude Sonnet 4.5',
+        model: 'claude-sonnet-4-5-20250929',
         endpoint: 'https://api.anthropic.com/v1/messages',
         requiresKey: true,
-        keyEnv: 'ANTHROPIC_API_KEY'
+        keyEnv: 'ANTHROPIC_API_KEY',
+        type: 'claude'
     },
-    openai: {
-        name: 'OpenAI',
-        model: 'gpt-4o',
-        endpoint: 'https://api.openai.com/v1/chat/completions',
-        requiresKey: true,
-        keyEnv: 'OPENAI_API_KEY'
+    // Open-source models via PublicAI
+    'apertus-70b': {
+        name: 'Apertus 70B',
+        model: 'swiss-ai/apertus-70b-instruct',
+        endpoint: 'https://publicai-api.alaexis.workers.dev/api/chat',
+        requiresKey: false,
+        type: 'publicai'
     },
-    gemini: {
-        name: 'Gemini',
-        model: 'gemini-2.0-flash',
-        endpoint: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent',
-        requiresKey: true,
-        keyEnv: 'GEMINI_API_KEY'
+    'qwen-sealion': {
+        name: 'Qwen SEA-LION v4',
+        model: 'aisingapore/Qwen-SEA-LION-v4-32B-IT',
+        endpoint: 'https://publicai-api.alaexis.workers.dev/api/chat',
+        requiresKey: false,
+        type: 'publicai'
+    },
+    'olmo-32b': {
+        name: 'OLMo 3.1 32B',
+        model: 'allenai/Olmo-3.1-32B-Instruct',
+        endpoint: 'https://publicai-api.alaexis.workers.dev/api/chat',
+        requiresKey: false,
+        type: 'publicai'
     }
 };
 
@@ -161,7 +182,8 @@ async function callProvider(provider, systemPrompt, userPrompt) {
     try {
         let result;
 
-        switch (provider) {
+        // Route based on provider type
+        switch (config.type) {
             case 'publicai':
                 result = await callPublicAI(config, systemPrompt, userPrompt);
                 break;
@@ -175,7 +197,7 @@ async function callProvider(provider, systemPrompt, userPrompt) {
                 result = await callGemini(config, systemPrompt, userPrompt);
                 break;
             default:
-                throw new Error(`Unknown provider: ${provider}`);
+                throw new Error(`Unknown provider type: ${config.type}`);
         }
 
         const latency = Date.now() - startTime;
