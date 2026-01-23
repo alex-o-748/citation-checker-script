@@ -1,4 +1,4 @@
-# Wikipedia Citation Verification Benchmarking Exercise
+# Wikipedia Citation Verification - LLM Benchmarking
 
 ## Overview
 
