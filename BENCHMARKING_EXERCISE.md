@@ -40,8 +40,7 @@ Claims were classified into four categories:
 We measured the following metrics for each model:
 
 - **Exact Accuracy**: Percentage of predictions that exactly match the ground truth
-- **Lenient Accuracy**: Exact matches plus cases where "Supported" ↔ "Partially supported"
-- **Binary Accuracy**: Correct classification of support vs. no support (ignoring partial distinctions)
+- **Lenient Accuracy**: Treats "Partially supported" and "Not supported" as equivalent (since both indicate citation problems requiring user action). Counts as correct: exact matches on "Supported", and either "Partially supported" OR "Not supported" when ground truth is one of those two.
 - **Confidence Calibration**: Difference between average confidence on correct vs. incorrect predictions (higher is better)
 - **Latency**: Average response time in milliseconds
 
@@ -79,20 +78,19 @@ We evaluated four models:
 
 ### Summary Statistics
 
-| Model | Exact Accuracy | Lenient Accuracy | Binary Accuracy | Avg Latency (ms) | Confidence Calibration |
-|-------|---------------|------------------|-----------------|------------------|----------------------|
-| **Claude Sonnet 4.5** | **75.0%** | 86.8% | **92.1%** | 4,093 | **39.04** |
-| Qwen-SEA-LION | 73.3% | 86.7% | 86.7% | **3,657** | 30.25 |
-| OLMo-32B | 66.7% | 82.7% | 84.0% | 3,002 | 43.20 |
-| Apertus-70B | 57.3% | **93.3%** | 94.7% | 4,398 | 8.15 |
+| Model | Exact Accuracy | Lenient Accuracy | Avg Latency (ms) | Confidence Calibration |
+|-------|---------------|------------------|------------------|----------------------|
+| **Claude Sonnet 4.5** | **75.0%** | **76.3%** | 4,093 | **39.04** |
+| Qwen-SEA-LION | 73.3% | 74.7% | **3,657** | 30.25 |
+| OLMo-32B | 66.7% | 66.7% | 3,002 | 43.20 |
+| Apertus-70B | 57.3% | 60.0% | 4,398 | 8.15 |
 
 ### Detailed Results
 
 #### Claude Sonnet 4.5 🏆
 - **Valid responses**: 76/76 (0 errors - perfect reliability!)
 - **Exact matches**: 57/76 (75.0%)
-- **Lenient accuracy**: 86.8%
-- **Binary accuracy**: 92.1%
+- **Lenient accuracy**: 58/76 (76.3%)
 - **Average latency**: 4,093ms
 - **Confidence calibration**: 39.04 (86.9% when correct, 47.9% when wrong)
 
@@ -108,8 +106,7 @@ Unavailable (0)         -        -          -             -
 #### Qwen-SEA-LION-v4-32B
 - **Valid responses**: 75/76 (1 error)
 - **Exact matches**: 55/75 (73.3%)
-- **Lenient accuracy**: 86.7%
-- **Binary accuracy**: 86.7%
+- **Lenient accuracy**: 56/75 (74.7%)
 - **Average latency**: 3,657ms (fastest)
 - **Confidence calibration**: 30.25 (86% when correct, 55.75% when wrong)
 
@@ -125,8 +122,7 @@ Unavailable (0)         -        -          -             -
 #### OLMo-3.1-32B-Instruct
 - **Valid responses**: 75/76 (1 error)
 - **Exact matches**: 50/75 (66.7%)
-- **Lenient accuracy**: 82.7%
-- **Binary accuracy**: 84.0%
+- **Lenient accuracy**: 50/75 (66.7%)
 - **Average latency**: 3,002ms
 - **Confidence calibration**: 43.20 (82.4% when correct, 39.2% when wrong)
 
@@ -142,8 +138,7 @@ Unavailable (0)         -        -          -             -
 #### Apertus-70B-Instruct
 - **Valid responses**: 75/76 (1 error)
 - **Exact matches**: 43/75 (57.3%)
-- **Lenient accuracy**: 93.3%
-- **Binary accuracy**: 94.7%
+- **Lenient accuracy**: 45/75 (60.0%)
 - **Average latency**: 4,398ms (slowest)
 - **Confidence calibration**: 8.15 (82.2% when correct, 74.1% when wrong)
 
@@ -161,11 +156,11 @@ Unavailable (0)         -        -          -             -
 
 ### Key Findings
 
-1. **Claude Sonnet 4.5 is the clear winner** with 75% exact accuracy and perfect reliability (0 errors). It also has the best confidence calibration, showing much higher confidence when correct (86.9%) vs. incorrect (47.9%).
+1. **Claude Sonnet 4.5 is the clear winner** with 75% exact accuracy, 76.3% lenient accuracy, and perfect reliability (0 errors). It also has the best confidence calibration, showing much higher confidence when correct (86.9%) vs. incorrect (47.9%).
 
-2. **Qwen-SEA-LION is the best open-source option** at 73.3% exact accuracy, nearly matching Claude's performance. It's also the fastest of the reliable models (3,657ms).
+2. **Qwen-SEA-LION is the best open-source option** at 73.3% exact accuracy and 74.7% lenient accuracy, nearly matching Claude's performance. It's also the fastest of the reliable models (3,657ms).
 
-3. **Apertus-70B has the best lenient and binary accuracy** (93.3% and 94.7%), meaning it rarely makes serious errors. However, it tends to over-classify claims as "Partially supported" when they should be "Supported" - a conservative approach that avoids false negatives but lacks precision.
+3. **Apertus-70B is the most conservative** but has the lowest accuracy (57.3% exact, 60.0% lenient). It tends to over-classify claims as "Partially supported" when they should be "Supported" - a conservative approach that avoids false negatives but creates many false positives.
 
 4. **OLMo-32B offers a balanced middle ground** with 66.7% accuracy and decent speed (3,002ms), though it showed good confidence calibration (43.2 point difference).
 
@@ -173,7 +168,7 @@ Unavailable (0)         -        -          -             -
 
 **Supported vs. Partially Supported**:
 - Apertus-70B frequently labeled "Supported" claims as "Partially supported" (24 out of 60 cases)
-- This accounts for its lower exact accuracy but higher lenient accuracy
+- This conservative approach creates many false positives, resulting in both lower exact accuracy (57.3%) and lower lenient accuracy (60.0%)
 - Claude and Qwen were much better at distinguishing these categories
 
 **False Negatives (missing problems - dangerous!)**:
@@ -212,9 +207,9 @@ These are cases where the model incorrectly flags good citations, potentially cr
 
 For the Wikipedia citation verification task, **Claude Sonnet 4.5** is the clear winner:
 - Highest exact accuracy (75.0%)
+- Highest lenient accuracy (76.3%)
 - Perfect reliability (0 errors out of 76)
 - Best confidence calibration (models that know when they're right are more trustworthy)
-- Highest binary accuracy (92.1%)
 
 ### Best Open-Source: Qwen-SEA-LION-v4-32B
 
