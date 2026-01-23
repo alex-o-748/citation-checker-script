@@ -1,0 +1,170 @@
+{
+  "generated": "2026-01-23T08:25:09.036Z",
+  "overview": {
+    "totalEntries": 76,
+    "totalCalls": 228,
+    "providers": [
+      "apertus-70b",
+      "qwen-sealion",
+      "olmo-32b"
+    ]
+  },
+  "providers": {
+    "apertus-70b": {
+      "name": "Apertus-70b",
+      "model": "swiss-ai/apertus-70b-instruct",
+      "sampleCount": 76,
+      "metrics": {
+        "total": 76,
+        "valid": 75,
+        "errors": 1,
+        "exactMatches": 43,
+        "partialMatches": 27,
+        "exactAccuracy": 0.5733333333333334,
+        "lenientAccuracy": 0.9333333333333333,
+        "binaryAccuracy": 0.9466666666666667,
+        "confusionMatrix": {
+          "Supported": {
+            "Supported": 34,
+            "Partially supported": 24,
+            "Not supported": 2,
+            "Source unavailable": 0
+          },
+          "Partially supported": {
+            "Supported": 3,
+            "Partially supported": 7,
+            "Not supported": 0,
+            "Source unavailable": 0
+          },
+          "Not supported": {
+            "Supported": 0,
+            "Partially supported": 2,
+            "Not supported": 2,
+            "Source unavailable": 1
+          },
+          "Source unavailable": {
+            "Supported": 0,
+            "Partially supported": 0,
+            "Not supported": 0,
+            "Source unavailable": 0
+          }
+        },
+        "latency": {
+          "avg": 4397.986842105263,
+          "min": 365,
+          "max": 7614
+        },
+        "confidence": {
+          "avg": 79.79729729729729,
+          "avgWhenCorrect": 82.20930232558139,
+          "avgWhenWrong": 74.0625,
+          "calibration": 8.14680232558139
+        }
+      }
+    },
+    "qwen-sealion": {
+      "name": "Qwen-sealion",
+      "model": "aisingapore/Qwen-SEA-LION-v4-32B-IT",
+      "sampleCount": 76,
+      "metrics": {
+        "total": 76,
+        "valid": 75,
+        "errors": 1,
+        "exactMatches": 55,
+        "partialMatches": 10,
+        "exactAccuracy": 0.7333333333333333,
+        "lenientAccuracy": 0.8666666666666667,
+        "binaryAccuracy": 0.8666666666666667,
+        "confusionMatrix": {
+          "Supported": {
+            "Supported": 50,
+            "Partially supported": 4,
+            "Not supported": 4,
+            "Source unavailable": 2
+          },
+          "Partially supported": {
+            "Supported": 6,
+            "Partially supported": 3,
+            "Not supported": 0,
+            "Source unavailable": 1
+          },
+          "Not supported": {
+            "Supported": 2,
+            "Partially supported": 1,
+            "Not supported": 2,
+            "Source unavailable": 0
+          },
+          "Source unavailable": {
+            "Supported": 0,
+            "Partially supported": 0,
+            "Not supported": 0,
+            "Source unavailable": 0
+          }
+        },
+        "latency": {
+          "avg": 3656.907894736842,
+          "min": 370,
+          "max": 6292
+        },
+        "confidence": {
+          "avg": 81.18055555555556,
+          "avgWhenCorrect": 86,
+          "avgWhenWrong": 55.75,
+          "calibration": 30.25
+        }
+      }
+    },
+    "olmo-32b": {
+      "name": "Olmo-32b",
+      "model": "allenai/Olmo-3.1-32B-Instruct",
+      "sampleCount": 76,
+      "metrics": {
+        "total": 76,
+        "valid": 75,
+        "errors": 1,
+        "exactMatches": 50,
+        "partialMatches": 12,
+        "exactAccuracy": 0.6666666666666666,
+        "lenientAccuracy": 0.8266666666666667,
+        "binaryAccuracy": 0.84,
+        "confusionMatrix": {
+          "Supported": {
+            "Supported": 44,
+            "Partially supported": 7,
+            "Not supported": 4,
+            "Source unavailable": 5
+          },
+          "Partially supported": {
+            "Supported": 5,
+            "Partially supported": 3,
+            "Not supported": 0,
+            "Source unavailable": 2
+          },
+          "Not supported": {
+            "Supported": 1,
+            "Partially supported": 0,
+            "Not supported": 3,
+            "Source unavailable": 1
+          },
+          "Source unavailable": {
+            "Supported": 0,
+            "Partially supported": 0,
+            "Not supported": 0,
+            "Source unavailable": 0
+          }
+        },
+        "latency": {
+          "avg": 3002.0394736842104,
+          "min": 375,
+          "max": 4637
+        },
+        "confidence": {
+          "avg": 77.27272727272727,
+          "avgWhenCorrect": 82.4,
+          "avgWhenWrong": 39.2,
+          "calibration": 43.2
+        }
+      }
+    }
+  }
+}
