@@ -185,8 +185,7 @@ Unavailable (0)         -        -          -             -
 - Claude Sonnet 4.5: 5 cases
 
 **"Not Supported" Detection**:
-- This was the hardest category for all models
-- Claude correctly identified 0/5 as "Not Supported" but conservatively marked 4 as "Source unavailable"
+- Claude marked 4 as "Source unavailable" when the source was in fact available. In the comments it reasoned correctly that the claim is not supported but somehow failed to classify them as "Not Supported"
 - OLMo performed best on this category (3/5 correct)
 
 **Confidence Calibration**:
