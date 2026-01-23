@@ -12,7 +12,7 @@ Wikipedia's reliability depends on accurate citations. The [Wikipedia AI Source 
 
 ### Dataset Construction
 
-We created a ground truth dataset of 76 claim-citation pairs from Wikipedia articles. The articles were chosen semi-randomly from the autor's areas of interest (). 
+We created a ground truth dataset of 76 claim-citation pairs from Wikipedia articles. The articles were chosen semi-randomly from the autor's areas of interest. 
 
 - **Claim text**: The specific statement made in the Wikipedia article
 - **Source text**: The content from the cited source
@@ -29,7 +29,7 @@ The dataset contains almost all of the sources that were available online for th
 
 ### Evaluation Criteria
 
-Claims were classified into four categories:
+Claims were classified into three categories:
 
 - **Supported**: The source clearly supports the claim with definitive statements
 - **Partially supported**: The source only parts of the claim or uses hedged language
@@ -37,7 +37,7 @@ Claims were classified into four categories:
 
 ### Metrics
 
-We measured the following metrics for each model:
+The following metrics were measured for each model:
 
 - **Exact Accuracy**: Percentage of predictions that exactly match the ground truth
 - **Lenient Accuracy**: Treats "Partially supported" and "Not supported" as equivalent (since both indicate citation problems requiring user action). Counts as correct: exact matches on "Supported", and either "Partially supported" OR "Not supported" when ground truth is one of those two.
@@ -56,7 +56,7 @@ All models were tested using:
 
 ## Models Tested
 
-We evaluated four models:
+Four models were evaluated:
 
 1. **Claude Sonnet 4.5** (`claude-sonnet-4-5-20250929`)
    - Anthropic's frontier model
@@ -88,7 +88,7 @@ We evaluated four models:
 ### Detailed Results
 
 #### Claude Sonnet 4.5 🏆
-- **Valid responses**: 76/76 (0 errors - perfect reliability!)
+- **Valid responses**: 76/76
 - **Exact matches**: 57/76 (75.0%)
 - **Lenient accuracy**: 58/76 (76.3%)
 - **Average latency**: 4,093ms
@@ -156,13 +156,13 @@ Unavailable (0)         -        -          -             -
 
 ### Key Findings
 
-1. **Claude Sonnet 4.5 is the clear winner** with 75% exact accuracy, 76.3% lenient accuracy, and perfect reliability (0 errors). It also has the best confidence calibration, showing much higher confidence when correct (86.9%) vs. incorrect (47.9%).
+1. **Claude Sonnet 4.5 is the clear winner** with 75% exact accuracy and 76.3% lenient accuracy. It also has the best confidence calibration, showing much higher confidence when correct (86.9%) vs. incorrect (47.9%).
 
 2. **Qwen-SEA-LION is the best open-source option** at 73.3% exact accuracy and 74.7% lenient accuracy, nearly matching Claude's performance. It's also the fastest of the reliable models (3,657ms).
 
 3. **Apertus-70B is the most conservative** but has the lowest accuracy (57.3% exact, 60.0% lenient). It tends to over-classify claims as "Partially supported" when they should be "Supported" - a conservative approach that avoids false negatives but creates many false positives.
 
-4. **OLMo-32B offers a balanced middle ground** with 66.7% accuracy and decent speed (3,002ms), though it showed good confidence calibration (43.2 point difference).
+4. **OLMo-32B offers a balanced middle ground** with 66.7% accuracy/
 
 ### Pattern Analysis
 
@@ -196,9 +196,7 @@ These are cases where the model incorrectly flags good citations, potentially cr
 
 ### Reliability Considerations
 
-- **Claude Sonnet 4.5** had perfect reliability with 0 errors (100% valid response rate)
-- The three open-source models had excellent reliability with only 1 error each (98.7% valid response rate)
-- No model had systematic failures or consistent patterns of breakdown
+- The models had excellent reliability with no more than 1 error each
 - Response format compliance was excellent across all models
 
 ## Conclusions
@@ -218,13 +216,6 @@ For users who need an open-source solution, **Qwen-SEA-LION-v4-32B** is the best
 - Fastest response time among reliable models (3,657ms)
 - Good confidence calibration (30.25)
 - Excellent reliability (98.7%)
-
-### Use Case Recommendations
-
-- **For maximum accuracy and reliability**: Use Claude Sonnet 4.5
-- **For best open-source option**: Use Qwen-SEA-LION-v4-32B
-- **For conservative checking** (avoiding false negatives, willing to accept false positives): Use Apertus-70B
-- **For budget-conscious deployments**: Use OLMo-32B
 
 ### Limitations
 
@@ -270,64 +261,19 @@ All code and data are available in the `/benchmark` directory of this repository
 
 These examples illustrate cases where the cited source does not support the Wikipedia claim. Detecting these is critical for maintaining Wikipedia's reliability.
 
-#### Example 1: Irrelevant Source Content
-
-**Article**: Immigration to the United States
-**Claim**: "After an initial wave of immigration from China following the California Gold Rush, racist attitudes toward the Chinese population of the West Coast led to Congress passing the very first U.S. law restricting immigration: The Page Act of 1875 banned Chinese women who, it was claimed, were arriving to engage in prostitution."
-
-**Source**: Washington Post opinion column about Arizona immigration law (2010)
-**Why Not Supported**: The source is a modern opinion piece about Arizona's immigration policies and makes no mention of the Page Act of 1875, Chinese immigration, or 19th-century immigration law. The source is completely unrelated to the historical claim.
-
-**Model Performance**:
-- OLMo-32B: ✓ Correctly identified as "Not supported"
-- Apertus-70B: Marked as "Partially supported" (false negative)
-- Qwen-SEA-LION: Marked as "Supported" (false negative)
-- Claude Sonnet 4.5: Marked as "Supported" (false negative)
-
----
-
-#### Example 2: Wrong Date/Event
+#### Example 1: Wrong Date/Event
 
 **Article**: Nasry Asfura
 **Claim**: "The case continued until 15 December 2025, when the Supreme Court fully annulled all charges against Asfura and Cruz."
 
 **Source**: El Heraldo article from June 1, 2021
-**Why Not Supported**: The source describes a June 2021 appeals court decision to freeze criminal proceedings, not a December 2025 Supreme Court decision to annul charges. The date, court, and outcome are all different from the claim.
+**Why Not Supported**: The source describes a June 2021 appeals court decision to freeze criminal proceedings, not a December 2025 Supreme Court decision to annul charges. The date, court, and outcome are all different from the claim. This would be a tricky one for a human reviewer to notice!
 
 **Model Performance**:
 - OLMo-32B: ✓ Correctly identified as "Not supported"
 - Apertus-70B: Marked as "Partially supported" (false negative)
 - Qwen-SEA-LION: Marked as "Supported" (false negative)
-- Claude Sonnet 4.5: Marked as "Source unavailable" (incorrect reasoning)
-
----
-
-#### Example 3: Source Unavailable
-
-**Article**: War in Abkhazia (1992-1993)
-**Claim**: "Most of the people who didn't survive the crossing died of cold and starvation. The survivors who reached the Svan mountains were attacked and robbed by local criminal groups. One of the survivors recalls the crossing:"
-
-**Source**: (Failed to fetch - 404 error)
-**Why Not Supported**: The source URL returns a 404 error and no content could be retrieved to verify the claim.
-
-**Model Performance**:
-- OLMo-32B: ✓ Correctly identified as "Not supported"
-- Apertus-70B: Marked as "Partially supported" (false negative)
-- Qwen-SEA-LION: Marked as "Supported" (false negative)
-- Claude Sonnet 4.5: Marked as "Source unavailable" (technically correct but not the category we used)
-
----
-
-### Key Observations from "Not Supported" Detection
-
-The rarest category in the dataset (only 5 examples out of 76), "Not Supported" was the hardest for all models to detect correctly:
-
-- **OLMo-32B performed best**: 3/5 correct (60%)
-- **Apertus-70B**: 2/5 correct (40%), marked 2 as "Partially supported" and 1 as "Source unavailable"
-- **Qwen-SEA-LION**: 2/5 correct (40%), incorrectly marked 2 as "Supported" and 1 as "Partially supported"
-- **Claude Sonnet 4.5**: 0/5 correct (0%), but interestingly marked 4 as "Source unavailable" - the model's reasoning in comments often correctly identified that claims weren't supported, but it chose the wrong category
-
-This pattern suggests that models tend to be overly generous in their assessments, preferring to mark questionable citations as "Partially supported" rather than "Not supported". This represents a significant risk for false negatives - allowing bad citations to remain on Wikipedia.
+- Claude Sonnet 4.5: Marked as "Source unavailable" but hit the nail on its head in the comment "the article discusses a different court ruling - it mentions the Sala Penal (Criminal Chamber) of the Supreme Court made a decision on 'este martes' (this Tuesday) to revoke a February 16, 2021 appellate court decision, but does not specify December 15, 2025 as the date. The source does not contain information about the specific date claimed in the Wikipedia article."
 
 ---
 
