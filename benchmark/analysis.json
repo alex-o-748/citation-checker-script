@@ -1,12 +1,16 @@
 {
-  "generated": "2026-01-23T08:25:09.036Z",
+  "generated": "2026-01-23T19:39:05.384Z",
   "overview": {
     "totalEntries": 76,
-    "totalCalls": 228,
+    "totalCalls": 532,
     "providers": [
       "apertus-70b",
       "qwen-sealion",
-      "olmo-32b"
+      "olmo-32b",
+      "claude-sonnet",
+      "gemini-flash",
+      "claude-sonnet-4-5",
+      "gemini-2.5-flash"
     ]
   },
   "providers": {
@@ -163,6 +167,214 @@
           "avgWhenCorrect": 82.4,
           "avgWhenWrong": 39.2,
           "calibration": 43.2
+        }
+      }
+    },
+    "claude-sonnet": {
+      "name": "Claude-sonnet",
+      "model": "claude-sonnet-4-5-20250514",
+      "sampleCount": 76,
+      "metrics": {
+        "total": 76,
+        "valid": 0,
+        "errors": 76,
+        "exactMatches": 0,
+        "partialMatches": 0,
+        "exactAccuracy": 0,
+        "lenientAccuracy": 0,
+        "binaryAccuracy": 0,
+        "confusionMatrix": {
+          "Supported": {
+            "Supported": 0,
+            "Partially supported": 0,
+            "Not supported": 0,
+            "Source unavailable": 0
+          },
+          "Partially supported": {
+            "Supported": 0,
+            "Partially supported": 0,
+            "Not supported": 0,
+            "Source unavailable": 0
+          },
+          "Not supported": {
+            "Supported": 0,
+            "Partially supported": 0,
+            "Not supported": 0,
+            "Source unavailable": 0
+          },
+          "Source unavailable": {
+            "Supported": 0,
+            "Partially supported": 0,
+            "Not supported": 0,
+            "Source unavailable": 0
+          }
+        },
+        "latency": {
+          "avg": 164.25,
+          "min": 125,
+          "max": 305
+        },
+        "confidence": {
+          "avg": 0,
+          "avgWhenCorrect": 0,
+          "avgWhenWrong": 0,
+          "calibration": 0
+        }
+      }
+    },
+    "gemini-flash": {
+      "name": "Gemini-flash",
+      "model": "gemini-2.5-flash-preview-05-20",
+      "sampleCount": 76,
+      "metrics": {
+        "total": 76,
+        "valid": 0,
+        "errors": 76,
+        "exactMatches": 0,
+        "partialMatches": 0,
+        "exactAccuracy": 0,
+        "lenientAccuracy": 0,
+        "binaryAccuracy": 0,
+        "confusionMatrix": {
+          "Supported": {
+            "Supported": 0,
+            "Partially supported": 0,
+            "Not supported": 0,
+            "Source unavailable": 0
+          },
+          "Partially supported": {
+            "Supported": 0,
+            "Partially supported": 0,
+            "Not supported": 0,
+            "Source unavailable": 0
+          },
+          "Not supported": {
+            "Supported": 0,
+            "Partially supported": 0,
+            "Not supported": 0,
+            "Source unavailable": 0
+          },
+          "Source unavailable": {
+            "Supported": 0,
+            "Partially supported": 0,
+            "Not supported": 0,
+            "Source unavailable": 0
+          }
+        },
+        "latency": {
+          "avg": 31.57894736842105,
+          "min": 19,
+          "max": 62
+        },
+        "confidence": {
+          "avg": 0,
+          "avgWhenCorrect": 0,
+          "avgWhenWrong": 0,
+          "calibration": 0
+        }
+      }
+    },
+    "claude-sonnet-4-5": {
+      "name": "Claude-sonnet-4-5",
+      "model": "claude-sonnet-4-5-20250929",
+      "sampleCount": 76,
+      "metrics": {
+        "total": 76,
+        "valid": 76,
+        "errors": 0,
+        "exactMatches": 57,
+        "partialMatches": 9,
+        "exactAccuracy": 0.75,
+        "lenientAccuracy": 0.868421052631579,
+        "binaryAccuracy": 0.9210526315789473,
+        "confusionMatrix": {
+          "Supported": {
+            "Supported": 52,
+            "Partially supported": 5,
+            "Not supported": 1,
+            "Source unavailable": 2
+          },
+          "Partially supported": {
+            "Supported": 4,
+            "Partially supported": 5,
+            "Not supported": 0,
+            "Source unavailable": 1
+          },
+          "Not supported": {
+            "Supported": 1,
+            "Partially supported": 1,
+            "Not supported": 0,
+            "Source unavailable": 4
+          },
+          "Source unavailable": {
+            "Supported": 0,
+            "Partially supported": 0,
+            "Not supported": 0,
+            "Source unavailable": 0
+          }
+        },
+        "latency": {
+          "avg": 4092.5789473684213,
+          "min": 2315,
+          "max": 7377
+        },
+        "confidence": {
+          "avg": 86.25,
+          "avgWhenCorrect": 86.9298245614035,
+          "avgWhenWrong": 47.89473684210526,
+          "calibration": 39.03508771929825
+        }
+      }
+    },
+    "gemini-2.5-flash": {
+      "name": "Gemini-2.5-flash",
+      "model": "gemini-2.5-flash",
+      "sampleCount": 76,
+      "metrics": {
+        "total": 76,
+        "valid": 21,
+        "errors": 55,
+        "exactMatches": 15,
+        "partialMatches": 3,
+        "exactAccuracy": 0.7142857142857143,
+        "lenientAccuracy": 0.8571428571428571,
+        "binaryAccuracy": 0.8571428571428571,
+        "confusionMatrix": {
+          "Supported": {
+            "Supported": 13,
+            "Partially supported": 3,
+            "Not supported": 2,
+            "Source unavailable": 0
+          },
+          "Partially supported": {
+            "Supported": 0,
+            "Partially supported": 1,
+            "Not supported": 0,
+            "Source unavailable": 0
+          },
+          "Not supported": {
+            "Supported": 0,
+            "Partially supported": 1,
+            "Not supported": 1,
+            "Source unavailable": 0
+          },
+          "Source unavailable": {
+            "Supported": 0,
+            "Partially supported": 0,
+            "Not supported": 0,
+            "Source unavailable": 0
+          }
+        },
+        "latency": {
+          "avg": 1200.4605263157894,
+          "min": 27,
+          "max": 7426
+        },
+        "confidence": {
+          "avg": 81.47058823529412,
+          "avgWhenCorrect": 83,
+          "avgWhenWrong": 23.333333333333332,
+          "calibration": 59.66666666666667
         }
       }
     }
