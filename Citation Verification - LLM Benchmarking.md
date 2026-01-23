@@ -257,9 +257,9 @@ All code and data are available in the `/benchmark` directory of this repository
 
 ## Appendix: Example Cases
 
-###Not Supported Examples
+### Not Supported Examples
 
-####Example 1: Wrong Date/Event
+#### Example 1: Wrong Date/Event
 
 **Article**: [Nasry Asfura](https://en.wikipedia.org/w/index.php?title=Nasry_Asfura&oldid=1330112057)
 
