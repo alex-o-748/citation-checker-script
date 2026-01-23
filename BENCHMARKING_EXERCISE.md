@@ -178,11 +178,12 @@ Unavailable (0)         -        -          -             -
 - This accounts for its lower exact accuracy but higher lenient accuracy
 - Claude and Qwen were much better at distinguishing these categories
 
-**False Positives (Source doesn't support, but model says it does)**:
-- Qwen-SEA-LION: 8 cases
-- OLMo-32B: 6 cases
-- Apertus-70B: 5 cases
-- Claude Sonnet 4.5: 5 cases
+**False Positives (overstating support)**:
+Cases where ground truth was "Partially supported" or "Not supported" but model predicted "Supported", or ground truth was "Not supported" but model predicted any level of support:
+- Qwen-SEA-LION: 9 cases (6 Partial→Supported, 3 NotSupported→Supported/Partial)
+- Claude Sonnet 4.5: 6 cases (4 Partial→Supported, 2 NotSupported→Supported/Partial)
+- OLMo-32B: 6 cases (5 Partial→Supported, 1 NotSupported→Supported)
+- Apertus-70B: 5 cases (3 Partial→Supported, 2 NotSupported→Partial)
 
 **"Not Supported" Detection**:
 - Claude marked 4 as "Source unavailable" when the source was in fact available. In the comments it reasoned correctly that the claim is not supported but somehow failed to classify them as "Not Supported"
