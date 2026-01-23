@@ -49,6 +49,24 @@ const PROVIDERS = {
         requiresKey: true,
         keyEnv: 'PUBLICAI_API_KEY',
         type: 'publicai'
+    },
+    // Claude
+    'claude-sonnet': {
+        name: 'Claude Sonnet 4.5',
+        model: 'claude-sonnet-4-5-20250514',
+        endpoint: 'https://api.anthropic.com/v1/messages',
+        requiresKey: true,
+        keyEnv: 'ANTHROPIC_API_KEY',
+        type: 'claude'
+    },
+    // Gemini
+    'gemini-flash': {
+        name: 'Gemini 2.5 Flash',
+        model: 'gemini-2.5-flash-preview-05-20',
+        endpoint: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent',
+        requiresKey: true,
+        keyEnv: 'GEMINI_API_KEY',
+        type: 'gemini'
     }
 };
 

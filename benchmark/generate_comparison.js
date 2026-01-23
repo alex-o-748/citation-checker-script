@@ -13,8 +13,11 @@ results.forEach(r => {
     byEntry[r.entry_id][r.provider] = r.predicted_verdict;
 });
 
+// Get all providers from results
+const allProviders = [...new Set(results.map(r => r.provider))].sort();
+
 // Create CSV
-const headers = ['entry_id', 'ground_truth', 'apertus-70b', 'qwen-sealion', 'olmo-32b'];
+const headers = ['entry_id', 'ground_truth', ...allProviders];
 const rows = [headers.join(',')];
 
 Object.keys(byEntry).sort().forEach(id => {
@@ -22,9 +25,7 @@ Object.keys(byEntry).sort().forEach(id => {
     const row = [
         id,
         entry.ground_truth,
-        entry['apertus-70b'] || '',
-        entry['qwen-sealion'] || '',
-        entry['olmo-32b'] || ''
+        ...allProviders.map(p => entry[p] || '')
     ];
     rows.push(row.map(v => '"' + v + '"').join(','));
 });
