@@ -1,0 +1,16 @@
+{
+  "name": "citation-benchmark",
+  "version": "1.0.0",
+  "description": "Benchmarking tools for comparing LLM performance on citation verification",
+  "scripts": {
+    "extract": "node extract_dataset.js",
+    "extract:dry": "node extract_dataset.js --dry-run",
+    "benchmark": "node run_benchmark.js",
+    "benchmark:publicai": "node run_benchmark.js --providers=publicai",
+    "analyze": "node analyze_results.js",
+    "report": "node analyze_results.js --output report.md"
+  },
+  "dependencies": {
+    "jsdom": "^24.0.0"
+  }
+}
