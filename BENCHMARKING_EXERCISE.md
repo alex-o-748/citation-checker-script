@@ -2,17 +2,17 @@
 
 ## Overview
 
-This document describes a benchmarking exercise conducted to evaluate the performance of various Large Language Models (LLMs) on the task of verifying Wikipedia citations. The goal was to assess how well different models can determine whether claims in Wikipedia articles are supported by their cited sources.
+This document describes a benchmarking exercise conducted to evaluate the performance of various Large Language Models (LLMs) on the task of verifying Wikipedia citations, that is, determining whether claims in Wikipedia articles are supported by their cited sources.
 
 ## Motivation
 
-Wikipedia's reliability depends on accurate citations. The [Wikipedia AI Source Verification tool](https://en.wikipedia.org/wiki/User:Alaexis/AI_Source_Verification) uses AI to help editors verify that citations actually support the claims they're attached to. To understand which models perform best at this task, we conducted a systematic benchmark across multiple LLMs using real Wikipedia citations.
+Wikipedia's reliability depends on accurate citations. The [Wikipedia AI Source Verification tool](https://en.wikipedia.org/wiki/User:Alaexis/AI_Source_Verification) uses AI to help editors verify that citations actually support the claims they're attached to. To understand which models perform best at this task, a systematic benchmark across multiple LLMs using real Wikipedia citations was conducted.
 
 ## Methodology
 
 ### Dataset Construction
 
-We created a ground truth dataset of 76 claim-citation pairs from Wikipedia articles. The articles were chosen semi-randomly from the autor's areas of interest. 
+The benchmark uses a ground truth dataset of 76 claim-citation pairs from Wikipedia articles. The articles were chosen semi-randomly from the author's areas of interest. 
 
 - **Claim text**: The specific statement made in the Wikipedia article
 - **Source text**: The content from the cited source
@@ -50,7 +50,7 @@ The following metrics were measured for each model:
 
 All models were tested using:
 - Temperature: 0.1 (for consistency)
-- The same system prompt with detailed instructions and examples // TODO add link
+- The same system prompt with detailed instructions and examples (can be found in [`main.js`](main.js))
 - The same dataset of 76 entries
 - API calls via PublicAI's free inference service (for open-source models) and Anthropic API (for Claude)
 
@@ -257,11 +257,28 @@ All code and data are available in the `/benchmark` directory of this repository
 
 ## Appendix: Example Cases
 
-### Not Supported Example
+###Not Supported Examples
+
+####Example 1: Wrong Date/Event
+
+**Article**: [Nasry Asfura](https://en.wikipedia.org/w/index.php?title=Nasry_Asfura&oldid=1330112057)
+
+**Claim**: "The case continued until 15 December 2025, when the Supreme Court fully annulled all charges against Asfura and Cruz."
+
+**Source**: El Heraldo article from June 1, 2021
+
+**Why Not Supported**: The source describes a June 2021 appeals court decision to freeze criminal proceedings, not a December 2025 Supreme Court decision to annul charges. The date, court, and outcome are all different from the claim. This would be a tricky one for a human reviewer to notice!
+
+**Model Performance**:
+
+- OLMo-32B: ✓ Correctly identified as "Not supported"
+- Apertus-70B: Marked as "Partially supported" (false negative)
+- Qwen-SEA-LION: Marked as "Supported" (false negative)
+- Claude Sonnet 4.5: Marked as "Source unavailable" but hit the nail on its head in the comment "the article discusses a different court ruling - it mentions the Sala Penal (Criminal Chamber) of the Supreme Court made a decision on 'este martes' (this Tuesday) to revoke a February 16, 2021 appellate court decision, but does not specify December 15, 2025 as the date. The source does not contain information about the specific date claimed in the Wikipedia article."
+
+#### Example 2: Subtle Numerical Inaccuracy (Fooled 3 out of 4 Models)
 
 This example illustrates a case where the cited source does not support the Wikipedia claim. Detecting these subtle inaccuracies is critical for maintaining Wikipedia's reliability.
-
-#### Example: Subtle Numerical Inaccuracy (Fooled 3 out of 4 Models)
 
 **Article**: [First Chechen War](https://en.wikipedia.org/w/index.php?title=First_Chechen_War&oldid=1325376850)
 
