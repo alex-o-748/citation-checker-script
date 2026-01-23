@@ -51,7 +51,7 @@ const PROVIDERS = {
         type: 'publicai'
     },
     // Claude
-    'claude-sonnet': {
+    'claude-sonnet-4-5': {
         name: 'Claude Sonnet 4.5',
         model: 'claude-sonnet-4-5-20250514',
         endpoint: 'https://api.anthropic.com/v1/messages',
@@ -60,7 +60,7 @@ const PROVIDERS = {
         type: 'claude'
     },
     // Gemini
-    'gemini-flash': {
+    'gemini-2.5-flash': {
         name: 'Gemini 2.5 Flash',
         model: 'gemini-2.5-flash-preview-05-20',
         endpoint: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent',
