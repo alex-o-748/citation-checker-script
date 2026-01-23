@@ -327,5 +327,5 @@ This pattern suggests that models tend to be overly generous in their assessment
 
 ## Contact
 
-**Author**: [[User:Alaexis]]
+**Author**: [User:Alaexis](https://en.wikipedia.org/wiki/User_talk:Alaexis)
 **Email**: alaexis.wiki@gmail.com
