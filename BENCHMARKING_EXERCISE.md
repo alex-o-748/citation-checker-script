@@ -257,23 +257,45 @@ All code and data are available in the `/benchmark` directory of this repository
 
 ## Appendix: Example Cases
 
-### Not Supported Examples
+### Not Supported Example
 
-These examples illustrate cases where the cited source does not support the Wikipedia claim. Detecting these is critical for maintaining Wikipedia's reliability.
+This example illustrates a case where the cited source does not support the Wikipedia claim. Detecting these subtle inaccuracies is critical for maintaining Wikipedia's reliability.
 
-#### Example 1: Wrong Date/Event
+#### Example: Subtle Numerical Inaccuracy (Fooled 3 out of 4 Models)
 
-**Article**: Nasry Asfura
-**Claim**: "The case continued until 15 December 2025, when the Supreme Court fully annulled all charges against Asfura and Cruz."
+**Article**: [First Chechen War](https://en.wikipedia.org/w/index.php?title=First_Chechen_War&oldid=1325376850)
 
-**Source**: El Heraldo article from June 1, 2021
-**Why Not Supported**: The source describes a June 2021 appeals court decision to freeze criminal proceedings, not a December 2025 Supreme Court decision to annul charges. The date, court, and outcome are all different from the claim. This would be a tricky one for a human reviewer to notice!
+**Claim**: "According to various estimates, the number of Chechens who are dead or missing is between 50,000 and 100,000."
+
+**Source**: [Human Rights Violations in Chechnya](https://web.archive.org/web/20021228053504/http://www.hrvc.net/htmls/references.htm) (archived)
+
+**Why Not Supported**: The source actually states: "for the period from 1994 to 2002 estimates range from **40,000 to 120,000 civilians**" - not 50,000 to 100,000. While the numbers are close, they are not the same. The claim's range (50K-100K) is narrower and shifted upward compared to the source's range (40K-120K).
 
 **Model Performance**:
-- OLMo-32B: ✓ Correctly identified as "Not supported"
-- Apertus-70B: Marked as "Partially supported" (false negative)
-- Qwen-SEA-LION: Marked as "Supported" (false negative)
-- Claude Sonnet 4.5: Marked as "Source unavailable" but hit the nail on its head in the comment "the article discusses a different court ruling - it mentions the Sala Penal (Criminal Chamber) of the Supreme Court made a decision on 'este martes' (this Tuesday) to revoke a February 16, 2021 appellate court decision, but does not specify December 15, 2025 as the date. The source does not contain information about the specific date claimed in the Wikipedia article."
+- Claude Sonnet 4.5: ✗ Marked as "Supported" with 85% confidence (false negative)
+- Qwen-SEA-LION: ✗ Marked as "Supported" with 85% confidence (false negative)
+- OLMo-32B: ✗ Marked as "Supported" with 80% confidence (false negative)
+- Apertus-70B: ~ Marked as "Partially supported" with 80% confidence (still wrong, but closer)
+
+**Key Insight**: This subtle numerical discrepancy fooled 3 out of 4 models. All three marked it as fully "Supported" despite the numbers being different. This type of error is particularly dangerous because:
+1. The inaccuracy is subtle enough that it appears plausible
+2. Models seem to treat "close enough" numbers as exact matches
+3. High confidence scores (80-85%) suggest the models didn't detect any issue
+
+**Note**: Prompt engineering could potentially help here. Adding explicit instructions to verify exact numerical ranges, dates, and statistics might improve detection of these subtle mismatches.
+
+---
+
+### Key Observations from "Not Supported" Detection
+
+The rarest category in the dataset (only 5 examples out of 76), "Not Supported" was the hardest for all models to detect correctly:
+
+- **OLMo-32B performed best**: 3/5 correct (60%)
+- **Apertus-70B**: 2/5 correct (40%), marked 2 as "Partially supported" and 1 as "Source unavailable"
+- **Qwen-SEA-LION**: 2/5 correct (40%), incorrectly marked 2 as "Supported" and 1 as "Partially supported"
+- **Claude Sonnet 4.5**: 0/5 correct (0%), but interestingly marked 4 as "Source unavailable" - the model's reasoning in comments often correctly identified that claims weren't supported, but it chose the wrong category
+
+This pattern suggests that models tend to be overly generous in their assessments, preferring to mark questionable citations as "Partially supported" or even "Supported" rather than "Not supported". This represents a significant risk for false negatives - allowing bad citations to remain on Wikipedia.
 
 ---
 
