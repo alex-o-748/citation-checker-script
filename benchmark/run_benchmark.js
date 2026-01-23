@@ -63,7 +63,7 @@ const PROVIDERS = {
     'gemini-2.5-flash': {
         name: 'Gemini 2.5 Flash',
         model: 'gemini-2.5-flash',
-        endpoint: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent',
+        endpoint: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent',
         requiresKey: true,
         keyEnv: 'GEMINI_API_KEY',
         type: 'gemini'
