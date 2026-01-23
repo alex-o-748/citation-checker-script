@@ -53,7 +53,7 @@ const PROVIDERS = {
     // Claude
     'claude-sonnet-4-5': {
         name: 'Claude Sonnet 4.5',
-        model: 'claude-sonnet-4-5-20250514',
+        model: 'claude-sonnet-4-5-20250929',
         endpoint: 'https://api.anthropic.com/v1/messages',
         requiresKey: true,
         keyEnv: 'ANTHROPIC_API_KEY',
@@ -62,7 +62,7 @@ const PROVIDERS = {
     // Gemini
     'gemini-2.5-flash': {
         name: 'Gemini 2.5 Flash',
-        model: 'gemini-2.5-flash-preview-05-20',
+        model: 'gemini-2.5-flash',
         endpoint: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent',
         requiresKey: true,
         keyEnv: 'GEMINI_API_KEY',
