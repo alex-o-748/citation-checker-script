@@ -25,9 +25,7 @@ The dataset was created using the following workflow:
 2. Manual review of the dataset to ensure accuracy (especially for citations that appear multiple times)
 3. Verification that source content was accessible and usable
 
-The dataset contains almost all of the sources that were available online for the articles in the sample. To balance the dataset, a few examples of citations that failed verification were added from the author's archives.
-
-//TODO add examples
+The dataset contains almost all of the sources that were available online for the articles in the sample. To balance the dataset, a few examples of citations that failed verification were added from the author's archives. See the [Appendix](#appendix-example-cases) for detailed examples of "Not Supported" cases.
 
 ### Evaluation Criteria
 
@@ -167,7 +165,7 @@ Unavailable (0)         -        -          -             -
 
 2. **Qwen-SEA-LION is the best open-source option** at 73.3% exact accuracy, nearly matching Claude's performance. It's also the fastest of the reliable models (3,657ms).
 
-3. **Apertus-70B has the best lenient and binary accuracy** (93.3% and 94.7%), meaning it rarely makes serious errors. However, it tends to over-classify claims as "Partially supported" when they should be "Supported" - a conservative approach that avoids false positives but lacks precision.
+3. **Apertus-70B has the best lenient and binary accuracy** (93.3% and 94.7%), meaning it rarely makes serious errors. However, it tends to over-classify claims as "Partially supported" when they should be "Supported" - a conservative approach that avoids false negatives but lacks precision.
 
 4. **OLMo-32B offers a balanced middle ground** with 66.7% accuracy and decent speed (3,002ms), though it showed good confidence calibration (43.2 point difference).
 
@@ -178,12 +176,19 @@ Unavailable (0)         -        -          -             -
 - This accounts for its lower exact accuracy but higher lenient accuracy
 - Claude and Qwen were much better at distinguishing these categories
 
-**False Positives (overstating support)**:
-Cases where ground truth was "Partially supported" or "Not supported" but model predicted "Supported", or ground truth was "Not supported" but model predicted any level of support:
+**False Negatives (missing problems - dangerous!)**:
+These are cases where the model fails to detect citation issues, allowing unsupported claims to pass. Ground truth was "Partially supported" or "Not supported" but model predicted "Supported", or ground truth was "Not supported" but model predicted any level of support:
 - Qwen-SEA-LION: 9 cases (6 Partial→Supported, 3 NotSupported→Supported/Partial)
 - Claude Sonnet 4.5: 6 cases (4 Partial→Supported, 2 NotSupported→Supported/Partial)
 - OLMo-32B: 6 cases (5 Partial→Supported, 1 NotSupported→Supported)
 - Apertus-70B: 5 cases (3 Partial→Supported, 2 NotSupported→Partial)
+
+**False Positives (overcautious)**:
+These are cases where the model incorrectly flags good citations, potentially creating unnecessary work. Ground truth was "Supported" but model predicted "Partially supported" or "Not supported":
+- Apertus-70B: 26 cases (24 Supported→Partial, 2 Supported→NotSupported)
+- OLMo-32B: 11 cases (7 Supported→Partial, 4 Supported→NotSupported)
+- Qwen-SEA-LION: 6 cases (4 Supported→Partial, 2 Supported→NotSupported - note: 2 were marked as unavailable)
+- Claude Sonnet 4.5: 6 cases (5 Supported→Partial, 1 Supported→NotSupported)
 
 **"Not Supported" Detection**:
 - Claude marked 4 as "Source unavailable" when the source was in fact available. In the comments it reasoned correctly that the claim is not supported but somehow failed to classify them as "Not Supported"
@@ -223,7 +228,7 @@ For users who need an open-source solution, **Qwen-SEA-LION-v4-32B** is the best
 
 - **For maximum accuracy and reliability**: Use Claude Sonnet 4.5
 - **For best open-source option**: Use Qwen-SEA-LION-v4-32B
-- **For conservative checking** (avoiding false claims of support): Use Apertus-70B
+- **For conservative checking** (avoiding false negatives, willing to accept false positives): Use Apertus-70B
 - **For budget-conscious deployments**: Use OLMo-32B
 
 ### Limitations
@@ -236,7 +241,7 @@ For users who need an open-source solution, **Qwen-SEA-LION-v4-32B** is the best
 
 - Expand dataset to cover more Wikipedia articles across diverse topics (target: 500+ entries)
 - Test additional models
-- Add more "Not Supported" examples to better test false positive rates
+- Add more "Not Supported" examples to better test false negative rates
 - Analyze specific failure cases to improve prompting strategies
 - Test impact of different temperature settings and prompt variations
 - Evaluate cost-performance tradeoffs for production deployment
@@ -263,6 +268,71 @@ npm run report
 ```
 
 All code and data are available in the `/benchmark` directory of this repository.
+
+## Appendix: Example Cases
+
+### Not Supported Examples
+
+These examples illustrate cases where the cited source does not support the Wikipedia claim. Detecting these is critical for maintaining Wikipedia's reliability.
+
+#### Example 1: Irrelevant Source Content
+
+**Article**: Immigration to the United States
+**Claim**: "After an initial wave of immigration from China following the California Gold Rush, racist attitudes toward the Chinese population of the West Coast led to Congress passing the very first U.S. law restricting immigration: The Page Act of 1875 banned Chinese women who, it was claimed, were arriving to engage in prostitution."
+
+**Source**: Washington Post opinion column about Arizona immigration law (2010)
+**Why Not Supported**: The source is a modern opinion piece about Arizona's immigration policies and makes no mention of the Page Act of 1875, Chinese immigration, or 19th-century immigration law. The source is completely unrelated to the historical claim.
+
+**Model Performance**:
+- OLMo-32B: ✓ Correctly identified as "Not supported"
+- Apertus-70B: Marked as "Partially supported" (false negative)
+- Qwen-SEA-LION: Marked as "Supported" (false negative)
+- Claude Sonnet 4.5: Marked as "Supported" (false negative)
+
+---
+
+#### Example 2: Wrong Date/Event
+
+**Article**: Nasry Asfura
+**Claim**: "The case continued until 15 December 2025, when the Supreme Court fully annulled all charges against Asfura and Cruz."
+
+**Source**: El Heraldo article from June 1, 2021
+**Why Not Supported**: The source describes a June 2021 appeals court decision to freeze criminal proceedings, not a December 2025 Supreme Court decision to annul charges. The date, court, and outcome are all different from the claim.
+
+**Model Performance**:
+- OLMo-32B: ✓ Correctly identified as "Not supported"
+- Apertus-70B: Marked as "Partially supported" (false negative)
+- Qwen-SEA-LION: Marked as "Supported" (false negative)
+- Claude Sonnet 4.5: Marked as "Source unavailable" (incorrect reasoning)
+
+---
+
+#### Example 3: Source Unavailable
+
+**Article**: War in Abkhazia (1992-1993)
+**Claim**: "Most of the people who didn't survive the crossing died of cold and starvation. The survivors who reached the Svan mountains were attacked and robbed by local criminal groups. One of the survivors recalls the crossing:"
+
+**Source**: (Failed to fetch - 404 error)
+**Why Not Supported**: The source URL returns a 404 error and no content could be retrieved to verify the claim.
+
+**Model Performance**:
+- OLMo-32B: ✓ Correctly identified as "Not supported"
+- Apertus-70B: Marked as "Partially supported" (false negative)
+- Qwen-SEA-LION: Marked as "Supported" (false negative)
+- Claude Sonnet 4.5: Marked as "Source unavailable" (technically correct but not the category we used)
+
+---
+
+### Key Observations from "Not Supported" Detection
+
+The rarest category in the dataset (only 5 examples out of 76), "Not Supported" was the hardest for all models to detect correctly:
+
+- **OLMo-32B performed best**: 3/5 correct (60%)
+- **Apertus-70B**: 2/5 correct (40%), marked 2 as "Partially supported" and 1 as "Source unavailable"
+- **Qwen-SEA-LION**: 2/5 correct (40%), incorrectly marked 2 as "Supported" and 1 as "Partially supported"
+- **Claude Sonnet 4.5**: 0/5 correct (0%), but interestingly marked 4 as "Source unavailable" - the model's reasoning in comments often correctly identified that claims weren't supported, but it chose the wrong category
+
+This pattern suggests that models tend to be overly generous in their assessments, preferring to mark questionable citations as "Partially supported" rather than "Not supported". This represents a significant risk for false negatives - allowing bad citations to remain on Wikipedia.
 
 ---
 
