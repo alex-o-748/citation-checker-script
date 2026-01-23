@@ -12,7 +12,7 @@ Wikipedia's reliability depends on accurate citations. The [Wikipedia AI Source 
 
 ### Dataset Construction
 
-We created a ground truth dataset of 76 claim-citation pairs from Wikipedia articles, specifically focusing on the "Immigration to the United States" article. Each entry contains:
+We created a ground truth dataset of 76 claim-citation pairs from Wikipedia articles. The articles were chosen semi-randomly from the autor's areas of interest (). 
 
 - **Claim text**: The specific statement made in the Wikipedia article
 - **Source text**: The content from the cited source
@@ -25,14 +25,17 @@ The dataset was created using the following workflow:
 2. Manual review of the dataset to ensure accuracy (especially for citations that appear multiple times)
 3. Verification that source content was accessible and usable
 
+The dataset contains almost all of the sources that were available online for the articles in the sample. To balance the dataset, a few examples of citations that failed verification were added from the author's archives.
+
+//TODO add examples
+
 ### Evaluation Criteria
 
 Claims were classified into four categories:
 
 - **Supported**: The source clearly supports the claim with definitive statements
-- **Partially supported**: The source provides some support but lacks specificity or uses hedged language
+- **Partially supported**: The source only parts of the claim or uses hedged language
 - **Not supported**: The source contradicts the claim or doesn't mention the asserted information
-- **Source unavailable**: The source content couldn't be accessed (paywall, 404, etc.)
 
 ### Metrics
 
@@ -50,7 +53,7 @@ We measured the following metrics for each model:
 
 All models were tested using:
 - Temperature: 0.1 (for consistency)
-- The same system prompt with detailed instructions and examples
+- The same system prompt with detailed instructions and examples // TODO add link
 - The same dataset of 76 entries
 - API calls via PublicAI's free inference service (for open-source models) and Anthropic API (for Claude)
 
@@ -155,9 +158,6 @@ Not Supported (5)       0        2          2             1
 Unavailable (0)         -        -          -             -
 ```
 
-### Note on Gemini
-
-Gemini 2.5 Flash was also tested but encountered significant reliability issues with 55 errors out of 76 attempts (72% failure rate), making it unsuitable for this task in its current API configuration.
 
 ## Analysis
 
@@ -229,17 +229,14 @@ For users who need an open-source solution, **Qwen-SEA-LION-v4-32B** is the best
 ### Limitations
 
 1. Dataset size (76 entries) is relatively small; more testing needed for statistical significance
-2. Dataset focused on a single article topic (immigration); generalization to other domains needs validation
-3. Open-source models tested via the same API provider; performance may vary with different inference setups
-4. Ground truth was created by human review, which may have its own biases
-5. "Not Supported" is the rarest category (5 examples), making it hard to evaluate performance on this edge case
+2. Ground truth was created by human review, which may have its own biases
+3. "Not Supported" is the rarest category (5 examples), making it hard to evaluate performance on this edge case
 
 ### Future Work
 
 - Expand dataset to cover more Wikipedia articles across diverse topics (target: 500+ entries)
-- Test additional models (GPT-4, other Claude variants, larger open models)
+- Test additional models
 - Add more "Not Supported" examples to better test false positive rates
-- Investigate why models struggle with "Not Supported" detection
 - Analyze specific failure cases to improve prompting strategies
 - Test impact of different temperature settings and prompt variations
 - Evaluate cost-performance tradeoffs for production deployment
