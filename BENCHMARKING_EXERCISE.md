@@ -322,3 +322,10 @@ This pattern suggests that models tend to be overly generous in their assessment
 **Total API calls**: 304 (76 × 4)
 **Full Results**: [`benchmark/results.json`](benchmark/results.json)
 **Analysis**: [`benchmark/analysis.json`](benchmark/analysis.json)
+
+---
+
+## Contact
+
+**Author**: [[User:Alaexis]]
+**Email**: alaexis.wiki@gmail.com
