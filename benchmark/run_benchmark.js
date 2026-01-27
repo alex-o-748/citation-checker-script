@@ -67,6 +67,15 @@ const PROVIDERS = {
         requiresKey: true,
         keyEnv: 'GEMINI_API_KEY',
         type: 'gemini'
+    },
+    // OpenAI
+    'gpt-5.1': {
+        name: 'GPT-5.1',
+        model: 'gpt-5.1',
+        endpoint: 'https://api.openai.com/v1/chat/completions',
+        requiresKey: true,
+        keyEnv: 'OPENAI_API_KEY',
+        type: 'openai'
     }
 };
 
