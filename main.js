@@ -488,7 +488,7 @@
         }
         
         createVerifierTab() {
-            if (typeof mw !== 'undefined' && mw.config.get('wgNamespaceNumber') === 0) {
+            if (typeof mw !== 'undefined' && [0, 118].includes(mw.config.get('wgNamespaceNumber'))) {
                 const skin = mw.config.get('skin');
                 let portletId;
                 
@@ -1359,7 +1359,7 @@ ${sourceText}`;
         }
     }
     
-    if (typeof mw !== 'undefined' && mw.config.get('wgNamespaceNumber') === 0) {
+    if (typeof mw !== 'undefined' && [0, 118].includes(mw.config.get('wgNamespaceNumber'))) {
         mw.loader.using(['mediawiki.util', 'mediawiki.api', 'oojs-ui-core', 'oojs-ui-widgets', 'oojs-ui-windows']).then(function() {
             $(function() {
                 new WikipediaSourceVerifier();
