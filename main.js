@@ -488,47 +488,50 @@
         }
         
         createVerifierTab() {
-            if (typeof mw !== 'undefined' && mw.config.get('wgNamespaceNumber') === 0) {
-                const skin = mw.config.get('skin');
-                let portletId;
-                
-                switch(skin) {
-                    case 'vector-2022':
-                        portletId = 'p-associated-pages';
-                        break;
-                    case 'monobook':
-                        portletId = 'p-cactions';
-                        break;
-                    case 'minerva':
-                        portletId = 'p-tb';
-                        break;
-                    case 'timeless':
-                        portletId = 'p-namespaces';
-                        break;
-                    default:
-                        portletId = 'p-namespaces';
-                }
-                
-                try {
-                    const verifierLink = mw.util.addPortletLink(
-                        portletId,
-                        '#',
-                        'Verify',
-                        't-verifier',
-                        'Verify claims against sources',
-                        'v',
-                    );
-                    
-                    if (verifierLink) {
-                        verifierLink.addEventListener('click', (e) => {
-                            e.preventDefault();
-                            this.showSidebar();
-                        });
-                    }
-                } catch (error) {
-                    console.warn('Could not create verifier tab:', error);
-                }
+            if (typeof mw === 'undefined') return;
+            const ns = Number(mw.config.get('wgNamespaceNumber'));
+            if (![0, 118].includes(ns)) return;
+
+            const skin = mw.config.get('skin');
+            let portletId;
+            
+            switch(skin) {
+                case 'vector-2022':
+                    portletId = 'p-associated-pages';
+                    break;
+                case 'monobook':
+                    portletId = 'p-cactions';
+                    break;
+                case 'minerva':
+                    portletId = 'p-tb';
+                    break;
+                case 'timeless':
+                    portletId = 'p-namespaces';
+                    break;
+                default:
+                    portletId = 'p-namespaces';
             }
+            
+            try {
+                const verifierLink = mw.util.addPortletLink(
+                    portletId,
+                    '#',
+                    'Verify',
+                    't-verifier',
+                    'Verify claims against sources',
+                    'v',
+                );
+                
+                if (verifierLink) {
+                    verifierLink.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        this.showSidebar();
+                    });
+                }
+            } catch (error) {
+                console.warn('Could not create verifier tab:', error);
+            }
+            
         }
         
         attachReferenceClickHandlers() {
@@ -1359,11 +1362,14 @@ ${sourceText}`;
         }
     }
     
-    if (typeof mw !== 'undefined' && mw.config.get('wgNamespaceNumber') === 0) {
-        mw.loader.using(['mediawiki.util', 'mediawiki.api', 'oojs-ui-core', 'oojs-ui-widgets', 'oojs-ui-windows']).then(function() {
-            $(function() {
-                new WikipediaSourceVerifier();
+    if (typeof mw !== 'undefined') {
+        const ns = Number(mw.config.get('wgNamespaceNumber'));
+        if ([0, 118].includes(ns)) {
+            mw.loader.using(['mediawiki.util', 'mediawiki.api', 'oojs-ui-core', 'oojs-ui-widgets', 'oojs-ui-windows']).then(function() {
+                $(function() {
+                    new WikipediaSourceVerifier();
+                });
             });
-        });
+        }
     }
 })();
