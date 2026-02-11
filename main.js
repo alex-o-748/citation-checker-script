@@ -310,7 +310,7 @@
                     background: ${this.getCurrentColor()};
                     opacity: 0.5;
                 }
-                #ca-verifier {
+                #ca-verifier, #t-verifier {
                     display: none;
                 }
                 #ca-verifier a, #t-verifier a {
@@ -338,7 +338,8 @@
                 .verifier-sidebar-hidden #source-verifier-sidebar {
                     display: none;
                 }
-                .verifier-sidebar-hidden #ca-verifier {
+                .verifier-sidebar-hidden #ca-verifier,
+                .verifier-sidebar-hidden #t-verifier {
                     display: list-item !important;
                 }
                 .reference:hover {
@@ -495,6 +496,9 @@
                 switch(skin) {
                     case 'vector-2022':
                         portletId = 'p-associated-pages';
+                        break;
+                    case 'vector':
+                        portletId = 'p-cactions';
                         break;
                     case 'monobook':
                         portletId = 'p-cactions';
