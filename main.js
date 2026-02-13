@@ -1,4 +1,4 @@
-// {{Wikipedia:USync |repo=https://github.com/alex-o-748/citation-checker-script |ref=refs/heads/dev|path=main.js}}
+// {{Wikipedia:USync |repo=https://github.com/alex-o-748/citation-checker-script |ref=refs/heads/main|path=main.js}}
 //Inspired by  User:Polygnotus/Scripts/AI_Source_Verification.js
 //Inspired by  User:Phlsph7/SourceVerificationAIAssistant.js
 
@@ -50,6 +50,7 @@
             this.buttons = {};
             this.activeClaim = null;
             this.activeSource = null;
+            this.activeRefElement = null;
             this.sourceTextInput = null;
             
             this.init();
@@ -136,6 +137,7 @@
                         <h4>Verification Result</h4>
                         <div id="verifier-verdict"></div>
                         <div id="verifier-comments"></div>
+                        <div id="verifier-action-container"></div>
                     </div>
                 </div>
                 <div id="verifier-resize-handle"></div>
@@ -296,6 +298,22 @@
                     max-height: 300px;
                     overflow-y: auto;
                 }
+                #verifier-action-container {
+                    margin-top: 10px;
+                }
+                #verifier-action-container .oo-ui-buttonElement {
+                    width: 100%;
+                }
+                #verifier-action-container .oo-ui-buttonElement-button {
+                    width: 100%;
+                    justify-content: center;
+                }
+                .verifier-action-hint {
+                    font-size: 11px;
+                    color: #888;
+                    margin-top: 4px;
+                    text-align: center;
+                }
                 #verifier-resize-handle {
                     position: absolute;
                     left: 0;
@@ -354,6 +372,280 @@
                     border-left: 3px solid ${this.getCurrentColor()};
                     padding-left: 5px;
                     margin-left: -8px;
+                }
+
+                /* Dark theme overrides for Wikipedia night mode */
+                html.skin-theme-clientpref-night #source-verifier-sidebar {
+                    background: #1a1a2e !important;
+                    color: #e0e0e0 !important;
+                    border-left-color: ${this.getCurrentColor()} !important;
+                    box-shadow: -2px 0 8px rgba(0,0,0,0.4) !important;
+                }
+                html.skin-theme-clientpref-night #source-verifier-sidebar * {
+                    color: inherit;
+                }
+                html.skin-theme-clientpref-night #verifier-sidebar-header {
+                    background: ${this.getCurrentColor()} !important;
+                    color: white !important;
+                }
+                html.skin-theme-clientpref-night #verifier-sidebar-header * {
+                    color: white !important;
+                }
+                html.skin-theme-clientpref-night #verifier-sidebar-content {
+                    background: #1a1a2e !important;
+                    color: #e0e0e0 !important;
+                }
+                html.skin-theme-clientpref-night #verifier-provider-info {
+                    background: #2a2a3e !important;
+                    color: #b0b0c0 !important;
+                    border-color: #3a3a4e !important;
+                }
+                html.skin-theme-clientpref-night #verifier-provider-info.free-provider {
+                    background: #1a2e1a !important;
+                    color: #6ecf6e !important;
+                }
+                html.skin-theme-clientpref-night #verifier-claim-section h4,
+                html.skin-theme-clientpref-night #verifier-source-section h4,
+                html.skin-theme-clientpref-night #verifier-results h4 {
+                    color: ${this.getCurrentColor()} !important;
+                    filter: brightness(1.3);
+                }
+                html.skin-theme-clientpref-night #verifier-claim-text,
+                html.skin-theme-clientpref-night #verifier-source-text {
+                    background: #2a2a3e !important;
+                    border-color: #3a3a4e !important;
+                    color: #e0e0e0 !important;
+                }
+                html.skin-theme-clientpref-night #verifier-verdict {
+                    color: #e0e0e0 !important;
+                }
+                html.skin-theme-clientpref-night #verifier-verdict.supported {
+                    background: #1a3a1a !important;
+                    color: #6ecf6e !important;
+                    border-color: #2a5a2a !important;
+                }
+                html.skin-theme-clientpref-night #verifier-verdict.partially-supported {
+                    background: #3a3a1a !important;
+                    color: #e0c060 !important;
+                    border-color: #5a5a2a !important;
+                }
+                html.skin-theme-clientpref-night #verifier-verdict.not-supported {
+                    background: #3a1a1a !important;
+                    color: #e06060 !important;
+                    border-color: #5a2a2a !important;
+                }
+                html.skin-theme-clientpref-night #verifier-verdict.source-unavailable {
+                    background: #2a2a2e !important;
+                    color: #a0a0a8 !important;
+                    border-color: #3a3a3e !important;
+                }
+                html.skin-theme-clientpref-night #verifier-comments {
+                    background: #2a2a3e !important;
+                    border-color: #3a3a4e !important;
+                    color: #e0e0e0 !important;
+                }
+                html.skin-theme-clientpref-night .verifier-action-hint {
+                    color: #888 !important;
+                }
+                html.skin-theme-clientpref-night .verifier-error {
+                    color: #ff8080 !important;
+                    background: #3a1a1a !important;
+                    border-color: #5a2a2a !important;
+                }
+                html.skin-theme-clientpref-night .reference:hover {
+                    background-color: rgba(100, 149, 237, 0.15) !important;
+                }
+                html.skin-theme-clientpref-night .claim-highlight {
+                    background-color: #3a3a1a !important;
+                }
+                html.skin-theme-clientpref-night #verifier-source-textarea-container textarea {
+                    background: #2a2a3e !important;
+                    color: #e0e0e0 !important;
+                    border-color: #3a3a4e !important;
+                }
+                html.skin-theme-clientpref-night #source-verifier-sidebar .oo-ui-dropdownWidget {
+                    background: #2a2a3e !important;
+                    border-color: #3a3a4e !important;
+                }
+                html.skin-theme-clientpref-night #source-verifier-sidebar .oo-ui-dropdownWidget .oo-ui-labelElement-label {
+                    color: #e0e0e0 !important;
+                }
+                html.skin-theme-clientpref-night #source-verifier-sidebar .oo-ui-buttonElement-button {
+                    background: #2a2a3e !important;
+                    color: #e0e0e0 !important;
+                    border-color: #3a3a4e !important;
+                }
+                html.skin-theme-clientpref-night #source-verifier-sidebar .oo-ui-buttonElement-button .oo-ui-labelElement-label {
+                    color: #e0e0e0 !important;
+                }
+                html.skin-theme-clientpref-night #source-verifier-sidebar .oo-ui-flaggedElement-primary.oo-ui-flaggedElement-progressive .oo-ui-buttonElement-button {
+                    background: ${this.getCurrentColor()} !important;
+                    color: white !important;
+                    border-color: ${this.getCurrentColor()} !important;
+                }
+                html.skin-theme-clientpref-night #source-verifier-sidebar .oo-ui-flaggedElement-primary.oo-ui-flaggedElement-progressive .oo-ui-labelElement-label {
+                    color: white !important;
+                }
+                html.skin-theme-clientpref-night #source-verifier-sidebar .oo-ui-flaggedElement-destructive .oo-ui-buttonElement-button {
+                    color: #e06060 !important;
+                }
+                html.skin-theme-clientpref-night #source-verifier-sidebar .oo-ui-iconElement-icon {
+                    filter: invert(0.8);
+                }
+                html.skin-theme-clientpref-night #source-verifier-sidebar .oo-ui-indicatorElement-indicator {
+                    filter: invert(0.8);
+                }
+                html.skin-theme-clientpref-night #source-verifier-sidebar .oo-ui-menuSelectWidget {
+                    background: #2a2a3e !important;
+                    border-color: #3a3a4e !important;
+                }
+                html.skin-theme-clientpref-night #source-verifier-sidebar .oo-ui-optionWidget {
+                    color: #e0e0e0 !important;
+                }
+                html.skin-theme-clientpref-night #source-verifier-sidebar .oo-ui-optionWidget-highlighted {
+                    background: #3a3a5e !important;
+                }
+                html.skin-theme-clientpref-night #source-verifier-sidebar .oo-ui-optionWidget-selected {
+                    background: ${this.getCurrentColor()} !important;
+                    color: white !important;
+                }
+
+                /* Support auto dark mode via OS preference */
+                @media (prefers-color-scheme: dark) {
+                    html.skin-theme-clientpref-os #source-verifier-sidebar {
+                        background: #1a1a2e !important;
+                        color: #e0e0e0 !important;
+                        border-left-color: ${this.getCurrentColor()} !important;
+                        box-shadow: -2px 0 8px rgba(0,0,0,0.4) !important;
+                    }
+                    html.skin-theme-clientpref-os #source-verifier-sidebar * {
+                        color: inherit;
+                    }
+                    html.skin-theme-clientpref-os #verifier-sidebar-header {
+                        background: ${this.getCurrentColor()} !important;
+                        color: white !important;
+                    }
+                    html.skin-theme-clientpref-os #verifier-sidebar-header * {
+                        color: white !important;
+                    }
+                    html.skin-theme-clientpref-os #verifier-sidebar-content {
+                        background: #1a1a2e !important;
+                        color: #e0e0e0 !important;
+                    }
+                    html.skin-theme-clientpref-os #verifier-provider-info {
+                        background: #2a2a3e !important;
+                        color: #b0b0c0 !important;
+                        border-color: #3a3a4e !important;
+                    }
+                    html.skin-theme-clientpref-os #verifier-provider-info.free-provider {
+                        background: #1a2e1a !important;
+                        color: #6ecf6e !important;
+                    }
+                    html.skin-theme-clientpref-os #verifier-claim-section h4,
+                    html.skin-theme-clientpref-os #verifier-source-section h4,
+                    html.skin-theme-clientpref-os #verifier-results h4 {
+                        color: ${this.getCurrentColor()} !important;
+                        filter: brightness(1.3);
+                    }
+                    html.skin-theme-clientpref-os #verifier-claim-text,
+                    html.skin-theme-clientpref-os #verifier-source-text {
+                        background: #2a2a3e !important;
+                        border-color: #3a3a4e !important;
+                        color: #e0e0e0 !important;
+                    }
+                    html.skin-theme-clientpref-os #verifier-verdict {
+                        color: #e0e0e0 !important;
+                    }
+                    html.skin-theme-clientpref-os #verifier-verdict.supported {
+                        background: #1a3a1a !important;
+                        color: #6ecf6e !important;
+                        border-color: #2a5a2a !important;
+                    }
+                    html.skin-theme-clientpref-os #verifier-verdict.partially-supported {
+                        background: #3a3a1a !important;
+                        color: #e0c060 !important;
+                        border-color: #5a5a2a !important;
+                    }
+                    html.skin-theme-clientpref-os #verifier-verdict.not-supported {
+                        background: #3a1a1a !important;
+                        color: #e06060 !important;
+                        border-color: #5a2a2a !important;
+                    }
+                    html.skin-theme-clientpref-os #verifier-verdict.source-unavailable {
+                        background: #2a2a2e !important;
+                        color: #a0a0a8 !important;
+                        border-color: #3a3a3e !important;
+                    }
+                    html.skin-theme-clientpref-os #verifier-comments {
+                        background: #2a2a3e !important;
+                        border-color: #3a3a4e !important;
+                        color: #e0e0e0 !important;
+                    }
+                    html.skin-theme-clientpref-os .verifier-action-hint {
+                        color: #888 !important;
+                    }
+                    html.skin-theme-clientpref-os .verifier-error {
+                        color: #ff8080 !important;
+                        background: #3a1a1a !important;
+                        border-color: #5a2a2a !important;
+                    }
+                    html.skin-theme-clientpref-os .reference:hover {
+                        background-color: rgba(100, 149, 237, 0.15) !important;
+                    }
+                    html.skin-theme-clientpref-os .claim-highlight {
+                        background-color: #3a3a1a !important;
+                    }
+                    html.skin-theme-clientpref-os #verifier-source-textarea-container textarea {
+                        background: #2a2a3e !important;
+                        color: #e0e0e0 !important;
+                        border-color: #3a3a4e !important;
+                    }
+                    html.skin-theme-clientpref-os #source-verifier-sidebar .oo-ui-dropdownWidget {
+                        background: #2a2a3e !important;
+                        border-color: #3a3a4e !important;
+                    }
+                    html.skin-theme-clientpref-os #source-verifier-sidebar .oo-ui-dropdownWidget .oo-ui-labelElement-label {
+                        color: #e0e0e0 !important;
+                    }
+                    html.skin-theme-clientpref-os #source-verifier-sidebar .oo-ui-buttonElement-button {
+                        background: #2a2a3e !important;
+                        color: #e0e0e0 !important;
+                        border-color: #3a3a4e !important;
+                    }
+                    html.skin-theme-clientpref-os #source-verifier-sidebar .oo-ui-buttonElement-button .oo-ui-labelElement-label {
+                        color: #e0e0e0 !important;
+                    }
+                    html.skin-theme-clientpref-os #source-verifier-sidebar .oo-ui-flaggedElement-primary.oo-ui-flaggedElement-progressive .oo-ui-buttonElement-button {
+                        background: ${this.getCurrentColor()} !important;
+                        color: white !important;
+                        border-color: ${this.getCurrentColor()} !important;
+                    }
+                    html.skin-theme-clientpref-os #source-verifier-sidebar .oo-ui-flaggedElement-primary.oo-ui-flaggedElement-progressive .oo-ui-labelElement-label {
+                        color: white !important;
+                    }
+                    html.skin-theme-clientpref-os #source-verifier-sidebar .oo-ui-flaggedElement-destructive .oo-ui-buttonElement-button {
+                        color: #e06060 !important;
+                    }
+                    html.skin-theme-clientpref-os #source-verifier-sidebar .oo-ui-iconElement-icon {
+                        filter: invert(0.8);
+                    }
+                    html.skin-theme-clientpref-os #source-verifier-sidebar .oo-ui-indicatorElement-indicator {
+                        filter: invert(0.8);
+                    }
+                    html.skin-theme-clientpref-os #source-verifier-sidebar .oo-ui-menuSelectWidget {
+                        background: #2a2a3e !important;
+                        border-color: #3a3a4e !important;
+                    }
+                    html.skin-theme-clientpref-os #source-verifier-sidebar .oo-ui-optionWidget {
+                        color: #e0e0e0 !important;
+                    }
+                    html.skin-theme-clientpref-os #source-verifier-sidebar .oo-ui-optionWidget-highlighted {
+                        background: #3a3a5e !important;
+                    }
+                    html.skin-theme-clientpref-os #source-verifier-sidebar .oo-ui-optionWidget-selected {
+                        background: ${this.getCurrentColor()} !important;
+                        color: white !important;
+                    }
                 }
             `;
             document.head.appendChild(style);
@@ -563,6 +855,7 @@
                 refElement.parentElement.classList.add('verifier-active');
                 
                 this.activeClaim = claim;
+                this.activeRefElement = refElement;
                 document.getElementById('verifier-claim-text').textContent = claim;
                 
                 const refUrl = this.extractReferenceUrl(refElement);
@@ -888,6 +1181,15 @@
         
         updateTheme() {
             const color = this.getCurrentColor();
+            // Remove old styles and re-create to pick up new provider color in dark theme
+            const oldStyle = document.querySelector('style[data-verifier-theme]');
+            if (oldStyle) oldStyle.remove();
+            // Re-create styles with updated color references
+            const existingStyles = document.head.querySelectorAll('style');
+            existingStyles.forEach(s => {
+                if (s.textContent.includes('#source-verifier-sidebar')) s.remove();
+            });
+            this.createStyles();
         }
         
         setApiKey() {
@@ -1338,7 +1640,8 @@ ${sourceText}`;
 	        }
 	        
 	        commentsEl.textContent = comments;
-	        
+	        this.showActionButton(verdict);
+
 	    } catch (e) {
 	        // Catch-all fallback if something else goes wrong
 	        console.error('Unexpected error in displayResult:', e);
@@ -1348,6 +1651,79 @@ ${sourceText}`;
 	    }
 	}
         
+        findSectionNumber() {
+            if (!this.activeRefElement) return 0;
+
+            const content = document.getElementById('mw-content-text');
+            if (!content) return 0;
+
+            const headings = content.querySelectorAll('h2, h3, h4, h5, h6');
+            let sectionNumber = 0;
+
+            for (const heading of headings) {
+                const position = heading.compareDocumentPosition(this.activeRefElement);
+                if (position & Node.DOCUMENT_POSITION_FOLLOWING) {
+                    sectionNumber++;
+                } else {
+                    break;
+                }
+            }
+
+            return sectionNumber;
+        }
+
+        buildEditUrl(tag) {
+            const title = mw.config.get('wgPageName');
+            const section = this.findSectionNumber();
+            const claimSnippet = this.activeClaim
+                ? this.activeClaim.substring(0, 80) + (this.activeClaim.length > 80 ? '...' : '')
+                : '';
+            const reason = tag === 'cn'
+                ? 'source does not support claim'
+                : 'source does not fully support claim';
+            const summary = `{{${tag}}} – ${reason} "${claimSnippet}" (checked with [[User:Alaexis/Source Verifier]])`;
+
+            const params = { action: 'edit', summary: summary };
+            if (section > 0) {
+                params.section = section;
+            }
+
+            return mw.util.getUrl(title, params);
+        }
+
+        showActionButton(verdict) {
+            const container = document.getElementById('verifier-action-container');
+            if (!container) return;
+
+            container.innerHTML = '';
+
+            let tag;
+            if (verdict === 'NOT SUPPORTED') {
+                tag = 'cn';
+            } else if (verdict === 'PARTIALLY SUPPORTED') {
+                tag = 'better source needed';
+            } else {
+                return;
+            }
+
+            const editUrl = this.buildEditUrl(tag);
+
+            const btn = new OO.ui.ButtonWidget({
+                label: `Add {{${tag}}}`,
+                flags: ['progressive'],
+                icon: 'edit',
+                href: editUrl,
+                target: '_blank'
+            });
+
+            container.appendChild(btn.$element[0]);
+
+            const hint = document.createElement('div');
+            hint.className = 'verifier-action-hint';
+            hint.textContent = 'Opens the editor in a new tab with a prepopulated edit summary.';
+            container.appendChild(hint);
+        }
+
         clearResult() {
             const verdictEl = document.getElementById('verifier-verdict');
             const commentsEl = document.getElementById('verifier-comments');
@@ -1358,6 +1734,10 @@ ${sourceText}`;
             }
             if (commentsEl) {
                 commentsEl.textContent = 'Click "Verify Claim" to verify the selected claim against the source.';
+            }
+            const actionContainer = document.getElementById('verifier-action-container');
+            if (actionContainer) {
+                actionContainer.innerHTML = '';
             }
         }
     }
