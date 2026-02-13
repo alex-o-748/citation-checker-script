@@ -1640,6 +1640,7 @@ ${sourceText}`;
 	        }
 	        
 	        commentsEl.textContent = comments;
+	        console.log('[Verifier] Verdict for action button:', JSON.stringify(verdict));
 	        this.showActionButton(verdict);
 
 	    } catch (e) {
