@@ -356,6 +356,156 @@
                     padding-left: 5px;
                     margin-left: -8px;
                 }
+
+                /* Dark theme overrides for Wikipedia night mode */
+                html.skin-theme-clientpref-night #source-verifier-sidebar {
+                    background: #1a1a2e;
+                    color: #e0e0e0;
+                    border-left-color: ${this.getCurrentColor()};
+                    box-shadow: -2px 0 8px rgba(0,0,0,0.4);
+                }
+                html.skin-theme-clientpref-night #verifier-sidebar-content {
+                    background: #1a1a2e;
+                    color: #e0e0e0;
+                }
+                html.skin-theme-clientpref-night #verifier-provider-info {
+                    background: #2a2a3e;
+                    color: #b0b0c0;
+                    border-color: #3a3a4e;
+                }
+                html.skin-theme-clientpref-night #verifier-provider-info.free-provider {
+                    background: #1a2e1a;
+                    color: #6ecf6e;
+                }
+                html.skin-theme-clientpref-night #verifier-claim-section h4,
+                html.skin-theme-clientpref-night #verifier-source-section h4,
+                html.skin-theme-clientpref-night #verifier-results h4 {
+                    color: ${this.getCurrentColor()};
+                    filter: brightness(1.3);
+                }
+                html.skin-theme-clientpref-night #verifier-claim-text,
+                html.skin-theme-clientpref-night #verifier-source-text {
+                    background: #2a2a3e;
+                    border-color: #3a3a4e;
+                    color: #e0e0e0;
+                }
+                html.skin-theme-clientpref-night #verifier-verdict.supported {
+                    background: #1a3a1a;
+                    color: #6ecf6e;
+                    border-color: #2a5a2a;
+                }
+                html.skin-theme-clientpref-night #verifier-verdict.partially-supported {
+                    background: #3a3a1a;
+                    color: #e0c060;
+                    border-color: #5a5a2a;
+                }
+                html.skin-theme-clientpref-night #verifier-verdict.not-supported {
+                    background: #3a1a1a;
+                    color: #e06060;
+                    border-color: #5a2a2a;
+                }
+                html.skin-theme-clientpref-night #verifier-verdict.source-unavailable {
+                    background: #2a2a2e;
+                    color: #a0a0a8;
+                    border-color: #3a3a3e;
+                }
+                html.skin-theme-clientpref-night #verifier-comments {
+                    background: #2a2a3e;
+                    border-color: #3a3a4e;
+                    color: #e0e0e0;
+                }
+                html.skin-theme-clientpref-night .verifier-error {
+                    color: #ff8080;
+                    background: #3a1a1a;
+                    border-color: #5a2a2a;
+                }
+                html.skin-theme-clientpref-night .reference:hover {
+                    background-color: rgba(100, 149, 237, 0.15);
+                }
+                html.skin-theme-clientpref-night .claim-highlight {
+                    background-color: #3a3a1a;
+                }
+                html.skin-theme-clientpref-night #verifier-source-textarea-container textarea {
+                    background: #2a2a3e;
+                    color: #e0e0e0;
+                    border-color: #3a3a4e;
+                }
+
+                /* Support auto dark mode via OS preference */
+                @media (prefers-color-scheme: dark) {
+                    html.skin-theme-clientpref--os #source-verifier-sidebar {
+                        background: #1a1a2e;
+                        color: #e0e0e0;
+                        border-left-color: ${this.getCurrentColor()};
+                        box-shadow: -2px 0 8px rgba(0,0,0,0.4);
+                    }
+                    html.skin-theme-clientpref--os #verifier-sidebar-content {
+                        background: #1a1a2e;
+                        color: #e0e0e0;
+                    }
+                    html.skin-theme-clientpref--os #verifier-provider-info {
+                        background: #2a2a3e;
+                        color: #b0b0c0;
+                        border-color: #3a3a4e;
+                    }
+                    html.skin-theme-clientpref--os #verifier-provider-info.free-provider {
+                        background: #1a2e1a;
+                        color: #6ecf6e;
+                    }
+                    html.skin-theme-clientpref--os #verifier-claim-section h4,
+                    html.skin-theme-clientpref--os #verifier-source-section h4,
+                    html.skin-theme-clientpref--os #verifier-results h4 {
+                        color: ${this.getCurrentColor()};
+                        filter: brightness(1.3);
+                    }
+                    html.skin-theme-clientpref--os #verifier-claim-text,
+                    html.skin-theme-clientpref--os #verifier-source-text {
+                        background: #2a2a3e;
+                        border-color: #3a3a4e;
+                        color: #e0e0e0;
+                    }
+                    html.skin-theme-clientpref--os #verifier-verdict.supported {
+                        background: #1a3a1a;
+                        color: #6ecf6e;
+                        border-color: #2a5a2a;
+                    }
+                    html.skin-theme-clientpref--os #verifier-verdict.partially-supported {
+                        background: #3a3a1a;
+                        color: #e0c060;
+                        border-color: #5a5a2a;
+                    }
+                    html.skin-theme-clientpref--os #verifier-verdict.not-supported {
+                        background: #3a1a1a;
+                        color: #e06060;
+                        border-color: #5a2a2a;
+                    }
+                    html.skin-theme-clientpref--os #verifier-verdict.source-unavailable {
+                        background: #2a2a2e;
+                        color: #a0a0a8;
+                        border-color: #3a3a3e;
+                    }
+                    html.skin-theme-clientpref--os #verifier-comments {
+                        background: #2a2a3e;
+                        border-color: #3a3a4e;
+                        color: #e0e0e0;
+                    }
+                    html.skin-theme-clientpref--os .verifier-error {
+                        color: #ff8080;
+                        background: #3a1a1a;
+                        border-color: #5a2a2a;
+                    }
+                    html.skin-theme-clientpref--os .reference:hover {
+                        background-color: rgba(100, 149, 237, 0.15);
+                    }
+                    html.skin-theme-clientpref--os .claim-highlight {
+                        background-color: #3a3a1a;
+                    }
+                    html.skin-theme-clientpref--os #verifier-source-textarea-container textarea {
+                        background: #2a2a3e;
+                        color: #e0e0e0;
+                        border-color: #3a3a4e;
+                    }
+                }
             `;
             document.head.appendChild(style);
         }
@@ -889,6 +1039,15 @@
         
         updateTheme() {
             const color = this.getCurrentColor();
+            // Remove old styles and re-create to pick up new provider color in dark theme
+            const oldStyle = document.querySelector('style[data-verifier-theme]');
+            if (oldStyle) oldStyle.remove();
+            // Re-create styles with updated color references
+            const existingStyles = document.head.querySelectorAll('style');
+            existingStyles.forEach(s => {
+                if (s.textContent.includes('#source-verifier-sidebar')) s.remove();
+            });
+            this.createStyles();
         }
         
         setApiKey() {
