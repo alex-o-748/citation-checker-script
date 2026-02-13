@@ -1,4 +1,4 @@
-// {{Wikipedia:USync |repo=https://github.com/alex-o-748/citation-checker-script |ref=refs/heads/main|path=main.js}}
+// {{Wikipedia:USync |repo=https://github.com/alex-o-748/citation-checker-script |ref=refs/heads/dev|path=main.js}}
 //Inspired by  User:Polygnotus/Scripts/AI_Source_Verification.js
 //Inspired by  User:Phlsph7/SourceVerificationAIAssistant.js
 
@@ -316,7 +316,6 @@
                 #ca-verifier a, #t-verifier a {
                     color: ${this.getCurrentColor()} !important;
                     text-decoration: none !important;
-                    padding: 0.5em !important;
                 }
                 #ca-verifier a:hover, #t-verifier a:hover {
                     text-decoration: underline !important;
@@ -332,14 +331,14 @@
                     padding: 8px;
                     border-radius: 4px;
                 }
-                .verifier-sidebar-hidden body {
+                body.verifier-sidebar-hidden {
                     margin-right: 0 !important;
                 }
-                .verifier-sidebar-hidden #source-verifier-sidebar {
+                body.verifier-sidebar-hidden #source-verifier-sidebar {
                     display: none;
                 }
-                .verifier-sidebar-hidden #ca-verifier,
-                .verifier-sidebar-hidden #t-verifier {
+                body.verifier-sidebar-hidden #ca-verifier,
+                body.verifier-sidebar-hidden #t-verifier {
                     display: list-item !important;
                 }
                 .reference:hover {
