@@ -46,7 +46,7 @@
             }
             this.currentProvider = storedProvider || 'publicai';
             this.sidebarWidth = localStorage.getItem('verifier_sidebar_width') || '400px';
-            this.isVisible = localStorage.getItem('verifier_sidebar_visible') === 'true';
+            this.isVisible = localStorage.getItem('verifier_sidebar_visible') !== 'false';
             this.buttons = {};
             this.activeClaim = null;
             this.activeSource = null;
@@ -339,7 +339,7 @@
                 }
                 body.verifier-sidebar-hidden #ca-verifier,
                 body.verifier-sidebar-hidden #t-verifier {
-                    display: block !important;
+                    display: list-item !important;
                 }
                 .reference:hover {
                     background-color: #e6f3ff;
@@ -497,7 +497,7 @@
                         portletId = 'p-associated-pages';
                         break;
                     case 'vector':
-                        portletId = 'p-namespaces';
+                        portletId = 'p-cactions';
                         break;
                     case 'monobook':
                         portletId = 'p-cactions';
@@ -831,7 +831,7 @@
             const verifierTab = document.getElementById('ca-verifier') || document.getElementById('t-verifier');
             
             document.body.classList.add('verifier-sidebar-hidden');
-            if (verifierTab) verifierTab.style.display = 'block';
+            if (verifierTab) verifierTab.style.display = 'list-item';
             document.body.style.marginRight = '0';
             
             this.clearHighlights();
