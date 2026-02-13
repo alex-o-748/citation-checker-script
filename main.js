@@ -359,151 +359,269 @@
 
                 /* Dark theme overrides for Wikipedia night mode */
                 html.skin-theme-clientpref-night #source-verifier-sidebar {
-                    background: #1a1a2e;
-                    color: #e0e0e0;
-                    border-left-color: ${this.getCurrentColor()};
-                    box-shadow: -2px 0 8px rgba(0,0,0,0.4);
+                    background: #1a1a2e !important;
+                    color: #e0e0e0 !important;
+                    border-left-color: ${this.getCurrentColor()} !important;
+                    box-shadow: -2px 0 8px rgba(0,0,0,0.4) !important;
+                }
+                html.skin-theme-clientpref-night #source-verifier-sidebar * {
+                    color: inherit;
+                }
+                html.skin-theme-clientpref-night #verifier-sidebar-header {
+                    background: ${this.getCurrentColor()} !important;
+                    color: white !important;
+                }
+                html.skin-theme-clientpref-night #verifier-sidebar-header * {
+                    color: white !important;
                 }
                 html.skin-theme-clientpref-night #verifier-sidebar-content {
-                    background: #1a1a2e;
-                    color: #e0e0e0;
+                    background: #1a1a2e !important;
+                    color: #e0e0e0 !important;
                 }
                 html.skin-theme-clientpref-night #verifier-provider-info {
-                    background: #2a2a3e;
-                    color: #b0b0c0;
-                    border-color: #3a3a4e;
+                    background: #2a2a3e !important;
+                    color: #b0b0c0 !important;
+                    border-color: #3a3a4e !important;
                 }
                 html.skin-theme-clientpref-night #verifier-provider-info.free-provider {
-                    background: #1a2e1a;
-                    color: #6ecf6e;
+                    background: #1a2e1a !important;
+                    color: #6ecf6e !important;
                 }
                 html.skin-theme-clientpref-night #verifier-claim-section h4,
                 html.skin-theme-clientpref-night #verifier-source-section h4,
                 html.skin-theme-clientpref-night #verifier-results h4 {
-                    color: ${this.getCurrentColor()};
+                    color: ${this.getCurrentColor()} !important;
                     filter: brightness(1.3);
                 }
                 html.skin-theme-clientpref-night #verifier-claim-text,
                 html.skin-theme-clientpref-night #verifier-source-text {
-                    background: #2a2a3e;
-                    border-color: #3a3a4e;
-                    color: #e0e0e0;
+                    background: #2a2a3e !important;
+                    border-color: #3a3a4e !important;
+                    color: #e0e0e0 !important;
+                }
+                html.skin-theme-clientpref-night #verifier-verdict {
+                    color: #e0e0e0 !important;
                 }
                 html.skin-theme-clientpref-night #verifier-verdict.supported {
-                    background: #1a3a1a;
-                    color: #6ecf6e;
-                    border-color: #2a5a2a;
+                    background: #1a3a1a !important;
+                    color: #6ecf6e !important;
+                    border-color: #2a5a2a !important;
                 }
                 html.skin-theme-clientpref-night #verifier-verdict.partially-supported {
-                    background: #3a3a1a;
-                    color: #e0c060;
-                    border-color: #5a5a2a;
+                    background: #3a3a1a !important;
+                    color: #e0c060 !important;
+                    border-color: #5a5a2a !important;
                 }
                 html.skin-theme-clientpref-night #verifier-verdict.not-supported {
-                    background: #3a1a1a;
-                    color: #e06060;
-                    border-color: #5a2a2a;
+                    background: #3a1a1a !important;
+                    color: #e06060 !important;
+                    border-color: #5a2a2a !important;
                 }
                 html.skin-theme-clientpref-night #verifier-verdict.source-unavailable {
-                    background: #2a2a2e;
-                    color: #a0a0a8;
-                    border-color: #3a3a3e;
+                    background: #2a2a2e !important;
+                    color: #a0a0a8 !important;
+                    border-color: #3a3a3e !important;
                 }
                 html.skin-theme-clientpref-night #verifier-comments {
-                    background: #2a2a3e;
-                    border-color: #3a3a4e;
-                    color: #e0e0e0;
+                    background: #2a2a3e !important;
+                    border-color: #3a3a4e !important;
+                    color: #e0e0e0 !important;
                 }
                 html.skin-theme-clientpref-night .verifier-error {
-                    color: #ff8080;
-                    background: #3a1a1a;
-                    border-color: #5a2a2a;
+                    color: #ff8080 !important;
+                    background: #3a1a1a !important;
+                    border-color: #5a2a2a !important;
                 }
                 html.skin-theme-clientpref-night .reference:hover {
-                    background-color: rgba(100, 149, 237, 0.15);
+                    background-color: rgba(100, 149, 237, 0.15) !important;
                 }
                 html.skin-theme-clientpref-night .claim-highlight {
-                    background-color: #3a3a1a;
+                    background-color: #3a3a1a !important;
                 }
                 html.skin-theme-clientpref-night #verifier-source-textarea-container textarea {
-                    background: #2a2a3e;
-                    color: #e0e0e0;
-                    border-color: #3a3a4e;
+                    background: #2a2a3e !important;
+                    color: #e0e0e0 !important;
+                    border-color: #3a3a4e !important;
+                }
+                html.skin-theme-clientpref-night #source-verifier-sidebar .oo-ui-dropdownWidget {
+                    background: #2a2a3e !important;
+                    border-color: #3a3a4e !important;
+                }
+                html.skin-theme-clientpref-night #source-verifier-sidebar .oo-ui-dropdownWidget .oo-ui-labelElement-label {
+                    color: #e0e0e0 !important;
+                }
+                html.skin-theme-clientpref-night #source-verifier-sidebar .oo-ui-buttonElement-button {
+                    background: #2a2a3e !important;
+                    color: #e0e0e0 !important;
+                    border-color: #3a3a4e !important;
+                }
+                html.skin-theme-clientpref-night #source-verifier-sidebar .oo-ui-buttonElement-button .oo-ui-labelElement-label {
+                    color: #e0e0e0 !important;
+                }
+                html.skin-theme-clientpref-night #source-verifier-sidebar .oo-ui-flaggedElement-primary.oo-ui-flaggedElement-progressive .oo-ui-buttonElement-button {
+                    background: ${this.getCurrentColor()} !important;
+                    color: white !important;
+                    border-color: ${this.getCurrentColor()} !important;
+                }
+                html.skin-theme-clientpref-night #source-verifier-sidebar .oo-ui-flaggedElement-primary.oo-ui-flaggedElement-progressive .oo-ui-labelElement-label {
+                    color: white !important;
+                }
+                html.skin-theme-clientpref-night #source-verifier-sidebar .oo-ui-flaggedElement-destructive .oo-ui-buttonElement-button {
+                    color: #e06060 !important;
+                }
+                html.skin-theme-clientpref-night #source-verifier-sidebar .oo-ui-iconElement-icon {
+                    filter: invert(0.8);
+                }
+                html.skin-theme-clientpref-night #source-verifier-sidebar .oo-ui-indicatorElement-indicator {
+                    filter: invert(0.8);
+                }
+                html.skin-theme-clientpref-night #source-verifier-sidebar .oo-ui-menuSelectWidget {
+                    background: #2a2a3e !important;
+                    border-color: #3a3a4e !important;
+                }
+                html.skin-theme-clientpref-night #source-verifier-sidebar .oo-ui-optionWidget {
+                    color: #e0e0e0 !important;
+                }
+                html.skin-theme-clientpref-night #source-verifier-sidebar .oo-ui-optionWidget-highlighted {
+                    background: #3a3a5e !important;
+                }
+                html.skin-theme-clientpref-night #source-verifier-sidebar .oo-ui-optionWidget-selected {
+                    background: ${this.getCurrentColor()} !important;
+                    color: white !important;
                 }
 
                 /* Support auto dark mode via OS preference */
                 @media (prefers-color-scheme: dark) {
                     html.skin-theme-clientpref--os #source-verifier-sidebar {
-                        background: #1a1a2e;
-                        color: #e0e0e0;
-                        border-left-color: ${this.getCurrentColor()};
-                        box-shadow: -2px 0 8px rgba(0,0,0,0.4);
+                        background: #1a1a2e !important;
+                        color: #e0e0e0 !important;
+                        border-left-color: ${this.getCurrentColor()} !important;
+                        box-shadow: -2px 0 8px rgba(0,0,0,0.4) !important;
+                    }
+                    html.skin-theme-clientpref--os #source-verifier-sidebar * {
+                        color: inherit;
+                    }
+                    html.skin-theme-clientpref--os #verifier-sidebar-header {
+                        background: ${this.getCurrentColor()} !important;
+                        color: white !important;
+                    }
+                    html.skin-theme-clientpref--os #verifier-sidebar-header * {
+                        color: white !important;
                     }
                     html.skin-theme-clientpref--os #verifier-sidebar-content {
-                        background: #1a1a2e;
-                        color: #e0e0e0;
+                        background: #1a1a2e !important;
+                        color: #e0e0e0 !important;
                     }
                     html.skin-theme-clientpref--os #verifier-provider-info {
-                        background: #2a2a3e;
-                        color: #b0b0c0;
-                        border-color: #3a3a4e;
+                        background: #2a2a3e !important;
+                        color: #b0b0c0 !important;
+                        border-color: #3a3a4e !important;
                     }
                     html.skin-theme-clientpref--os #verifier-provider-info.free-provider {
-                        background: #1a2e1a;
-                        color: #6ecf6e;
+                        background: #1a2e1a !important;
+                        color: #6ecf6e !important;
                     }
                     html.skin-theme-clientpref--os #verifier-claim-section h4,
                     html.skin-theme-clientpref--os #verifier-source-section h4,
                     html.skin-theme-clientpref--os #verifier-results h4 {
-                        color: ${this.getCurrentColor()};
+                        color: ${this.getCurrentColor()} !important;
                         filter: brightness(1.3);
                     }
                     html.skin-theme-clientpref--os #verifier-claim-text,
                     html.skin-theme-clientpref--os #verifier-source-text {
-                        background: #2a2a3e;
-                        border-color: #3a3a4e;
-                        color: #e0e0e0;
+                        background: #2a2a3e !important;
+                        border-color: #3a3a4e !important;
+                        color: #e0e0e0 !important;
+                    }
+                    html.skin-theme-clientpref--os #verifier-verdict {
+                        color: #e0e0e0 !important;
                     }
                     html.skin-theme-clientpref--os #verifier-verdict.supported {
-                        background: #1a3a1a;
-                        color: #6ecf6e;
-                        border-color: #2a5a2a;
+                        background: #1a3a1a !important;
+                        color: #6ecf6e !important;
+                        border-color: #2a5a2a !important;
                     }
                     html.skin-theme-clientpref--os #verifier-verdict.partially-supported {
-                        background: #3a3a1a;
-                        color: #e0c060;
-                        border-color: #5a5a2a;
+                        background: #3a3a1a !important;
+                        color: #e0c060 !important;
+                        border-color: #5a5a2a !important;
                     }
                     html.skin-theme-clientpref--os #verifier-verdict.not-supported {
-                        background: #3a1a1a;
-                        color: #e06060;
-                        border-color: #5a2a2a;
+                        background: #3a1a1a !important;
+                        color: #e06060 !important;
+                        border-color: #5a2a2a !important;
                     }
                     html.skin-theme-clientpref--os #verifier-verdict.source-unavailable {
-                        background: #2a2a2e;
-                        color: #a0a0a8;
-                        border-color: #3a3a3e;
+                        background: #2a2a2e !important;
+                        color: #a0a0a8 !important;
+                        border-color: #3a3a3e !important;
                     }
                     html.skin-theme-clientpref--os #verifier-comments {
-                        background: #2a2a3e;
-                        border-color: #3a3a4e;
-                        color: #e0e0e0;
+                        background: #2a2a3e !important;
+                        border-color: #3a3a4e !important;
+                        color: #e0e0e0 !important;
                     }
                     html.skin-theme-clientpref--os .verifier-error {
-                        color: #ff8080;
-                        background: #3a1a1a;
-                        border-color: #5a2a2a;
+                        color: #ff8080 !important;
+                        background: #3a1a1a !important;
+                        border-color: #5a2a2a !important;
                     }
                     html.skin-theme-clientpref--os .reference:hover {
-                        background-color: rgba(100, 149, 237, 0.15);
+                        background-color: rgba(100, 149, 237, 0.15) !important;
                     }
                     html.skin-theme-clientpref--os .claim-highlight {
-                        background-color: #3a3a1a;
+                        background-color: #3a3a1a !important;
                     }
                     html.skin-theme-clientpref--os #verifier-source-textarea-container textarea {
-                        background: #2a2a3e;
-                        color: #e0e0e0;
-                        border-color: #3a3a4e;
+                        background: #2a2a3e !important;
+                        color: #e0e0e0 !important;
+                        border-color: #3a3a4e !important;
+                    }
+                    html.skin-theme-clientpref--os #source-verifier-sidebar .oo-ui-dropdownWidget {
+                        background: #2a2a3e !important;
+                        border-color: #3a3a4e !important;
+                    }
+                    html.skin-theme-clientpref--os #source-verifier-sidebar .oo-ui-dropdownWidget .oo-ui-labelElement-label {
+                        color: #e0e0e0 !important;
+                    }
+                    html.skin-theme-clientpref--os #source-verifier-sidebar .oo-ui-buttonElement-button {
+                        background: #2a2a3e !important;
+                        color: #e0e0e0 !important;
+                        border-color: #3a3a4e !important;
+                    }
+                    html.skin-theme-clientpref--os #source-verifier-sidebar .oo-ui-buttonElement-button .oo-ui-labelElement-label {
+                        color: #e0e0e0 !important;
+                    }
+                    html.skin-theme-clientpref--os #source-verifier-sidebar .oo-ui-flaggedElement-primary.oo-ui-flaggedElement-progressive .oo-ui-buttonElement-button {
+                        background: ${this.getCurrentColor()} !important;
+                        color: white !important;
+                        border-color: ${this.getCurrentColor()} !important;
+                    }
+                    html.skin-theme-clientpref--os #source-verifier-sidebar .oo-ui-flaggedElement-primary.oo-ui-flaggedElement-progressive .oo-ui-labelElement-label {
+                        color: white !important;
+                    }
+                    html.skin-theme-clientpref--os #source-verifier-sidebar .oo-ui-flaggedElement-destructive .oo-ui-buttonElement-button {
+                        color: #e06060 !important;
+                    }
+                    html.skin-theme-clientpref--os #source-verifier-sidebar .oo-ui-iconElement-icon {
+                        filter: invert(0.8);
+                    }
+                    html.skin-theme-clientpref--os #source-verifier-sidebar .oo-ui-indicatorElement-indicator {
+                        filter: invert(0.8);
+                    }
+                    html.skin-theme-clientpref--os #source-verifier-sidebar .oo-ui-menuSelectWidget {
+                        background: #2a2a3e !important;
+                        border-color: #3a3a4e !important;
+                    }
+                    html.skin-theme-clientpref--os #source-verifier-sidebar .oo-ui-optionWidget {
+                        color: #e0e0e0 !important;
+                    }
+                    html.skin-theme-clientpref--os #source-verifier-sidebar .oo-ui-optionWidget-highlighted {
+                        background: #3a3a5e !important;
+                    }
+                    html.skin-theme-clientpref--os #source-verifier-sidebar .oo-ui-optionWidget-selected {
+                        background: ${this.getCurrentColor()} !important;
+                        color: white !important;
                     }
                 }
             `;
