@@ -1679,10 +1679,7 @@ ${sourceText}`;
             const claimSnippet = this.activeClaim
                 ? this.activeClaim.substring(0, 80) + (this.activeClaim.length > 80 ? '...' : '')
                 : '';
-            const reason = tag === 'cn'
-                ? 'source does not support claim'
-                : 'source does not fully support claim';
-            const summary = `{{${tag}}} – ${reason} "${claimSnippet}" (checked with [[User:Alaexis/Source Verifier]])`;
+            const summary = `{{${tag}}} – source does not support claim "${claimSnippet}" (checked with [[User:Alaexis/Source Verifier]])`;
 
             const params = { action: 'edit', summary: summary };
             if (section > 0) {
@@ -1698,14 +1695,9 @@ ${sourceText}`;
 
             container.innerHTML = '';
 
-            let tag;
-            if (verdict === 'NOT SUPPORTED') {
-                tag = 'cn';
-            } else if (verdict === 'PARTIALLY SUPPORTED') {
-                tag = 'better source needed';
-            } else {
-                return;
-            }
+            if (verdict !== 'NOT SUPPORTED' && verdict !== 'PARTIALLY SUPPORTED') return;
+
+            const tag = 'Failed verification';
 
             const editUrl = this.buildEditUrl(tag);
 
