@@ -342,6 +342,17 @@
                 .verifier-sidebar-hidden #t-verifier {
                     display: list-item !important;
                 }
+                .skin-vector-2022 #p-associated-pages #t-verifier {
+                    font-size: inherit;
+                    margin: 0;
+                    padding: 0;
+                }
+                .skin-vector-2022 #p-associated-pages #t-verifier a {
+                    font-size: inherit !important;
+                    padding: 0 !important;
+                    margin: 0;
+                    display: inline-block;
+                }
                 .reference:hover {
                     background-color: #e6f3ff;
                     cursor: pointer;
@@ -498,7 +509,7 @@
                         portletId = 'p-associated-pages';
                         break;
                     case 'vector':
-                        portletId = 'p-cactions';
+                        portletId = 'p-namespaces';
                         break;
                     case 'monobook':
                         portletId = 'p-cactions';
