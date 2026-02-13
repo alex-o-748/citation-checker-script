@@ -1695,7 +1695,7 @@ ${sourceText}`;
 
             container.innerHTML = '';
 
-            if (verdict !== 'NOT SUPPORTED' && verdict !== 'PARTIALLY SUPPORTED') return;
+            if (verdict !== 'NOT SUPPORTED' && verdict !== 'PARTIALLY SUPPORTED' && verdict !== 'SOURCE UNAVAILABLE') return;
 
             const tag = 'Failed verification';
 
