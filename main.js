@@ -331,14 +331,14 @@
                     padding: 8px;
                     border-radius: 4px;
                 }
-                .verifier-sidebar-hidden body {
+                body.verifier-sidebar-hidden {
                     margin-right: 0 !important;
                 }
-                .verifier-sidebar-hidden #source-verifier-sidebar {
+                body.verifier-sidebar-hidden #source-verifier-sidebar {
                     display: none;
                 }
-                .verifier-sidebar-hidden #ca-verifier,
-                .verifier-sidebar-hidden #t-verifier {
+                body.verifier-sidebar-hidden #ca-verifier,
+                body.verifier-sidebar-hidden #t-verifier {
                     display: block !important;
                 }
                 .reference:hover {
