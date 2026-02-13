@@ -1672,13 +1672,16 @@ ${sourceText}`;
             return sectionNumber;
         }
 
-        buildEditUrl() {
+        buildEditUrl(tag) {
             const title = mw.config.get('wgPageName');
             const section = this.findSectionNumber();
             const claimSnippet = this.activeClaim
                 ? this.activeClaim.substring(0, 80) + (this.activeClaim.length > 80 ? '...' : '')
                 : '';
-            const summary = `{{better source needed}} – source does not fully support claim "${claimSnippet}" (checked with [[User:Alaexis/Source Verifier]])`;
+            const reason = tag === 'cn'
+                ? 'source does not support claim'
+                : 'source does not fully support claim';
+            const summary = `{{${tag}}} – ${reason} "${claimSnippet}" (checked with [[User:Alaexis/Source Verifier]])`;
 
             const params = { action: 'edit', summary: summary };
             if (section > 0) {
@@ -1694,12 +1697,19 @@ ${sourceText}`;
 
             container.innerHTML = '';
 
-            if (verdict !== 'NOT SUPPORTED' && verdict !== 'PARTIALLY SUPPORTED') return;
+            let tag;
+            if (verdict === 'NOT SUPPORTED') {
+                tag = 'cn';
+            } else if (verdict === 'PARTIALLY SUPPORTED') {
+                tag = 'better source needed';
+            } else {
+                return;
+            }
 
-            const editUrl = this.buildEditUrl();
+            const editUrl = this.buildEditUrl(tag);
 
             const btn = new OO.ui.ButtonWidget({
-                label: 'Add {{better source needed}}',
+                label: `Add {{${tag}}}`,
                 flags: ['progressive'],
                 icon: 'edit',
                 href: editUrl,
