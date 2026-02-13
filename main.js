@@ -1588,6 +1588,7 @@ ${sourceText}`;
 	    const commentsEl = document.getElementById('verifier-comments');
 	    
 	    try {
+	        console.log('[Verifier] displayResult called with type:', typeof response, 'value:', response?.substring?.(0, 200) || response);
 	        // Clean up the response text
 	        let jsonStr = response.trim();
 	        
@@ -1645,7 +1646,7 @@ ${sourceText}`;
 
 	    } catch (e) {
 	        // Catch-all fallback if something else goes wrong
-	        console.error('Unexpected error in displayResult:', e);
+	        console.warn('[Verifier] Unexpected error in displayResult:', e.message, e.stack);
 	        verdictEl.textContent = 'ERROR';
 	        verdictEl.className = 'source-unavailable';
 	        commentsEl.innerHTML = `<strong>Unexpected error:</strong> ${e.message}<br><br>Raw response:<br><pre style="white-space: pre-wrap; font-size: 11px;">${response}</pre>`;
