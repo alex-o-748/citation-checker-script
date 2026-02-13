@@ -50,6 +50,7 @@
             this.buttons = {};
             this.activeClaim = null;
             this.activeSource = null;
+            this.activeRefElement = null;
             this.sourceTextInput = null;
             
             this.init();
@@ -136,6 +137,7 @@
                         <h4>Verification Result</h4>
                         <div id="verifier-verdict"></div>
                         <div id="verifier-comments"></div>
+                        <div id="verifier-action-container"></div>
                     </div>
                 </div>
                 <div id="verifier-resize-handle"></div>
@@ -296,6 +298,22 @@
                     max-height: 300px;
                     overflow-y: auto;
                 }
+                #verifier-action-container {
+                    margin-top: 10px;
+                }
+                #verifier-action-container .oo-ui-buttonElement {
+                    width: 100%;
+                }
+                #verifier-action-container .oo-ui-buttonElement-button {
+                    width: 100%;
+                    justify-content: center;
+                }
+                .verifier-action-hint {
+                    font-size: 11px;
+                    color: #888;
+                    margin-top: 4px;
+                    text-align: center;
+                }
                 #verifier-resize-handle {
                     position: absolute;
                     left: 0;
@@ -425,6 +443,9 @@
                     background: #2a2a3e !important;
                     border-color: #3a3a4e !important;
                     color: #e0e0e0 !important;
+                }
+                html.skin-theme-clientpref-night .verifier-action-hint {
+                    color: #888 !important;
                 }
                 html.skin-theme-clientpref-night .verifier-error {
                     color: #ff8080 !important;
@@ -559,6 +580,9 @@
                         background: #2a2a3e !important;
                         border-color: #3a3a4e !important;
                         color: #e0e0e0 !important;
+                    }
+                    html.skin-theme-clientpref-os .verifier-action-hint {
+                        color: #888 !important;
                     }
                     html.skin-theme-clientpref-os .verifier-error {
                         color: #ff8080 !important;
@@ -831,6 +855,7 @@
                 refElement.parentElement.classList.add('verifier-active');
                 
                 this.activeClaim = claim;
+                this.activeRefElement = refElement;
                 document.getElementById('verifier-claim-text').textContent = claim;
                 
                 const refUrl = this.extractReferenceUrl(refElement);
@@ -1615,7 +1640,8 @@ ${sourceText}`;
 	        }
 	        
 	        commentsEl.textContent = comments;
-	        
+	        this.showActionButton(verdict);
+
 	    } catch (e) {
 	        // Catch-all fallback if something else goes wrong
 	        console.error('Unexpected error in displayResult:', e);
@@ -1625,6 +1651,69 @@ ${sourceText}`;
 	    }
 	}
         
+        findSectionNumber() {
+            if (!this.activeRefElement) return 0;
+
+            const content = document.getElementById('mw-content-text');
+            if (!content) return 0;
+
+            const headings = content.querySelectorAll('h2, h3, h4, h5, h6');
+            let sectionNumber = 0;
+
+            for (const heading of headings) {
+                const position = heading.compareDocumentPosition(this.activeRefElement);
+                if (position & Node.DOCUMENT_POSITION_FOLLOWING) {
+                    sectionNumber++;
+                } else {
+                    break;
+                }
+            }
+
+            return sectionNumber;
+        }
+
+        buildEditUrl() {
+            const title = mw.config.get('wgPageName');
+            const section = this.findSectionNumber();
+            const claimSnippet = this.activeClaim
+                ? this.activeClaim.substring(0, 80) + (this.activeClaim.length > 80 ? '...' : '')
+                : '';
+            const summary = `{{better source needed}} – source does not fully support claim "${claimSnippet}" (checked with [[User:Alaexis/Source Verifier]])`;
+
+            const params = { action: 'edit', summary: summary };
+            if (section > 0) {
+                params.section = section;
+            }
+
+            return mw.util.getUrl(title, params);
+        }
+
+        showActionButton(verdict) {
+            const container = document.getElementById('verifier-action-container');
+            if (!container) return;
+
+            container.innerHTML = '';
+
+            if (verdict !== 'NOT SUPPORTED' && verdict !== 'PARTIALLY SUPPORTED') return;
+
+            const editUrl = this.buildEditUrl();
+
+            const btn = new OO.ui.ButtonWidget({
+                label: 'Add {{better source needed}}',
+                flags: ['progressive'],
+                icon: 'edit',
+                href: editUrl,
+                target: '_blank'
+            });
+
+            container.appendChild(btn.$element[0]);
+
+            const hint = document.createElement('div');
+            hint.className = 'verifier-action-hint';
+            hint.textContent = 'Opens the editor in a new tab with a prepopulated edit summary.';
+            container.appendChild(hint);
+        }
+
         clearResult() {
             const verdictEl = document.getElementById('verifier-verdict');
             const commentsEl = document.getElementById('verifier-comments');
@@ -1635,6 +1724,10 @@ ${sourceText}`;
             }
             if (commentsEl) {
                 commentsEl.textContent = 'Click "Verify Claim" to verify the selected claim against the source.';
+            }
+            const actionContainer = document.getElementById('verifier-action-container');
+            if (actionContainer) {
+                actionContainer.innerHTML = '';
             }
         }
     }
