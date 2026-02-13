@@ -316,7 +316,6 @@
                 #ca-verifier a, #t-verifier a {
                     color: ${this.getCurrentColor()} !important;
                     text-decoration: none !important;
-                    padding: 0.5em !important;
                 }
                 #ca-verifier a:hover, #t-verifier a:hover {
                     text-decoration: underline !important;
@@ -340,18 +339,7 @@
                 }
                 .verifier-sidebar-hidden #ca-verifier,
                 .verifier-sidebar-hidden #t-verifier {
-                    display: list-item !important;
-                }
-                .skin-vector-2022 #p-associated-pages #t-verifier {
-                    font-size: inherit;
-                    margin: 0;
-                    padding: 0;
-                }
-                .skin-vector-2022 #p-associated-pages #t-verifier a {
-                    font-size: inherit !important;
-                    padding: 0 !important;
-                    margin: 0;
-                    display: inline-block;
+                    display: block !important;
                 }
                 .reference:hover {
                     background-color: #e6f3ff;
@@ -843,7 +831,7 @@
             const verifierTab = document.getElementById('ca-verifier') || document.getElementById('t-verifier');
             
             document.body.classList.add('verifier-sidebar-hidden');
-            if (verifierTab) verifierTab.style.display = 'list-item';
+            if (verifierTab) verifierTab.style.display = 'block';
             document.body.style.marginRight = '0';
             
             this.clearHighlights();
