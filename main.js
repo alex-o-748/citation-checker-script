@@ -51,6 +51,7 @@
             this.activeClaim = null;
             this.activeSource = null;
             this.activeRefElement = null;
+            this.activeRefUrl = null;
             this.sourceTextInput = null;
             
             this.init();
@@ -856,6 +857,7 @@
                 
                 this.activeClaim = claim;
                 this.activeRefElement = refElement;
+                this.activeRefUrl = this.extractReferenceUrl(refElement);
                 document.getElementById('verifier-claim-text').textContent = claim;
                 
                 const refUrl = this.extractReferenceUrl(refElement);
