@@ -58,6 +58,8 @@
         }
         
         init() {
+            if (mw.config.get('wgAction') !== 'view') return;
+
             this.loadOOUI().then(() => {
                 this.createUI();
                 this.attachEventListeners();
@@ -1679,7 +1681,7 @@ ${sourceText}`;
         buildEditUrl() {
             const title = mw.config.get('wgPageName');
             const section = this.findSectionNumber();
-            const summary = 'source does not support claim (checked with [[User:Alaexis/Source Verifier|Source Verifier]])';
+            const summary = 'source does not support claim (checked with [[User:Alaexis/AI_Source_Verification|Source Verifier]])';
 
             const params = { action: 'edit', summary: summary };
             if (section > 0) {
