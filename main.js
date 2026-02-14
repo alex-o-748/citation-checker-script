@@ -51,7 +51,7 @@
             this.activeClaim = null;
             this.activeSource = null;
             this.activeRefElement = null;
-            this.activeRefUrl = null;
+
             this.sourceTextInput = null;
             
             this.init();
@@ -857,7 +857,7 @@
                 
                 this.activeClaim = claim;
                 this.activeRefElement = refElement;
-                this.activeRefUrl = this.extractReferenceUrl(refElement);
+
                 document.getElementById('verifier-claim-text').textContent = claim;
                 
                 const refUrl = this.extractReferenceUrl(refElement);
@@ -1676,13 +1676,10 @@ ${sourceText}`;
             return sectionNumber;
         }
 
-        buildEditUrl(tag) {
+        buildEditUrl() {
             const title = mw.config.get('wgPageName');
             const section = this.findSectionNumber();
-            const claimSnippet = this.activeClaim
-                ? this.activeClaim.substring(0, 80) + (this.activeClaim.length > 80 ? '...' : '')
-                : '';
-            const summary = `{{${tag}}} – source does not support claim "${claimSnippet}" (checked with [[User:Alaexis/Source Verifier]])`;
+            const summary = 'source does not support claim (checked with [[User:Alaexis/Source Verifier|Source Verifier]])';
 
             const params = { action: 'edit', summary: summary };
             if (section > 0) {
@@ -1692,105 +1689,6 @@ ${sourceText}`;
             return mw.util.getUrl(title, params);
         }
 
-        async fetchSectionWikitext(title, section) {
-            const params = {
-                action: 'parse',
-                page: title,
-                prop: 'wikitext',
-                format: 'json'
-            };
-            if (section > 0) {
-                params.section = section;
-            }
-            const query = Object.entries(params).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&');
-            const resp = await fetch(`/w/api.php?${query}`);
-            const data = await resp.json();
-            if (data.parse && data.parse.wikitext) {
-                return data.parse.wikitext['*'];
-            }
-            return null;
-        }
-
-        findRefByUrl(wikitext, url) {
-            // Extract domain + path from the URL to match flexibly
-            let urlPattern;
-            try {
-                const parsed = new URL(url);
-                // Use domain + pathname as the search key (ignore protocol, query params, fragments)
-                urlPattern = parsed.hostname + parsed.pathname;
-            } catch {
-                urlPattern = url;
-            }
-
-            // Find all <ref>...</ref> and <ref ... /> occurrences with their positions
-            const refRegex = /<ref[^>]*>[\s\S]*?<\/ref>|<ref[^/>]*\/>/g;
-            let match;
-            while ((match = refRegex.exec(wikitext)) !== null) {
-                if (match[0].includes(urlPattern)) {
-                    return {
-                        start: match.index,
-                        end: match.index + match[0].length,
-                        refText: match[0]
-                    };
-                }
-            }
-            return null;
-        }
-
-        async insertTagAfterRef(tag) {
-            const title = mw.config.get('wgPageName');
-            const section = this.findSectionNumber();
-            const url = this.activeRefUrl;
-
-            if (!url) {
-                return { success: false, reason: 'No source URL available for this reference.' };
-            }
-
-            const wikitext = await this.fetchSectionWikitext(title, section);
-            if (!wikitext) {
-                return { success: false, reason: 'Could not fetch page wikitext.' };
-            }
-
-            const ref = this.findRefByUrl(wikitext, url);
-            if (!ref) {
-                return { success: false, reason: `Could not find a <ref> containing URL "${url}" in the wikitext.` };
-            }
-
-            // Insert the tag right after the closing </ref>
-            const tagWikitext = `{{${tag}}}`;
-            const newWikitext = wikitext.substring(0, ref.end) + tagWikitext + wikitext.substring(ref.end);
-
-            // Save via MediaWiki API
-            const claimSnippet = this.activeClaim
-                ? this.activeClaim.substring(0, 80) + (this.activeClaim.length > 80 ? '...' : '')
-                : '';
-            const summary = `{{${tag}}} – source does not support claim "${claimSnippet}" (checked with [[User:Alaexis/Source Verifier]])`;
-
-            const editParams = new URLSearchParams({
-                action: 'edit',
-                title: title,
-                text: newWikitext,
-                summary: summary,
-                format: 'json'
-            });
-            if (section > 0) {
-                editParams.set('section', section);
-            }
-
-            const token = mw.user.tokens.get('csrfToken');
-            editParams.set('token', token);
-
-            const resp = await fetch('/w/api.php', {
-                method: 'POST',
-                body: editParams
-            });
-            const data = await resp.json();
-
-            if (data.edit && data.edit.result === 'Success') {
-                return { success: true };
-            }
-            return { success: false, reason: `Edit API error: ${JSON.stringify(data)}` };
-        }
 
         showActionButton(verdict) {
             const container = document.getElementById('verifier-action-container');
@@ -1800,43 +1698,15 @@ ${sourceText}`;
 
             if (verdict !== 'NOT SUPPORTED' && verdict !== 'PARTIALLY SUPPORTED' && verdict !== 'SOURCE UNAVAILABLE') return;
 
-            const tag = 'Failed verification';
-
             const btn = new OO.ui.ButtonWidget({
-                label: `Add {{${tag}}}`,
+                label: 'Add {{Failed verification}}',
                 flags: ['progressive'],
-                icon: 'edit'
-            });
-
-            btn.on('click', async () => {
-                btn.setDisabled(true);
-                btn.setLabel('Inserting tag...');
-
-                const result = await this.insertTagAfterRef(tag);
-
-                if (result.success) {
-                    btn.setLabel('Tag added successfully');
-                    btn.setFlags({ progressive: false, constructive: true });
-                    const hint = container.querySelector('.verifier-action-hint');
-                    if (hint) hint.textContent = 'The page will need to be reloaded to see the change.';
-                } else {
-                    btn.setLabel(`Add {{${tag}}}`);
-                    btn.setDisabled(false);
-
-                    const errorDiv = container.querySelector('.verifier-action-hint');
-                    if (errorDiv) {
-                        errorDiv.innerHTML = `<span style="color: #d33;">Could not insert tag automatically: ${result.reason}</span><br>` +
-                            `<a href="${this.buildEditUrl(tag)}" target="_blank">Open editor manually instead</a>`;
-                    }
-                }
+                icon: 'edit',
+                href: this.buildEditUrl(),
+                target: '_blank'
             });
 
             container.appendChild(btn.$element[0]);
-
-            const hint = document.createElement('div');
-            hint.className = 'verifier-action-hint';
-            hint.textContent = 'Inserts the tag directly into the article wikitext after the matching reference.';
-            container.appendChild(hint);
         }
 
         clearResult() {
