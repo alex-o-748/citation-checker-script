@@ -51,6 +51,7 @@
             this.activeClaim = null;
             this.activeSource = null;
             this.activeRefElement = null;
+
             this.sourceTextInput = null;
             
             this.init();
@@ -856,6 +857,7 @@
                 
                 this.activeClaim = claim;
                 this.activeRefElement = refElement;
+
                 document.getElementById('verifier-claim-text').textContent = claim;
                 
                 const refUrl = this.extractReferenceUrl(refElement);
@@ -1674,13 +1676,10 @@ ${sourceText}`;
             return sectionNumber;
         }
 
-        buildEditUrl(tag) {
+        buildEditUrl() {
             const title = mw.config.get('wgPageName');
             const section = this.findSectionNumber();
-            const claimSnippet = this.activeClaim
-                ? this.activeClaim.substring(0, 80) + (this.activeClaim.length > 80 ? '...' : '')
-                : '';
-            const summary = `{{${tag}}} – source does not support claim "${claimSnippet}" (checked with [[User:Alaexis/Source Verifier]])`;
+            const summary = 'source does not support claim (checked with [[User:Alaexis/Source Verifier|Source Verifier]])';
 
             const params = { action: 'edit', summary: summary };
             if (section > 0) {
@@ -1690,6 +1689,7 @@ ${sourceText}`;
             return mw.util.getUrl(title, params);
         }
 
+
         showActionButton(verdict) {
             const container = document.getElementById('verifier-action-container');
             if (!container) return;
@@ -1698,24 +1698,15 @@ ${sourceText}`;
 
             if (verdict !== 'NOT SUPPORTED' && verdict !== 'PARTIALLY SUPPORTED' && verdict !== 'SOURCE UNAVAILABLE') return;
 
-            const tag = 'Failed verification';
-
-            const editUrl = this.buildEditUrl(tag);
-
             const btn = new OO.ui.ButtonWidget({
-                label: `Add {{${tag}}}`,
+                label: 'Add {{Failed verification}}',
                 flags: ['progressive'],
                 icon: 'edit',
-                href: editUrl,
+                href: this.buildEditUrl(),
                 target: '_blank'
             });
 
             container.appendChild(btn.$element[0]);
-
-            const hint = document.createElement('div');
-            hint.className = 'verifier-action-hint';
-            hint.textContent = 'Opens the editor in a new tab with a prepopulated edit summary.';
-            container.appendChild(hint);
         }
 
         clearResult() {
