@@ -50,6 +50,8 @@
             this.buttons = {};
             this.activeClaim = null;
             this.activeSource = null;
+            this.activeSourceUrl = null;
+            this.activeCitationNumber = null;
             this.sourceTextInput = null;
             
             this.init();
@@ -831,9 +833,11 @@
                 refElement.parentElement.classList.add('verifier-active');
                 
                 this.activeClaim = claim;
+                this.activeCitationNumber = refElement.textContent.replace(/[\[\]]/g, '').trim() || null;
                 document.getElementById('verifier-claim-text').textContent = claim;
-                
+
                 const refUrl = this.extractReferenceUrl(refElement);
+                this.activeSourceUrl = refUrl;
                 
                 if (!refUrl) {
                     this.showSourceTextInput();
@@ -1361,7 +1365,28 @@ Source text: "The president remained in office throughout March."
 Source text:
 ${sourceText}`;
         }
-        
+
+        logVerification(verdict, confidence) {
+            try {
+                const payload = {
+                    article_url: window.location.href,
+                    article_title: typeof mw !== 'undefined' ? mw.config.get('wgTitle') : document.title,
+                    citation_number: this.activeCitationNumber,
+                    source_url: this.activeSourceUrl,
+                    provider: this.currentProvider,
+                    verdict: verdict,
+                    confidence: confidence
+                };
+                fetch('https://publicai-proxy.alaexis.workers.dev/log', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                }).catch(() => {});
+            } catch (e) {
+                // logging should never break the main flow
+            }
+        }
+
         async verifyClaim() {
             const requiresKey = this.providerRequiresKey();
             const hasKey = !!this.getCurrentApiKey();
@@ -1395,7 +1420,15 @@ ${sourceText}`;
                 
                 this.updateStatus('Verification complete!');
                 this.displayResult(result);
-                
+
+                // Fire-and-forget logging
+                try {
+                    const jsonMatch = result.match(/```(?:json)?\s*([\s\S]*?)\s*```/) ||
+                                     [null, result.match(/\{[\s\S]*\}/)?.[0]];
+                    const parsed = JSON.parse(jsonMatch[1]);
+                    this.logVerification(parsed.verdict, parsed.confidence);
+                } catch (e) {}
+
             } catch (error) {
                 console.error('Verification error:', error);
                 this.updateStatus(`Error: ${error.message}`, true);
