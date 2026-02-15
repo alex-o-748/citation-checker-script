@@ -1,4 +1,4 @@
-// {{Wikipedia:USync |repo=https://github.com/alex-o-748/citation-checker-script |ref=refs/heads/main|path=main.js}}
+// {{Wikipedia:USync |repo=https://github.com/alex-o-748/citation-checker-script |ref=refs/heads/dev|path=main.js}}
 //Inspired by  User:Polygnotus/Scripts/AI_Source_Verification.js
 //Inspired by  User:Phlsph7/SourceVerificationAIAssistant.js
 
@@ -52,12 +52,16 @@
             this.activeSource = null;
             this.activeSourceUrl = null;
             this.activeCitationNumber = null;
+            this.activeRefElement = null;
+
             this.sourceTextInput = null;
             
             this.init();
         }
         
         init() {
+            if (mw.config.get('wgAction') !== 'view') return;
+
             this.loadOOUI().then(() => {
                 this.createUI();
                 this.attachEventListeners();
@@ -138,6 +142,7 @@
                         <h4>Verification Result</h4>
                         <div id="verifier-verdict"></div>
                         <div id="verifier-comments"></div>
+                        <div id="verifier-action-container"></div>
                     </div>
                 </div>
                 <div id="verifier-resize-handle"></div>
@@ -298,6 +303,22 @@
                     max-height: 300px;
                     overflow-y: auto;
                 }
+                #verifier-action-container {
+                    margin-top: 10px;
+                }
+                #verifier-action-container .oo-ui-buttonElement {
+                    width: 100%;
+                }
+                #verifier-action-container .oo-ui-buttonElement-button {
+                    width: 100%;
+                    justify-content: center;
+                }
+                .verifier-action-hint {
+                    font-size: 11px;
+                    color: #888;
+                    margin-top: 4px;
+                    text-align: center;
+                }
                 #verifier-resize-handle {
                     position: absolute;
                     left: 0;
@@ -427,6 +448,9 @@
                     background: #2a2a3e !important;
                     border-color: #3a3a4e !important;
                     color: #e0e0e0 !important;
+                }
+                html.skin-theme-clientpref-night .verifier-action-hint {
+                    color: #888 !important;
                 }
                 html.skin-theme-clientpref-night .verifier-error {
                     color: #ff8080 !important;
@@ -561,6 +585,9 @@
                         background: #2a2a3e !important;
                         border-color: #3a3a4e !important;
                         color: #e0e0e0 !important;
+                    }
+                    html.skin-theme-clientpref-os .verifier-action-hint {
+                        color: #888 !important;
                     }
                     html.skin-theme-clientpref-os .verifier-error {
                         color: #ff8080 !important;
@@ -839,6 +866,8 @@
                 
                 this.activeClaim = claim;
                 this.activeCitationNumber = refElement.textContent.replace(/[\[\]]/g, '').trim() || null;
+                this.activeRefElement = refElement;
+
                 document.getElementById('verifier-claim-text').textContent = claim;
 
                 const refUrl = this.extractReferenceUrl(refElement);
@@ -1601,6 +1630,7 @@ ${sourceText}`;
 	    const commentsEl = document.getElementById('verifier-comments');
 	    
 	    try {
+	        console.log('[Verifier] displayResult called with type:', typeof response, 'value:', response?.substring?.(0, 200) || response);
 	        // Clean up the response text
 	        let jsonStr = response.trim();
 	        
@@ -1653,16 +1683,72 @@ ${sourceText}`;
 	        }
 	        
 	        commentsEl.textContent = comments;
-	        
+	        console.log('[Verifier] Verdict for action button:', JSON.stringify(verdict));
+	        this.showActionButton(verdict);
+
 	    } catch (e) {
 	        // Catch-all fallback if something else goes wrong
-	        console.error('Unexpected error in displayResult:', e);
+	        console.warn('[Verifier] Unexpected error in displayResult:', e.message, e.stack);
 	        verdictEl.textContent = 'ERROR';
 	        verdictEl.className = 'source-unavailable';
 	        commentsEl.innerHTML = `<strong>Unexpected error:</strong> ${e.message}<br><br>Raw response:<br><pre style="white-space: pre-wrap; font-size: 11px;">${response}</pre>`;
 	    }
 	}
         
+        findSectionNumber() {
+            if (!this.activeRefElement) return 0;
+
+            const content = document.getElementById('mw-content-text');
+            if (!content) return 0;
+
+            const headings = content.querySelectorAll('h2, h3, h4, h5, h6');
+            let sectionNumber = 0;
+
+            for (const heading of headings) {
+                const position = heading.compareDocumentPosition(this.activeRefElement);
+                if (position & Node.DOCUMENT_POSITION_FOLLOWING) {
+                    sectionNumber++;
+                } else {
+                    break;
+                }
+            }
+
+            return sectionNumber;
+        }
+
+        buildEditUrl() {
+            const title = mw.config.get('wgPageName');
+            const section = this.findSectionNumber();
+            const summary = 'source does not support claim (checked with [[User:Alaexis/AI_Source_Verification|Source Verifier]])';
+
+            const params = { action: 'edit', summary: summary };
+            if (section > 0) {
+                params.section = section;
+            }
+
+            return mw.util.getUrl(title, params);
+        }
+
+
+        showActionButton(verdict) {
+            const container = document.getElementById('verifier-action-container');
+            if (!container) return;
+
+            container.innerHTML = '';
+
+            if (verdict !== 'NOT SUPPORTED' && verdict !== 'PARTIALLY SUPPORTED' && verdict !== 'SOURCE UNAVAILABLE') return;
+
+            const btn = new OO.ui.ButtonWidget({
+                label: 'Add {{Failed verification}}',
+                flags: ['progressive'],
+                icon: 'edit',
+                href: this.buildEditUrl(),
+                target: '_blank'
+            });
+
+            container.appendChild(btn.$element[0]);
+        }
+
         clearResult() {
             const verdictEl = document.getElementById('verifier-verdict');
             const commentsEl = document.getElementById('verifier-comments');
@@ -1673,6 +1759,10 @@ ${sourceText}`;
             }
             if (commentsEl) {
                 commentsEl.textContent = 'Click "Verify Claim" to verify the selected claim against the source.';
+            }
+            const actionContainer = document.getElementById('verifier-action-container');
+            if (actionContainer) {
+                actionContainer.innerHTML = '';
             }
         }
     }
