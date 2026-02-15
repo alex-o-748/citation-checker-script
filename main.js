@@ -742,7 +742,12 @@
                 const hasClaimAndSource = this.activeClaim && this.activeSource;
                 this.buttons.verify.setDisabled(!hasClaimAndSource);
                 container.appendChild(this.buttons.verify.$element[0]);
-                
+
+                const privacyNote = document.createElement('div');
+                privacyNote.style.cssText = 'font-size: 11px; color: #72777d; margin-top: 4px;';
+                privacyNote.textContent = 'Results are logged for research. Your username is not recorded.';
+                container.appendChild(privacyNote);
+
                 // Only show key management buttons for providers that use user keys
                 if (requiresKey) {
                     container.appendChild(this.buttons.changeKey.$element[0]);
