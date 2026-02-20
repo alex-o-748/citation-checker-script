@@ -53,6 +53,7 @@
             this.activeSourceUrl = null;
             this.activeCitationNumber = null;
             this.activeRefElement = null;
+            this.currentFetchId = 0;
 
             this.sourceTextInput = null;
             
@@ -880,15 +881,22 @@
                 }
                 
                 this.hideSourceTextInput();
+                this.activeSource = null;
+                this.updateButtonVisibility();
                 this.updateStatus('Fetching source content...');
+                const fetchId = ++this.currentFetchId;
                 const sourceInfo = await this.fetchSourceContent(refUrl);
-                
+
+                if (fetchId !== this.currentFetchId) {
+                    return;
+                }
+
                 if (!sourceInfo) {
                     this.showSourceTextInput();
                     this.updateStatus('Could not fetch source. Please paste the source text below.');
                     return;
                 }
-                
+
                 this.activeSource = sourceInfo;
                 const sourceElement = document.getElementById('verifier-source-text');
                 
