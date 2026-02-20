@@ -54,6 +54,7 @@
             this.activeCitationNumber = null;
             this.activeRefElement = null;
             this.currentFetchId = 0;
+            this.currentVerifyId = 0;
 
             this.sourceTextInput = null;
             
@@ -853,8 +854,9 @@
                 this.clearHighlights();
                 this.showSidebar();
                 
-                // Clear previous verification result to avoid confusion
+                // Clear previous verification result and invalidate any in-flight verification
                 this.clearResult();
+                this.currentVerifyId++;
                 
                 const claim = this.extractClaimText(refElement);
                 if (!claim) {
@@ -1439,12 +1441,13 @@ ${sourceText}`;
                 return;
             }
             
+            const verifyId = ++this.currentVerifyId;
             try {
                 this.buttons.verify.setDisabled(true);
                 this.updateStatus('Verifying claim against source...');
-                
+
                 let result;
-                
+
                 switch (this.currentProvider) {
                     case 'publicai':
                         result = await this.callPublicAIAPI(this.activeClaim, this.activeSource);
@@ -1459,7 +1462,11 @@ ${sourceText}`;
                         result = await this.callOpenAIAPI(this.activeClaim, this.activeSource);
                         break;
                 }
-                
+
+                if (verifyId !== this.currentVerifyId) {
+                    return;
+                }
+
                 this.updateStatus('Verification complete!');
                 this.displayResult(result);
 
@@ -1472,6 +1479,9 @@ ${sourceText}`;
                 } catch (e) {}
 
             } catch (error) {
+                if (verifyId !== this.currentVerifyId) {
+                    return;
+                }
                 console.error('Verification error:', error);
                 this.updateStatus(`Error: ${error.message}`, true);
                 document.getElementById('verifier-verdict').textContent = 'ERROR';
