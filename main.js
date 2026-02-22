@@ -1,4 +1,4 @@
-// {{Wikipedia:USync |repo=https://github.com/alex-o-748/citation-checker-script |ref=refs/heads/dev|path=main.js}}
+// {{Wikipedia:USync |repo=https://github.com/alex-o-748/citation-checker-script |ref=refs/heads/main|path=main.js}}
 //Inspired by  User:Polygnotus/Scripts/AI_Source_Verification.js
 //Inspired by  User:Phlsph7/SourceVerificationAIAssistant.js
 
@@ -1043,23 +1043,28 @@
         extractReferenceUrl(refElement) {
             const href = refElement.getAttribute('href');
             if (!href || !href.startsWith('#')) {
+                console.log('[CitationVerifier] No valid href on refElement:', href);
                 return null;
             }
-            
+
             const refId = href.substring(1);
             const refTarget = document.getElementById(refId);
-            
+
             if (!refTarget) {
+                console.log('[CitationVerifier] No element found for refId:', refId);
                 return null;
             }
-            
+
             // First look for archive links (prioritize these)
             const archiveLink = refTarget.querySelector('a[href*="web.archive.org"], a[href*="archive.today"], a[href*="archive.is"], a[href*="archive.ph"], a[href*="webcitation.org"]');
             if (archiveLink) return archiveLink.href;
-            
+
             // Fall back to any http link
             const links = refTarget.querySelectorAll('a[href^="http"]');
-            if (links.length === 0) return null;
+            if (links.length === 0) {
+                console.log('[CitationVerifier] No http links in refTarget. innerHTML:', refTarget.innerHTML.substring(0, 500));
+                return null;
+            }
             return links[0].href;
         }
         
