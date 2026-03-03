@@ -1418,13 +1418,18 @@ ${sourceText}`;
                     citation_number: this.activeCitationNumber,
                     source_url: this.activeSourceUrl,
                     provider: this.currentProvider,
+                    model: this.providers[this.currentProvider].model,
                     verdict: verdict,
-                    confidence: confidence
+                    confidence: parseInt(confidence, 10)
                 };
                 fetch('https://publicai-proxy.alaexis.workers.dev/log', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
+                }).then(res => {
+                    if (!res.ok) {
+                        res.text().then(body => console.warn('[Verifier] Log request failed:', res.status, body));
+                    }
                 }).catch(() => {});
             } catch (e) {
                 // logging should never break the main flow
