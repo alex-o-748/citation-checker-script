@@ -1,6 +1,27 @@
 # Worker-side Logging Implementation Reference
 
+## Root cause of the current 400 error
+
+The worker has **no `/log` route**. Every POST request, regardless of path,
+is forwarded to the PublicAI chat completions API. When `main.js` posts to
+`/log`, PublicAI receives the log payload (article URL, verdict, etc.) and
+rejects it as an invalid chat request → HTTP 400, which the worker passes
+straight back to the browser.
+
+The `/log` handler must be added to the worker before the catch-all POST
+block that proxies requests to PublicAI.
+
+---
+
 ## Neon DB Schema
+
+Run this migration to add the `model` column (the script now sends it):
+
+```sql
+ALTER TABLE verification_logs ADD COLUMN IF NOT EXISTS model TEXT;
+```
+
+Full schema for reference:
 
 ```sql
 CREATE TABLE verification_logs (
@@ -11,65 +32,66 @@ CREATE TABLE verification_logs (
   citation_number TEXT,
   source_url TEXT,
   provider TEXT,
+  model TEXT,
   verdict TEXT,
   confidence INT
 );
 ```
 
-## Cloudflare Worker Changes
+---
 
-Install the Neon serverless driver:
+## Worker fix
 
-```
-npm install @neondatabase/serverless
-```
-
-Add `DATABASE_URL` as a secret in the Worker settings (Cloudflare dashboard > Workers > Settings > Variables > Secrets).
-
-The value should be your Neon connection string, e.g.:
-`postgresql://user:pass@ep-xxx.us-east-2.aws.neon.tech/dbname?sslmode=require`
-
-### Handler code
-
-Add this to the Worker's `fetch` handler, before the existing route logic:
+The worker already has a `queryNeon` helper and a `cors` headers object — use
+both. Add the block below **after** the `GET ?fetch` handler and **before**
+the rate-limiter (`const ip = ...`):
 
 ```javascript
-import { neon } from '@neondatabase/serverless';
-
-// Inside fetch handler:
-if (request.method === 'POST' && url.pathname === '/log') {
-  // Return 200 immediately, log in background
-  const body = await request.json();
-  const sql = neon(env.DATABASE_URL);
-
-  ctx.waitUntil(
-    sql`INSERT INTO verification_logs
-        (article_url, article_title, citation_number, source_url, provider, verdict, confidence)
-        VALUES (${body.article_url}, ${body.article_title}, ${body.citation_number},
-                ${body.source_url}, ${body.provider}, ${body.verdict}, ${body.confidence})`
-      .catch(err => console.error('Log write failed:', err))
-  );
-
-  return new Response('ok', {
-    headers: { 'Access-Control-Allow-Origin': '*' }
-  });
-}
-
-// Also handle CORS preflight for /log:
-if (request.method === 'OPTIONS' && url.pathname === '/log') {
-  return new Response(null, {
-    headers: {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'POST',
-      'Access-Control-Allow-Headers': 'Content-Type'
+// --- Verification logging ---
+if (request.method === "POST" && url.pathname === "/log") {
+  try {
+    const body = await request.json();
+    if (env.DATABASE_URL) {
+      ctx.waitUntil(
+        queryNeon(
+          env.DATABASE_URL,
+          `INSERT INTO verification_logs
+             (article_url, article_title, citation_number, source_url,
+              provider, model, verdict, confidence)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+          [
+            body.article_url,
+            body.article_title,
+            body.citation_number,
+            body.source_url,
+            body.provider,
+            body.model || null,
+            body.verdict,
+            Number.isInteger(body.confidence) ? body.confidence : null,
+          ]
+        ).catch(() => {})
+      );
     }
+  } catch (e) {}
+  return new Response(JSON.stringify({ success: true }), {
+    status: 200,
+    headers: { ...cors, "Content-Type": "application/json" },
   });
 }
+// --- End verification logging ---
 ```
 
-### Key points
+### Notes
 
-- `ctx.waitUntil()` lets the response return immediately while the DB write happens in the background
-- `neon()` from `@neondatabase/serverless` uses HTTP queries (no TCP), which works in Cloudflare Workers
-- CORS headers are needed since the script runs on `en.wikipedia.org` and posts to the Worker domain
-- The `.catch()` ensures a failed DB write never surfaces as an error to the client
+- The CORS `OPTIONS` preflight is already handled globally at the top of the
+  worker (it catches all `OPTIONS` regardless of path), so no separate
+  preflight case is needed for `/log`.
+- The `cors` object already sends `Access-Control-Allow-Origin:
+  https://en.wikipedia.org` when the request origin matches — correct for a
+  Wikipedia user script.
+- `ctx.waitUntil()` returns the 200 immediately; the DB write happens in the
+  background. The `.catch(() => {})` ensures a DB failure never surfaces as
+  an error to the client.
+- `main.js` now sends `model` (the AI model name, e.g.
+  `claude-sonnet-4-20250514`) and casts `confidence` to an integer, so the
+  payload is ready once the worker handler is in place.
