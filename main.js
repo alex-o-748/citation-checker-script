@@ -894,7 +894,7 @@
                 }
 
                 if (!sourceInfo) {
-                    this.showSourceTextInput();
+                    this.showSourceTextInput(refUrl);
                     this.updateStatus('Could not fetch source. Please paste the source text below.');
                     return;
                 }
@@ -926,9 +926,18 @@
             }
         }
         
-        showSourceTextInput() {
+        showSourceTextInput(foundUrl) {
             document.getElementById('verifier-source-input-container').style.display = 'block';
-            document.getElementById('verifier-source-text').textContent = 'No URL found. Please paste the source text below:';
+            const sourceElement = document.getElementById('verifier-source-text');
+            if (foundUrl) {
+                sourceElement.innerHTML = `
+                    <strong>Source URL:</strong><br>
+                    <a href="${foundUrl}" target="_blank" style="word-break: break-all;">${foundUrl}</a><br><br>
+                    <em>Could not fetch content automatically. Open the URL above and paste the text below.</em>
+                `;
+            } else {
+                sourceElement.textContent = 'No URL found. Please paste the source text below:';
+            }
             this.sourceTextInput.setValue('');
         }
         
@@ -1064,18 +1073,44 @@
         }
         
         async fetchSourceContent(url) {
+            // Try fetching the original URL
+            const content = await this._fetchViaProxy(url);
+            if (content) {
+                return `Source URL: ${url}\n\nSource Content:\n${content}`;
+            }
+
+            // Original fetch failed — try the Wayback Machine for an archived copy
+            try {
+                const waybackResponse = await fetch(
+                    `https://archive.org/wayback/available?url=${encodeURIComponent(url)}`
+                );
+                const waybackData = await waybackResponse.json();
+                const archiveUrl = waybackData?.archived_snapshots?.closest?.url;
+                if (archiveUrl) {
+                    const archiveContent = await this._fetchViaProxy(archiveUrl);
+                    if (archiveContent) {
+                        return `Source URL: ${url}\n\nSource Content:\n${archiveContent}`;
+                    }
+                }
+            } catch (e) {
+                console.error('Wayback Machine fallback failed:', e);
+            }
+
+            return null; // Falls back to manual input
+        }
+
+        async _fetchViaProxy(url) {
             try {
                 const proxyUrl = `https://publicai-proxy.alaexis.workers.dev/?fetch=${encodeURIComponent(url)}`;
                 const response = await fetch(proxyUrl);
                 const data = await response.json();
-                
                 if (data.content && data.content.length > 100) {
-                    return `Source URL: ${url}\n\nSource Content:\n${data.content}`;
+                    return data.content;
                 }
             } catch (error) {
                 console.error('Proxy fetch failed:', error);
             }
-            return null; // Falls back to manual input
+            return null;
         }
         
         highlightClaim(refElement, claim) {
