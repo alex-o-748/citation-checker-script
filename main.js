@@ -69,6 +69,8 @@
                 this.attachEventListeners();
                 this.attachReferenceClickHandlers();
                 this.adjustMainContent();
+            }).catch(err => {
+                console.error('[Source Verifier] Initialization failed:', err);
             });
         }
         
@@ -156,7 +158,9 @@
             
             this.appendOOUIButtons();
             
-            if (!this.isVisible) {
+            if (this.isVisible) {
+                this.showSidebar();
+            } else {
                 this.hideSidebar();
             }
             
@@ -839,14 +843,14 @@
         }
         
         attachReferenceClickHandlers() {
-            const references = document.querySelectorAll('.reference a');
-            references.forEach(ref => {
-                ref.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    this.handleReferenceClick(ref);
-                });
-            });
+            const contentEl = document.getElementById('mw-content-text') || document.body;
+            contentEl.addEventListener('click', (e) => {
+                const ref = e.target.closest('.reference a');
+                if (!ref) return;
+                e.preventDefault();
+                e.stopPropagation();
+                this.handleReferenceClick(ref);
+            }, true);
         }
         
         async handleReferenceClick(refElement) {
