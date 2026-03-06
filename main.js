@@ -1,10 +1,49 @@
+// ==UserScript==
+// @name         Citation Checker
+// @namespace    https://github.com/alex-o-748/citation-checker-script
+// @match        https://*.wikipedia.org/wiki/*
+// @grant        GM_xmlhttpRequest
+// @connect      publicai-proxy.alaexis.workers.dev
+// @connect      api.anthropic.com
+// @connect      generativelanguage.googleapis.com
+// @connect      api.openai.com
+// ==/UserScript==
 // {{Wikipedia:USync |repo=https://github.com/alex-o-748/citation-checker-script |ref=refs/heads/main|path=main.js}}
 //Inspired by  User:Polygnotus/Scripts/AI_Source_Verification.js
 //Inspired by  User:Phlsph7/SourceVerificationAIAssistant.js
 
 (function() {
     'use strict';
-    
+
+    // Wraps GM_xmlhttpRequest (available in Tampermonkey) in a fetch-compatible Promise,
+    // bypassing Wikipedia's Content-Security-Policy for external domains.
+    // Falls back to native fetch() when running as a plain MediaWiki gadget.
+    function gmFetch(url, options = {}) {
+        if (typeof GM_xmlhttpRequest === 'undefined') {
+            return fetch(url, options);
+        }
+        return new Promise((resolve, reject) => {
+            GM_xmlhttpRequest({
+                method: options.method || 'GET',
+                url: url,
+                headers: options.headers || {},
+                data: options.body || null,
+                onload: (response) => {
+                    const ok = response.status >= 200 && response.status < 300;
+                    resolve({
+                        ok,
+                        status: response.status,
+                        statusText: response.statusText,
+                        text: () => Promise.resolve(response.responseText),
+                        json: () => Promise.resolve(JSON.parse(response.responseText))
+                    });
+                },
+                onerror: () => reject(new Error('Network request failed')),
+                ontimeout: () => reject(new Error('Request timed out'))
+            });
+        });
+    }
+
     class WikipediaSourceVerifier {
         constructor() {
             this.providers = {
@@ -1066,7 +1105,7 @@
         async fetchSourceContent(url) {
             try {
                 const proxyUrl = `https://publicai-proxy.alaexis.workers.dev/?fetch=${encodeURIComponent(url)}`;
-                const response = await fetch(proxyUrl);
+                const response = await gmFetch(proxyUrl);
                 const data = await response.json();
                 
                 if (data.content && data.content.length > 100) {
@@ -1421,7 +1460,7 @@ ${sourceText}`;
                     verdict: verdict,
                     confidence: confidence
                 };
-                fetch('https://publicai-proxy.alaexis.workers.dev/log', {
+                gmFetch('https://publicai-proxy.alaexis.workers.dev/log', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
@@ -1506,12 +1545,12 @@ ${sourceText}`;
                 temperature: 0.1
             };
             
-            const response = await fetch('https://publicai-proxy.alaexis.workers.dev', {
+            const response = await gmFetch('https://publicai-proxy.alaexis.workers.dev', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(requestBody)
             });
-            
+
             if (!response.ok) {
                 const errorText = await response.text();
                 let errorMessage;
@@ -1544,7 +1583,7 @@ ${sourceText}`;
                 messages: [{ role: "user", content: userContent }]
             };
             
-            const response = await fetch('https://api.anthropic.com/v1/messages', {
+            const response = await gmFetch('https://api.anthropic.com/v1/messages', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -1579,7 +1618,7 @@ ${sourceText}`;
                 }
             };
             
-            const response = await fetch(API_URL, {
+            const response = await gmFetch(API_URL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(requestBody)
@@ -1613,7 +1652,7 @@ ${sourceText}`;
                 temperature: 0.1
             };
             
-            const response = await fetch('https://api.openai.com/v1/chat/completions', {
+            const response = await gmFetch('https://api.openai.com/v1/chat/completions', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
