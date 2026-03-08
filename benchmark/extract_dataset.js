@@ -338,19 +338,20 @@ function extractUrlFromRef(refTarget) {
         return archiveLink.href;
     }
 
-    // Fall back to any http link
+    // Fall back to any http link, but deprioritize identifier links (DOI, Bibcode, etc.)
     const links = refTarget.querySelectorAll('a[href^="http"]');
     log(`    Found ${links.length} http links in ref`);
     if (links.length === 0) return null;
 
-    // Skip Wikipedia internal links
+    const identifierDomains = ['doi.org', 'adsabs.harvard.edu', 'semanticscholar.org', 'pubmed.ncbi.nlm.nih.gov', 'ncbi.nlm.nih.gov', 'jstor.org', 'worldcat.org', 'arxiv.org', 'hdl.handle.net', 'zbmath.org', 'mathscinet.ams.org'];
+    let fallbackLink = null;
     for (const link of links) {
-        if (!link.href.includes('wikipedia.org') && !link.href.includes('wikimedia.org')) {
-            return link.href;
-        }
+        if (link.href.includes('wikipedia.org') || link.href.includes('wikimedia.org')) continue;
+        const isIdentifier = identifierDomains.some(d => link.href.includes(d));
+        if (!isIdentifier) return link.href;
+        if (!fallbackLink) fallbackLink = link.href;
     }
-
-    return links[0]?.href || null;
+    return fallbackLink || links[0]?.href || null;
 }
 
 /**
