@@ -831,6 +831,7 @@
                             e.preventDefault();
                             this.showSidebar();
                         });
+                        this.showFirstRunNotification();
                     }
                 } catch (error) {
                     console.warn('Could not create verifier tab:', error);
@@ -838,6 +839,19 @@
             }
         }
         
+        showFirstRunNotification() {
+            if (localStorage.getItem('verifier_first_run_done')) return;
+            localStorage.setItem('verifier_first_run_done', 'true');
+            mw.notify(
+                $('<span>').append(
+                    'Citation Verifier installed — click the ',
+                    $('<strong>').text('Verify'),
+                    ' tab to get started.'
+                ),
+                { title: 'Citation Verifier', type: 'info', autoHide: true, autoHideSeconds: 8 }
+            );
+        }
+
         attachReferenceClickHandlers() {
             const references = document.querySelectorAll('.reference a');
             references.forEach(ref => {
