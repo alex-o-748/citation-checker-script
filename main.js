@@ -114,7 +114,7 @@
             
             sidebar.innerHTML = `
                 <div id="verifier-sidebar-header">
-                    <h3>Source Verifier</h3>
+                    <h3><a href="https://en.wikipedia.org/wiki/User:Alaexis/AI_Source_Verification" target="_blank" id="verifier-title-link">Source Verifier</a></h3>
                     <div id="verifier-sidebar-controls">
                         <div id="verifier-close-btn-container"></div>
                     </div>
@@ -124,6 +124,7 @@
                         <div id="verifier-provider-container"></div>
                         <div id="verifier-provider-info"></div>
                         <div id="verifier-buttons-container"></div>
+                        <div id="verifier-status"></div>
                     </div>
                     <div id="verifier-claim-section">
                         <h4>Selected Claim</h4>
@@ -310,6 +311,33 @@
                 }
                 #verifier-action-container .oo-ui-buttonElement {
                     width: 100%;
+                }
+                #verifier-status {
+                    font-size: 12px;
+                    padding: 6px 8px;
+                    border-radius: 4px;
+                    min-height: 1em;
+                    word-break: break-all;
+                    display: none;
+                }
+                #verifier-status.verifier-status-info {
+                    display: block;
+                    background: #e8f4fd;
+                    color: #0645ad;
+                    border: 1px solid #b3d7f0;
+                }
+                #verifier-status.verifier-status-error {
+                    display: block;
+                    background: #f8d7da;
+                    color: #721c24;
+                    border: 1px solid #f5c6cb;
+                }
+                #verifier-title-link {
+                    color: white;
+                    text-decoration: none;
+                }
+                #verifier-title-link:hover {
+                    text-decoration: underline;
                 }
                 #verifier-action-container .oo-ui-buttonElement-button {
                     width: 100%;
@@ -900,7 +928,7 @@
                 this.hideSourceTextInput();
                 this.activeSource = null;
                 this.updateButtonVisibility();
-                this.updateStatus('Fetching source content...');
+                this.updateStatus(`Opening ${refUrl}...`);
                 const fetchId = ++this.currentFetchId;
                 const sourceInfo = await this.fetchSourceContent(refUrl);
 
@@ -1311,6 +1339,11 @@
             } else {
                 console.log('Verifier Status:', message);
             }
+            const statusEl = document.getElementById('verifier-status');
+            if (statusEl) {
+                statusEl.textContent = message;
+                statusEl.className = isError ? 'verifier-status-error' : 'verifier-status-info';
+            }
         }
         
         // ========================================
@@ -1464,6 +1497,8 @@ ${sourceText}`;
             const verifyId = ++this.currentVerifyId;
             try {
                 this.buttons.verify.setDisabled(true);
+                this.buttons.verify.setLabel('Verifying...');
+                this.buttons.verify.setIcon('clock');
                 this.updateStatus('Verifying claim against source...');
 
                 let result;
@@ -1508,6 +1543,8 @@ ${sourceText}`;
                 document.getElementById('verifier-verdict').className = 'source-unavailable';
                 document.getElementById('verifier-comments').textContent = error.message;
             } finally {
+                this.buttons.verify.setLabel('Verify Claim');
+                this.buttons.verify.setIcon('check');
                 this.buttons.verify.setDisabled(false);
             }
         }
