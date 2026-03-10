@@ -1543,9 +1543,11 @@ ${sourceText}`;
                 document.getElementById('verifier-verdict').className = 'source-unavailable';
                 document.getElementById('verifier-comments').textContent = error.message;
             } finally {
-                this.buttons.verify.setLabel('Verify Claim');
-                this.buttons.verify.setIcon('check');
-                this.buttons.verify.setDisabled(false);
+                if (verifyId === this.currentVerifyId) {
+                    this.buttons.verify.setLabel('Verify Claim');
+                    this.buttons.verify.setIcon('check');
+                    this.buttons.verify.setDisabled(false);
+                }
             }
         }
         
