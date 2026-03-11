@@ -114,7 +114,7 @@
             
             sidebar.innerHTML = `
                 <div id="verifier-sidebar-header">
-                    <h3>Source Verifier</h3>
+                    <h3><a href="https://en.wikipedia.org/wiki/User:Alaexis/AI_Source_Verification" target="_blank" id="verifier-title-link">Source Verifier</a></h3>
                     <div id="verifier-sidebar-controls">
                         <div id="verifier-close-btn-container"></div>
                     </div>
@@ -311,6 +311,13 @@
                 #verifier-action-container .oo-ui-buttonElement {
                     width: 100%;
                 }
+                #verifier-title-link {
+                    color: white;
+                    text-decoration: none;
+                }
+                #verifier-title-link:hover {
+                    text-decoration: underline;
+                }
                 #verifier-action-container .oo-ui-buttonElement-button {
                     width: 100%;
                     justify-content: center;
@@ -490,6 +497,12 @@
                     color: white !important;
                     border-color: ${this.getCurrentColor()} !important;
                 }
+                html.skin-theme-clientpref-night #source-verifier-sidebar .oo-ui-flaggedElement-primary.oo-ui-flaggedElement-progressive.oo-ui-widget-disabled .oo-ui-buttonElement-button {
+                    background: #3a3a4e !important;
+                    color: #888 !important;
+                    border-color: #4a4a5e !important;
+                    cursor: default !important;
+                }
                 html.skin-theme-clientpref-night #source-verifier-sidebar .oo-ui-flaggedElement-primary.oo-ui-flaggedElement-progressive .oo-ui-labelElement-label {
                     color: white !important;
                 }
@@ -626,6 +639,12 @@
                         background: ${this.getCurrentColor()} !important;
                         color: white !important;
                         border-color: ${this.getCurrentColor()} !important;
+                    }
+                    html.skin-theme-clientpref-os #source-verifier-sidebar .oo-ui-flaggedElement-primary.oo-ui-flaggedElement-progressive.oo-ui-widget-disabled .oo-ui-buttonElement-button {
+                        background: #3a3a4e !important;
+                        color: #888 !important;
+                        border-color: #4a4a5e !important;
+                        cursor: default !important;
                     }
                     html.skin-theme-clientpref-os #source-verifier-sidebar .oo-ui-flaggedElement-primary.oo-ui-flaggedElement-progressive .oo-ui-labelElement-label {
                         color: white !important;
@@ -1464,6 +1483,8 @@ ${sourceText}`;
             const verifyId = ++this.currentVerifyId;
             try {
                 this.buttons.verify.setDisabled(true);
+                this.buttons.verify.setLabel('Verifying...');
+                this.buttons.verify.setIcon('clock');
                 this.updateStatus('Verifying claim against source...');
 
                 let result;
@@ -1508,7 +1529,11 @@ ${sourceText}`;
                 document.getElementById('verifier-verdict').className = 'source-unavailable';
                 document.getElementById('verifier-comments').textContent = error.message;
             } finally {
-                this.buttons.verify.setDisabled(false);
+                if (verifyId === this.currentVerifyId) {
+                    this.buttons.verify.setLabel('Verify Claim');
+                    this.buttons.verify.setIcon('check');
+                    this.buttons.verify.setDisabled(false);
+                }
             }
         }
         
