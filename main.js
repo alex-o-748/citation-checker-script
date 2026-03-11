@@ -518,6 +518,12 @@
                     color: white !important;
                     border-color: ${this.getCurrentColor()} !important;
                 }
+                html.skin-theme-clientpref-night #source-verifier-sidebar .oo-ui-flaggedElement-primary.oo-ui-flaggedElement-progressive.oo-ui-widget-disabled .oo-ui-buttonElement-button {
+                    background: #3a3a4e !important;
+                    color: #888 !important;
+                    border-color: #4a4a5e !important;
+                    cursor: default !important;
+                }
                 html.skin-theme-clientpref-night #source-verifier-sidebar .oo-ui-flaggedElement-primary.oo-ui-flaggedElement-progressive .oo-ui-labelElement-label {
                     color: white !important;
                 }
@@ -654,6 +660,12 @@
                         background: ${this.getCurrentColor()} !important;
                         color: white !important;
                         border-color: ${this.getCurrentColor()} !important;
+                    }
+                    html.skin-theme-clientpref-os #source-verifier-sidebar .oo-ui-flaggedElement-primary.oo-ui-flaggedElement-progressive.oo-ui-widget-disabled .oo-ui-buttonElement-button {
+                        background: #3a3a4e !important;
+                        color: #888 !important;
+                        border-color: #4a4a5e !important;
+                        cursor: default !important;
                     }
                     html.skin-theme-clientpref-os #source-verifier-sidebar .oo-ui-flaggedElement-primary.oo-ui-flaggedElement-progressive .oo-ui-labelElement-label {
                         color: white !important;
