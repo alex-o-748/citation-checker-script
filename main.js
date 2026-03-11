@@ -921,7 +921,8 @@
                 this.updateButtonVisibility();
                 this.updateStatus('Fetching source content...');
                 const fetchId = ++this.currentFetchId;
-                const sourceInfo = await this.fetchSourceContent(refUrl);
+                const pageNum = this.extractPageNumber(refElement);
+                const sourceInfo = await this.fetchSourceContent(refUrl, pageNum);
 
                 if (fetchId !== this.currentFetchId) {
                     return;
@@ -935,22 +936,33 @@
 
                 this.activeSource = sourceInfo;
                 const sourceElement = document.getElementById('verifier-source-text');
-                
+
                 const urlMatch = sourceInfo.match(/Source URL: (https?:\/\/[^\s\n]+)/);
                 const contentFetched = sourceInfo.includes('Source Content:');
-                
+                const pdfMatch = sourceInfo.match(/PDF: (\d+) pages/);
+                const pageMatch = sourceInfo.match(/\(extracted page (\d+)\)/);
+
                 if (urlMatch) {
+                    let statusHtml;
+                    if (contentFetched && pdfMatch) {
+                        const pageInfo = pageMatch
+                            ? ` (page ${pageMatch[1]} of ${pdfMatch[1]})`
+                            : ` (${pdfMatch[1]} pages)`;
+                        statusHtml = `<span style="color: #2e7d32;">✓ PDF content extracted${pageInfo}</span>`;
+                    } else if (contentFetched) {
+                        statusHtml = '<span style="color: #2e7d32;">✓ Content fetched successfully</span>';
+                    } else {
+                        statusHtml = '<em>Content will be fetched by AI during verification.</em>';
+                    }
                     sourceElement.innerHTML = `
                         <strong>Source URL:</strong><br>
                         <a href="${urlMatch[1]}" target="_blank" style="word-break: break-all;">${urlMatch[1]}</a><br><br>
-                        ${contentFetched 
-                            ? '<span style="color: #2e7d32;">✓ Content fetched successfully</span>' 
-                            : '<em>Content will be fetched by AI during verification.</em>'}
+                        ${statusHtml}
                     `;
                 } else {
                     sourceElement.textContent = sourceInfo;
                 }
-                
+
                 this.updateButtonVisibility();
                 this.updateStatus(contentFetched ? 'Source fetched. Ready to verify.' : 'Ready to verify claim against source');
                 
@@ -1101,15 +1113,53 @@
             }
             return links[0].href;
         }
+
+        extractPageNumber(refElement) {
+            const href = refElement.getAttribute('href');
+            if (!href || !href.startsWith('#')) return null;
+
+            const refTarget = document.getElementById(href.substring(1));
+            if (!refTarget) return null;
+
+            const text = refTarget.textContent;
+            // Match patterns like "p. 42", "pp. 42-43", "p.42", "page 42", "pages 42–43"
+            const match = text.match(/\bp(?:p|ages?)?\.?\s*(\d+)/i);
+            if (match) {
+                console.log('[CitationVerifier] Extracted page number:', match[1]);
+                return parseInt(match[1], 10);
+            }
+            return null;
+        }
         
-        async fetchSourceContent(url) {
+        async fetchSourceContent(url, pageNum) {
             try {
-                const proxyUrl = `https://publicai-proxy.alaexis.workers.dev/?fetch=${encodeURIComponent(url)}`;
+                let proxyUrl = `https://publicai-proxy.alaexis.workers.dev/?fetch=${encodeURIComponent(url)}`;
+                if (pageNum) {
+                    proxyUrl += `&page=${pageNum}`;
+                }
                 const response = await fetch(proxyUrl);
                 const data = await response.json();
-                
+
+                if (data.error) {
+                    console.warn('[CitationVerifier] Proxy error:', data.error);
+                    return null;
+                }
+
                 if (data.content && data.content.length > 100) {
-                    return `Source URL: ${url}\n\nSource Content:\n${data.content}`;
+                    let meta = `Source URL: ${url}`;
+                    if (data.pdf) {
+                        meta += `\nPDF: ${data.totalPages} pages`;
+                        if (data.page) {
+                            meta += ` (extracted page ${data.page})`;
+                        }
+                    }
+                    return `${meta}\n\nSource Content:\n${data.content}`;
+                }
+
+                // If PDF was large and we didn't request a specific page, retry
+                // with the citation page if available
+                if (data.pdf && !pageNum && data.totalPages > 15) {
+                    console.log('[CitationVerifier] Large PDF without page param, content may be truncated');
                 }
             } catch (error) {
                 console.error('Proxy fetch failed:', error);
