@@ -1104,7 +1104,8 @@
 
             const text = refTarget.textContent;
             // Match patterns like "p. 42", "pp. 42-43", "p.42", "page 42", "pages 42–43"
-            const match = text.match(/\bp(?:p|ages?)?\.?\s*(\d+)/i);
+            // Requires a dot or space after p/pp to avoid matching words like "published"
+            const match = text.match(/\bpp?[.\s]\s*(\d+)/i) || text.match(/\bpages?\s+(\d+)/i);
             if (match) {
                 console.log('[CitationVerifier] Extracted page number:', match[1]);
                 return parseInt(match[1], 10);
