@@ -1405,7 +1405,7 @@ Before analyzing, check if the provided "source text" is actually usable content
 It IS usable if it's:
 - Article text from any website, including archive.org snapshots
 - News articles, blog posts, press releases
-- Actual content from the original source, even if it includes some navigation or boilerplate
+- Actual content from the original source, even if it includes navigation, boilerplate, or Internet Archive/Wayback Machine framing
 
 It is NOT usable if it's:
 - A library catalog, database record, or book metadata (e.g., WorldCat, Google Books, JSTOR preview pages)
@@ -1414,6 +1414,8 @@ It is NOT usable if it's:
 - A cookie consent notice or JavaScript error
 - A 404 page or redirect notice
 - Just bibliographic information without the actual content being cited
+
+IMPORTANT: If the source text contains actual article content (paragraphs of text, quotes, factual statements), it IS usable even if it also contains archive navigation, headers, footers, or other page chrome. Only return SOURCE UNAVAILABLE when there is genuinely no article content to analyze.
 
 If the source text is not usable, you MUST return verdict SOURCE UNAVAILABLE with confidence 0. Do not attempt to verify the claim - if you cannot find actual article or book content to quote, the source is unavailable.
 
@@ -1435,6 +1437,13 @@ Claim: "The committee published its findings in 1932."
 Source text: "History of Modern Economics - Economic Research Council - Google Books Sign in Hidden fields Books Try the new Google Books Check out the new look and enjoy easier access to your favorite features Try it now No thanks My library Help Advanced Book Search Download EPUB Download PDF Plain text Read eBook Get this book in print AbeBooks On Demand Books Amazon Find in a library All sellers About this book Terms of Service Plain text PDF EPUB"
 
 {"source_quote": "", "confidence": 0, "verdict": "SOURCE UNAVAILABLE", "comments": "Google Books interface with no actual book content, only navigation and metadata."}
+</example>
+
+<example>
+Claim: "The bridge was completed in 1998."
+Source text: "Skip to main content Web Archive toolbar... Capture date: 2015-03-12 ... City Tribune - Local News ... The Morrison Bridge project broke ground in 1994 after years of planning. Construction faced multiple delays due to funding shortages. The bridge was finally opened to traffic in August 2002, four years behind schedule. Mayor Davis called it 'a triumph of persistence.'"
+
+{"confidence": 15, "verdict": "NOT SUPPORTED", "comments": "\"finally opened to traffic in August 2002, four years behind schedule\" - Source says the bridge opened in 2002, not 1998. The article is accessible despite being an Internet Archive capture."}
 </example>
 
 <example>
