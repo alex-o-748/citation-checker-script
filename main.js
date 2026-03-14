@@ -801,16 +801,16 @@
                         portletId = 'p-associated-pages';
                         break;
                     case 'vector':
-                        portletId = 'p-namespaces';
+                        portletId = 'p-cactions';
                         break;
                     case 'monobook':
-                        portletId = 'p-namespaces';
+                        portletId = 'p-cactions';
                         break;
                     case 'minerva':
                         portletId = 'p-tb';
                         break;
                     case 'timeless':
-                        portletId = 'p-namespaces';
+                        portletId = 'p-associated-pages';
                         break;
                     default:
                         portletId = 'p-namespaces';
