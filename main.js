@@ -64,6 +64,7 @@
             this.reportRunning = false;
             this.reportResults = [];
             this.sourceCache = new Map();
+            this.reportTokenUsage = { input: 0, output: 0 };
             this.hasReport = false;
 
             this.init();
@@ -1789,7 +1790,8 @@ ${sourceText}`;
                 this.buttons.verify.setIcon('clock');
                 this.updateStatus('Verifying claim against source...');
 
-                const result = await this.callProviderAPI(this.activeClaim, this.activeSource);
+                const apiResult = await this.callProviderAPI(this.activeClaim, this.activeSource);
+                const result = apiResult.text;
 
                 if (verifyId !== this.currentVerifyId) {
                     return;
@@ -1855,14 +1857,20 @@ ${sourceText}`;
                 }
                 throw new Error(`PublicAI API request failed (${response.status}): ${errorMessage}`);
             }
-            
+
             const data = await response.json();
-            
+
             if (!data.choices?.[0]?.message?.content) {
                 throw new Error('Invalid API response format');
             }
-            
-            return data.choices[0].message.content;
+
+            return {
+                text: data.choices[0].message.content,
+                usage: {
+                    input: data.usage?.prompt_tokens || 0,
+                    output: data.usage?.completion_tokens || 0
+                }
+            };
         }
         
         async callClaudeAPI(claim, sourceInfo) {
@@ -1891,9 +1899,15 @@ ${sourceText}`;
                 const errorText = await response.text();
                 throw new Error(`API request failed (${response.status}): ${errorText}`);
             }
-            
+
             const data = await response.json();
-            return data.content[0].text;
+            return {
+                text: data.content[0].text,
+                usage: {
+                    input: data.usage?.input_tokens || 0,
+                    output: data.usage?.output_tokens || 0
+                }
+            };
         }
         
         async callGeminiAPI(claim, sourceInfo) {
@@ -1928,7 +1942,13 @@ ${sourceText}`;
                 throw new Error('Invalid API response format or no content generated.');
             }
             
-            return responseData.candidates[0].content.parts[0].text;
+            return {
+                text: responseData.candidates[0].content.parts[0].text,
+                usage: {
+                    input: responseData.usageMetadata?.promptTokenCount || 0,
+                    output: responseData.usageMetadata?.candidatesTokenCount || 0
+                }
+            };
         }
         
         async callOpenAIAPI(claim, sourceInfo) {
@@ -1965,14 +1985,20 @@ ${sourceText}`;
                 }
                 throw new Error(`API request failed (${response.status}): ${errorMessage}`);
             }
-            
+
             const data = await response.json();
-            
+
             if (!data.choices?.[0]?.message?.content) {
                 throw new Error('Invalid API response format');
             }
-            
-            return data.choices[0].message.content;
+
+            return {
+                text: data.choices[0].message.content,
+                usage: {
+                    input: data.usage?.prompt_tokens || 0,
+                    output: data.usage?.completion_tokens || 0
+                }
+            };
         }
         
 	parseVerificationResult(response) {
@@ -2140,7 +2166,9 @@ ${sourceText}`;
                     <span><span class="dot" style="background:#6c757d"></span>${counts.unavailable} unavailable</span>
                     ${counts.error > 0 ? `<span><span class="dot" style="background:#adb5bd"></span>${counts.error} errors</span>` : ''}
                 </div>
-                <div style="margin-top:6px;font-size:11px;color:#888;">${total} citations checked</div>
+                <div style="margin-top:6px;font-size:11px;color:#888;">
+                    ${total} citations checked${this.reportTokenUsage.input + this.reportTokenUsage.output > 0 ? ` · ${this.reportTokenUsage.input.toLocaleString()} input + ${this.reportTokenUsage.output.toLocaleString()} output tokens` : ''}
+                </div>
             `;
         }
 
@@ -2244,6 +2272,9 @@ ${sourceText}`;
                 else counts.unavailable++;
             }
             wikitext += `'''Summary:''' ${counts.supported} supported, ${counts.partial} partially supported, ${counts.notSupported} not supported, ${counts.unavailable} source unavailable out of ${this.reportResults.length} citations.\n`;
+            if (this.reportTokenUsage.input + this.reportTokenUsage.output > 0) {
+                wikitext += `\nTokens used: ${this.reportTokenUsage.input.toLocaleString()} input, ${this.reportTokenUsage.output.toLocaleString()} output.\n`;
+            }
 
             return wikitext;
         }
@@ -2261,6 +2292,10 @@ ${sourceText}`;
                 if (r.url) text += `  Source: ${r.url}\n`;
                 if (r.comments) text += `  Comments: ${r.comments}\n`;
                 text += `\n`;
+            }
+
+            if (this.reportTokenUsage.input + this.reportTokenUsage.output > 0) {
+                text += `Tokens used: ${this.reportTokenUsage.input.toLocaleString()} input, ${this.reportTokenUsage.output.toLocaleString()} output\n`;
             }
 
             return text;
@@ -2318,6 +2353,7 @@ ${sourceText}`;
             this.reportCancelled = false;
             this.reportResults = [];
             this.sourceCache = new Map();
+            this.reportTokenUsage = { input: 0, output: 0 };
             this.hasReport = true;
 
             this.showReportView();
@@ -2385,8 +2421,10 @@ ${sourceText}`;
                         // Verify via LLM
                         this.updateReportProgress(i, citations.length, `Verifying citation [${citation.citationNumber}]`, startTime);
                         try {
-                            const rawResponse = await this.callProviderAPI(citation.claimText, sourceContent);
-                            const parsed = this.parseVerificationResult(rawResponse);
+                            const apiResult = await this.callProviderAPI(citation.claimText, sourceContent);
+                            const parsed = this.parseVerificationResult(apiResult.text);
+                            this.reportTokenUsage.input += apiResult.usage.input;
+                            this.reportTokenUsage.output += apiResult.usage.output;
                             result = {
                                 citationNumber: citation.citationNumber,
                                 claimText: citation.claimText,
@@ -2417,8 +2455,10 @@ ${sourceText}`;
                                     this.updateReportProgress(i, citations.length, `Rate limited, retrying in ${backoff/1000}s...`, startTime);
                                     await new Promise(r => setTimeout(r, backoff));
                                     try {
-                                        const rawResponse = await this.callProviderAPI(citation.claimText, sourceContent);
-                                        const parsed = this.parseVerificationResult(rawResponse);
+                                        const retryApiResult = await this.callProviderAPI(citation.claimText, sourceContent);
+                                        const parsed = this.parseVerificationResult(retryApiResult.text);
+                                        this.reportTokenUsage.input += retryApiResult.usage.input;
+                                        this.reportTokenUsage.output += retryApiResult.usage.output;
                                         result = {
                                             citationNumber: citation.citationNumber,
                                             claimText: citation.claimText,
