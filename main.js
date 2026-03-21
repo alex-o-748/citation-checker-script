@@ -648,6 +648,26 @@
                 html.skin-theme-clientpref-night .report-card-comment {
                     color: #a0a0b0 !important;
                 }
+                html.skin-theme-clientpref-night .report-card-verdict.supported {
+                    background: #1a3a1a !important;
+                    color: #6ecf6e !important;
+                }
+                html.skin-theme-clientpref-night .report-card-verdict.partial {
+                    background: #3a3a1a !important;
+                    color: #e0c060 !important;
+                }
+                html.skin-theme-clientpref-night .report-card-verdict.not-supported {
+                    background: #3a1a1a !important;
+                    color: #e06060 !important;
+                }
+                html.skin-theme-clientpref-night .report-card-verdict.unavailable {
+                    background: #2a2a2e !important;
+                    color: #a0a0a8 !important;
+                }
+                html.skin-theme-clientpref-night .report-card-verdict.error {
+                    background: #2a2a2e !important;
+                    color: #a0a0a8 !important;
+                }
                 html.skin-theme-clientpref-night #verifier-source-textarea-container textarea {
                     background: #2a2a3e !important;
                     color: #e0e0e0 !important;
@@ -815,6 +835,26 @@
                     }
                     html.skin-theme-clientpref-os .report-card-comment {
                         color: #a0a0b0 !important;
+                    }
+                    html.skin-theme-clientpref-os .report-card-verdict.supported {
+                        background: #1a3a1a !important;
+                        color: #6ecf6e !important;
+                    }
+                    html.skin-theme-clientpref-os .report-card-verdict.partial {
+                        background: #3a3a1a !important;
+                        color: #e0c060 !important;
+                    }
+                    html.skin-theme-clientpref-os .report-card-verdict.not-supported {
+                        background: #3a1a1a !important;
+                        color: #e06060 !important;
+                    }
+                    html.skin-theme-clientpref-os .report-card-verdict.unavailable {
+                        background: #2a2a2e !important;
+                        color: #a0a0a8 !important;
+                    }
+                    html.skin-theme-clientpref-os .report-card-verdict.error {
+                        background: #2a2a2e !important;
+                        color: #a0a0a8 !important;
                     }
                     html.skin-theme-clientpref-os #verifier-source-textarea-container textarea {
                         background: #2a2a3e !important;
