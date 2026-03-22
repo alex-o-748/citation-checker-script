@@ -511,6 +511,13 @@
                     font-size: 11px;
                     font-style: italic;
                 }
+                .report-card-action {
+                    margin-top: 4px;
+                }
+                .report-card-action .oo-ui-buttonElement-button {
+                    font-size: 11px;
+                    padding: 2px 4px;
+                }
                 #verifier-report-actions {
                     display: flex;
                     flex-direction: column;
@@ -2239,12 +2246,28 @@ ${sourceText}`;
             `;
 
             if (result.refElement) {
-                card.addEventListener('click', () => {
+                card.addEventListener('click', (e) => {
+                    if (e.target.closest('.report-card-action')) return;
                     result.refElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
                     this.clearHighlights();
                     const parentRef = result.refElement.closest('.reference');
                     if (parentRef) parentRef.classList.add('verifier-active');
                 });
+            }
+
+            if (result.refElement && (result.verdict === 'NOT SUPPORTED' || result.verdict === 'PARTIALLY SUPPORTED' || result.verdict === 'SOURCE UNAVAILABLE')) {
+                const actionDiv = document.createElement('div');
+                actionDiv.className = 'report-card-action';
+                const editBtn = new OO.ui.ButtonWidget({
+                    label: 'Add {{Failed verification}}',
+                    flags: ['progressive'],
+                    icon: 'edit',
+                    href: this.buildEditUrl(result.refElement),
+                    target: '_blank',
+                    framed: false
+                });
+                actionDiv.appendChild(editBtn.$element[0]);
+                card.appendChild(actionDiv);
             }
 
             resultsEl.appendChild(card);
@@ -2563,8 +2586,9 @@ ${sourceText}`;
             this.updateButtonVisibility();
         }
 
-        findSectionNumber() {
-            if (!this.activeRefElement) return 0;
+        findSectionNumber(refElement) {
+            const el = refElement || this.activeRefElement;
+            if (!el) return 0;
 
             const content = document.getElementById('mw-content-text');
             if (!content) return 0;
@@ -2573,7 +2597,7 @@ ${sourceText}`;
             let sectionNumber = 0;
 
             for (const heading of headings) {
-                const position = heading.compareDocumentPosition(this.activeRefElement);
+                const position = heading.compareDocumentPosition(el);
                 if (position & Node.DOCUMENT_POSITION_FOLLOWING) {
                     sectionNumber++;
                 } else {
@@ -2584,9 +2608,9 @@ ${sourceText}`;
             return sectionNumber;
         }
 
-        buildEditUrl() {
+        buildEditUrl(refElement) {
             const title = mw.config.get('wgPageName');
-            const section = this.findSectionNumber();
+            const section = this.findSectionNumber(refElement);
             const summary = 'source does not support claim (checked with [[User:Alaexis/AI_Source_Verification|Source Verifier]])';
 
             const params = { action: 'edit', summary: summary };
