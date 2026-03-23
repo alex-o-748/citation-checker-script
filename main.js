@@ -1162,7 +1162,8 @@
         async handleReferenceClick(refElement) {
             try {
                 if (this.reportMode) {
-                    this.showSingleCitationView();
+                    this.scrollToReportCard(refElement);
+                    return;
                 }
                 this.clearHighlights();
                 this.showSidebar();
@@ -2152,6 +2153,22 @@ ${sourceText}`;
             this.updateButtonVisibility();
         }
 
+        scrollToReportCard(refElement) {
+            const resultsEl = document.getElementById('verifier-report-results');
+            if (!resultsEl) return;
+
+            const cards = resultsEl.querySelectorAll('.verifier-report-card');
+            for (const card of cards) {
+                if (card._refElement === refElement) {
+                    card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    card.style.transition = 'background 0.3s';
+                    card.style.background = '#e8f0fe';
+                    setTimeout(() => { card.style.background = ''; }, 1500);
+                    return;
+                }
+            }
+        }
+
         updateReportProgress(current, total, phase, startTime) {
             const progressEl = document.getElementById('verifier-report-progress');
             if (!progressEl) return;
@@ -2234,6 +2251,10 @@ ${sourceText}`;
 
             const card = document.createElement('div');
             card.className = `verifier-report-card verdict-${verdictClass}`;
+            if (result.refElement) {
+                card.dataset.refElement = 'true';
+                card._refElement = result.refElement;
+            }
             const claimExcerpt = result.claimText.length > 80 ? result.claimText.substring(0, 80) + '…' : result.claimText;
             const confidenceStr = result.confidence !== null ? ` (${result.confidence}%)` : '';
             card.innerHTML = `
