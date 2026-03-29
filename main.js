@@ -57,7 +57,16 @@
             this.currentVerifyId = 0;
 
             this.sourceTextInput = null;
-            
+
+            // Article report state
+            this.reportMode = false;
+            this.reportCancelled = false;
+            this.reportRunning = false;
+            this.reportResults = [];
+            this.sourceCache = new Map();
+            this.reportTokenUsage = { input: 0, output: 0 };
+            this.hasReport = false;
+
             this.init();
         }
         
@@ -145,6 +154,12 @@
                         <div id="verifier-verdict"></div>
                         <div id="verifier-comments"></div>
                         <div id="verifier-action-container"></div>
+                    </div>
+                    <div id="verifier-report-view" style="display:none;">
+                        <div id="verifier-report-progress"></div>
+                        <div id="verifier-report-summary"></div>
+                        <div id="verifier-report-results"></div>
+                        <div id="verifier-report-actions"></div>
                     </div>
                 </div>
                 <div id="verifier-resize-handle"></div>
@@ -373,6 +388,149 @@
                 body.verifier-sidebar-hidden #t-verifier {
                     display: list-item !important;
                 }
+                /* Report view styles */
+                #verifier-report-view h4 {
+                    margin: 0 0 8px 0;
+                    color: ${this.getCurrentColor()};
+                    font-size: 14px;
+                    font-weight: bold;
+                }
+                #verifier-report-progress {
+                    margin-bottom: 12px;
+                }
+                .verifier-progress-bar {
+                    width: 100%;
+                    height: 8px;
+                    background: #e0e0e0;
+                    border-radius: 4px;
+                    overflow: hidden;
+                    margin-bottom: 6px;
+                }
+                .verifier-progress-fill {
+                    height: 100%;
+                    background: ${this.getCurrentColor()};
+                    transition: width 0.3s ease;
+                    border-radius: 4px;
+                }
+                .verifier-progress-text {
+                    font-size: 12px;
+                    color: #666;
+                }
+                #verifier-report-summary {
+                    padding: 10px;
+                    background: #f8f9fa;
+                    border: 1px solid #ddd;
+                    border-radius: 4px;
+                    font-size: 13px;
+                    margin-bottom: 12px;
+                }
+                .verifier-summary-bar {
+                    display: flex;
+                    height: 6px;
+                    border-radius: 3px;
+                    overflow: hidden;
+                    margin-bottom: 8px;
+                }
+                .verifier-summary-bar .seg-supported { background: #28a745; }
+                .verifier-summary-bar .seg-partial { background: #ffc107; }
+                .verifier-summary-bar .seg-not-supported { background: #dc3545; }
+                .verifier-summary-bar .seg-unavailable { background: #6c757d; }
+                .verifier-summary-bar .seg-error { background: #adb5bd; }
+                .verifier-summary-counts {
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: 8px;
+                    font-size: 12px;
+                }
+                .verifier-summary-counts span {
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 4px;
+                }
+                .verifier-summary-counts .dot {
+                    width: 8px;
+                    height: 8px;
+                    border-radius: 50%;
+                    display: inline-block;
+                }
+                #verifier-report-results {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 6px;
+                    max-height: 50vh;
+                    overflow-y: auto;
+                    margin-bottom: 12px;
+                }
+                .verifier-report-card {
+                    padding: 8px 10px;
+                    border: 1px solid #ddd;
+                    border-radius: 4px;
+                    font-size: 12px;
+                    cursor: pointer;
+                    background: #fff;
+                    border-left: 3px solid #ccc;
+                }
+                .verifier-report-card:hover {
+                    background: #f0f4ff;
+                }
+                .verifier-report-card.verdict-supported { border-left-color: #28a745; }
+                .verifier-report-card.verdict-partial { border-left-color: #ffc107; }
+                .verifier-report-card.verdict-not-supported { border-left-color: #dc3545; }
+                .verifier-report-card.verdict-unavailable { border-left-color: #6c757d; }
+                .verifier-report-card.verdict-error { border-left-color: #adb5bd; }
+                .report-card-header {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    margin-bottom: 4px;
+                }
+                .report-card-citation {
+                    font-weight: bold;
+                }
+                .report-card-verdict {
+                    font-weight: bold;
+                    font-size: 11px;
+                    padding: 1px 6px;
+                    border-radius: 3px;
+                }
+                .report-card-verdict.supported { background: #d4edda; color: #155724; }
+                .report-card-verdict.partial { background: #fff3cd; color: #856404; }
+                .report-card-verdict.not-supported { background: #f8d7da; color: #721c24; }
+                .report-card-verdict.unavailable { background: #e2e3e5; color: #383d41; }
+                .report-card-verdict.error { background: #e2e3e5; color: #383d41; }
+                .report-card-claim {
+                    color: #555;
+                    font-size: 11px;
+                    margin-bottom: 2px;
+                    white-space: nowrap;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                }
+                .report-card-comment {
+                    color: #666;
+                    font-size: 11px;
+                    font-style: italic;
+                }
+                .report-card-action {
+                    margin-top: 4px;
+                }
+                .report-card-action .oo-ui-buttonElement-button {
+                    font-size: 11px;
+                    padding: 2px 4px;
+                }
+                #verifier-report-actions {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 8px;
+                }
+                #verifier-report-actions .oo-ui-buttonElement {
+                    width: 100%;
+                }
+                #verifier-report-actions .oo-ui-buttonElement-button {
+                    width: 100%;
+                    justify-content: center;
+                }
+
                 .reference:hover {
                     background-color: #e6f3ff;
                     cursor: pointer;
@@ -471,6 +629,51 @@
                 }
                 html.skin-theme-clientpref-night .claim-highlight {
                     background-color: #3a3a1a !important;
+                }
+                html.skin-theme-clientpref-night #verifier-report-summary {
+                    background: #2a2a3e !important;
+                    border-color: #3a3a4e !important;
+                    color: #e0e0e0 !important;
+                }
+                html.skin-theme-clientpref-night .verifier-progress-bar {
+                    background: #3a3a4e !important;
+                }
+                html.skin-theme-clientpref-night .verifier-progress-text {
+                    color: #b0b0c0 !important;
+                }
+                html.skin-theme-clientpref-night .verifier-report-card {
+                    background: #2a2a3e !important;
+                    border-color: #3a3a4e !important;
+                    color: #e0e0e0 !important;
+                }
+                html.skin-theme-clientpref-night .verifier-report-card:hover {
+                    background: #3a3a5e !important;
+                }
+                html.skin-theme-clientpref-night .report-card-claim {
+                    color: #b0b0c0 !important;
+                }
+                html.skin-theme-clientpref-night .report-card-comment {
+                    color: #a0a0b0 !important;
+                }
+                html.skin-theme-clientpref-night .report-card-verdict.supported {
+                    background: #1a3a1a !important;
+                    color: #6ecf6e !important;
+                }
+                html.skin-theme-clientpref-night .report-card-verdict.partial {
+                    background: #3a3a1a !important;
+                    color: #e0c060 !important;
+                }
+                html.skin-theme-clientpref-night .report-card-verdict.not-supported {
+                    background: #3a1a1a !important;
+                    color: #e06060 !important;
+                }
+                html.skin-theme-clientpref-night .report-card-verdict.unavailable {
+                    background: #2a2a2e !important;
+                    color: #a0a0a8 !important;
+                }
+                html.skin-theme-clientpref-night .report-card-verdict.error {
+                    background: #2a2a2e !important;
+                    color: #a0a0a8 !important;
                 }
                 html.skin-theme-clientpref-night #verifier-source-textarea-container textarea {
                     background: #2a2a3e !important;
@@ -615,6 +818,51 @@
                     html.skin-theme-clientpref-os .claim-highlight {
                         background-color: #3a3a1a !important;
                     }
+                    html.skin-theme-clientpref-os #verifier-report-summary {
+                        background: #2a2a3e !important;
+                        border-color: #3a3a4e !important;
+                        color: #e0e0e0 !important;
+                    }
+                    html.skin-theme-clientpref-os .verifier-progress-bar {
+                        background: #3a3a4e !important;
+                    }
+                    html.skin-theme-clientpref-os .verifier-progress-text {
+                        color: #b0b0c0 !important;
+                    }
+                    html.skin-theme-clientpref-os .verifier-report-card {
+                        background: #2a2a3e !important;
+                        border-color: #3a3a4e !important;
+                        color: #e0e0e0 !important;
+                    }
+                    html.skin-theme-clientpref-os .verifier-report-card:hover {
+                        background: #3a3a5e !important;
+                    }
+                    html.skin-theme-clientpref-os .report-card-claim {
+                        color: #b0b0c0 !important;
+                    }
+                    html.skin-theme-clientpref-os .report-card-comment {
+                        color: #a0a0b0 !important;
+                    }
+                    html.skin-theme-clientpref-os .report-card-verdict.supported {
+                        background: #1a3a1a !important;
+                        color: #6ecf6e !important;
+                    }
+                    html.skin-theme-clientpref-os .report-card-verdict.partial {
+                        background: #3a3a1a !important;
+                        color: #e0c060 !important;
+                    }
+                    html.skin-theme-clientpref-os .report-card-verdict.not-supported {
+                        background: #3a1a1a !important;
+                        color: #e06060 !important;
+                    }
+                    html.skin-theme-clientpref-os .report-card-verdict.unavailable {
+                        background: #2a2a2e !important;
+                        color: #a0a0a8 !important;
+                    }
+                    html.skin-theme-clientpref-os .report-card-verdict.error {
+                        background: #2a2a2e !important;
+                        color: #a0a0a8 !important;
+                    }
                     html.skin-theme-clientpref-os #verifier-source-textarea-container textarea {
                         background: #2a2a3e !important;
                         color: #e0e0e0 !important;
@@ -742,7 +990,26 @@
                 label: 'Cancel',
                 flags: ['safe']
             });
-            
+
+            // Article report buttons
+            this.buttons.verifyAll = new OO.ui.ButtonWidget({
+                label: 'Verify All Citations',
+                flags: ['primary', 'progressive'],
+                icon: 'articles'
+            });
+
+            this.buttons.stopAll = new OO.ui.ButtonWidget({
+                label: 'Stop',
+                flags: ['destructive'],
+                icon: 'cancel'
+            });
+
+            this.buttons.backToReport = new OO.ui.ButtonWidget({
+                label: 'Back to Report',
+                flags: ['safe'],
+                icon: 'arrowPrevious'
+            });
+
             this.updateButtonVisibility();
         }
         
@@ -787,9 +1054,18 @@
             
             if (!requiresKey || hasKey) {
                 // Provider is ready to use
-                const hasClaimAndSource = this.activeClaim && this.activeSource;
-                this.buttons.verify.setDisabled(!hasClaimAndSource);
-                container.appendChild(this.buttons.verify.$element[0]);
+                if (this.reportRunning) {
+                    container.appendChild(this.buttons.stopAll.$element[0]);
+                } else {
+                    const hasClaimAndSource = this.activeClaim && this.activeSource;
+                    this.buttons.verify.setDisabled(!hasClaimAndSource);
+                    container.appendChild(this.buttons.verify.$element[0]);
+                    container.appendChild(this.buttons.verifyAll.$element[0]);
+
+                    if (this.hasReport && !this.reportMode) {
+                        container.appendChild(this.buttons.backToReport.$element[0]);
+                    }
+                }
 
                 const privacyNote = document.createElement('div');
                 privacyNote.style.cssText = 'font-size: 11px; color: #72777d; margin-top: 4px;';
@@ -797,7 +1073,7 @@
                 container.appendChild(privacyNote);
 
                 // Only show key management buttons for providers that use user keys
-                if (requiresKey) {
+                if (requiresKey && !this.reportRunning) {
                     container.appendChild(this.buttons.changeKey.$element[0]);
                     container.appendChild(this.buttons.removeKey.$element[0]);
                 }
@@ -885,9 +1161,12 @@
         
         async handleReferenceClick(refElement) {
             try {
+                if (this.reportMode) {
+                    this.showSingleCitationView();
+                }
                 this.clearHighlights();
                 this.showSidebar();
-                
+
                 // Clear previous verification result and invalidate any in-flight verification
                 this.clearResult();
                 this.currentVerifyId++;
@@ -1289,6 +1568,18 @@
             this.buttons.cancelText.on('click', () => {
                 this.cancelManualSourceText();
             });
+
+            this.buttons.verifyAll.on('click', () => {
+                this.verifyAllCitations();
+            });
+
+            this.buttons.stopAll.on('click', () => {
+                this.reportCancelled = true;
+            });
+
+            this.buttons.backToReport.on('click', () => {
+                this.showReportView();
+            });
         }
         
         updateTheme() {
@@ -1546,22 +1837,8 @@ ${sourceText}`;
                 this.buttons.verify.setIcon('clock');
                 this.updateStatus('Verifying claim against source...');
 
-                let result;
-
-                switch (this.currentProvider) {
-                    case 'publicai':
-                        result = await this.callPublicAIAPI(this.activeClaim, this.activeSource);
-                        break;
-                    case 'claude':
-                        result = await this.callClaudeAPI(this.activeClaim, this.activeSource);
-                        break;
-                    case 'gemini':
-                        result = await this.callGeminiAPI(this.activeClaim, this.activeSource);
-                        break;
-                    case 'openai':
-                        result = await this.callOpenAIAPI(this.activeClaim, this.activeSource);
-                        break;
-                }
+                const apiResult = await this.callProviderAPI(this.activeClaim, this.activeSource);
+                const result = apiResult.text;
 
                 if (verifyId !== this.currentVerifyId) {
                     return;
@@ -1627,14 +1904,20 @@ ${sourceText}`;
                 }
                 throw new Error(`PublicAI API request failed (${response.status}): ${errorMessage}`);
             }
-            
+
             const data = await response.json();
-            
+
             if (!data.choices?.[0]?.message?.content) {
                 throw new Error('Invalid API response format');
             }
-            
-            return data.choices[0].message.content;
+
+            return {
+                text: data.choices[0].message.content,
+                usage: {
+                    input: data.usage?.prompt_tokens || 0,
+                    output: data.usage?.completion_tokens || 0
+                }
+            };
         }
         
         async callClaudeAPI(claim, sourceInfo) {
@@ -1663,9 +1946,15 @@ ${sourceText}`;
                 const errorText = await response.text();
                 throw new Error(`API request failed (${response.status}): ${errorText}`);
             }
-            
+
             const data = await response.json();
-            return data.content[0].text;
+            return {
+                text: data.content[0].text,
+                usage: {
+                    input: data.usage?.input_tokens || 0,
+                    output: data.usage?.output_tokens || 0
+                }
+            };
         }
         
         async callGeminiAPI(claim, sourceInfo) {
@@ -1700,7 +1989,13 @@ ${sourceText}`;
                 throw new Error('Invalid API response format or no content generated.');
             }
             
-            return responseData.candidates[0].content.parts[0].text;
+            return {
+                text: responseData.candidates[0].content.parts[0].text,
+                usage: {
+                    input: responseData.usageMetadata?.promptTokenCount || 0,
+                    output: responseData.usageMetadata?.candidatesTokenCount || 0
+                }
+            };
         }
         
         async callOpenAIAPI(claim, sourceInfo) {
@@ -1737,88 +2032,563 @@ ${sourceText}`;
                 }
                 throw new Error(`API request failed (${response.status}): ${errorMessage}`);
             }
-            
+
             const data = await response.json();
-            
+
             if (!data.choices?.[0]?.message?.content) {
                 throw new Error('Invalid API response format');
             }
-            
-            return data.choices[0].message.content;
+
+            return {
+                text: data.choices[0].message.content,
+                usage: {
+                    input: data.usage?.prompt_tokens || 0,
+                    output: data.usage?.completion_tokens || 0
+                }
+            };
         }
         
-	displayResult(response) {
-	    const verdictEl = document.getElementById('verifier-verdict');
-	    const commentsEl = document.getElementById('verifier-comments');
-	    
+	parseVerificationResult(response) {
 	    try {
-	        console.log('[Verifier] displayResult called with type:', typeof response, 'value:', response?.substring?.(0, 200) || response);
-	        // Clean up the response text
 	        let jsonStr = response.trim();
-	        
-	        // First, try to extract JSON from markdown code blocks
+
 	        const codeBlockMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
 	        if (codeBlockMatch) {
 	            jsonStr = codeBlockMatch[1].trim();
 	        }
-	        
-	        // If no code block, try to extract JSON object from text
-	        // This handles cases where AI adds explanation before/after JSON
+
 	        if (!codeBlockMatch) {
 	            const jsonMatch = jsonStr.match(/\{[\s\S]*\}/);
 	            if (jsonMatch) {
 	                jsonStr = jsonMatch[0];
 	            }
 	        }
-	        
-	        // Try to parse the JSON
-	        let result;
-	        try {
-	            result = JSON.parse(jsonStr);
-	        } catch (parseError) {
-	            console.error('JSON parsing failed:', parseError);
-	            console.error('Attempted to parse:', jsonStr);
-	            console.error('Original response:', response);
-	            
-	            // Show error in UI
-	            verdictEl.textContent = 'ERROR';
-	            verdictEl.className = 'source-unavailable';
-	            commentsEl.innerHTML = `<strong>Failed to parse AI response.</strong><br><br>Raw response:<br><pre style="white-space: pre-wrap; font-size: 11px;">${response}</pre>`;
-	            return;
-	        }
-	        
-	        const verdict = result.verdict || 'UNKNOWN';
-	        const comments = result.comments || '';
-	        
-	        // Set verdict text and styling
-	        verdictEl.textContent = verdict;
-	        verdictEl.className = '';
-	        
-	        if (verdict === 'SUPPORTED') {
-	            verdictEl.classList.add('supported');
-	        } else if (verdict === 'PARTIALLY SUPPORTED') {
-	            verdictEl.classList.add('partially-supported');
-	        } else if (verdict === 'NOT SUPPORTED') {
-	            verdictEl.classList.add('not-supported');
-	        } else if (verdict === 'SOURCE UNAVAILABLE') {
-	            verdictEl.classList.add('source-unavailable');
-	        }
-	        
-	        commentsEl.textContent = comments;
-	        console.log('[Verifier] Verdict for action button:', JSON.stringify(verdict));
-	        this.showActionButton(verdict);
 
+	        const result = JSON.parse(jsonStr);
+	        return {
+	            verdict: result.verdict || 'UNKNOWN',
+	            confidence: result.confidence ?? null,
+	            comments: result.comments || ''
+	        };
 	    } catch (e) {
-	        // Catch-all fallback if something else goes wrong
-	        console.warn('[Verifier] Unexpected error in displayResult:', e.message, e.stack);
-	        verdictEl.textContent = 'ERROR';
-	        verdictEl.className = 'source-unavailable';
-	        commentsEl.innerHTML = `<strong>Unexpected error:</strong> ${e.message}<br><br>Raw response:<br><pre style="white-space: pre-wrap; font-size: 11px;">${response}</pre>`;
+	        return { verdict: 'ERROR', confidence: null, comments: `Failed to parse AI response: ${response.substring(0, 200)}` };
 	    }
 	}
+
+	displayResult(response) {
+	    const verdictEl = document.getElementById('verifier-verdict');
+	    const commentsEl = document.getElementById('verifier-comments');
+
+	    const result = this.parseVerificationResult(response);
+
+	    verdictEl.textContent = result.verdict;
+	    verdictEl.className = '';
+
+	    if (result.verdict === 'SUPPORTED') {
+	        verdictEl.classList.add('supported');
+	    } else if (result.verdict === 'PARTIALLY SUPPORTED') {
+	        verdictEl.classList.add('partially-supported');
+	    } else if (result.verdict === 'NOT SUPPORTED') {
+	        verdictEl.classList.add('not-supported');
+	    } else if (result.verdict === 'SOURCE UNAVAILABLE' || result.verdict === 'ERROR') {
+	        verdictEl.classList.add('source-unavailable');
+	    }
+
+	    commentsEl.textContent = result.comments;
+	    console.log('[Verifier] Verdict for action button:', JSON.stringify(result.verdict));
+	    this.showActionButton(result.verdict);
+	}
         
-        findSectionNumber() {
-            if (!this.activeRefElement) return 0;
+        // ========================================
+        // ARTICLE REPORT METHODS
+        // ========================================
+
+        collectAllCitations() {
+            const refs = document.querySelectorAll('#mw-content-text .reference a');
+            const citations = [];
+            const seenRefIds = new Set();
+
+            refs.forEach(refElement => {
+                const href = refElement.getAttribute('href');
+                if (!href || !href.startsWith('#')) return;
+
+                const refId = href.substring(1);
+                // Deduplicate by footnote target (handles [1a], [1b] etc.)
+                if (seenRefIds.has(refId)) return;
+                seenRefIds.add(refId);
+
+                const citationNumber = refElement.textContent.replace(/[\[\]]/g, '').trim();
+                const claimText = this.extractClaimText(refElement);
+                if (!claimText || claimText.length < 10) return;
+
+                const url = this.extractReferenceUrl(refElement);
+                const pageNum = this.extractPageNumber(refElement);
+
+                citations.push({ refElement, citationNumber, claimText, url, pageNum, refId });
+            });
+
+            return citations;
+        }
+
+        showReportView() {
+            this.reportMode = true;
+            // Hide single-citation sections
+            document.getElementById('verifier-claim-section').style.display = 'none';
+            document.getElementById('verifier-source-section').style.display = 'none';
+            document.getElementById('verifier-results').style.display = 'none';
+            // Show report view
+            document.getElementById('verifier-report-view').style.display = 'block';
+            this.updateButtonVisibility();
+        }
+
+        showSingleCitationView() {
+            this.reportMode = false;
+            // Show single-citation sections
+            document.getElementById('verifier-claim-section').style.display = '';
+            document.getElementById('verifier-source-section').style.display = '';
+            document.getElementById('verifier-results').style.display = '';
+            // Hide report view
+            document.getElementById('verifier-report-view').style.display = 'none';
+            this.updateButtonVisibility();
+        }
+
+        updateReportProgress(current, total, phase, startTime) {
+            const progressEl = document.getElementById('verifier-report-progress');
+            if (!progressEl) return;
+
+            const pct = total > 0 ? Math.round((current / total) * 100) : 0;
+            const elapsed = Date.now() - startTime;
+            const elapsedStr = this.formatDuration(elapsed);
+            let etaStr = '';
+            if (current > 0) {
+                const remaining = ((elapsed / current) * (total - current));
+                etaStr = ` · ~${this.formatDuration(remaining)} remaining`;
+            }
+
+            progressEl.innerHTML = `
+                <div class="verifier-progress-bar">
+                    <div class="verifier-progress-fill" style="width: ${pct}%"></div>
+                </div>
+                <div class="verifier-progress-text">
+                    ${phase} (${current}/${total}) · ${elapsedStr}${etaStr}
+                </div>
+            `;
+        }
+
+        formatDuration(ms) {
+            const s = Math.round(ms / 1000);
+            if (s < 60) return `${s}s`;
+            const m = Math.floor(s / 60);
+            return `${m}m ${s % 60}s`;
+        }
+
+        renderReportSummary() {
+            const summaryEl = document.getElementById('verifier-report-summary');
+            if (!summaryEl) return;
+
+            const counts = { supported: 0, partial: 0, notSupported: 0, unavailable: 0, error: 0 };
+            for (const r of this.reportResults) {
+                if (r.verdict === 'SUPPORTED') counts.supported++;
+                else if (r.verdict === 'PARTIALLY SUPPORTED') counts.partial++;
+                else if (r.verdict === 'NOT SUPPORTED') counts.notSupported++;
+                else if (r.verdict === 'SOURCE UNAVAILABLE') counts.unavailable++;
+                else counts.error++;
+            }
+            const total = this.reportResults.length;
+
+            const segHtml = (count, cls) => count > 0 ? `<div class="${cls}" style="width:${(count/total)*100}%"></div>` : '';
+
+            summaryEl.innerHTML = `
+                <div class="verifier-summary-bar">
+                    ${segHtml(counts.supported, 'seg-supported')}
+                    ${segHtml(counts.partial, 'seg-partial')}
+                    ${segHtml(counts.notSupported, 'seg-not-supported')}
+                    ${segHtml(counts.unavailable, 'seg-unavailable')}
+                    ${segHtml(counts.error, 'seg-error')}
+                </div>
+                <div class="verifier-summary-counts">
+                    <span><span class="dot" style="background:#28a745"></span>${counts.supported} supported</span>
+                    <span><span class="dot" style="background:#ffc107"></span>${counts.partial} partial</span>
+                    <span><span class="dot" style="background:#dc3545"></span>${counts.notSupported} not supported</span>
+                    <span><span class="dot" style="background:#6c757d"></span>${counts.unavailable} unavailable</span>
+                    ${counts.error > 0 ? `<span><span class="dot" style="background:#adb5bd"></span>${counts.error} errors</span>` : ''}
+                </div>
+                <div style="margin-top:6px;font-size:11px;color:#888;">
+                    ${total} citations checked${this.reportTokenUsage.input + this.reportTokenUsage.output > 0 ? ` · ${this.reportTokenUsage.input.toLocaleString()} input + ${this.reportTokenUsage.output.toLocaleString()} output tokens` : ''}
+                </div>
+            `;
+        }
+
+        renderReportCard(result, index) {
+            const resultsEl = document.getElementById('verifier-report-results');
+            if (!resultsEl) return;
+
+            let verdictClass, verdictLabel;
+            switch (result.verdict) {
+                case 'SUPPORTED': verdictClass = 'supported'; verdictLabel = 'Supported'; break;
+                case 'PARTIALLY SUPPORTED': verdictClass = 'partial'; verdictLabel = 'Partial'; break;
+                case 'NOT SUPPORTED': verdictClass = 'not-supported'; verdictLabel = 'Not Supported'; break;
+                case 'SOURCE UNAVAILABLE': verdictClass = 'unavailable'; verdictLabel = 'Unavailable'; break;
+                default: verdictClass = 'error'; verdictLabel = result.verdict; break;
+            }
+
+            const card = document.createElement('div');
+            card.className = `verifier-report-card verdict-${verdictClass}`;
+            const claimExcerpt = result.claimText.length > 80 ? result.claimText.substring(0, 80) + '…' : result.claimText;
+            const confidenceStr = result.confidence !== null ? ` (${result.confidence}%)` : '';
+            card.innerHTML = `
+                <div class="report-card-header">
+                    <span class="report-card-citation">[${result.citationNumber}]</span>
+                    <span class="report-card-verdict ${verdictClass}">${verdictLabel}${confidenceStr}</span>
+                </div>
+                <div class="report-card-claim">${this.escapeHtml(claimExcerpt)}</div>
+                ${result.comments ? `<div class="report-card-comment">${this.escapeHtml(result.comments)}</div>` : ''}
+            `;
+
+            if (result.refElement) {
+                card.addEventListener('click', (e) => {
+                    if (e.target.closest('.report-card-action')) return;
+                    result.refElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    this.clearHighlights();
+                    const parentRef = result.refElement.closest('.reference');
+                    if (parentRef) parentRef.classList.add('verifier-active');
+                });
+            }
+
+            if (result.refElement && (result.verdict === 'NOT SUPPORTED' || result.verdict === 'PARTIALLY SUPPORTED' || result.verdict === 'SOURCE UNAVAILABLE')) {
+                const actionDiv = document.createElement('div');
+                actionDiv.className = 'report-card-action';
+                const editBtn = new OO.ui.ButtonWidget({
+                    label: 'Add {{Failed verification}}',
+                    flags: ['progressive'],
+                    icon: 'edit',
+                    href: this.buildEditUrl(result.refElement),
+                    target: '_blank',
+                    framed: false
+                });
+                actionDiv.appendChild(editBtn.$element[0]);
+                card.appendChild(actionDiv);
+            }
+
+            resultsEl.appendChild(card);
+        }
+
+        escapeHtml(str) {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+
+        renderReportActions() {
+            const actionsEl = document.getElementById('verifier-report-actions');
+            if (!actionsEl) return;
+            actionsEl.innerHTML = '';
+
+            const copyWikiBtn = new OO.ui.ButtonWidget({
+                label: 'Copy Report (Wikitext)',
+                flags: ['progressive'],
+                icon: 'copy'
+            });
+            copyWikiBtn.on('click', () => this.copyReportToClipboard('wikitext'));
+            actionsEl.appendChild(copyWikiBtn.$element[0]);
+
+            const copyTextBtn = new OO.ui.ButtonWidget({
+                label: 'Copy Report (Plain Text)',
+                flags: ['safe'],
+                icon: 'copy'
+            });
+            copyTextBtn.on('click', () => this.copyReportToClipboard('plaintext'));
+            actionsEl.appendChild(copyTextBtn.$element[0]);
+        }
+
+        generateWikitextReport() {
+            const articleTitle = typeof mw !== 'undefined' ? mw.config.get('wgTitle') : document.title;
+            let wikitext = `== Citation verification report ==\n`;
+            wikitext += `This is an experimental check of the article sources by [[User:Alaexis/AI_Source_Verification|Citation Verifier]]. Treat it with caution, be aware of its [[User:Alaexis/AI_Source_Verification#Limitations|limitations]] and feel free to leave feedback at [[User_talk:Alaexis/AI_Source_Verification|the talk page]].\n\n`;
+            wikitext += `{| class="wikitable sortable"\n`;
+            wikitext += `|-\n! # !! Verdict !! Confidence !! Source !! Comments\n`;
+
+            for (const r of this.reportResults) {
+                let verdictWiki;
+                switch (r.verdict) {
+                    case 'SUPPORTED': verdictWiki = '{{tick}} Supported'; break;
+                    case 'PARTIALLY SUPPORTED': verdictWiki = '{{bang}} Partially supported'; break;
+                    case 'NOT SUPPORTED': verdictWiki = '{{cross}} Not supported'; break;
+                    case 'SOURCE UNAVAILABLE': verdictWiki = '{{hmmm}} Source unavailable'; break;
+                    default: verdictWiki = r.verdict; break;
+                }
+                const confStr = r.confidence !== null ? `${r.confidence}%` : '—';
+                const sourceStr = r.url ? `[${r.url} source]` : '—';
+                const commentsClean = (r.comments || '').replace(/\n/g, ' ');
+                wikitext += `|-\n| [${r.citationNumber}] || ${verdictWiki} || ${confStr} || ${sourceStr} || ${commentsClean}\n`;
+            }
+
+            wikitext += `|}\n\n`;
+
+            const counts = { supported: 0, partial: 0, notSupported: 0, unavailable: 0 };
+            for (const r of this.reportResults) {
+                if (r.verdict === 'SUPPORTED') counts.supported++;
+                else if (r.verdict === 'PARTIALLY SUPPORTED') counts.partial++;
+                else if (r.verdict === 'NOT SUPPORTED') counts.notSupported++;
+                else counts.unavailable++;
+            }
+            wikitext += `'''Summary:''' ${counts.supported} supported, ${counts.partial} partially supported, ${counts.notSupported} not supported, ${counts.unavailable} source unavailable out of ${this.reportResults.length} citations.\n`;
+
+            const provider = this.providers[this.currentProvider];
+            let modelDesc;
+            if (this.currentProvider === 'publicai') {
+                modelDesc = 'a PublicAI-hosted open-source LLM';
+            } else {
+                modelDesc = provider.model;
+            }
+            wikitext += `Generated by [[User:Alaexis/AI_Source_Verification|Citation Verifier]] using ${modelDesc} on ~~~~~.`;
+            if (this.reportTokenUsage.input + this.reportTokenUsage.output > 0) {
+                wikitext += ` Tokens used: ${this.reportTokenUsage.input.toLocaleString()} input, ${this.reportTokenUsage.output.toLocaleString()} output.`;
+            }
+            wikitext += `\n`;
+
+            return wikitext;
+        }
+
+        generatePlainTextReport() {
+            const articleTitle = typeof mw !== 'undefined' ? mw.config.get('wgTitle') : document.title;
+            let text = `Citation Verification Report: ${articleTitle}\n`;
+            text += `Provider: ${this.providers[this.currentProvider].name}\n`;
+            text += `${'='.repeat(60)}\n\n`;
+
+            for (const r of this.reportResults) {
+                const confStr = r.confidence !== null ? ` (${r.confidence}%)` : '';
+                text += `[${r.citationNumber}] ${r.verdict}${confStr}\n`;
+                text += `  Claim: ${r.claimText.substring(0, 100)}${r.claimText.length > 100 ? '...' : ''}\n`;
+                if (r.url) text += `  Source: ${r.url}\n`;
+                if (r.comments) text += `  Comments: ${r.comments}\n`;
+                text += `\n`;
+            }
+
+            if (this.reportTokenUsage.input + this.reportTokenUsage.output > 0) {
+                text += `Tokens used: ${this.reportTokenUsage.input.toLocaleString()} input, ${this.reportTokenUsage.output.toLocaleString()} output\n`;
+            }
+
+            return text;
+        }
+
+        async copyReportToClipboard(format) {
+            const text = format === 'wikitext' ? this.generateWikitextReport() : this.generatePlainTextReport();
+            try {
+                await navigator.clipboard.writeText(text);
+                mw.notify('Report copied to clipboard!', { type: 'info', autoHide: true, autoHideSeconds: 3 });
+            } catch (e) {
+                // Fallback
+                const textarea = document.createElement('textarea');
+                textarea.value = text;
+                document.body.appendChild(textarea);
+                textarea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textarea);
+                mw.notify('Report copied to clipboard!', { type: 'info', autoHide: true, autoHideSeconds: 3 });
+            }
+        }
+
+        async callProviderAPI(claim, sourceInfo) {
+            switch (this.currentProvider) {
+                case 'publicai': return await this.callPublicAIAPI(claim, sourceInfo);
+                case 'claude': return await this.callClaudeAPI(claim, sourceInfo);
+                case 'gemini': return await this.callGeminiAPI(claim, sourceInfo);
+                case 'openai': return await this.callOpenAIAPI(claim, sourceInfo);
+                default: throw new Error(`Unknown provider: ${this.currentProvider}`);
+            }
+        }
+
+        async verifyAllCitations() {
+            const citations = this.collectAllCitations();
+            if (citations.length === 0) {
+                mw.notify('No citations found on this page.', { type: 'warn', autoHide: true });
+                return;
+            }
+
+            // Estimate time and show confirmation
+            const uniqueUrls = new Set(citations.filter(c => c.url).map(c => c.url));
+            const estimatedSeconds = citations.length * 7;
+            const estimatedMinutes = Math.ceil(estimatedSeconds / 60);
+
+            const confirmed = await new Promise(resolve => {
+                OO.ui.confirm(
+                    `This will verify ${citations.length} citations from ${uniqueUrls.size} unique sources.\n\nEstimated time: ~${estimatedMinutes} minute${estimatedMinutes > 1 ? 's' : ''}.\n\nContinue?`
+                ).done(result => resolve(result));
+            });
+            if (!confirmed) return;
+
+            // Setup
+            this.reportMode = true;
+            this.reportRunning = true;
+            this.reportCancelled = false;
+            this.reportResults = [];
+            this.sourceCache = new Map();
+            this.reportTokenUsage = { input: 0, output: 0 };
+            this.hasReport = true;
+
+            this.showReportView();
+            document.getElementById('verifier-report-results').innerHTML = '';
+            document.getElementById('verifier-report-summary').innerHTML = '';
+            document.getElementById('verifier-report-actions').innerHTML = '';
+            this.updateButtonVisibility();
+
+            const startTime = Date.now();
+            const useProxy = this.currentProvider === 'publicai';
+            const delayBetweenCalls = useProxy ? 3000 : 1000;
+
+            for (let i = 0; i < citations.length; i++) {
+                if (this.reportCancelled) break;
+
+                const citation = citations[i];
+                this.updateReportProgress(i, citations.length, `Checking citation [${citation.citationNumber}]`, startTime);
+
+                let result;
+
+                if (!citation.url) {
+                    // No URL found
+                    result = {
+                        citationNumber: citation.citationNumber,
+                        claimText: citation.claimText,
+                        url: null,
+                        refElement: citation.refElement,
+                        verdict: 'SOURCE UNAVAILABLE',
+                        confidence: 0,
+                        comments: 'No URL found in reference'
+                    };
+                } else {
+                    // Fetch source if not cached
+                    const cacheKey = citation.pageNum ? `${citation.url}|page=${citation.pageNum}` : citation.url;
+
+                    if (!this.sourceCache.has(cacheKey)) {
+                        this.updateReportProgress(i, citations.length, `Fetching source for [${citation.citationNumber}]`, startTime);
+                        try {
+                            const sourceContent = await this.fetchSourceContent(citation.url, citation.pageNum);
+                            this.sourceCache.set(cacheKey, sourceContent);
+                        } catch (e) {
+                            this.sourceCache.set(cacheKey, null);
+                        }
+                        // Rate limit delay after fetch
+                        if (!this.reportCancelled) {
+                            await new Promise(r => setTimeout(r, delayBetweenCalls));
+                        }
+                    }
+
+                    if (this.reportCancelled) break;
+
+                    const sourceContent = this.sourceCache.get(cacheKey);
+
+                    if (!sourceContent) {
+                        result = {
+                            citationNumber: citation.citationNumber,
+                            claimText: citation.claimText,
+                            url: citation.url,
+                            refElement: citation.refElement,
+                            verdict: 'SOURCE UNAVAILABLE',
+                            confidence: 0,
+                            comments: 'Could not fetch source content'
+                        };
+                    } else {
+                        // Verify via LLM
+                        this.updateReportProgress(i, citations.length, `Verifying citation [${citation.citationNumber}]`, startTime);
+                        try {
+                            const apiResult = await this.callProviderAPI(citation.claimText, sourceContent);
+                            const parsed = this.parseVerificationResult(apiResult.text);
+                            this.reportTokenUsage.input += apiResult.usage.input;
+                            this.reportTokenUsage.output += apiResult.usage.output;
+                            result = {
+                                citationNumber: citation.citationNumber,
+                                claimText: citation.claimText,
+                                url: citation.url,
+                                refElement: citation.refElement,
+                                verdict: parsed.verdict,
+                                confidence: parsed.confidence,
+                                comments: parsed.comments
+                            };
+
+                            // Fire-and-forget logging
+                            try {
+                                const savedCitationNumber = this.activeCitationNumber;
+                                const savedSourceUrl = this.activeSourceUrl;
+                                this.activeCitationNumber = citation.citationNumber;
+                                this.activeSourceUrl = citation.url;
+                                this.logVerification(parsed.verdict, parsed.confidence);
+                                this.activeCitationNumber = savedCitationNumber;
+                                this.activeSourceUrl = savedSourceUrl;
+                            } catch (e) {}
+                        } catch (e) {
+                            // Check for rate limiting (429)
+                            let retried = false;
+                            if (e.message && e.message.includes('429')) {
+                                for (let attempt = 0; attempt < 3; attempt++) {
+                                    if (this.reportCancelled) break;
+                                    const backoff = [5000, 10000, 20000][attempt];
+                                    this.updateReportProgress(i, citations.length, `Rate limited, retrying in ${backoff/1000}s...`, startTime);
+                                    await new Promise(r => setTimeout(r, backoff));
+                                    try {
+                                        const retryApiResult = await this.callProviderAPI(citation.claimText, sourceContent);
+                                        const parsed = this.parseVerificationResult(retryApiResult.text);
+                                        this.reportTokenUsage.input += retryApiResult.usage.input;
+                                        this.reportTokenUsage.output += retryApiResult.usage.output;
+                                        result = {
+                                            citationNumber: citation.citationNumber,
+                                            claimText: citation.claimText,
+                                            url: citation.url,
+                                            refElement: citation.refElement,
+                                            verdict: parsed.verdict,
+                                            confidence: parsed.confidence,
+                                            comments: parsed.comments
+                                        };
+                                        retried = true;
+                                        break;
+                                    } catch (retryErr) {
+                                        if (!retryErr.message?.includes('429')) {
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                            if (!retried) {
+                                result = {
+                                    citationNumber: citation.citationNumber,
+                                    claimText: citation.claimText,
+                                    url: citation.url,
+                                    refElement: citation.refElement,
+                                    verdict: 'ERROR',
+                                    confidence: null,
+                                    comments: e.message
+                                };
+                            }
+                        }
+
+                        // Rate limit delay after LLM call
+                        if (!this.reportCancelled && i < citations.length - 1) {
+                            await new Promise(r => setTimeout(r, delayBetweenCalls));
+                        }
+                    }
+                }
+
+                if (result) {
+                    this.reportResults.push(result);
+                    this.renderReportCard(result, this.reportResults.length - 1);
+                    this.renderReportSummary();
+                }
+            }
+
+            // Finalize
+            this.reportRunning = false;
+            const finalPhase = this.reportCancelled
+                ? `Cancelled after ${this.reportResults.length} of ${citations.length} citations`
+                : `Completed: ${this.reportResults.length} citations checked`;
+            this.updateReportProgress(this.reportResults.length, citations.length, finalPhase, startTime);
+            this.renderReportSummary();
+            this.renderReportActions();
+            this.updateButtonVisibility();
+        }
+
+        findSectionNumber(refElement) {
+            const el = refElement || this.activeRefElement;
+            if (!el) return 0;
 
             const content = document.getElementById('mw-content-text');
             if (!content) return 0;
@@ -1827,7 +2597,7 @@ ${sourceText}`;
             let sectionNumber = 0;
 
             for (const heading of headings) {
-                const position = heading.compareDocumentPosition(this.activeRefElement);
+                const position = heading.compareDocumentPosition(el);
                 if (position & Node.DOCUMENT_POSITION_FOLLOWING) {
                     sectionNumber++;
                 } else {
@@ -1838,9 +2608,9 @@ ${sourceText}`;
             return sectionNumber;
         }
 
-        buildEditUrl() {
+        buildEditUrl(refElement) {
             const title = mw.config.get('wgPageName');
-            const section = this.findSectionNumber();
+            const section = this.findSectionNumber(refElement);
             const summary = 'source does not support claim (checked with [[User:Alaexis/AI_Source_Verification|Source Verifier]])';
 
             const params = { action: 'edit', summary: summary };
