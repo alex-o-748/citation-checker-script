@@ -1689,6 +1689,7 @@ Rules:
 - First identify what the claim asserts, then look for information that supports or contradicts it.
 - Accept paraphrasing and straightforward implications, but not speculative inferences or logical leaps.
 - Distinguish between definitive statements and uncertain/hedged language. Claims stated as facts require sources that make definitive statements, not speculation or tentative assertions.
+- Names from languages using non-Latin scripts (Arabic, Chinese, Japanese, Korean, Russian, Hindi, etc.) may have multiple valid romanizations/transliterations. For example, "Yasmin" and "Yazmeen," or "Chekhov" and "Tchekhov," are variant spellings of the same name. Do not treat transliteration differences as factual errors.
 
 Source text evaluation:
 Before analyzing, check if the provided "source text" is actually usable content.
