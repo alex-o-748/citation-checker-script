@@ -2114,13 +2114,15 @@ ${sourceText}`;
                 if (!href || !href.startsWith('#')) return;
 
                 const refId = href.substring(1);
-                // Deduplicate by footnote target (handles [1a], [1b] etc.)
-                if (seenRefIds.has(refId)) return;
-                seenRefIds.add(refId);
 
                 const citationNumber = refElement.textContent.replace(/[\[\]]/g, '').trim();
                 const claimText = this.extractClaimText(refElement);
                 if (!claimText || claimText.length < 10) return;
+
+                // Deduplicate by footnote target + claim text (allows same source with different claims)
+                const dedupeKey = `${refId}|${claimText}`;
+                if (seenRefIds.has(dedupeKey)) return;
+                seenRefIds.add(dedupeKey);
 
                 const url = this.extractReferenceUrl(refElement);
                 const pageNum = this.extractPageNumber(refElement);
