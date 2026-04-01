@@ -2105,6 +2105,8 @@ ${sourceText}`;
         // ========================================
 
         collectAllCitations() {
+            // .reference a targets inline <sup class="reference"> links only — each is a unique
+            // DOM element. Footnote backlinks use .mw-cite-backlink, not .reference, so no dedup needed.
             const refs = document.querySelectorAll('#mw-content-text .reference a');
             const citations = [];
 
