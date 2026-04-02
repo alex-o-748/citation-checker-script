@@ -2105,19 +2105,16 @@ ${sourceText}`;
         // ========================================
 
         collectAllCitations() {
+            // .reference a targets inline <sup class="reference"> links only — each is a unique
+            // DOM element. Footnote backlinks use .mw-cite-backlink, not .reference, so no dedup needed.
             const refs = document.querySelectorAll('#mw-content-text .reference a');
             const citations = [];
-            const seenRefIds = new Set();
 
             refs.forEach(refElement => {
                 const href = refElement.getAttribute('href');
                 if (!href || !href.startsWith('#')) return;
 
                 const refId = href.substring(1);
-                // Deduplicate by footnote target (handles [1a], [1b] etc.)
-                if (seenRefIds.has(refId)) return;
-                seenRefIds.add(refId);
-
                 const citationNumber = refElement.textContent.replace(/[\[\]]/g, '').trim();
                 const claimText = this.extractClaimText(refElement);
                 if (!claimText || claimText.length < 10) return;
