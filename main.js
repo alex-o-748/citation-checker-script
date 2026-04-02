@@ -1689,6 +1689,7 @@ Rules:
 - First identify what the claim asserts, then look for information that supports or contradicts it.
 - Accept paraphrasing and straightforward implications, but not speculative inferences or logical leaps.
 - Distinguish between definitive statements and uncertain/hedged language. Claims stated as facts require sources that make definitive statements, not speculation or tentative assertions.
+- Names from languages using non-Latin scripts (Arabic, Chinese, Japanese, Korean, Russian, Hindi, etc.) may have multiple valid romanizations/transliterations. For example, "Yasmin" and "Yazmeen," or "Chekhov" and "Tchekhov," are variant spellings of the same name. Do not treat transliteration differences as factual errors.
 
 Source text evaluation:
 Before analyzing, check if the provided "source text" is actually usable content.
@@ -1868,7 +1869,7 @@ ${sourceText}`;
                 if (verifyId === this.currentVerifyId) {
                     this.buttons.verify.setLabel('Verify Claim');
                     this.buttons.verify.setIcon('check');
-                    this.buttons.verify.setDisabled(false);
+                    this.updateButtonVisibility();
                 }
             }
         }
@@ -2104,19 +2105,16 @@ ${sourceText}`;
         // ========================================
 
         collectAllCitations() {
+            // .reference a targets inline <sup class="reference"> links only — each is a unique
+            // DOM element. Footnote backlinks use .mw-cite-backlink, not .reference, so no dedup needed.
             const refs = document.querySelectorAll('#mw-content-text .reference a');
             const citations = [];
-            const seenRefIds = new Set();
 
             refs.forEach(refElement => {
                 const href = refElement.getAttribute('href');
                 if (!href || !href.startsWith('#')) return;
 
                 const refId = href.substring(1);
-                // Deduplicate by footnote target (handles [1a], [1b] etc.)
-                if (seenRefIds.has(refId)) return;
-                seenRefIds.add(refId);
-
                 const citationNumber = refElement.textContent.replace(/[\[\]]/g, '').trim();
                 const claimText = this.extractClaimText(refElement);
                 if (!claimText || claimText.length < 10) return;
