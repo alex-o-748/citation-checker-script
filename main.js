@@ -1869,6 +1869,8 @@ ${sourceText}`;
                 if (verifyId === this.currentVerifyId) {
                     this.buttons.verify.setLabel('Verify Claim');
                     this.buttons.verify.setIcon('check');
+                    this.activeClaim = null;
+                    this.activeSource = null;
                     this.updateButtonVisibility();
                 }
             }
