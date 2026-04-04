@@ -1161,8 +1161,21 @@
         
         async handleReferenceClick(refElement) {
             try {
+                // When in report mode, don't switch to single-citation view.
+                // Instead, scroll to the matching report card if one exists.
                 if (this.reportMode) {
-                    this.showSingleCitationView();
+                    const matchIndex = this.reportResults.findIndex(r => r.refElement === refElement);
+                    if (matchIndex !== -1) {
+                        const cards = document.querySelectorAll('#verifier-report-results .report-card');
+                        const card = cards[matchIndex];
+                        if (card) {
+                            card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            card.style.transition = 'box-shadow 0.3s';
+                            card.style.boxShadow = '0 0 0 3px #36c';
+                            setTimeout(() => { card.style.boxShadow = ''; }, 1500);
+                        }
+                    }
+                    return;
                 }
                 this.clearHighlights();
                 this.showSidebar();
