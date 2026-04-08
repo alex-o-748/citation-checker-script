@@ -19,7 +19,7 @@
                     name: 'Claude',
                     storageKey: 'claude_api_key',
                     color: '#0645ad',
-                    model: 'claude-sonnet-4-20250514',
+                    model: 'claude-sonnet-4-6',
                     requiresKey: true
                 },
                 gemini: {
