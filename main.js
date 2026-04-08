@@ -19,7 +19,7 @@
                     name: 'Claude',
                     storageKey: 'claude_api_key',
                     color: '#0645ad',
-                    model: 'claude-sonnet-4-20250514',
+                    model: 'claude-sonnet-4-6',
                     requiresKey: true
                 },
                 gemini: {
@@ -66,6 +66,7 @@
             this.sourceCache = new Map();
             this.reportTokenUsage = { input: 0, output: 0 };
             this.hasReport = false;
+            this.reportRevisionId = null;
 
             this.init();
         }
@@ -378,6 +379,24 @@
                     padding: 8px;
                     border-radius: 4px;
                 }
+                .verifier-truncation-warning {
+                    margin-top: 6px;
+                    padding: 6px 8px;
+                    font-size: 12px;
+                    color: #856404;
+                    background: #fff3cd;
+                    border: 1px solid #ffeeba;
+                    border-radius: 4px;
+                }
+                .report-card-truncated {
+                    margin-top: 4px;
+                    font-size: 11px;
+                    color: #856404;
+                    background: #fff3cd;
+                    border: 1px solid #ffeeba;
+                    border-radius: 3px;
+                    padding: 2px 6px;
+                }
                 body.verifier-sidebar-hidden {
                     margin-right: 0 !important;
                 }
@@ -662,6 +681,12 @@
                 html.skin-theme-clientpref-night .report-card-verdict.partial {
                     background: #3a3a1a !important;
                     color: #e0c060 !important;
+                }
+                html.skin-theme-clientpref-night .verifier-truncation-warning,
+                html.skin-theme-clientpref-night .report-card-truncated {
+                    background: #3a3a1a !important;
+                    color: #e0c060 !important;
+                    border-color: #5a5a2a !important;
                 }
                 html.skin-theme-clientpref-night .report-card-verdict.not-supported {
                     background: #3a1a1a !important;
@@ -1233,6 +1258,7 @@
                 const contentFetched = sourceInfo.includes('Source Content:');
                 const pdfMatch = sourceInfo.match(/PDF: (\d+) pages/);
                 const pageMatch = sourceInfo.match(/\(extracted page (\d+)\)/);
+                const isTruncated = sourceInfo.includes('\nTruncated: true');
 
                 if (urlMatch) {
                     let statusHtml;
@@ -1246,10 +1272,14 @@
                     } else {
                         statusHtml = '<em>Content will be fetched by AI during verification.</em>';
                     }
+                    const truncationHtml = isTruncated
+                        ? '<div class="verifier-truncation-warning">⚠ The source is long and can only be checked partially.</div>'
+                        : '';
                     sourceElement.innerHTML = `
                         <strong>Source URL:</strong><br>
                         <a href="${urlMatch[1]}" target="_blank" style="word-break: break-all;">${urlMatch[1]}</a><br><br>
                         ${statusHtml}
+                        ${truncationHtml}
                     `;
                 } else {
                     sourceElement.textContent = sourceInfo;
@@ -1438,12 +1468,19 @@
                 }
 
                 if (data.content && data.content.length > 100) {
+                    // Proxy caps fetched content around 12k chars. If we're at or
+                    // above that, the source was almost certainly truncated and
+                    // only partially sent to the model.
+                    const isTruncated = data.truncated === true || data.content.length >= 12000;
                     let meta = `Source URL: ${url}`;
                     if (data.pdf) {
                         meta += `\nPDF: ${data.totalPages} pages`;
                         if (data.page) {
                             meta += ` (extracted page ${data.page})`;
                         }
+                    }
+                    if (isTruncated) {
+                        meta += `\nTruncated: true`;
                     }
                     return `${meta}\n\nSource Content:\n${data.content}`;
                 }
@@ -2227,6 +2264,7 @@ ${sourceText}`;
                 <div style="margin-top:6px;font-size:11px;color:#888;">
                     ${total} citations checked${this.reportTokenUsage.input + this.reportTokenUsage.output > 0 ? ` · ${this.reportTokenUsage.input.toLocaleString()} input + ${this.reportTokenUsage.output.toLocaleString()} output tokens` : ''}
                 </div>
+                ${this.reportRevisionId ? `<div style="margin-top:4px;font-size:11px;color:#888;">Revision: <a href="${this.escapeHtml(this.getRevisionPermalinkUrl(this.reportRevisionId) || '#')}" target="_blank" rel="noopener">${this.reportRevisionId}</a></div>` : ''}
             `;
         }
 
@@ -2247,6 +2285,9 @@ ${sourceText}`;
             card.className = `verifier-report-card verdict-${verdictClass}`;
             const claimExcerpt = result.claimText.length > 80 ? result.claimText.substring(0, 80) + '…' : result.claimText;
             const confidenceStr = result.confidence !== null ? ` (${result.confidence}%)` : '';
+            const truncationHtml = result.truncated
+                ? '<div class="report-card-truncated">⚠ Source is long, only partially checked.</div>'
+                : '';
             card.innerHTML = `
                 <div class="report-card-header">
                     <span class="report-card-citation">[${result.citationNumber}]</span>
@@ -2254,6 +2295,7 @@ ${sourceText}`;
                 </div>
                 <div class="report-card-claim">${this.escapeHtml(claimExcerpt)}</div>
                 ${result.comments ? `<div class="report-card-comment">${this.escapeHtml(result.comments)}</div>` : ''}
+                ${truncationHtml}
             `;
 
             if (result.refElement) {
@@ -2312,10 +2354,27 @@ ${sourceText}`;
             actionsEl.appendChild(copyTextBtn.$element[0]);
         }
 
+        getRevisionPermalinkUrl(revId) {
+            if (!revId || typeof mw === 'undefined') return null;
+            try {
+                let server = mw.config.get('wgServer') || '';
+                if (server.startsWith('//')) server = 'https:' + server;
+                const script = mw.config.get('wgScript') || '/w/index.php';
+                const title = mw.config.get('wgPageName') || '';
+                return `${server}${script}?title=${encodeURIComponent(title)}&oldid=${revId}`;
+            } catch (e) {
+                return null;
+            }
+        }
+
         generateWikitextReport() {
             const articleTitle = typeof mw !== 'undefined' ? mw.config.get('wgTitle') : document.title;
+            const revId = this.reportRevisionId;
             let wikitext = `== Citation verification report ==\n`;
             wikitext += `This is an experimental check of the article sources by [[User:Alaexis/AI_Source_Verification|Citation Verifier]]. Treat it with caution, be aware of its [[User:Alaexis/AI_Source_Verification#Limitations|limitations]] and feel free to leave feedback at [[User_talk:Alaexis/AI_Source_Verification|the talk page]].\n\n`;
+            if (revId) {
+                wikitext += `Revision checked: [[Special:PermanentLink/${revId}|${revId}]]\n\n`;
+            }
             wikitext += `{| class="wikitable sortable"\n`;
             wikitext += `|-\n! # !! Verdict !! Confidence !! Source !! Comments\n`;
 
@@ -2330,7 +2389,10 @@ ${sourceText}`;
                 }
                 const confStr = r.confidence !== null ? `${r.confidence}%` : '—';
                 const sourceStr = r.url ? `[${r.url} source]` : '—';
-                const commentsClean = (r.comments || '').replace(/\n/g, ' ');
+                let commentsClean = (r.comments || '').replace(/\n/g, ' ');
+                if (r.truncated) {
+                    commentsClean += (commentsClean ? ' ' : '') + "''(Source is long, only partially checked.)''";
+                }
                 wikitext += `|-\n| [${r.citationNumber}] || ${verdictWiki} || ${confStr} || ${sourceStr} || ${commentsClean}\n`;
             }
 
@@ -2363,8 +2425,13 @@ ${sourceText}`;
 
         generatePlainTextReport() {
             const articleTitle = typeof mw !== 'undefined' ? mw.config.get('wgTitle') : document.title;
+            const revId = this.reportRevisionId;
             let text = `Citation Verification Report: ${articleTitle}\n`;
             text += `Provider: ${this.providers[this.currentProvider].name}\n`;
+            if (revId) {
+                const permalink = this.getRevisionPermalinkUrl(revId);
+                text += `Revision: ${revId}${permalink ? ` (${permalink})` : ''}\n`;
+            }
             text += `${'='.repeat(60)}\n\n`;
 
             for (const r of this.reportResults) {
@@ -2373,6 +2440,7 @@ ${sourceText}`;
                 text += `  Claim: ${r.claimText.substring(0, 100)}${r.claimText.length > 100 ? '...' : ''}\n`;
                 if (r.url) text += `  Source: ${r.url}\n`;
                 if (r.comments) text += `  Comments: ${r.comments}\n`;
+                if (r.truncated) text += `  Note: Source is long, only partially checked.\n`;
                 text += `\n`;
             }
 
@@ -2437,6 +2505,7 @@ ${sourceText}`;
             this.sourceCache = new Map();
             this.reportTokenUsage = { input: 0, output: 0 };
             this.hasReport = true;
+            this.reportRevisionId = mw.config.get('wgCurRevisionId') || null;
 
             this.showReportView();
             document.getElementById('verifier-report-results').innerHTML = '';
@@ -2465,7 +2534,8 @@ ${sourceText}`;
                         refElement: citation.refElement,
                         verdict: 'SOURCE UNAVAILABLE',
                         confidence: 0,
-                        comments: 'No URL found in reference'
+                        comments: 'No URL found in reference',
+                        truncated: false
                     };
                 } else {
                     // Fetch source if not cached
@@ -2497,9 +2567,11 @@ ${sourceText}`;
                             refElement: citation.refElement,
                             verdict: 'SOURCE UNAVAILABLE',
                             confidence: 0,
-                            comments: 'Could not fetch source content'
+                            comments: 'Could not fetch source content',
+                            truncated: false
                         };
                     } else {
+                        const sourceTruncated = sourceContent.includes('\nTruncated: true');
                         // Verify via LLM
                         this.updateReportProgress(i, citations.length, `Verifying citation [${citation.citationNumber}]`, startTime);
                         try {
@@ -2514,7 +2586,8 @@ ${sourceText}`;
                                 refElement: citation.refElement,
                                 verdict: parsed.verdict,
                                 confidence: parsed.confidence,
-                                comments: parsed.comments
+                                comments: parsed.comments,
+                                truncated: sourceTruncated
                             };
 
                             // Fire-and-forget logging
@@ -2548,7 +2621,8 @@ ${sourceText}`;
                                             refElement: citation.refElement,
                                             verdict: parsed.verdict,
                                             confidence: parsed.confidence,
-                                            comments: parsed.comments
+                                            comments: parsed.comments,
+                                            truncated: sourceTruncated
                                         };
                                         retried = true;
                                         break;
@@ -2567,7 +2641,8 @@ ${sourceText}`;
                                     refElement: citation.refElement,
                                     verdict: 'ERROR',
                                     confidence: null,
-                                    comments: e.message
+                                    comments: e.message,
+                                    truncated: sourceTruncated
                                 };
                             }
                         }
