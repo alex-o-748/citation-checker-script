@@ -1273,7 +1273,7 @@
                         statusHtml = '<em>Content will be fetched by AI during verification.</em>';
                     }
                     const truncationHtml = isTruncated
-                        ? '<div class="verifier-truncation-warning">⚠ The source is long and was checked partially.</div>'
+                        ? '<div class="verifier-truncation-warning">⚠ The source is long and can only be partially checked.</div>'
                         : '';
                     sourceElement.innerHTML = `
                         <strong>Source URL:</strong><br>
@@ -2286,7 +2286,7 @@ ${sourceText}`;
             const claimExcerpt = result.claimText.length > 80 ? result.claimText.substring(0, 80) + '…' : result.claimText;
             const confidenceStr = result.confidence !== null ? ` (${result.confidence}%)` : '';
             const truncationHtml = result.truncated
-                ? '<div class="report-card-truncated">⚠ Source is long, only partially checked.</div>'
+                ? '<div class="report-card-truncated">⚠ Source is long, can only be partially checked.</div>'
                 : '';
             card.innerHTML = `
                 <div class="report-card-header">
@@ -2391,7 +2391,7 @@ ${sourceText}`;
                 const sourceStr = r.url ? `[${r.url} source]` : '—';
                 let commentsClean = (r.comments || '').replace(/\n/g, ' ');
                 if (r.truncated) {
-                    commentsClean += (commentsClean ? ' ' : '') + "''(Source is long, only partially checked.)''";
+                    commentsClean += (commentsClean ? ' ' : '') + "''(Source is long, can only be partially checked.)''";
                 }
                 wikitext += `|-\n| [${r.citationNumber}] || ${verdictWiki} || ${confStr} || ${sourceStr} || ${commentsClean}\n`;
             }
@@ -2440,7 +2440,7 @@ ${sourceText}`;
                 text += `  Claim: ${r.claimText.substring(0, 100)}${r.claimText.length > 100 ? '...' : ''}\n`;
                 if (r.url) text += `  Source: ${r.url}\n`;
                 if (r.comments) text += `  Comments: ${r.comments}\n`;
-                if (r.truncated) text += `  Note: Source is long, only partially checked.\n`;
+                if (r.truncated) text += `  Note: Source is long, can only be partially checked.\n`;
                 text += `\n`;
             }
 
