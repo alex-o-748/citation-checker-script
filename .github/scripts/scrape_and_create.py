@@ -236,7 +236,7 @@ def main():
             if item.get("duplicate_of"):
                 print(f"  ↩ Skipping duplicate: '{item['title']}' (covered by '{item['duplicate_of']}')")
                 continue
-            create_issue(item["title"], item["body"], item["type"])
+            create_issue(item["title"], item["body"], item["type"], section["title"])
             existing_titles.append(item["title"])
 
     new_ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
