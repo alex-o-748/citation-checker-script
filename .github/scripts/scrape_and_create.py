@@ -10,7 +10,7 @@ from github import Github, Auth
 TALK_PAGE = "User_talk:Alaexis/AI_Source_Verification"
 TALK_PAGE_URL = "https://en.wikipedia.org/wiki/User_talk:Alaexis/AI_Source_Verification"
 LAST_SCRAPED_FILE = ".github/last_scraped.txt"
-ANTHROPIC_MODEL = "claude-opus-4-5"
+ANTHROPIC_MODEL = "claude-sonnet-4-6"
 WIKI_HEADERS = {
     "User-Agent": "citation-checker-script/1.0 (https://github.com/alex-o-748/citation-checker-script)"
 }
