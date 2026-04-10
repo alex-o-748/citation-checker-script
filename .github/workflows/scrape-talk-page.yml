@@ -1,0 +1,28 @@
+name: Scrape Wikipedia Talk Page
+
+on:
+  schedule:
+    - cron: '0 8 * * *'  # every day at 8am UTC
+  workflow_dispatch:       # allow manual trigger
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write        # needed to commit last_scraped.txt
+      issues: write          # needed to create issues
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - run: pip install requests anthropic PyGithub
+
+      - run: python .github/scripts/scrape_and_create.py
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPO: ${{ github.repository }}

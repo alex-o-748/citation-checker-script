@@ -1,4 +1,4 @@
-// {{Wikipedia:USync |repo=https://github.com/alex-o-748/citation-checker-script |ref=refs/heads/dev|path=main.js}}
+// {{Wikipedia:USync |repo=https://github.com/alex-o-748/citation-checker-script |ref=refs/heads/main|path=main.js}}
 //Inspired by  User:Polygnotus/Scripts/AI_Source_Verification.js
 //Inspired by  User:Phlsph7/SourceVerificationAIAssistant.js
 
@@ -1232,7 +1232,13 @@
                     this.updateStatus('No URL found in reference. Please paste the source text below.');
                     return;
                 }
-                
+
+                if (this.isGoogleBooksUrl(refUrl)) {
+                    this.showSourceTextInput();
+                    this.updateStatus('Google Books sources cannot be fetched. Please paste the source text below.');
+                    return;
+                }
+
                 this.hideSourceTextInput();
                 this.activeSource = null;
                 this.updateButtonVisibility();
@@ -1452,8 +1458,17 @@
             }
             return null;
         }
-        
+
+        isGoogleBooksUrl(url) {
+            return /books\.google\./.test(url);
+        }
+
         async fetchSourceContent(url, pageNum) {
+            if (this.isGoogleBooksUrl(url)) {
+                console.log('[CitationVerifier] Skipping Google Books URL:', url);
+                return null;
+            }
+
             try {
                 let proxyUrl = `https://publicai-proxy.alaexis.workers.dev/?fetch=${encodeURIComponent(url)}`;
                 if (pageNum) {
