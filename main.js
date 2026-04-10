@@ -1408,6 +1408,18 @@
             return claimText;
         }
         
+        extractHttpUrl(element) {
+            if (!element) return null;
+            // First look for archive links (prioritize these)
+            const archiveLink = element.querySelector('a[href*="web.archive.org"], a[href*="archive.today"], a[href*="archive.is"], a[href*="archive.ph"], a[href*="webcitation.org"]');
+            if (archiveLink) return archiveLink.href;
+
+            // Fall back to any http link
+            const links = element.querySelectorAll('a[href^="http"]');
+            if (links.length === 0) return null;
+            return links[0].href;
+        }
+
         extractReferenceUrl(refElement) {
             const href = refElement.getAttribute('href');
             if (!href || !href.startsWith('#')) {
@@ -1423,17 +1435,40 @@
                 return null;
             }
 
-            // First look for archive links (prioritize these)
-            const archiveLink = refTarget.querySelector('a[href*="web.archive.org"], a[href*="archive.today"], a[href*="archive.is"], a[href*="archive.ph"], a[href*="webcitation.org"]');
-            if (archiveLink) return archiveLink.href;
+            // Try to extract a direct HTTP URL from the footnote
+            const directUrl = this.extractHttpUrl(refTarget);
+            if (directUrl) return directUrl;
 
-            // Fall back to any http link
-            const links = refTarget.querySelectorAll('a[href^="http"]');
-            if (links.length === 0) {
-                console.log('[CitationVerifier] No http links in refTarget. innerHTML:', refTarget.innerHTML.substring(0, 500));
+            // Harvard/sfn citation support: the footnote may contain only a
+            // short-cite linking to the full citation via a #CITEREF anchor.
+            // Follow that link to resolve the actual source URL.
+            const citerefLink = refTarget.querySelector('a[href^="#CITEREF"]');
+            if (citerefLink) {
+                const citerefId = citerefLink.getAttribute('href').substring(1);
+                const fullCitation = document.getElementById(citerefId);
+                if (fullCitation) {
+                    const resolvedUrl = this.extractHttpUrl(fullCitation);
+                    if (resolvedUrl) {
+                        console.log('[CitationVerifier] Resolved Harvard/sfn citation via', citerefId);
+                        return resolvedUrl;
+                    }
+                }
+                // Also try the parent <li> or <cite> element in case the anchor
+                // is on a child element within the full citation list item
+                const fullCitationLi = fullCitation && fullCitation.closest('li');
+                if (fullCitationLi && fullCitationLi !== fullCitation) {
+                    const resolvedUrl = this.extractHttpUrl(fullCitationLi);
+                    if (resolvedUrl) {
+                        console.log('[CitationVerifier] Resolved Harvard/sfn citation via parent li of', citerefId);
+                        return resolvedUrl;
+                    }
+                }
+                console.log('[CitationVerifier] Harvard/sfn citation found but no URL in full citation:', citerefId);
                 return null;
             }
-            return links[0].href;
+
+            console.log('[CitationVerifier] No http links in refTarget. innerHTML:', refTarget.innerHTML.substring(0, 500));
+            return null;
         }
 
         extractPageNumber(refElement) {
