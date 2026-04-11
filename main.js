@@ -67,6 +67,7 @@
             this.reportTokenUsage = { input: 0, output: 0 };
             this.hasReport = false;
             this.reportRevisionId = null;
+            this.reportFilters = this.loadReportFilters();
 
             this.init();
         }
@@ -458,19 +459,43 @@
                 .verifier-summary-counts {
                     display: flex;
                     flex-wrap: wrap;
-                    gap: 8px;
+                    gap: 6px;
                     font-size: 12px;
-                }
-                .verifier-summary-counts span {
-                    display: inline-flex;
-                    align-items: center;
-                    gap: 4px;
                 }
                 .verifier-summary-counts .dot {
                     width: 8px;
                     height: 8px;
                     border-radius: 50%;
                     display: inline-block;
+                }
+                .verifier-filter-chip {
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 4px;
+                    padding: 2px 8px;
+                    font: inherit;
+                    font-size: 12px;
+                    color: #333;
+                    background: #fff;
+                    border: 1px solid #ccc;
+                    border-radius: 12px;
+                    cursor: pointer;
+                    user-select: none;
+                    transition: opacity 0.15s, background 0.15s;
+                }
+                .verifier-filter-chip:hover {
+                    background: #eef2ff;
+                    border-color: #99a;
+                }
+                .verifier-filter-chip.hidden {
+                    opacity: 0.5;
+                    text-decoration: line-through;
+                    background: #f0f0f0;
+                }
+                .verifier-summary-meta {
+                    margin-top: 6px;
+                    font-size: 11px;
+                    color: #888;
                 }
                 #verifier-report-results {
                     display: flex;
@@ -479,6 +504,34 @@
                     max-height: 50vh;
                     overflow-y: auto;
                     margin-bottom: 12px;
+                }
+                #verifier-report-results.filter-hide-supported .verifier-report-card.verdict-supported,
+                #verifier-report-results.filter-hide-partial .verifier-report-card.verdict-partial,
+                #verifier-report-results.filter-hide-not-supported .verifier-report-card.verdict-not-supported,
+                #verifier-report-results.filter-hide-unavailable .verifier-report-card.verdict-unavailable,
+                #verifier-report-results.filter-hide-error .verifier-report-card.verdict-error {
+                    display: none;
+                }
+                .verifier-filter-empty {
+                    padding: 12px;
+                    background: #f8f9fa;
+                    border: 1px dashed #ccc;
+                    border-radius: 4px;
+                    color: #666;
+                    font-size: 12px;
+                    text-align: center;
+                }
+                html.skin-theme-clientpref-night .verifier-filter-empty {
+                    background: #2a2a3e !important;
+                    border-color: #3a3a4e !important;
+                    color: #b0b0c0 !important;
+                }
+                @media (prefers-color-scheme: dark) {
+                    html.skin-theme-clientpref-os .verifier-filter-empty {
+                        background: #2a2a3e !important;
+                        border-color: #3a3a4e !important;
+                        color: #b0b0c0 !important;
+                    }
                 }
                 .verifier-report-card {
                     padding: 8px 10px;
@@ -653,6 +706,22 @@
                     background: #2a2a3e !important;
                     border-color: #3a3a4e !important;
                     color: #e0e0e0 !important;
+                }
+                html.skin-theme-clientpref-night .verifier-filter-chip {
+                    background: #2a2a3e !important;
+                    color: #e0e0e0 !important;
+                    border-color: #3a3a4e !important;
+                }
+                html.skin-theme-clientpref-night .verifier-filter-chip:hover {
+                    background: #3a3a5e !important;
+                    border-color: #5a5a7e !important;
+                }
+                html.skin-theme-clientpref-night .verifier-filter-chip.hidden {
+                    background: #1f1f2e !important;
+                    color: #8a8a9e !important;
+                }
+                html.skin-theme-clientpref-night .verifier-summary-meta {
+                    color: #a0a0b0 !important;
                 }
                 html.skin-theme-clientpref-night .verifier-progress-bar {
                     background: #3a3a4e !important;
@@ -847,6 +916,22 @@
                         background: #2a2a3e !important;
                         border-color: #3a3a4e !important;
                         color: #e0e0e0 !important;
+                    }
+                    html.skin-theme-clientpref-os .verifier-filter-chip {
+                        background: #2a2a3e !important;
+                        color: #e0e0e0 !important;
+                        border-color: #3a3a4e !important;
+                    }
+                    html.skin-theme-clientpref-os .verifier-filter-chip:hover {
+                        background: #3a3a5e !important;
+                        border-color: #5a5a7e !important;
+                    }
+                    html.skin-theme-clientpref-os .verifier-filter-chip.hidden {
+                        background: #1f1f2e !important;
+                        color: #8a8a9e !important;
+                    }
+                    html.skin-theme-clientpref-os .verifier-summary-meta {
+                        color: #a0a0b0 !important;
                     }
                     html.skin-theme-clientpref-os .verifier-progress-bar {
                         background: #3a3a4e !important;
@@ -2245,15 +2330,69 @@ ${sourceText}`;
             return `${m}m ${s % 60}s`;
         }
 
+        loadReportFilters() {
+            // Filter keys match CSS verdict classes: supported, partial, not-supported, unavailable, error
+            // By default, hide 'supported' since those citations are usually not actionable.
+            const defaults = { supported: true, partial: false, 'not-supported': false, unavailable: false, error: false };
+            try {
+                const stored = localStorage.getItem('verifier_report_filters');
+                if (!stored) return defaults;
+                const parsed = JSON.parse(stored);
+                return { ...defaults, ...parsed };
+            } catch (e) {
+                return defaults;
+            }
+        }
+
+        saveReportFilters() {
+            try {
+                localStorage.setItem('verifier_report_filters', JSON.stringify(this.reportFilters));
+            } catch (e) {}
+        }
+
+        toggleReportFilter(verdictClass) {
+            this.reportFilters[verdictClass] = !this.reportFilters[verdictClass];
+            this.saveReportFilters();
+            this.applyReportFilters();
+            this.renderReportSummary();
+        }
+
+        applyReportFilters() {
+            const resultsEl = document.getElementById('verifier-report-results');
+            if (!resultsEl) return;
+            const classes = ['supported', 'partial', 'not-supported', 'unavailable', 'error'];
+            for (const cls of classes) {
+                resultsEl.classList.toggle(`filter-hide-${cls}`, !!this.reportFilters[cls]);
+            }
+
+            // Show an empty-state hint when every rendered card is hidden by filters.
+            let emptyEl = resultsEl.querySelector('.verifier-filter-empty');
+            const cards = resultsEl.querySelectorAll('.verifier-report-card');
+            const hasVisible = Array.from(cards).some(c => {
+                const verdictClass = classes.find(cls => c.classList.contains(`verdict-${cls}`));
+                return verdictClass && !this.reportFilters[verdictClass];
+            });
+            if (cards.length > 0 && !hasVisible) {
+                if (!emptyEl) {
+                    emptyEl = document.createElement('div');
+                    emptyEl.className = 'verifier-filter-empty';
+                    emptyEl.textContent = 'All citations are hidden by the current filters. Click a filter chip above to show them.';
+                    resultsEl.appendChild(emptyEl);
+                }
+            } else if (emptyEl) {
+                emptyEl.remove();
+            }
+        }
+
         renderReportSummary() {
             const summaryEl = document.getElementById('verifier-report-summary');
             if (!summaryEl) return;
 
-            const counts = { supported: 0, partial: 0, notSupported: 0, unavailable: 0, error: 0 };
+            const counts = { supported: 0, partial: 0, 'not-supported': 0, unavailable: 0, error: 0 };
             for (const r of this.reportResults) {
                 if (r.verdict === 'SUPPORTED') counts.supported++;
                 else if (r.verdict === 'PARTIALLY SUPPORTED') counts.partial++;
-                else if (r.verdict === 'NOT SUPPORTED') counts.notSupported++;
+                else if (r.verdict === 'NOT SUPPORTED') counts['not-supported']++;
                 else if (r.verdict === 'SOURCE UNAVAILABLE') counts.unavailable++;
                 else counts.error++;
             }
@@ -2261,26 +2400,51 @@ ${sourceText}`;
 
             const segHtml = (count, cls) => count > 0 ? `<div class="${cls}" style="width:${(count/total)*100}%"></div>` : '';
 
+            const chip = (key, count, label, color) => {
+                const hidden = !!this.reportFilters[key];
+                return `<button type="button"
+                    class="verifier-filter-chip${hidden ? ' hidden' : ''}"
+                    data-filter="${key}"
+                    title="${hidden ? 'Show' : 'Hide'} ${this.escapeHtml(label)} citations"
+                    aria-pressed="${hidden ? 'false' : 'true'}">
+                    <span class="dot" style="background:${color}"></span>${count} ${this.escapeHtml(label)}
+                </button>`;
+            };
+
+            const hiddenCount =
+                (this.reportFilters.supported ? counts.supported : 0) +
+                (this.reportFilters.partial ? counts.partial : 0) +
+                (this.reportFilters['not-supported'] ? counts['not-supported'] : 0) +
+                (this.reportFilters.unavailable ? counts.unavailable : 0) +
+                (this.reportFilters.error ? counts.error : 0);
+
             summaryEl.innerHTML = `
                 <div class="verifier-summary-bar">
                     ${segHtml(counts.supported, 'seg-supported')}
                     ${segHtml(counts.partial, 'seg-partial')}
-                    ${segHtml(counts.notSupported, 'seg-not-supported')}
+                    ${segHtml(counts['not-supported'], 'seg-not-supported')}
                     ${segHtml(counts.unavailable, 'seg-unavailable')}
                     ${segHtml(counts.error, 'seg-error')}
                 </div>
                 <div class="verifier-summary-counts">
-                    <span><span class="dot" style="background:#28a745"></span>${counts.supported} supported</span>
-                    <span><span class="dot" style="background:#ffc107"></span>${counts.partial} partial</span>
-                    <span><span class="dot" style="background:#dc3545"></span>${counts.notSupported} not supported</span>
-                    <span><span class="dot" style="background:#6c757d"></span>${counts.unavailable} unavailable</span>
-                    ${counts.error > 0 ? `<span><span class="dot" style="background:#adb5bd"></span>${counts.error} errors</span>` : ''}
+                    ${chip('supported', counts.supported, 'supported', '#28a745')}
+                    ${chip('partial', counts.partial, 'partial', '#ffc107')}
+                    ${chip('not-supported', counts['not-supported'], 'not supported', '#dc3545')}
+                    ${chip('unavailable', counts.unavailable, 'unavailable', '#6c757d')}
+                    ${counts.error > 0 ? chip('error', counts.error, 'errors', '#adb5bd') : ''}
                 </div>
-                <div style="margin-top:6px;font-size:11px;color:#888;">
-                    ${total} citations checked${this.reportTokenUsage.input + this.reportTokenUsage.output > 0 ? ` · ${this.reportTokenUsage.input.toLocaleString()} input + ${this.reportTokenUsage.output.toLocaleString()} output tokens` : ''}
+                <div class="verifier-summary-meta">
+                    ${total} citations checked${hiddenCount > 0 ? ` · ${hiddenCount} hidden by filter` : ''}${this.reportTokenUsage.input + this.reportTokenUsage.output > 0 ? ` · ${this.reportTokenUsage.input.toLocaleString()} input + ${this.reportTokenUsage.output.toLocaleString()} output tokens` : ''}
                 </div>
-                ${this.reportRevisionId ? `<div style="margin-top:4px;font-size:11px;color:#888;">Revision: <a href="${this.escapeHtml(this.getRevisionPermalinkUrl(this.reportRevisionId) || '#')}" target="_blank" rel="noopener">${this.reportRevisionId}</a></div>` : ''}
+                ${this.reportRevisionId ? `<div class="verifier-summary-meta">Revision: <a href="${this.escapeHtml(this.getRevisionPermalinkUrl(this.reportRevisionId) || '#')}" target="_blank" rel="noopener">${this.reportRevisionId}</a></div>` : ''}
             `;
+
+            summaryEl.querySelectorAll('.verifier-filter-chip').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    this.toggleReportFilter(btn.dataset.filter);
+                });
+            });
         }
 
         renderReportCard(result, index) {
@@ -2526,6 +2690,7 @@ ${sourceText}`;
             document.getElementById('verifier-report-results').innerHTML = '';
             document.getElementById('verifier-report-summary').innerHTML = '';
             document.getElementById('verifier-report-actions').innerHTML = '';
+            this.applyReportFilters();
             this.updateButtonVisibility();
 
             const startTime = Date.now();
@@ -2673,6 +2838,7 @@ ${sourceText}`;
                     this.reportResults.push(result);
                     this.renderReportCard(result, this.reportResults.length - 1);
                     this.renderReportSummary();
+                    this.applyReportFilters();
                 }
             }
 
