@@ -2526,7 +2526,7 @@ ${sourceText}`;
                 const actionDiv = document.createElement('div');
                 actionDiv.className = 'report-card-action';
                 const editBtn = new OO.ui.ButtonWidget({
-                    label: 'Edit in Wikipedia',
+                    label: 'Edit Section',
                     flags: ['progressive'],
                     icon: 'edit',
                     href: this.buildEditUrl(result.refElement),
@@ -2942,7 +2942,7 @@ ${sourceText}`;
             if (verdict !== 'NOT SUPPORTED' && verdict !== 'PARTIALLY SUPPORTED' && verdict !== 'SOURCE UNAVAILABLE') return;
 
             const btn = new OO.ui.ButtonWidget({
-                label: 'Edit in Wikipedia',
+                label: 'Edit Section',
                 flags: ['progressive'],
                 icon: 'edit',
                 href: this.buildEditUrl(),
