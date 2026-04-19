@@ -1,4 +1,4 @@
-// {{Wikipedia:USync |repo=https://github.com/alex-o-748/citation-checker-script |ref=refs/heads/main|path=main.js}}
+// {{Wikipedia:USync |repo=https://github.com/alex-o-748/citation-checker-script |ref=refs/heads/dev|path=main.js}}
 //Inspired by  User:Polygnotus/Scripts/AI_Source_Verification.js
 //Inspired by  User:Phlsph7/SourceVerificationAIAssistant.js
 
@@ -589,6 +589,9 @@
                 .report-card-action .oo-ui-buttonElement-button {
                     font-size: 11px;
                     padding: 2px 4px;
+                }
+                #source-verifier-sidebar .oo-ui-iconElement-icon + .oo-ui-labelElement-label {
+                    margin-left: 4px;
                 }
                 #verifier-report-actions {
                     display: flex;
@@ -2499,7 +2502,7 @@ ${sourceText}`;
             card.className = `verifier-report-card verdict-${verdictClass}`;
             const claimExcerpt = result.claimText.length > 80 ? result.claimText.substring(0, 80) + '…' : result.claimText;
             const confidenceStr = result.confidence !== null ? ` (${result.confidence}%)` : '';
-            const truncationHtml = result.truncated
+            const truncationHtml = (result.truncated && result.verdict !== 'SUPPORTED')
                 ? '<div class="report-card-truncated">⚠ Source is long, only partially checked.</div>'
                 : '';
             card.innerHTML = `
@@ -2604,7 +2607,7 @@ ${sourceText}`;
                 const confStr = r.confidence !== null ? `${r.confidence}%` : '—';
                 const sourceStr = r.url ? `[${r.url} source]` : '—';
                 let commentsClean = (r.comments || '').replace(/\n/g, ' ');
-                if (r.truncated) {
+                if (r.truncated && r.verdict !== 'SUPPORTED') {
                     commentsClean += (commentsClean ? ' ' : '') + "''(Source is long, only partially checked.)''";
                 }
                 // Link the citation number to the footnote anchor on the analyzed revision,
@@ -2663,7 +2666,7 @@ ${sourceText}`;
                 text += `  Claim: ${r.claimText.substring(0, 100)}${r.claimText.length > 100 ? '...' : ''}\n`;
                 if (r.url) text += `  Source: ${r.url}\n`;
                 if (r.comments) text += `  Comments: ${r.comments}\n`;
-                if (r.truncated) text += `  Note: Source is long, only partially checked.\n`;
+                if (r.truncated && r.verdict !== 'SUPPORTED') text += `  Note: Source is long, only partially checked.\n`;
                 text += `\n`;
             }
 
