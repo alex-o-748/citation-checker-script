@@ -590,6 +590,9 @@
                     font-size: 11px;
                     padding: 2px 4px;
                 }
+                #source-verifier-sidebar .oo-ui-iconElement-icon + .oo-ui-labelElement-label {
+                    margin-left: 4px;
+                }
                 #verifier-report-actions {
                     display: flex;
                     flex-direction: column;
