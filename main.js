@@ -1905,7 +1905,12 @@ It is NOT usable if it's:
 
 IMPORTANT: If the source text contains actual article content (paragraphs of text, quotes, factual statements), it IS usable even if it also contains archive navigation, headers, footers, or other page chrome. Only return SOURCE UNAVAILABLE when there is genuinely no article content to analyze.
 
-Note on excerpts: long sources may be delivered as a lead plus claim-relevant excerpts drawn from later in the page, within a fixed size budget. This is expected and is not a signal of unreliability — gaps between paragraphs, missing middle sections, or text that appears to end abruptly mean "this part was not shown", not "this source failed to load". Judge based on what IS present. Only return SOURCE UNAVAILABLE when the actual content is missing (login wall, 404, metadata-only catalog page), not when the page text appears to be a partial slice.
+Note on excerpts and chrome: long sources are delivered through a CORS proxy that returns a fixed-size text budget. For pages that exceed the budget, the proxy may:
+- Include page-header navigation, archive-wrapper chrome (like Wayback Machine capture metadata), share/nav widgets, and footer links — ignore these and focus on the article prose.
+- Include only a lead paragraph plus claim-relevant excerpts drawn from later in the page — gaps between paragraphs, blank-line stacks, text ending mid-sentence, or excerpts separated by "..." are NORMAL and mean "this part was not shown", not "the source failed to load."
+- Deliver a shorter-than-budget excerpt when few paragraphs matched the claim — brevity alone is NOT a source-unavailability signal.
+
+SOURCE UNAVAILABLE is reserved for cases where ZERO article prose is present: login wall, paywall, 404 error page, empty search results page, Google Books preview with only bibliographic metadata, or pages showing only "access denied." If ANY paragraph of article prose is visible — even if surrounded by chrome or separated by gaps — evaluate based on that paragraph.
 
 If the source text is not usable, you MUST return verdict SOURCE UNAVAILABLE with confidence 0. Do not attempt to verify the claim - if you cannot find actual article or book content to quote, the source is unavailable.
 
