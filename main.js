@@ -1905,6 +1905,8 @@ It is NOT usable if it's:
 
 IMPORTANT: If the source text contains actual article content (paragraphs of text, quotes, factual statements), it IS usable even if it also contains archive navigation, headers, footers, or other page chrome. Only return SOURCE UNAVAILABLE when there is genuinely no article content to analyze.
 
+Note on excerpts: long sources may be delivered as a lead plus claim-relevant excerpts drawn from later in the page, within a fixed size budget. This is expected and is not a signal of unreliability — gaps between paragraphs, missing middle sections, or text that appears to end abruptly mean "this part was not shown", not "this source failed to load". Judge based on what IS present. Only return SOURCE UNAVAILABLE when the actual content is missing (login wall, 404, metadata-only catalog page), not when the page text appears to be a partial slice.
+
 If the source text is not usable, you MUST return verdict SOURCE UNAVAILABLE with confidence 0. Do not attempt to verify the claim - if you cannot find actual article or book content to quote, the source is unavailable.
 
 Respond in JSON format:
