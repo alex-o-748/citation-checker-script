@@ -1333,7 +1333,7 @@
                 this.updateStatus('Fetching source content...');
                 const fetchId = ++this.currentFetchId;
                 const pageNum = this.extractPageNumber(refElement);
-                const sourceInfo = await this.fetchSourceContent(refUrl, pageNum);
+                const sourceInfo = await this.fetchSourceContent(refUrl, pageNum, claim);
 
                 if (fetchId !== this.currentFetchId) {
                     return;
@@ -1586,7 +1586,12 @@
             return /books\.google\./.test(url);
         }
 
-        async fetchSourceContent(url, pageNum) {
+        // claim is optional. When supplied, the proxy may use it to extract
+        // claim-relevant excerpts from long sources instead of returning
+        // only the first ~12k chars. The proxy MUST gracefully ignore the
+        // `query` param if it does not yet support it, so this is safe to
+        // ship before the Worker is updated. See worker-integration.md.
+        async fetchSourceContent(url, pageNum, claim) {
             if (this.isGoogleBooksUrl(url)) {
                 console.log('[CitationVerifier] Skipping Google Books URL:', url);
                 return null;
@@ -1596,6 +1601,9 @@
                 let proxyUrl = `https://publicai-proxy.alaexis.workers.dev/?fetch=${encodeURIComponent(url)}`;
                 if (pageNum) {
                     proxyUrl += `&page=${pageNum}`;
+                }
+                if (claim) {
+                    proxyUrl += `&query=${encodeURIComponent(claim)}`;
                 }
                 const response = await fetch(proxyUrl);
                 const data = await response.json();
@@ -2771,7 +2779,7 @@ ${sourceText}`;
                     if (!this.sourceCache.has(cacheKey)) {
                         this.updateReportProgress(i, citations.length, `Fetching source for [${citation.citationNumber}]`, startTime);
                         try {
-                            const sourceContent = await this.fetchSourceContent(citation.url, citation.pageNum);
+                            const sourceContent = await this.fetchSourceContent(citation.url, citation.pageNum, citation.claimText);
                             this.sourceCache.set(cacheKey, sourceContent);
                         } catch (e) {
                             this.sourceCache.set(cacheKey, null);
