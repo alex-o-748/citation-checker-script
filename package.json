@@ -6,6 +6,9 @@
   "engines": {
     "node": ">=18"
   },
+  "bin": {
+    "ccs": "./bin/ccs"
+  },
   "scripts": {
     "test": "node --test 'tests/**/*.test.js'",
     "build": "node scripts/sync-main.js"

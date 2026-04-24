@@ -1,0 +1,10 @@
+#!/usr/bin/env node
+import { main } from '../cli/verify.js';
+
+main(process.argv).then(
+    (code) => process.exit(code ?? 0),
+    (err) => {
+        process.stderr.write(`ccs: unexpected error: ${err?.stack || err}\n`);
+        process.exit(1);
+    }
+);
