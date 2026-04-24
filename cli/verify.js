@@ -1,6 +1,7 @@
-// Entry point for the `ccs` CLI. Later phases add argv parsing, Wikipedia
-// fetch, and the verification pipeline. For now this is a placeholder so
-// `bin/ccs` can import something.
+// Entry point for the `ccs` CLI. Owns argv parsing, Wikipedia REST
+// fetching, JSDOM parsing, dispatch into core/, exit-code classification,
+// and stdout formatting. core/ owns the pure logic; this file is the only
+// place that does I/O.
 
 import { parseArgs } from 'node:util';
 import { JSDOM } from 'jsdom';
