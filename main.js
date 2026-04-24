@@ -161,7 +161,10 @@ function parseVerificationResult(response) {
 
 // --- core/urls.js ---
 // URL extraction helpers for Wikipedia reference elements.
-// Note: extractReferenceUrl and extractPageNumber depend on a global `document` object (supplied by the browser in main.js, or by JSDOM in Node callers).
+// extractReferenceUrl and extractPageNumber accept a `document` parameter
+// for Node callers (CLI, tests). They fall back to `globalThis.document`
+// when called without one — that's the userscript path, where the browser
+// supplies the global.
 
 function extractHttpUrl(element) {
     if (!element) return null;
@@ -175,7 +178,7 @@ function extractHttpUrl(element) {
     return links[0].href;
 }
 
-function extractReferenceUrl(refElement) {
+function extractReferenceUrl(refElement, doc = globalThis.document) {
     const href = refElement.getAttribute('href');
     if (!href || !href.startsWith('#')) {
         console.log('[CitationVerifier] No valid href on refElement:', href);
@@ -183,7 +186,7 @@ function extractReferenceUrl(refElement) {
     }
 
     const refId = href.substring(1);
-    const refTarget = document.getElementById(refId);
+    const refTarget = doc.getElementById(refId);
 
     if (!refTarget) {
         console.log('[CitationVerifier] No element found for refId:', refId);
@@ -200,7 +203,7 @@ function extractReferenceUrl(refElement) {
     const citerefLink = refTarget.querySelector('a[href^="#CITEREF"]');
     if (citerefLink) {
         const citerefId = citerefLink.getAttribute('href').substring(1);
-        const fullCitation = document.getElementById(citerefId);
+        const fullCitation = doc.getElementById(citerefId);
         if (fullCitation) {
             const resolvedUrl = extractHttpUrl(fullCitation);
             if (resolvedUrl) {
@@ -226,11 +229,11 @@ function extractReferenceUrl(refElement) {
     return null;
 }
 
-function extractPageNumber(refElement) {
+function extractPageNumber(refElement, doc = globalThis.document) {
     const href = refElement.getAttribute('href');
     if (!href || !href.startsWith('#')) return null;
 
-    const refTarget = document.getElementById(href.substring(1));
+    const refTarget = doc.getElementById(href.substring(1));
     if (!refTarget) return null;
 
     const text = refTarget.textContent;

@@ -22,8 +22,6 @@ test('isGoogleBooksUrl recognizes books.google.com URLs', () => {
 });
 
 test('extractReferenceUrl pulls the external link out of a citation element', () => {
-  // Set up a document where we create a reference that points to a footnote with a link
-  // The function uses document.getElementById() globally, so we need to set that up correctly
   const jsdom = new JSDOM(`<!DOCTYPE html><body>
     <a id="ref-1" href="#cite_note-1">1</a>
     <span id="cite_note-1" class="reference">
@@ -31,15 +29,28 @@ test('extractReferenceUrl pulls the external link out of a citation element', ()
     </span>
   </body>`);
 
-  const refElement = jsdom.window.document.getElementById('ref-1');
-  // Inject document into global scope for the function to use
-  global.document = jsdom.window.document;
+  const doc = jsdom.window.document;
+  const refElement = doc.getElementById('ref-1');
+  const url = extractReferenceUrl(refElement, doc);
+  assert.equal(url, 'https://example.com/src');
+});
 
+test('extractReferenceUrl falls back to globalThis.document when no doc arg is passed', () => {
+  const jsdom = new JSDOM(`<!DOCTYPE html><body>
+    <a id="ref-1" href="#cite_note-1">1</a>
+    <span id="cite_note-1" class="reference">
+      <cite><a href="https://example.com/fallback">fallback</a></cite>
+    </span>
+  </body>`);
+
+  const refElement = jsdom.window.document.getElementById('ref-1');
+  const prev = globalThis.document;
   try {
+    globalThis.document = jsdom.window.document;
+    // Deliberately omit the second argument — simulates the browser path.
     const url = extractReferenceUrl(refElement);
-    assert.equal(url, 'https://example.com/src');
+    assert.equal(url, 'https://example.com/fallback');
   } finally {
-    // Clean up
-    delete global.document;
+    if (prev === undefined) delete globalThis.document; else globalThis.document = prev;
   }
 });
