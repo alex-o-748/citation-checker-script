@@ -91,7 +91,7 @@ See [`benchmark/README.md`](benchmark/README.md) for the full workflow, includin
 
 ## Development
 
-- No CI/CD, no test framework, no linter — validation is via the benchmark suite
+- No CI/CD and no linter; `core/*.js` has a `node:test` suite (`npm test`), and end-to-end validation is via the benchmark suite
 - Edit `main.js` directly; test by loading it on Wikipedia (via the user-script page or a browser-console `importScript` call)
 - For testing changes before release, use [`User:Alaexis/AI_Source_Verification_test.js`](https://en.wikipedia.org/wiki/User:Alaexis/AI_Source_Verification_test.js), which tracks the dev branch
 - Feature branches off `main`, merged via pull requests
