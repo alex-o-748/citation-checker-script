@@ -16,7 +16,6 @@ export function extractClaimText(refElement) {
         // Fallback: return container text
         return container.textContent
             .replace(/\[\d+\]/g, '')
-            .replace(MAINTENANCE_MARKER_RE, '')
             .replace(/\s+/g, ' ')
             .trim();
     }
