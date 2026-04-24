@@ -480,6 +480,56 @@ test('runVerify: logs to /log endpoint when noLog is false', async () => {
   }
 });
 
+test('runVerify: logs article title with literal percent character correctly', async () => {
+  // Regression test for redundant decodeURIComponent: titles containing a
+  // literal "%" (e.g., "100%") should not crash the log path.
+  // parseWikiUrl already decodes %25 → %, so by the time it reaches the log
+  // block, parsedWikiUrl.title is already decoded. Calling decodeURIComponent
+  // again would throw URIError for titles with a literal %.
+  let logPayload = null;
+  const mock = mkFetchMock([
+    {
+      match: (url) => String(url).startsWith('https://en.wikipedia.org/api/rest_v1/'),
+      respond: async () => ({ ok: true, status: 200, text: async () => WIKI_HTML_WITH_ONE_CITATION }),
+    },
+    {
+      match: (url) => String(url).includes('?fetch='),
+      respond: async () => ({ ok: true, json: async () => ({ content: 'x'.repeat(300) }) }),
+    },
+    {
+      match: (url, opts) => String(url) === 'https://publicai-proxy.alaexis.workers.dev' && opts?.method === 'POST',
+      respond: async () => ({
+        ok: true, status: 200, json: async () => ({
+          choices: [{ message: { content: '{"verdict": "SUPPORTED", "confidence": 85, "comments": "ok"}' } }],
+          usage: { prompt_tokens: 10, completion_tokens: 5 },
+        }),
+      }),
+    },
+    {
+      match: (url) => String(url).endsWith('/log'),
+      respond: async (_url, opts) => {
+        logPayload = JSON.parse(opts.body);
+        return { ok: true, json: async () => ({}) };
+      },
+    },
+  ]);
+  const stdout = mkStream();
+  const stderr = mkStream();
+  try {
+    // %25 is the URL-encoded form of %; it decodes to literal "100%"
+    const code = await runVerify(
+      { url: 'https://en.wikipedia.org/wiki/100%25', citationNumber: 1, provider: 'publicai', noLog: false },
+      { stdout, stderr, env: {} },
+    );
+    assert.equal(code, 0, `stderr: ${stderr.value()}`);
+    await new Promise((r) => setImmediate(r));
+    assert.ok(logPayload, 'expected /log endpoint to have been called');
+    assert.equal(logPayload.article_title, '100%', 'article title should have literal % character');
+  } finally {
+    mock.restore();
+  }
+});
+
 test('runVerify: DOM traversal chain works against a realistic Wikipedia fixture', async () => {
   // A slightly more realistic HTML shape: multi-citation paragraph, named
   // reference with an anchor inside <span class="reference-text"> (closer

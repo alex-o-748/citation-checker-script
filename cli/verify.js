@@ -279,7 +279,7 @@ export async function runVerify(opts, { stdout = process.stdout, stderr = proces
 
     // 11. Log (fire-and-forget).
     if (!noLog) {
-        const articleTitle = decodeURIComponent(parsedWikiUrl.title).replace(/_/g, ' ');
+        const articleTitle = parsedWikiUrl.title.replace(/_/g, ' ');
         logVerification({
             article_url: url,
             article_title: articleTitle,
