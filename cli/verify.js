@@ -156,6 +156,47 @@ const PROVIDER_ENV_VARS = {
     openai:   'OPENAI_API_KEY',
 };
 
+export const HELP_TEXT = `usage: ccs verify <wikipedia-url> <citation-number> [options]
+
+Verify a Wikipedia citation by fetching its source and asking an LLM
+whether the cited claim is supported.
+
+Arguments:
+  <wikipedia-url>    An https://en.wikipedia.org/wiki/<Title> URL.
+                     Optional ?oldid=<rev> query param pins a revision.
+  <citation-number>  The [N] bracketed reference number as it appears
+                     in the rendered article (positive integer).
+
+Options:
+  --provider <name>  LLM provider to use. One of:
+                       publicai (default; routed via the worker proxy,
+                                 no API key needed)
+                       claude   (requires CLAUDE_API_KEY)
+                       gemini   (requires GEMINI_API_KEY)
+                       openai   (requires OPENAI_API_KEY)
+  --no-log           Do not log the verification to the worker proxy's
+                     /log endpoint.
+  --help, -h         Show this help and exit.
+
+Exit codes:
+  0   success
+  2   bad command-line arguments
+  3   Wikipedia article not found (404)
+  4   Wikipedia fetch failed (5xx or network error)
+  5   citation number not present in article
+  6   citation has no fetchable source URL
+  7   source unavailable (fetch returned empty or the URL was unfetchable)
+  8   required API key environment variable is missing
+  9   provider returned a 4xx (auth error, rate limit, bad request)
+  10  provider returned a 5xx or network error
+  11  LLM returned malformed JSON
+
+Examples:
+  ccs verify https://en.wikipedia.org/wiki/Great_Migration_(African_American) 14
+  ccs verify https://en.wikipedia.org/wiki/Foo 3 --provider claude
+  ccs verify https://en.wikipedia.org/wiki/Foo?oldid=1234567 3 --no-log
+`;
+
 async function fetchWikipediaHtml(restUrl) {
     const response = await fetch(restUrl, {
         headers: {
@@ -300,24 +341,24 @@ export async function runVerify(opts, { stdout = process.stdout, stderr = proces
     return 0;
 }
 
-export async function main(argv) {
+export async function main(argv, { stdout = process.stdout, stderr = process.stderr, env = process.env } = {}) {
     let opts;
     try {
         opts = parseCliArgs(argv);
     } catch (err) {
         if (err instanceof UsageError) {
-            process.stderr.write(`ccs: ${err.message}\n`);
+            stderr.write(`ccs: ${err.message}\n`);
             return 2;
         }
         throw err;
     }
 
     if (opts.help) {
-        process.stdout.write('usage: ccs verify <wikipedia-url> <citation-number> [--provider <name>] [--no-log]\n');
+        stdout.write(HELP_TEXT);
         return 0;
     }
 
-    return await runVerify(opts);
+    return await runVerify(opts, { stdout, stderr, env });
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

@@ -35,6 +35,60 @@ API keys for paid providers are stored in `localStorage` and configured from the
 3. Click any citation number `[N]` in the article — the claim and source will be extracted, sent to the selected LLM, and a verdict displayed
 4. Or click **Verify all citations** to batch-check the whole article and generate a wiki-markup report
 
+## Command-line interface (`ccs verify`)
+
+The CLI reuses `core/` to verify a single citation from the terminal — the same verification the userscript performs in-page, minus the UI.
+
+### Install (from a clone)
+
+```sh
+git clone https://github.com/alex-o-748/citation-checker-script.git
+cd citation-checker-script
+npm install
+```
+
+No global install needed. Use the `npx` form shown below; npm exposes the `ccs` bin directly from `node_modules/.bin`.
+
+### Usage
+
+```sh
+npx ccs verify <wikipedia-url> <citation-number> [--provider <name>] [--no-log]
+```
+
+Example:
+
+```sh
+npx ccs verify https://en.wikipedia.org/wiki/Great_Migration_(African_American) 14
+```
+
+Run `npx ccs --help` for the full option and exit-code table.
+
+### Providers and API keys
+
+| Provider | Flag value | Env var required |
+| --- | --- | --- |
+| PublicAI (default) | `--provider publicai` | none (routed via the worker proxy) |
+| Claude | `--provider claude` | `CLAUDE_API_KEY` |
+| Gemini | `--provider gemini` | `GEMINI_API_KEY` |
+| OpenAI | `--provider openai` | `OPENAI_API_KEY` |
+
+The CLI calls the same `publicai-proxy.alaexis.workers.dev` endpoint as the userscript for source fetching and PublicAI routing; other providers are called directly using your env-var API key.
+
+### Logging
+
+By default the CLI POSTs a log entry to the worker proxy's `/log` endpoint (same schema the userscript uses). Pass `--no-log` to skip.
+
+### URL forms
+
+Supported:
+- `https://en.wikipedia.org/wiki/<Title>`
+- `https://en.wikipedia.org/wiki/<Title>?oldid=<rev>`
+
+Not supported in Phase 1:
+- `https://en.wikipedia.org/w/index.php?title=<Title>` form
+- `?curid=<pageid>` form
+- non-`en` Wikipedias
+
 ## Repository Layout
 
 ```

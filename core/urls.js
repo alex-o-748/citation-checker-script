@@ -17,13 +17,20 @@ export function extractHttpUrl(element) {
 }
 
 export function extractReferenceUrl(refElement, doc = globalThis.document) {
-    const href = refElement.getAttribute('href');
-    if (!href || !href.startsWith('#')) {
-        console.log('[CitationVerifier] No valid href on refElement:', href);
+    let href = refElement.getAttribute('href');
+    if (!href) {
+        console.log('[CitationVerifier] No href on refElement');
         return null;
     }
 
-    const refId = href.substring(1);
+    // Handle Wikipedia REST API HTML which uses relative URLs with fragments
+    // like "./Page#cite_note-1". Extract just the fragment part.
+    const fragmentIndex = href.indexOf('#');
+    if (fragmentIndex === -1) {
+        console.log('[CitationVerifier] No fragment in href:', href);
+        return null;
+    }
+    const refId = href.substring(fragmentIndex + 1);
     const refTarget = doc.getElementById(refId);
 
     if (!refTarget) {
@@ -69,9 +76,12 @@ export function extractReferenceUrl(refElement, doc = globalThis.document) {
 
 export function extractPageNumber(refElement, doc = globalThis.document) {
     const href = refElement.getAttribute('href');
-    if (!href || !href.startsWith('#')) return null;
+    if (!href) return null;
 
-    const refTarget = doc.getElementById(href.substring(1));
+    const fragmentIndex = href.indexOf('#');
+    if (fragmentIndex === -1) return null;
+
+    const refTarget = doc.getElementById(href.substring(fragmentIndex + 1));
     if (!refTarget) return null;
 
     const text = refTarget.textContent;

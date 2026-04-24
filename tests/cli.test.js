@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
-import { parseCliArgs, parseWikiUrl, deriveRestUrl, findReferenceByCitationNumber, classifyProviderError, runVerify } from '../cli/verify.js';
+import { HELP_TEXT, main, parseCliArgs, parseWikiUrl, deriveRestUrl, findReferenceByCitationNumber, classifyProviderError, runVerify } from '../cli/verify.js';
 
 function args(...rest) {
   return ['node', 'bin/ccs', ...rest];
@@ -587,5 +587,49 @@ test('runVerify: DOM traversal chain works against a realistic Wikipedia fixture
   } finally {
     mock.restore();
   }
+});
+
+test('HELP_TEXT: documents the verify subcommand usage', () => {
+  assert.match(HELP_TEXT, /ccs verify <wikipedia-url> <citation-number>/);
+});
+
+test('HELP_TEXT: documents --provider with all four choices', () => {
+  assert.match(HELP_TEXT, /--provider/);
+  for (const p of ['publicai', 'claude', 'gemini', 'openai']) {
+    assert.match(HELP_TEXT, new RegExp(p), `HELP_TEXT missing provider: ${p}`);
+  }
+});
+
+test('HELP_TEXT: documents --no-log', () => {
+  assert.match(HELP_TEXT, /--no-log/);
+});
+
+test('HELP_TEXT: documents the API key env vars for external providers', () => {
+  for (const v of ['CLAUDE_API_KEY', 'GEMINI_API_KEY', 'OPENAI_API_KEY']) {
+    assert.match(HELP_TEXT, new RegExp(v), `HELP_TEXT missing env var: ${v}`);
+  }
+  // PublicAI goes through the proxy and needs no client-side key — document
+  // that explicitly so users don't go looking for a PUBLICAI_API_KEY.
+  // Use [\s\S] (not [^\n]*) so the match can span the line break between
+  // "publicai" and "no API key" in the formatted block.
+  assert.match(HELP_TEXT, /publicai[\s\S]*?no API key/i);
+});
+
+test('HELP_TEXT: documents every exit code from the error table', () => {
+  // Exit codes from docs/design-plans/2026-04-23-factor-and-cli.md, minus the
+  // success exit (0), which doesn't need to appear in a table of failures.
+  const expectedCodes = ['2', '3', '4', '5', '6', '7', '8', '9', '10', '11'];
+  for (const code of expectedCodes) {
+    assert.match(HELP_TEXT, new RegExp(`\\b${code}\\b`), `HELP_TEXT missing exit code ${code}`);
+  }
+});
+
+test('main() with --help writes HELP_TEXT to the injected stdout and returns 0', async () => {
+  const stdout = mkStream();
+  const stderr = mkStream();
+  const code = await main(['node', 'bin/ccs', '--help'], { stdout, stderr, env: {} });
+  assert.equal(code, 0, `stderr: ${stderr.value()}`);
+  assert.match(stdout.value(), /ccs verify/);
+  assert.match(stdout.value(), /Exit codes:/);
 });
 

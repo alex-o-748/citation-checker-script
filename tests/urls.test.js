@@ -54,3 +54,20 @@ test('extractReferenceUrl falls back to globalThis.document when no doc arg is p
     if (prev === undefined) delete globalThis.document; else globalThis.document = prev;
   }
 });
+
+test('extractReferenceUrl handles Wikipedia REST API relative hrefs like ./Page#cite_note-1', () => {
+  // The Wikipedia REST API includes a <base href="//en.wikipedia.org/wiki/">
+  // and returns HTML with relative URLs. JSDOM preserves the literal href attribute,
+  // so we get hrefs like "./Sky#cite_note-1" instead of pure fragments.
+  const jsdom = new JSDOM(`<!DOCTYPE html><body>
+    <a id="ref-1" href="./Sky#cite_note-1">1</a>
+    <span id="cite_note-1" class="reference">
+      <cite class="citation"><a class="external" href="https://example.com/sky-source">Sky research</a></cite>
+    </span>
+  </body>`);
+
+  const doc = jsdom.window.document;
+  const refElement = doc.getElementById('ref-1');
+  const url = extractReferenceUrl(refElement, doc);
+  assert.equal(url, 'https://example.com/sky-source');
+});
