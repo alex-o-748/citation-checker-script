@@ -105,3 +105,30 @@ See [`benchmark/README.md`](benchmark/README.md) for the full workflow, includin
 - API keys live in `localStorage`, never in source
 - The system prompt contains 9 tuned few-shot examples; edits affect benchmark accuracy
 - Claim extraction uses "between adjacent citations" logic by design (not full sentences) for precision
+
+## `core/` and the sync script
+
+Pure-logic functions (prompt building, verdict parsing, URL extraction, claim
+extraction, provider dispatch, worker proxy calls) live in `core/*.js` as ESM
+modules and are tested with `node:test`:
+
+```sh
+npm install
+npm test
+```
+
+`main.js` is a Wikipedia userscript with no module system, so `core/` is also
+spliced into it by `scripts/sync-main.js`:
+
+```sh
+npm run build            # regenerate main.js from core/
+npm run build -- --check # fail if main.js is stale (for CI)
+```
+
+The injected region in `main.js` is framed by `// <core-injected>` and
+`// </core-injected>` markers — do not edit between them by hand; edit the
+file in `core/` and rerun `npm run build`.
+
+Class methods on `WikipediaSourceVerifier` that correspond to `core/` functions
+are thin wrappers; the bodies live in `core/`. The rest of `main.js` — UI,
+event handlers, MediaWiki integration — is hand-maintained as before.
