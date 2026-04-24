@@ -1,4 +1,5 @@
 // URL extraction helpers for Wikipedia reference elements.
+// Note: extractReferenceUrl and extractPageNumber depend on a global `document` object (supplied by the browser in main.js, or by JSDOM in Node callers).
 
 export function extractHttpUrl(element) {
     if (!element) return null;

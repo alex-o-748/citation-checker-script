@@ -35,10 +35,11 @@ test('extractReferenceUrl pulls the external link out of a citation element', ()
   // Inject document into global scope for the function to use
   global.document = jsdom.window.document;
 
-  const url = extractReferenceUrl(refElement);
-
-  // Clean up
-  delete global.document;
-
-  assert.equal(url, 'https://example.com/src');
+  try {
+    const url = extractReferenceUrl(refElement);
+    assert.equal(url, 'https://example.com/src');
+  } finally {
+    // Clean up
+    delete global.document;
+  }
 });
