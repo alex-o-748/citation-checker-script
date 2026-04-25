@@ -1,0 +1,16 @@
+{
+  "name": "citation-checker-script",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "node --test 'tests/**/*.test.js'",
+    "build": "node scripts/sync-main.js"
+  },
+  "dependencies": {
+    "jsdom": "^24.0.0"
+  }
+}
