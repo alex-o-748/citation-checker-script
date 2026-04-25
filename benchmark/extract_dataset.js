@@ -17,6 +17,12 @@ const path = require('path');
 const https = require('https');
 const { JSDOM } = require('jsdom');
 
+// Wikipedia inline maintenance markers that the article renders as bracketed
+// superscript text (e.g. "[failed verification]"). These leak into claim text
+// when the surrounding ref is the one we're testing — strip them so they
+// don't bias the LLM verdict.
+const MAINTENANCE_MARKER_RE = /\[(failed verification|verification needed|citation needed|better source[^\]]*|dubious[^\]]*|unreliable source[^\]]*|clarification needed|disputed[^\]]*|page needed|when\??|where\??|who\??|why\??|by whom\??|according to whom\??|original research[^\]]*|specify[^\]]*|vague|opinion|fact)\]/gi;
+
 // Configuration
 const INPUT_CSV = path.join(__dirname, '..', 'Benchmarking_data_Citations.csv');
 const OUTPUT_JSON = path.join(__dirname, 'dataset.json');
@@ -223,6 +229,7 @@ function extractClaimText(document, citationNumber) {
         // Clean up
         text = text
             .replace(/\[\d+\]/g, '')
+            .replace(MAINTENANCE_MARKER_RE, '')
             .replace(/\s+/g, ' ')
             .trim();
 
@@ -230,6 +237,7 @@ function extractClaimText(document, citationNumber) {
         if (!text || text.length < 10) {
             text = container.textContent
                 .replace(/\[\d+\]/g, '')
+                .replace(MAINTENANCE_MARKER_RE, '')
                 .replace(/\s+/g, ' ')
                 .trim();
         }
