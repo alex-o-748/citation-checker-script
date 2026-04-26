@@ -44,3 +44,18 @@ test('extractClaimText strips maintenance markers from the returned claim', () =
   assert.ok(!claim.includes('[failed verification]'), `marker leaked into claim: ${claim}`);
   assert.ok(claim.includes('Elvis is still alive'));
 });
+
+test('extractClaimText strips maintenance markers that contain a non-breaking space', () => {
+  // Wikipedia's {{failed verification}} and similar templates are styled
+  // white-space:nowrap and emit U+00A0 between the words in the rendered
+  // bracket text, so range.toString() yields "[failed verification]"
+  // rather than "[failed verification]".
+  const doc = mkDoc(`
+    <p>Elvis is still alive[failed verification].<sup id="cite_ref-1" class="reference"><a href="#cite_note-1">[1]</a></sup></p>
+  `);
+  const ref = doc.getElementById('cite_ref-1');
+  const claim = extractClaimText(ref);
+  assert.ok(!claim.includes('failed') && !claim.includes('verification'),
+    `NBSP marker leaked into claim: ${JSON.stringify(claim)}`);
+  assert.ok(claim.includes('Elvis is still alive'));
+});

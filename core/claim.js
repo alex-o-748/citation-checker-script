@@ -68,19 +68,23 @@ export function extractClaimText(refElement) {
     // Get the text content
     let claimText = extractionRange.toString();
 
-    // Clean up the text
+    // Clean up the text. Whitespace normalization must run BEFORE the
+    // maintenance-marker strip: Wikipedia's {{failed verification}} and similar
+    // templates use white-space:nowrap and emit U+00A0 (NBSP) between the
+    // words, which the literal-space alternatives in MAINTENANCE_MARKER_RE
+    // would otherwise fail to match.
     claimText = claimText
         .replace(/\[\d+\]/g, '')                 // Remove reference numbers like [1], [2]
+        .replace(/\s+/g, ' ')                    // Normalize whitespace (incl. NBSP)
         .replace(MAINTENANCE_MARKER_RE, '')      // Remove maintenance markers like [failed verification]
-        .replace(/\s+/g, ' ')                    // Normalize whitespace
         .trim();
 
     // If we got nothing meaningful, fall back to the container text
     if (!claimText || claimText.length < 10) {
         claimText = container.textContent
             .replace(/\[\d+\]/g, '')
-            .replace(MAINTENANCE_MARKER_RE, '')
             .replace(/\s+/g, ' ')
+            .replace(MAINTENANCE_MARKER_RE, '')
             .trim();
     }
 
