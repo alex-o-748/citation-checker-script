@@ -2586,14 +2586,13 @@ function logVerification(payload, { workerBase = 'https://publicai-proxy.alaexis
             const card = document.createElement('div');
             card.className = `verifier-report-card verdict-${verdictClass}`;
             const claimExcerpt = result.claimText.length > 80 ? result.claimText.substring(0, 80) + '…' : result.claimText;
-            const confidenceStr = result.confidence !== null ? ` (${result.confidence}%)` : '';
             const truncationHtml = (result.truncated && result.verdict !== 'SUPPORTED')
                 ? '<div class="report-card-truncated">⚠ Source is long, only partially checked.</div>'
                 : '';
             card.innerHTML = `
                 <div class="report-card-header">
                     <span class="report-card-citation">[${result.citationNumber}]</span>
-                    <span class="report-card-verdict ${verdictClass}">${verdictLabel}${confidenceStr}</span>
+                    <span class="report-card-verdict ${verdictClass}">${verdictLabel}</span>
                 </div>
                 <div class="report-card-claim">${this.escapeHtml(claimExcerpt)}</div>
                 ${result.comments ? `<div class="report-card-comment">${this.escapeHtml(result.comments)}</div>` : ''}
@@ -2678,7 +2677,7 @@ function logVerification(payload, { workerBase = 'https://publicai-proxy.alaexis
                 wikitext += `Revision checked: [[Special:PermanentLink/${revId}|${revId}]]\n\n`;
             }
             wikitext += `{| class="wikitable sortable"\n`;
-            wikitext += `|-\n! # !! Verdict !! Confidence !! Source !! Comments\n`;
+            wikitext += `|-\n! # !! Verdict !! Source !! Comments\n`;
 
             for (const r of this.reportResults) {
                 let verdictWiki;
@@ -2689,7 +2688,6 @@ function logVerification(payload, { workerBase = 'https://publicai-proxy.alaexis
                     case 'SOURCE UNAVAILABLE': verdictWiki = '{{hmmm}} Source unavailable'; break;
                     default: verdictWiki = r.verdict; break;
                 }
-                const confStr = r.confidence !== null ? `${r.confidence}%` : '—';
                 const sourceStr = r.url ? `[${r.url} source]` : '—';
                 let commentsClean = (r.comments || '').replace(/\n/g, ' ');
                 if (r.truncated && r.verdict !== 'SUPPORTED') {
@@ -2704,7 +2702,7 @@ function logVerification(payload, { workerBase = 'https://publicai-proxy.alaexis
                 const citationCell = (revId && refAnchor)
                     ? `[[Special:PermanentLink/${revId}#${refAnchor}|&#91;${r.citationNumber}&#93;]]`
                     : `[${r.citationNumber}]`;
-                wikitext += `|-\n| ${citationCell} || ${verdictWiki} || ${confStr} || ${sourceStr} || ${commentsClean}\n`;
+                wikitext += `|-\n| ${citationCell} || ${verdictWiki} || ${sourceStr} || ${commentsClean}\n`;
             }
 
             wikitext += `|}\n\n`;
@@ -2746,8 +2744,7 @@ function logVerification(payload, { workerBase = 'https://publicai-proxy.alaexis
             text += `${'='.repeat(60)}\n\n`;
 
             for (const r of this.reportResults) {
-                const confStr = r.confidence !== null ? ` (${r.confidence}%)` : '';
-                text += `[${r.citationNumber}] ${r.verdict}${confStr}\n`;
+                text += `[${r.citationNumber}] ${r.verdict}\n`;
                 text += `  Claim: ${r.claimText.substring(0, 100)}${r.claimText.length > 100 ? '...' : ''}\n`;
                 if (r.url) text += `  Source: ${r.url}\n`;
                 if (r.comments) text += `  Comments: ${r.comments}\n`;
