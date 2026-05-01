@@ -23,7 +23,7 @@ benchmark/
   analysis.json                  # Calculated metrics
   analysis_v1.json               # Frozen v1 analysis snapshot
 Benchmarking_data_Citations.csv  # Source ground truth data (with Dataset version column)
-*.md                             # Documentation and research notes
+docs/                            # Reference docs + design plans (see docs/README.md)
 ```
 
 ## Architecture

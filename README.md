@@ -93,16 +93,16 @@ Not supported in Phase 1:
 
 ```
 main.js                          Wikipedia user script (single-class IIFE)
+core/                            Pure-logic ESM modules spliced into main.js
+bin/, cli/                       `npx ccs verify` CLI entry point
 benchmark/                       Benchmark suite (Node.js)
   extract_dataset.js               Extract claim/source pairs from Wikipedia
   run_benchmark.js                 Run LLM verification on the dataset
   analyze_results.js               Metrics and confusion matrices
   generate_comparison.js           CSV comparison across providers
-  dataset.json                     76 ground-truth claim-citation pairs
+  dataset.json                     Ground-truth claim-citation pairs
 Benchmarking_data_Citations.csv  Source ground-truth data
-Citation Verification - LLM Benchmarking.md  Research notes
-review_researcher_feedback.md    Review feedback notes
-worker_logging_reference.md      CORS-proxy worker notes
+docs/                            Reference docs and design plans (see docs/README.md)
 ```
 
 ## Architecture
