@@ -3,7 +3,7 @@
 Project documentation that isn't a top-level `README.md` or `CLAUDE.md`. Two kinds of file live here:
 
 - **Reference / overview docs** at the top of `docs/` describe how parts of the system work today (research notes, schema references, integration points).
-- **Design plans** under `docs/design-plans/` are date-prefixed proposals for changes. Each one carries its own status header noting whether the work is proposed, in progress, deferred, or superseded — read the header before assuming the doc reflects current code.
+- **Design plans** under `docs/design-plans/` are date-prefixed proposals for changes. Each one carries its own status header noting whether the work is proposed, in progress, deferred, or superseded — read the header before assuming the doc reflects current code. See `docs/design-plans/README.md` for the full status convention and lifecycle.
 
 ## Contents
 
