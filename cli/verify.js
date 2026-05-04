@@ -12,7 +12,7 @@ import { generateSystemPrompt, generateUserPrompt } from '../core/prompts.js';
 import { callProviderAPI } from '../core/providers.js';
 import { parseVerificationResult } from '../core/parsing.js';
 
-const KNOWN_PROVIDERS = ['publicai', 'claude', 'gemini', 'openai'];
+const KNOWN_PROVIDERS = ['publicai', 'huggingface', 'claude', 'gemini', 'openai'];
 
 export function parseCliArgs(argv) {
     const raw = argv.slice(2);
@@ -144,17 +144,19 @@ export function classifyProviderError(err) {
 }
 
 const PROVIDER_MODELS = {
-    publicai: 'aisingapore/Qwen-SEA-LION-v4-32B-IT',
-    claude:   'claude-sonnet-4-6',
-    gemini:   'gemini-flash-latest',
-    openai:   'gpt-4o',
+    publicai:    'aisingapore/Qwen-SEA-LION-v4-32B-IT',
+    huggingface: 'openai/gpt-oss-20b',
+    claude:      'claude-sonnet-4-6',
+    gemini:      'gemini-flash-latest',
+    openai:      'gpt-4o',
 };
 
 const PROVIDER_ENV_VARS = {
-    publicai: null, // routed through the worker proxy; no client-side key
-    claude:   'CLAUDE_API_KEY',
-    gemini:   'GEMINI_API_KEY',
-    openai:   'OPENAI_API_KEY',
+    publicai:    null, // routed through the worker proxy; no client-side key
+    huggingface: null, // routed through the worker proxy; no client-side key
+    claude:      'CLAUDE_API_KEY',
+    gemini:      'GEMINI_API_KEY',
+    openai:      'OPENAI_API_KEY',
 };
 
 export const HELP_TEXT = `usage: ccs verify <wikipedia-url> <citation-number> [options]
@@ -170,11 +172,13 @@ Arguments:
 
 Options:
   --provider <name>  LLM provider to use. One of:
-                       publicai (default; routed via the worker proxy,
-                                 no API key needed)
-                       claude   (requires CLAUDE_API_KEY)
-                       gemini   (requires GEMINI_API_KEY)
-                       openai   (requires OPENAI_API_KEY)
+                       publicai    (default; routed via the worker proxy,
+                                    no API key needed)
+                       huggingface (routed via the worker proxy,
+                                    no API key needed)
+                       claude      (requires CLAUDE_API_KEY)
+                       gemini      (requires GEMINI_API_KEY)
+                       openai      (requires OPENAI_API_KEY)
   --no-log           Do not log the verification to the worker proxy's
                      /log endpoint.
   --help, -h         Show this help and exit.

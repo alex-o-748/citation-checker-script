@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   callPublicAIAPI,
+  callHuggingFaceAPI,
   callClaudeAPI,
   callProviderAPI,
 } from '../core/providers.js';
@@ -61,6 +62,69 @@ test('callPublicAIAPI posts to workerBase and returns text + usage', async () =>
     });
     assert.equal(result.text, 'verdict');
     assert.ok(mock.calls[0].url.startsWith('https://publicai-proxy.alaexis.workers.dev'));
+  } finally {
+    mock.restore();
+  }
+});
+
+test('callHuggingFaceAPI posts to workerBase /hf and returns text + usage', async () => {
+  const mock = withMockFetch(async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      choices: [{ message: { content: 'hf-verdict' } }],
+      usage: { prompt_tokens: 50, completion_tokens: 10 },
+    }),
+  }));
+  try {
+    const result = await callHuggingFaceAPI({
+      model: 'meta-llama/Llama-3.3-70B-Instruct',
+      systemPrompt: 's',
+      userContent: 'u',
+    });
+    assert.equal(result.text, 'hf-verdict');
+    assert.equal(result.usage.input, 50);
+    assert.equal(result.usage.output, 10);
+    assert.equal(mock.calls[0].url, 'https://publicai-proxy.alaexis.workers.dev/hf');
+    const sent = JSON.parse(mock.calls[0].opts.body);
+    assert.equal(sent.model, 'meta-llama/Llama-3.3-70B-Instruct');
+  } finally {
+    mock.restore();
+  }
+});
+
+test('callHuggingFaceAPI surfaces upstream error messages', async () => {
+  const mock = withMockFetch(async () => ({
+    ok: false,
+    status: 429,
+    text: async () => JSON.stringify({ error: { message: 'rate limited' } }),
+  }));
+  try {
+    await assert.rejects(
+      () => callHuggingFaceAPI({ model: 'm', systemPrompt: 's', userContent: 'u' }),
+      /HuggingFace API request failed \(429\): rate limited/
+    );
+  } finally {
+    mock.restore();
+  }
+});
+
+test('callProviderAPI dispatches huggingface to /hf', async () => {
+  const mock = withMockFetch(async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      choices: [{ message: { content: 'ok' } }],
+      usage: {},
+    }),
+  }));
+  try {
+    await callProviderAPI('huggingface', {
+      model: 'meta-llama/Llama-3.3-70B-Instruct',
+      systemPrompt: 's',
+      userContent: 'u',
+    });
+    assert.ok(mock.calls[0].url.endsWith('/hf'));
   } finally {
     mock.restore();
   }

@@ -360,7 +360,9 @@ function extractClaimText(refElement) {
 // --- core/providers.js ---
 // LLM provider dispatch. Pure HTTP routing — callers build the prompt.
 
-async function callPublicAIAPI({ model, systemPrompt, userContent, workerBase = 'https://publicai-proxy.alaexis.workers.dev' }) {
+// Shared call shape for proxy-routed OpenAI-compatible upstreams (PublicAI, HF).
+// The proxy injects upstream API keys; the userscript only specifies the model.
+async function callProxyChatCompletion({ url, model, systemPrompt, userContent, label }) {
     const requestBody = {
         model: model,
         messages: [
@@ -371,7 +373,7 @@ async function callPublicAIAPI({ model, systemPrompt, userContent, workerBase = 
         temperature: 0.1
     };
 
-    const response = await fetch(workerBase, {
+    const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(requestBody)
@@ -386,7 +388,7 @@ async function callPublicAIAPI({ model, systemPrompt, userContent, workerBase = 
         } catch {
             errorMessage = errorText;
         }
-        throw new Error(`PublicAI API request failed (${response.status}): ${errorMessage}`);
+        throw new Error(`${label} API request failed (${response.status}): ${errorMessage}`);
     }
 
     const data = await response.json();
@@ -402,6 +404,22 @@ async function callPublicAIAPI({ model, systemPrompt, userContent, workerBase = 
             output: data.usage?.completion_tokens || 0
         }
     };
+}
+
+async function callPublicAIAPI({ model, systemPrompt, userContent, workerBase = 'https://publicai-proxy.alaexis.workers.dev' }) {
+    return callProxyChatCompletion({
+        url: workerBase,
+        model, systemPrompt, userContent,
+        label: 'PublicAI',
+    });
+}
+
+async function callHuggingFaceAPI({ model, systemPrompt, userContent, workerBase = 'https://publicai-proxy.alaexis.workers.dev' }) {
+    return callProxyChatCompletion({
+        url: `${workerBase}/hf`,
+        model, systemPrompt, userContent,
+        label: 'HuggingFace',
+    });
 }
 
 async function callClaudeAPI({ apiKey, model, systemPrompt, userContent }) {
@@ -525,10 +543,11 @@ async function callOpenAIAPI({ apiKey, model, systemPrompt, userContent }) {
 
 async function callProviderAPI(name, config) {
     switch (name) {
-        case 'publicai': return await callPublicAIAPI(config);
-        case 'claude':   return await callClaudeAPI(config);
-        case 'gemini':   return await callGeminiAPI(config);
-        case 'openai':   return await callOpenAIAPI(config);
+        case 'publicai':    return await callPublicAIAPI(config);
+        case 'huggingface': return await callHuggingFaceAPI(config);
+        case 'claude':      return await callClaudeAPI(config);
+        case 'gemini':      return await callGeminiAPI(config);
+        case 'openai':      return await callOpenAIAPI(config);
         default: throw new Error(`Unknown provider: ${name}`);
     }
 }
@@ -609,6 +628,13 @@ function logVerification(payload, { workerBase = 'https://publicai-proxy.alaexis
                     storageKey: null, // No key needed - uses built-in key
                     color: '#6B21A8', // Purple for PublicAI
                     model: 'aisingapore/Qwen-SEA-LION-v4-32B-IT',
+                    requiresKey: false
+                },
+                huggingface: {
+                    name: 'HuggingFace (Free)',
+                    storageKey: null, // No key needed - proxy injects upstream key
+                    color: '#FF9D00', // HF yellow-orange
+                    model: 'openai/gpt-oss-20b',
                     requiresKey: false
                 },
                 claude: {
