@@ -2326,7 +2326,11 @@ function logVerification(payload, { workerBase = 'https://publicai-proxy.alaexis
             });
             
             const windowManager = new OO.ui.WindowManager();
-            $('body').append(windowManager.$element);
+            // Append to #mw-teleport-target (lifted above the sidebar by our
+            // CSS) so the dialog renders on top when the sidebar overlaps it.
+            // Fall back to body if the teleport target is unavailable.
+            const dialogHost = document.getElementById('mw-teleport-target') || document.body;
+            dialogHost.appendChild(windowManager.$element[0]);
             windowManager.addWindows([dialog]);
             
             windowManager.openWindow(dialog, {
