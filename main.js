@@ -623,38 +623,33 @@ function logVerification(payload, { workerBase = 'https://publicai-proxy.alaexis
     class WikipediaSourceVerifier {
         constructor() {
             this.providers = {
+                huggingface: {
+                    name: 'Qwen-HF (free)',
+                    storageKey: null, // No key needed - proxy injects upstream key
+                    model: 'Qwen/Qwen3-32B',
+                    requiresKey: false
+                },
                 publicai: {
                     name: 'PublicAI (Free)',
                     storageKey: null, // No key needed - uses built-in key
-                    color: '#6B21A8', // Purple for PublicAI
                     model: 'aisingapore/Qwen-SEA-LION-v4-32B-IT',
-                    requiresKey: false
-                },
-                huggingface: {
-                    name: 'HuggingFace (Free)',
-                    storageKey: null, // No key needed - proxy injects upstream key
-                    color: '#FF9D00', // HF yellow-orange
-                    model: 'openai/gpt-oss-20b',
                     requiresKey: false
                 },
                 claude: {
                     name: 'Claude',
                     storageKey: 'claude_api_key',
-                    color: '#0645ad',
                     model: 'claude-sonnet-4-6',
                     requiresKey: true
                 },
                 gemini: {
                     name: 'Gemini',
                     storageKey: 'gemini_api_key',
-                    color: '#4285F4',
                     model: 'gemini-flash-latest',
                     requiresKey: true
                 },
                 openai: {
                     name: 'ChatGPT',
                     storageKey: 'openai_api_key',
-                    color: '#10a37f',
                     model: 'gpt-4o',
                     requiresKey: true
                 }
@@ -666,7 +661,17 @@ function logVerification(payload, { workerBase = 'https://publicai-proxy.alaexis
                 storedProvider = 'publicai';
                 localStorage.setItem('source_verifier_provider', 'publicai');
             }
-            this.currentProvider = storedProvider || 'publicai';
+            // One-time migration: move existing PublicAI users to the new
+            // Qwen-HF default. Runs once per browser so a later switch back
+            // to PublicAI sticks.
+            if (!localStorage.getItem('qwen_hf_default_migrated')) {
+                if (storedProvider === 'publicai') {
+                    storedProvider = 'huggingface';
+                    localStorage.setItem('source_verifier_provider', 'huggingface');
+                }
+                localStorage.setItem('qwen_hf_default_migrated', '1');
+            }
+            this.currentProvider = storedProvider || 'huggingface';
             this.sidebarWidth = localStorage.getItem('verifier_sidebar_width') || '400px';
             this.isVisible = localStorage.getItem('verifier_sidebar_visible') === 'true';
             this.buttons = {};
@@ -733,7 +738,7 @@ function logVerification(payload, { workerBase = 'https://publicai-proxy.alaexis
         }
         
         getCurrentColor() {
-            return this.providers[this.currentProvider].color;
+            return '#6B21A8';
         }
         
         providerRequiresKey() {
@@ -1823,7 +1828,7 @@ function logVerification(payload, { workerBase = 'https://publicai-proxy.alaexis
             
             const provider = this.providers[this.currentProvider];
             if (!provider.requiresKey) {
-                infoEl.textContent = '✓ No API key required - using free PublicAI model';
+                infoEl.textContent = `✓ No API key required - using free ${provider.name} model`;
                 infoEl.className = 'free-provider';
             } else if (this.getCurrentApiKey()) {
                 infoEl.textContent = `API key configured for ${provider.name}`;
@@ -2250,7 +2255,6 @@ function logVerification(payload, { workerBase = 'https://publicai-proxy.alaexis
                 this.currentProvider = item.getData();
                 localStorage.setItem('source_verifier_provider', this.currentProvider);
                 this.updateButtonVisibility();
-                this.updateTheme();
                 this.updateStatus(`Switched to ${this.providers[this.currentProvider].name}`);
             });
             
@@ -2294,19 +2298,6 @@ function logVerification(payload, { workerBase = 'https://publicai-proxy.alaexis
             this.buttons.backToReport.on('click', () => {
                 this.showReportView();
             });
-        }
-        
-        updateTheme() {
-            const color = this.getCurrentColor();
-            // Remove old styles and re-create to pick up new provider color in dark theme
-            const oldStyle = document.querySelector('style[data-verifier-theme]');
-            if (oldStyle) oldStyle.remove();
-            // Re-create styles with updated color references
-            const existingStyles = document.head.querySelectorAll('style');
-            existingStyles.forEach(s => {
-                if (s.textContent.includes('#source-verifier-sidebar')) s.remove();
-            });
-            this.createStyles();
         }
         
         setApiKey() {
@@ -2864,6 +2855,8 @@ function logVerification(payload, { workerBase = 'https://publicai-proxy.alaexis
             let modelDesc;
             if (this.currentProvider === 'publicai') {
                 modelDesc = 'a PublicAI-hosted open-source LLM';
+            } else if (this.currentProvider === 'huggingface') {
+                modelDesc = `a HuggingFace-hosted open-source LLM (${provider.model})`;
             } else {
                 modelDesc = provider.model;
             }
@@ -2961,7 +2954,7 @@ function logVerification(payload, { workerBase = 'https://publicai-proxy.alaexis
             this.updateButtonVisibility();
 
             const startTime = Date.now();
-            const useProxy = this.currentProvider === 'publicai';
+            const useProxy = this.currentProvider === 'publicai' || this.currentProvider === 'huggingface';
             const delayBetweenCalls = useProxy ? 3000 : 1000;
 
             for (let i = 0; i < citations.length; i++) {
