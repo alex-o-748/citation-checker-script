@@ -2855,6 +2855,8 @@ function logVerification(payload, { workerBase = 'https://publicai-proxy.alaexis
             let modelDesc;
             if (this.currentProvider === 'publicai') {
                 modelDesc = 'a PublicAI-hosted open-source LLM';
+            } else if (this.currentProvider === 'huggingface') {
+                modelDesc = `a HuggingFace-hosted open-source LLM (${provider.model})`;
             } else {
                 modelDesc = provider.model;
             }
