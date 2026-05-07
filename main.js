@@ -623,18 +623,18 @@ function logVerification(payload, { workerBase = 'https://publicai-proxy.alaexis
     class WikipediaSourceVerifier {
         constructor() {
             this.providers = {
+                huggingface: {
+                    name: 'Qwen-HF (free)',
+                    storageKey: null, // No key needed - proxy injects upstream key
+                    color: '#FF9D00', // HF yellow-orange
+                    model: 'Qwen/Qwen3-32B',
+                    requiresKey: false
+                },
                 publicai: {
                     name: 'PublicAI (Free)',
                     storageKey: null, // No key needed - uses built-in key
                     color: '#6B21A8', // Purple for PublicAI
                     model: 'aisingapore/Qwen-SEA-LION-v4-32B-IT',
-                    requiresKey: false
-                },
-                huggingface: {
-                    name: 'HuggingFace (Free)',
-                    storageKey: null, // No key needed - proxy injects upstream key
-                    color: '#FF9D00', // HF yellow-orange
-                    model: 'openai/gpt-oss-20b',
                     requiresKey: false
                 },
                 claude: {
@@ -666,7 +666,7 @@ function logVerification(payload, { workerBase = 'https://publicai-proxy.alaexis
                 storedProvider = 'publicai';
                 localStorage.setItem('source_verifier_provider', 'publicai');
             }
-            this.currentProvider = storedProvider || 'publicai';
+            this.currentProvider = storedProvider || 'huggingface';
             this.sidebarWidth = localStorage.getItem('verifier_sidebar_width') || '400px';
             this.isVisible = localStorage.getItem('verifier_sidebar_visible') === 'true';
             this.buttons = {};
@@ -1823,7 +1823,7 @@ function logVerification(payload, { workerBase = 'https://publicai-proxy.alaexis
             
             const provider = this.providers[this.currentProvider];
             if (!provider.requiresKey) {
-                infoEl.textContent = '✓ No API key required - using free PublicAI model';
+                infoEl.textContent = `✓ No API key required - using free ${provider.name} model`;
                 infoEl.className = 'free-provider';
             } else if (this.getCurrentApiKey()) {
                 infoEl.textContent = `API key configured for ${provider.name}`;
@@ -2961,7 +2961,7 @@ function logVerification(payload, { workerBase = 'https://publicai-proxy.alaexis
             this.updateButtonVisibility();
 
             const startTime = Date.now();
-            const useProxy = this.currentProvider === 'publicai';
+            const useProxy = this.currentProvider === 'publicai' || this.currentProvider === 'huggingface';
             const delayBetweenCalls = useProxy ? 3000 : 1000;
 
             for (let i = 0; i < citations.length; i++) {
