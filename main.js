@@ -626,35 +626,30 @@ function logVerification(payload, { workerBase = 'https://publicai-proxy.alaexis
                 huggingface: {
                     name: 'Qwen-HF (free)',
                     storageKey: null, // No key needed - proxy injects upstream key
-                    color: '#FF9D00', // HF yellow-orange
                     model: 'Qwen/Qwen3-32B',
                     requiresKey: false
                 },
                 publicai: {
                     name: 'PublicAI (Free)',
                     storageKey: null, // No key needed - uses built-in key
-                    color: '#6B21A8', // Purple for PublicAI
                     model: 'aisingapore/Qwen-SEA-LION-v4-32B-IT',
                     requiresKey: false
                 },
                 claude: {
                     name: 'Claude',
                     storageKey: 'claude_api_key',
-                    color: '#0645ad',
                     model: 'claude-sonnet-4-6',
                     requiresKey: true
                 },
                 gemini: {
                     name: 'Gemini',
                     storageKey: 'gemini_api_key',
-                    color: '#4285F4',
                     model: 'gemini-flash-latest',
                     requiresKey: true
                 },
                 openai: {
                     name: 'ChatGPT',
                     storageKey: 'openai_api_key',
-                    color: '#10a37f',
                     model: 'gpt-4o',
                     requiresKey: true
                 }
@@ -665,6 +660,16 @@ function logVerification(payload, { workerBase = 'https://publicai-proxy.alaexis
             if (storedProvider === 'apertus') {
                 storedProvider = 'publicai';
                 localStorage.setItem('source_verifier_provider', 'publicai');
+            }
+            // One-time migration: move existing PublicAI users to the new
+            // Qwen-HF default. Runs once per browser so a later switch back
+            // to PublicAI sticks.
+            if (!localStorage.getItem('qwen_hf_default_migrated')) {
+                if (storedProvider === 'publicai') {
+                    storedProvider = 'huggingface';
+                    localStorage.setItem('source_verifier_provider', 'huggingface');
+                }
+                localStorage.setItem('qwen_hf_default_migrated', '1');
             }
             this.currentProvider = storedProvider || 'huggingface';
             this.sidebarWidth = localStorage.getItem('verifier_sidebar_width') || '400px';
@@ -733,7 +738,7 @@ function logVerification(payload, { workerBase = 'https://publicai-proxy.alaexis
         }
         
         getCurrentColor() {
-            return this.providers[this.currentProvider].color;
+            return '#6B21A8';
         }
         
         providerRequiresKey() {
@@ -2250,7 +2255,6 @@ function logVerification(payload, { workerBase = 'https://publicai-proxy.alaexis
                 this.currentProvider = item.getData();
                 localStorage.setItem('source_verifier_provider', this.currentProvider);
                 this.updateButtonVisibility();
-                this.updateTheme();
                 this.updateStatus(`Switched to ${this.providers[this.currentProvider].name}`);
             });
             
@@ -2294,19 +2298,6 @@ function logVerification(payload, { workerBase = 'https://publicai-proxy.alaexis
             this.buttons.backToReport.on('click', () => {
                 this.showReportView();
             });
-        }
-        
-        updateTheme() {
-            const color = this.getCurrentColor();
-            // Remove old styles and re-create to pick up new provider color in dark theme
-            const oldStyle = document.querySelector('style[data-verifier-theme]');
-            if (oldStyle) oldStyle.remove();
-            // Re-create styles with updated color references
-            const existingStyles = document.head.querySelectorAll('style');
-            existingStyles.forEach(s => {
-                if (s.textContent.includes('#source-verifier-sidebar')) s.remove();
-            });
-            this.createStyles();
         }
         
         setApiKey() {
