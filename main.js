@@ -266,6 +266,14 @@ function isGoogleBooksUrl(url) {
 
 const MAINTENANCE_MARKER_RE = /\[(failed verification|verification needed|citation needed|better source[^\]]*|dubious[^\]]*|unreliable source[^\]]*|clarification needed|disputed[^\]]*|page needed|when\??|where\??|who\??|why\??|by whom\??|according to whom\??|original research[^\]]*|specify[^\]]*|vague|opinion|fact)\]/gi;
 
+// {{citation needed}} tags an unsupported claim. When the next citation in
+// the same paragraph follows a [citation needed] marker, the text before it
+// belongs to a different (uncited) claim and must not be folded into the
+// cited claim. Other Inline-Template markers (e.g. {{clarification
+// needed}}, {{when?}}) appear inside a single claim and are intentionally
+// excluded here so they get stripped in-place rather than splitting it.
+const CLAIM_BOUNDARY_MARKER_RE = /\[citation needed\]/gi;
+
 // True iff the DOM range strictly between two .reference wrapper elements (in
 // document order: refA before refB) contains no non-whitespace text. This is
 // the rule that defines whether two adjacent citations attach to the same
@@ -366,7 +374,9 @@ function extractClaimText(refElement) {
     // double space behind).
     claimText = claimText
         .replace(/\[\d+\]/g, '')                 // Remove reference numbers like [1], [2]
-        .replace(/\s+/g, ' ')                    // Normalize whitespace (incl. NBSP) so the marker regex matches
+        .replace(/\s+/g, ' ');                   // Normalize whitespace (incl. NBSP) so the marker regex matches
+    claimText = sliceAfterLastBoundaryMarker(claimText);
+    claimText = claimText
         .replace(MAINTENANCE_MARKER_RE, '')      // Remove maintenance markers like [failed verification]
         .replace(/\s+/g, ' ')                    // Collapse the gap left by the marker strip
         .trim();
@@ -375,13 +385,22 @@ function extractClaimText(refElement) {
     if (!claimText || claimText.length < 10) {
         claimText = container.textContent
             .replace(/\[\d+\]/g, '')
-            .replace(/\s+/g, ' ')
+            .replace(/\s+/g, ' ');
+        claimText = sliceAfterLastBoundaryMarker(claimText);
+        claimText = claimText
             .replace(MAINTENANCE_MARKER_RE, '')
             .replace(/\s+/g, ' ')
             .trim();
     }
 
     return claimText;
+}
+
+function sliceAfterLastBoundaryMarker(text) {
+    const matches = [...text.matchAll(CLAIM_BOUNDARY_MARKER_RE)];
+    if (matches.length === 0) return text;
+    const last = matches[matches.length - 1];
+    return text.slice(last.index + last[0].length);
 }
 
 // --- core/providers.js ---

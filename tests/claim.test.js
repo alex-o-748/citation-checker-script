@@ -151,6 +151,56 @@ test('getCitationGroup returns distinct wrappers for named-ref reuses', () => {
   assert.notEqual(groupA[0], groupB[0]);
 });
 
+test('extractClaimText stops at a preceding [citation needed] tag', () => {
+  // Regression: prose like "Claim A.[citation needed] Claim B.<ref>" would
+  // previously fold Claim A into Claim B's claim text because [citation
+  // needed] isn't a <sup class="reference"> wrapper and so wasn't seen as a
+  // boundary. The citation only attaches to "Claim B".
+  const doc = mkDoc(`
+    <p>he act did not include any power for it to be amended in Canada, so amendments had to be made by the British Parliament at the request of the Canadian Parliament.<sup class="noprint Inline-Template Template-Fact">[<i><a href="/wiki/Wikipedia:Citation_needed">citation needed</a></i>]</sup> That remained the case until Patriation of the Constitution in 1982, when the act was brought under full Canadian control and was renamed the Constitution Act, 1867.<sup id="cite_ref-1" class="reference"><a href="#cite_note-1">[1]</a></sup></p>
+  `);
+  const claim = extractClaimText(doc.getElementById('cite_ref-1'));
+  assert.ok(!claim.includes('British Parliament'),
+    `pre-marker claim leaked into post-marker claim: ${JSON.stringify(claim)}`);
+  assert.ok(claim.includes('Patriation of the Constitution'));
+  assert.ok(claim.includes('renamed the Constitution Act, 1867'));
+});
+
+test('extractClaimText stops at [citation needed] even when the words are joined by NBSP', () => {
+  // Wikipedia renders {{citation needed}} inside white-space:nowrap, so the
+  // visible text is "[citation needed]" rather than "[citation needed]".
+  const doc = mkDoc(`
+    <p>Unsupported claim text here.<sup class="noprint Inline-Template Template-Fact" style="white-space:nowrap;">[<i><a href="/wiki/Wikipedia:Citation_needed">citation needed</a></i>]</sup> Supported follow-up claim.<sup id="cite_ref-1" class="reference"><a href="#cite_note-1">[1]</a></sup></p>
+  `);
+  const claim = extractClaimText(doc.getElementById('cite_ref-1'));
+  assert.ok(!claim.includes('Unsupported claim text'),
+    `claim leaked across NBSP [citation needed]: ${JSON.stringify(claim)}`);
+  assert.ok(claim.includes('Supported follow-up claim'));
+});
+
+test('extractClaimText slices to the LAST [citation needed] when multiple precede the citation', () => {
+  const doc = mkDoc(`
+    <p>First uncited claim.<sup class="noprint Inline-Template Template-Fact">[<i><a href="/wiki/Wikipedia:Citation_needed">citation needed</a></i>]</sup> Second uncited claim.<sup class="noprint Inline-Template Template-Fact">[<i><a href="/wiki/Wikipedia:Citation_needed">citation needed</a></i>]</sup> The cited claim.<sup id="cite_ref-1" class="reference"><a href="#cite_note-1">[1]</a></sup></p>
+  `);
+  const claim = extractClaimText(doc.getElementById('cite_ref-1'));
+  assert.ok(!claim.includes('First uncited claim'));
+  assert.ok(!claim.includes('Second uncited claim'));
+  assert.ok(claim.includes('The cited claim'));
+});
+
+test('extractClaimText leaves [clarification needed] in place (not a claim boundary)', () => {
+  // Inline maintenance markers that flag a specific phrase, not a whole
+  // claim, should be stripped in-place rather than truncating the claim.
+  const doc = mkDoc(`
+    <p>The treaty was signed in the spring[clarification needed] of 1867.<sup id="cite_ref-1" class="reference"><a href="#cite_note-1">[1]</a></sup></p>
+  `);
+  const claim = extractClaimText(doc.getElementById('cite_ref-1'));
+  assert.ok(claim.includes('The treaty was signed'),
+    `non-boundary marker incorrectly split the claim: ${JSON.stringify(claim)}`);
+  assert.ok(claim.includes('of 1867'));
+  assert.ok(!claim.includes('clarification needed'));
+});
+
 test('getCitationGroup handles mixed groups and singletons in the same paragraph', () => {
   // text [1][2] more text [3] more text [4][5]  →  three groups: {1,2}, {3}, {4,5}.
   const doc = mkDoc(`
