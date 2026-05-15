@@ -1,6 +1,6 @@
 {
   "metadata": {
-    "extracted_at": "2026-05-10",
+    "extracted_at": "2026-05-15",
     "version_filter": "all"
   },
   "rows": [
@@ -1215,10 +1215,10 @@
       "claim_container": "On 12 October, the United Kingdom arranged flights for its citizens in Israel; the first plane departed Ben Gurion Airport that day. The government had said before that it would not be evacuating its nationals due to available commercial flights. However, most commercial flights were suspended.[737] Nepal arranged a flight to evacuate at least 254 of its citizens.[738] India launched Operation Ajay to evacuate its citizens.[739] Ukraine facilitated the evacuation of ~450 of its citizens from Israel as of 18 October, with additional evacuation flights planned for the near future.[740]",
       "source_url": "https://www.ndtv.com/india-news/israel-gaza-war-israel-hamas-war-indians-in-israel-operation-ajay-operation-ajay-first-flight-to-evacuate-indians-from-israel-tonight-4473665",
       "source_text": "",
-      "ground_truth": "Not supported",
+      "ground_truth": "Supported",
       "dataset_version": "v1",
       "extraction_status": "source_fetch_failed",
-      "needs_manual_review": true
+      "needs_manual_review": false
     },
     {
       "id": "row_78",
@@ -1759,10 +1759,10 @@
       "claim_container": "The most crucial aspect of the sanctuary is a pest-exclusion fence, designed to exclude 14 species of non-native land mammals ranging from deer to mice, which encircles the 8.6-kilometre (5.3 mi) perimeter of the sanctuary.[12] Construction of the fence was completed in late 1999 and all mammalian pests within the perimeter were then eradicated over a nine-month period. This predator-proof fence is of great conservation significance, being a world first design to bar all terrestrial mammals from mouse size up.[13]",
       "source_url": "https://www.bbc.co.uk/nature/programmes/tv/state_planet/intro.shtml",
       "source_text": "",
-      "ground_truth": "Not supported",
+      "ground_truth": "Source unavailable",
       "dataset_version": "v2",
       "extraction_status": "source_fetch_failed",
-      "needs_manual_review": true
+      "needs_manual_review": false
     },
     {
       "id": "row_112",
@@ -2794,11 +2794,11 @@
       "claim_text": "If you live in an area with low or moderate flood risk, you are 5 times more likely to experience flood than a fire in your home over the next 30 years.  Flood maps are a guide for people who live there.",
       "claim_container": "",
       "source_url": "https://msc.fema.gov/portal/search?AddressQuery=11361",
-      "source_text": "",
+      "source_text": "Skip to main content Navigation &times; Close Navigation Enter Search Term(s): About the Agency Volunteer &amp; Donate Responsibly Assistance To Firefighters Grant Program Authorized Equipment List Blog Careers Center for Faith-Based &amp; Neighborhood Partnerships Children and Disasters Community Resilience Indicators and National-Level Measures: A Draft Interagency Concept Contact Us Dam Safety Data Visualization Disability Disaster Assistance Reports Disaster Declarations Disaster Emergency Communications Disaster Recovery Centers Document and Resource Library Email Updates Emergency Management Agencies Emergency Management Institute El Niño Environmental Planning and Historic Preservation Program Exercise Fact Sheets Finance Center Flood Hazard Mapping Flood Insurance Flood Map Service Center Frequently Asked Questions (FAQs) Grants Grants Management Modernization Program Hazard Mitigation Assistance Hazard Mitigation Planning Hazus High Water Mark Initiative Home How to Make a Payment to FEMA Hurricane Harvey Hurricane Irma Hurricane Katrina Hurricane Maria Incident Management Assistance Teams Independent Study Program News, Graphics, and Social Media Accessible ASL Videos Individual and Community Preparedness Division Individual Disaster Assistance Integrated Public Alert &amp; Warning System International Affairs Mississippi Recovery Multimedia Library (Photos, Video, and Audio) National Exercise Program National Continuity Programs National Disaster Recovery Framework National Incident Management System National Preparedness News Desk Contacts News Releases Official Accounts OpenFEMA Preliminary Damage Assessment Reports Preparedness (Non-Disaster) Grants Private Sector Public Assistance Appeals Database Public Assistance: Local, State, Tribal and Non-Profit Region I Region II Region III Region IV Region V Region VII Region VIII Region IX Required Notices Reservist Program Safer, Stronger, Protected Homes &amp; Communities Social Media States Testimony &amp; Speeches Text Messages Tribal Unified Federal Environmental and Historic Preservation Review Urban Search and Rescue U.S. Coast Guard Retiree to FEMA Reservist Initiative Voluntary, Faith-Based, &amp; Community-Based Organizations Search &times; Close Search Enter Search Term(s): MSC Home MSC Search by Address MSC Search All Products MSC Products and Tools Hazus LOMC Batch Files Product Availability MSC Frequently Asked Questions (FAQs) MSC Email Subscriptions Contact MSC Help Main Content FEMA Flood Map Service Center: Search By Address Please enter a valid US address/place. x Enter an address, place, or coordinates: Whether you are in a high risk zone or not, you may need flood insurance because most homeowners insurance doesn't cover flood damage. If you live in an area with low or moderate flood risk, you are 5 times more likely to experience flood than a fire in your home over the next 30 years. For many, a National Flood Insurance Program's flood insurance policy could cost less than $400 per year. Call your insurance agent today and protect what you've built. Learn more about steps you can take to reduce flood risk damage. Search Results&mdash;Products for Show ALL Products &raquo; The flood map for the selected area is number flood map number , effective on effective date Dynamic Map Map Image Failed to load Map Image. Please try refreshing the page. Changes to this FIRM Revisions (0) s Amendments (0) Revalidations (0) Show all products for this area --> Printing in Progress --> Letters of Map Change --> You can choose a new flood map or move the location pin by selecting a different location on the locator map below or by entering a new location in the search field above. It may take a minute or more during peak hours to generate a dynamic FIRMette. Go To NFHL Viewer &raquo; Locator Map --> Share This Page. Home Download Plug-ins About Us Privacy Policy FOIA Office of the Inspector General Strategic Plan Whitehouse.gov DHS.gov Ready.gov USA.gov DisasterAssistance.gov Official website of the Department of Homeland Security -->",
       "ground_truth": "Supported",
       "dataset_version": "v3",
-      "extraction_status": "source_fetch_failed",
-      "needs_manual_review": true,
+      "extraction_status": "complete",
+      "needs_manual_review": false,
       "provenance": "human-annotation:source-verification-2026-04-25"
     },
     {
@@ -2866,7 +2866,7 @@
       "ground_truth": "Partially supported",
       "dataset_version": "v3",
       "extraction_status": "source_fetch_failed",
-      "needs_manual_review": true,
+      "needs_manual_review": false,
       "provenance": "human-annotation:source-verification-2026-04-25"
     },
     {
@@ -3067,10 +3067,10 @@
       "claim_container": "",
       "source_url": "http://www.nj.com/mercer/index.ssf/2009/08/church_rejects_restoration_off.html",
       "source_text": "",
-      "ground_truth": "Not supported",
+      "ground_truth": "Partially supported",
       "dataset_version": "v3",
       "extraction_status": "source_fetch_failed",
-      "needs_manual_review": true,
+      "needs_manual_review": false,
       "provenance": "human-annotation:source-verification-2026-04-25"
     },
     {
