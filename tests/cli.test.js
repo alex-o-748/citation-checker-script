@@ -285,7 +285,8 @@ test('runVerify: success path prints verdict and returns 0', async () => {
     },
     {
       match: (url) => String(url).includes('publicai-proxy.alaexis.workers.dev') && String(url).includes('?fetch='),
-      respond: async () => ({ ok: true, json: async () => ({ content: 'The sky is indeed blue due to Rayleigh scattering.' + 'x'.repeat(200) }) }),
+      // Body padded above SHORT_BODY_FLOOR (300 chars in core/body-classifier.js).
+      respond: async () => ({ ok: true, json: async () => ({ content: 'The sky is indeed blue due to Rayleigh scattering. ' + 'Sunlight entering the atmosphere is scattered by gas molecules, with shorter wavelengths (blue) scattering more strongly than longer ones (red), producing the characteristic blue color we see overhead during daytime. '.repeat(2) }) }),
     },
     {
       match: (url, opts) => String(url) === 'https://publicai-proxy.alaexis.workers.dev' && opts?.method === 'POST',
@@ -627,7 +628,9 @@ test('runVerify: DOM traversal chain works against a realistic Wikipedia fixture
     },
     {
       match: (url) => String(url).includes('?fetch=https%3A%2F%2Fexample.com%2Fsecond'),
-      respond: async () => ({ ok: true, json: async () => ({ content: 'At higher pressures the boiling point of water increases above 100 C.' + 'y'.repeat(200) }) }),
+      // Body padded above SHORT_BODY_FLOOR (300 chars in core/body-classifier.js)
+      // so the body-usability classifier passes it through to the LLM mock.
+      respond: async () => ({ ok: true, json: async () => ({ content: 'At higher pressures the boiling point of water increases above 100 C. ' + 'Water exhibits its standard boiling point at 100 C only at one standard atmosphere of pressure; at altitude or under reduced pressure the boiling point drops, while pressure cookers and industrial autoclaves raise it well above that. '.repeat(2) }) }),
     },
     {
       match: (url, opts) => String(url) === 'https://publicai-proxy.alaexis.workers.dev' && opts?.method === 'POST',

@@ -27,6 +27,7 @@ import { JSDOM } from 'jsdom';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import { extractClaimText as extractClaimTextFromRef } from '../core/claim.js';
+import { classifyBody } from '../core/body-classifier.js';
 import { writeWithMetadata, todayIso } from './io.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -443,9 +444,22 @@ async function main() {
 
             // Fetch source content
             let sourceText = '';
+            let bodyUnusableReason = null;
             if (sourceUrl && !DRY_RUN) {
                 console.log(`    Fetching source: ${sourceUrl.substring(0, 60)}...`);
                 sourceText = await fetchSourceContent(sourceUrl) || '';
+                if (sourceText) {
+                    // Mechanically detect structurally-bad bodies (Wayback chrome,
+                    // CSS leak, JSON-LD blob, anti-bot challenge, etc.) so the
+                    // benchmark records SU deterministically without invoking
+                    // an LLM. The bad text is preserved in source_text for
+                    // future audit / pattern re-tuning.
+                    const classification = classifyBody(sourceText);
+                    if (!classification.usable) {
+                        bodyUnusableReason = classification.reason;
+                        console.log(`    Body classified unusable: ${classification.reason} (${sourceText.length} chars preserved for audit)`);
+                    }
+                }
                 await sleep(500); // Rate limiting
             }
 
@@ -462,8 +476,11 @@ async function main() {
                 source_text: sourceText,
                 ground_truth: normalizeVerdict(row['Ground truth']),
                 dataset_version: row['Dataset version'] || 'v1',
-                extraction_status: determineStatus(claimText, sourceUrl, sourceText),
-                needs_manual_review: !claimText || !sourceText,
+                extraction_status: bodyUnusableReason
+                    ? 'body_unusable'
+                    : determineStatus(claimText, sourceUrl, sourceText),
+                ...(bodyUnusableReason ? { body_unusable_reason: bodyUnusableReason } : {}),
+                needs_manual_review: !claimText || (!sourceText && !bodyUnusableReason),
                 ...(wmfProvenance ? { provenance: wmfProvenance } : {}),
             };
 
@@ -493,11 +510,25 @@ async function main() {
     // Summary
     const needsReview = dataset.filter(d => d.needs_manual_review).length;
     const complete = dataset.filter(d => !d.needs_manual_review).length;
+    const bodyUnusable = dataset.filter(d => d.extraction_status === 'body_unusable').length;
+    const bodyUnusableByReason = dataset
+        .filter(d => d.extraction_status === 'body_unusable')
+        .reduce((acc, d) => {
+            const r = d.body_unusable_reason || 'unknown';
+            acc[r] = (acc[r] || 0) + 1;
+            return acc;
+        }, {});
 
     console.log('\n=== Summary ===');
     console.log(`Total entries: ${dataset.length}`);
     console.log(`Complete: ${complete}`);
     console.log(`Needs manual review: ${needsReview}`);
+    console.log(`Body unusable (pipeline-attributed SU): ${bodyUnusable}`);
+    if (bodyUnusable > 0) {
+        for (const [reason, count] of Object.entries(bodyUnusableByReason)) {
+            console.log(`  - ${reason}: ${count}`);
+        }
+    }
 
     if (needsReview > 0) {
         console.log(`\nReview the entries in ${OUTPUT_REVIEW_CSV} before running benchmarks.`);
@@ -505,7 +536,9 @@ async function main() {
 }
 
 /**
- * Determine extraction status
+ * Determine extraction status. Note: 'body_unusable' is set by the caller
+ * before this is consulted, when the body-classifier flags structurally-bad
+ * extracted content (Wayback chrome, CSS leak, etc.).
  */
 function determineStatus(claimText, sourceUrl, sourceText) {
     if (!claimText) return 'claim_extraction_failed';

@@ -1,7 +1,17 @@
 // Calls to the Cloudflare Worker proxy: source fetching and verification logging.
 
 import { isGoogleBooksUrl } from './urls.js';
+import { classifyBody } from './body-classifier.js';
 
+// fetchSourceContent return shapes:
+//   string                                  — usable body, formatted as
+//                                             "Source URL: <u>\n\nSource Content:\n<body>"
+//   null                                    — fetch failed (network/proxy/Google Books skip)
+//   { sourceUnavailable, reason }           — body is structurally bad (Wayback chrome,
+//                                             CSS leak, JSON-LD blob, anti-bot challenge,
+//                                             etc.). Callers should record a deterministic
+//                                             "Source unavailable" verdict without invoking
+//                                             the LLM. See core/body-classifier.js.
 export async function fetchSourceContent(url, pageNum, { workerBase = 'https://publicai-proxy.alaexis.workers.dev' } = {}) {
     if (isGoogleBooksUrl(url)) {
         console.log('[CitationVerifier] Skipping Google Books URL:', url);
@@ -22,6 +32,10 @@ export async function fetchSourceContent(url, pageNum, { workerBase = 'https://p
         }
 
         if (data.content && data.content.length > 100) {
+            const classification = classifyBody(data.content);
+            if (!classification.usable) {
+                return { sourceUnavailable: true, reason: classification.reason };
+            }
             // Proxy caps fetched content around 12k chars. If we're at or
             // above that, the source was almost certainly truncated and
             // only partially sent to the model.

@@ -19,6 +19,7 @@ const CORE_ORDER = [
   'urls.js',
   'claim.js',
   'providers.js',
+  'body-classifier.js',
   'worker.js',
 ];
 

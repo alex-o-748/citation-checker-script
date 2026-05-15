@@ -180,7 +180,12 @@ function generateMarkdownReport(analysis) {
     md += '## Overview\n\n';
     md += `- Total entries: ${analysis.overview.totalEntries}\n`;
     md += `- Providers tested: ${analysis.overview.providers.join(', ')}\n`;
-    md += `- Total API calls: ${analysis.overview.totalCalls}\n\n`;
+    md += `- Total API calls: ${analysis.overview.totalCalls}\n`;
+    if (analysis.overview.pipelineCoverage) {
+        const pc = analysis.overview.pipelineCoverage;
+        md += `- Pipeline coverage: ${(pc.ratio * 100).toFixed(1)}% (${pc.usableEntries}/${analysis.overview.totalEntries} usable; ${pc.pipelineAttributedEntries} pipeline-attributed SU)\n`;
+    }
+    md += '\n';
 
     // Comparison table
     md += '## Provider Comparison\n\n';
@@ -210,7 +215,11 @@ function generateMarkdownReport(analysis) {
         md += `### ${data.name} (${data.model})\n\n`;
 
         md += '**Accuracy Metrics:**\n';
-        md += `- Exact match: ${m.exactMatches}/${m.valid} (${(m.exactAccuracy * 100).toFixed(1)}%)\n`;
+        md += `- Exact match (all): ${m.exactMatches}/${m.valid} (${(m.exactAccuracy * 100).toFixed(1)}%)\n`;
+        if (data.metricsOnUsable && analysis.overview.pipelineCoverage?.pipelineAttributedEntries > 0) {
+            const mu = data.metricsOnUsable;
+            md += `- Exact match (model-attributed, excl. pipeline SU): ${mu.exactMatches}/${mu.valid} (${(mu.exactAccuracy * 100).toFixed(1)}%)\n`;
+        }
         md += `- Lenient (includes partial): ${m.exactMatches + m.partialMatches}/${m.valid} (${(m.lenientAccuracy * 100).toFixed(1)}%)\n`;
         md += `- Binary (support vs not): ${(m.binaryAccuracy * 100).toFixed(1)}%\n`;
         md += `- Errors: ${m.errors}\n\n`;
@@ -307,21 +316,47 @@ function main() {
     const providers = Object.keys(byProvider);
     console.log(`Providers: ${providers.join(', ')}\n`);
 
+    // Pipeline-coverage stats: how many rows have a deterministic SU verdict
+    // synthesized by the body-classifier rather than computed from an LLM call.
+    // Pipeline-attributed rows are excluded from `metricsOnUsable` so per-provider
+    // model accuracy isn't contaminated by deterministic pipeline-level outcomes.
+    // See benchmark/run_benchmark.js (synthesizePipelineSU) and
+    // core/body-classifier.js for how the pipeline_attributed flag is set.
+    const totalEntryIds = new Set(results.map(r => r.entry_id));
+    const pipelineAttributedEntryIds = new Set(
+        results.filter(r => r.pipeline_attributed === true).map(r => r.entry_id)
+    );
+    const usableEntryCount = totalEntryIds.size - pipelineAttributedEntryIds.size;
+    const pipelineCoverage = totalEntryIds.size > 0
+        ? usableEntryCount / totalEntryIds.size
+        : 0;
+
     // Calculate metrics per provider
     const analysis = {
         generated: new Date().toISOString(),
         overview: {
             datasetVersion: VERSION_FILTER,
-            totalEntries: new Set(results.map(r => r.entry_id)).size,
+            totalEntries: totalEntryIds.size,
             totalCalls: results.length,
-            providers: providers
+            providers: providers,
+            pipelineCoverage: {
+                ratio: pipelineCoverage,
+                usableEntries: usableEntryCount,
+                pipelineAttributedEntries: pipelineAttributedEntryIds.size,
+            }
         },
         providers: {}
     };
 
+    console.log(`Pipeline coverage: ${(pipelineCoverage * 100).toFixed(1)}% (${usableEntryCount}/${totalEntryIds.size} entries usable; ${pipelineAttributedEntryIds.size} pipeline-attributed SU)\n`);
+
     for (const provider of providers) {
         const providerResults = byProvider[provider];
+        const usableProviderResults = providerResults.filter(r => !r.pipeline_attributed);
         const metrics = calculateMetrics(providerResults);
+        const metricsOnUsable = usableProviderResults.length > 0
+            ? calculateMetrics(usableProviderResults)
+            : null;
 
         // Get provider info from first result
         const firstResult = providerResults[0];
@@ -330,14 +365,18 @@ function main() {
             name: provider.charAt(0).toUpperCase() + provider.slice(1),
             model: firstResult.model,
             sampleCount: providerResults.length,
-            metrics
+            metrics,
+            metricsOnUsable,
         };
 
         // Print summary
         console.log(`${provider.toUpperCase()} (${firstResult.model}):`);
-        console.log(`  Exact accuracy: ${(metrics.exactAccuracy * 100).toFixed(1)}%`);
+        console.log(`  Exact accuracy (all):    ${(metrics.exactAccuracy * 100).toFixed(1)}%`);
+        if (metricsOnUsable && pipelineAttributedEntryIds.size > 0) {
+            console.log(`  Exact accuracy (model):  ${(metricsOnUsable.exactAccuracy * 100).toFixed(1)}% on ${metricsOnUsable.valid} usable rows`);
+        }
         console.log(`  Lenient accuracy: ${(metrics.lenientAccuracy * 100).toFixed(1)}%`);
-        console.log(`  Binary accuracy: ${(metrics.binaryAccuracy * 100).toFixed(1)}%`);
+        console.log(`  Binary accuracy:  ${(metrics.binaryAccuracy * 100).toFixed(1)}%`);
         console.log(`  Avg latency: ${metrics.latency.avg.toFixed(0)}ms`);
         console.log(`  Errors: ${metrics.errors}/${metrics.total}`);
         console.log('');

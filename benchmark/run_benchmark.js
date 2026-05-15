@@ -506,9 +506,17 @@ async function main() {
     const datasetMetadata = loadMetadata(DATASET_PATH);
     console.log(`Loaded ${dataset.length} entries from dataset`);
 
-    // Filter to complete entries only
-    let entries = dataset.filter(e => e.extraction_status === 'complete' && !e.needs_manual_review);
-    console.log(`${entries.length} entries are complete and ready for benchmarking`);
+    // Filter to entries ready for benchmarking. Includes both:
+    //   - extraction_status === 'complete'        — feeds normal LLM flow
+    //   - extraction_status === 'body_unusable'   — feeds the synthetic-SU
+    //     path below (no LLM call, deterministic SU verdict per provider)
+    let entries = dataset.filter(
+        e => (e.extraction_status === 'complete' || e.extraction_status === 'body_unusable')
+             && !e.needs_manual_review
+    );
+    const usableCount = entries.filter(e => e.extraction_status === 'complete').length;
+    const unusableCount = entries.length - usableCount;
+    console.log(`${entries.length} entries ready for benchmarking (${usableCount} usable, ${unusableCount} body_unusable → synthetic SU)`);
 
     if (VERSION_FILTER !== 'all') {
         const before = entries.length;
@@ -617,6 +625,18 @@ async function main() {
     await Promise.all(
         [...tasksByHost.entries()].map(([host, hostTasks]) =>
             runPool(hostTasks, CONCURRENCY, async ({ entry, provider }) => {
+                // body_unusable rows synthesize a "Source unavailable" verdict
+                // for every provider without invoking the LLM. The body-classifier
+                // (in extract_dataset.js) already determined the answer; the
+                // benchmark just records it.
+                if (entry.extraction_status === 'body_unusable') {
+                    results.push(synthesizePipelineSU(entry, provider, PROVIDERS[provider].model));
+                    completed++;
+                    console.log(`[${completed}/${totalTasks}] ${entry.id} / ${provider} (pipeline_attributed=${entry.body_unusable_reason})`);
+                    requestSave();
+                    return;
+                }
+
                 const userPrompt = generateUserPrompt(entry.claim_text, entry.source_text);
 
                 const result = await callProvider(provider, systemPrompt, userPrompt);
@@ -655,9 +675,35 @@ async function main() {
 }
 
 /**
+ * Synthesize a deterministic "Source unavailable" result for a body_unusable
+ * dataset row, without invoking the LLM. Used by the runner for rows where
+ * the body-classifier flagged structurally-bad extracted content (Wayback
+ * chrome, CSS leak, anti-bot challenge, etc.). The `pipeline_attributed`
+ * flag lets analyze_results.js split pipeline-vs-model attribution in the
+ * per-provider accuracy metric.
+ */
+export function synthesizePipelineSU(entry, provider, model) {
+    const verdict = 'Source unavailable';
+    return {
+        entry_id: entry.id,
+        provider,
+        model,
+        ground_truth: entry.ground_truth,
+        predicted_verdict: verdict,
+        confidence: 'High',
+        comments: `Pipeline-attributed (${entry.body_unusable_reason || 'unknown'})`,
+        latency_ms: 0,
+        error: null,
+        correct: compareVerdicts(verdict, entry.ground_truth),
+        pipeline_attributed: true,
+        timestamp: new Date().toISOString(),
+    };
+}
+
+/**
  * Compare predicted verdict with ground truth
  */
-function compareVerdicts(predicted, groundTruth) {
+export function compareVerdicts(predicted, groundTruth) {
     const p = predicted.toLowerCase();
     const g = groundTruth.toLowerCase();
 

@@ -317,6 +317,13 @@ export async function runVerify(opts, { stdout = process.stdout, stderr = proces
         stderr.write(`ccs: source unavailable: ${sourceUrl}\n`);
         return 7;
     }
+    if (typeof sourceInfo === 'object' && sourceInfo.sourceUnavailable) {
+        // Body classifier flagged extracted content as structurally unusable
+        // (Wayback chrome, JS-only skeleton, anti-bot challenge, etc.). The
+        // verdict is pipeline-attributed; no LLM call needed.
+        stderr.write(`ccs: source unavailable (${sourceInfo.reason}): ${sourceUrl}\n`);
+        return 7;
+    }
 
     // 9. Build prompts and call the LLM.
     //    fetchSourceContent returns a string shaped "Source URL: <u>\n\n

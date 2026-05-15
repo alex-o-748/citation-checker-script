@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { runPool, withRetry, makeSaver, hostForProvider, shapeResult } from '../benchmark/run_benchmark.js';
+import { runPool, withRetry, makeSaver, hostForProvider, shapeResult, synthesizePipelineSU, compareVerdicts } from '../benchmark/run_benchmark.js';
 
 // ---- runPool ----------------------------------------------------------------
 
@@ -286,4 +286,53 @@ test('shapeResult: returns PARSE_ERROR sentinel on unrecoverable prose', () => {
     const out = shapeResult({ text: 'I cannot determine this.', usage: null });
     assert.equal(out.verdict, 'PARSE_ERROR');
     assert.equal(out.confidence, 0);
+});
+
+// ---- synthesizePipelineSU --------------------------------------------------
+
+test('synthesizePipelineSU emits Source unavailable verdict with pipeline_attributed flag', () => {
+    const entry = {
+        id: 'row_70',
+        ground_truth: 'Not supported',
+        extraction_status: 'body_unusable',
+        body_unusable_reason: 'json_ld_leak',
+    };
+    const result = synthesizePipelineSU(entry, 'claude-sonnet-4-5', 'claude-sonnet-4-5-20250929');
+    assert.equal(result.entry_id, 'row_70');
+    assert.equal(result.provider, 'claude-sonnet-4-5');
+    assert.equal(result.model, 'claude-sonnet-4-5-20250929');
+    assert.equal(result.predicted_verdict, 'Source unavailable');
+    assert.equal(result.confidence, 'High');
+    assert.equal(result.comments, 'Pipeline-attributed (json_ld_leak)');
+    assert.equal(result.latency_ms, 0);
+    assert.equal(result.error, null);
+    assert.equal(result.pipeline_attributed, true);
+    assert.ok(result.timestamp);
+});
+
+test('synthesizePipelineSU correct field reflects GT match', () => {
+    // When GT is "Source unavailable", the synthesized verdict matches → exact
+    const matchingEntry = {
+        id: 'row_x',
+        ground_truth: 'Source unavailable',
+        body_unusable_reason: 'wayback_chrome',
+    };
+    const matching = synthesizePipelineSU(matchingEntry, 'p', 'm');
+    assert.equal(matching.correct, 'exact');
+
+    // When GT is "Supported", the synthesized SU verdict is wrong (per-row this
+    // is a pipeline-attributed failure; the analyzer separates from model failures).
+    const mismatchEntry = {
+        id: 'row_y',
+        ground_truth: 'Supported',
+        body_unusable_reason: 'wayback_chrome',
+    };
+    const mismatch = synthesizePipelineSU(mismatchEntry, 'p', 'm');
+    assert.equal(mismatch.correct, 'wrong');
+});
+
+test('synthesizePipelineSU handles missing body_unusable_reason gracefully', () => {
+    const entry = { id: 'row_x', ground_truth: 'Not supported' };
+    const result = synthesizePipelineSU(entry, 'p', 'm');
+    assert.equal(result.comments, 'Pipeline-attributed (unknown)');
 });

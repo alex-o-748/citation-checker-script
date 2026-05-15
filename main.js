@@ -670,10 +670,121 @@ async function callProviderAPI(name, config) {
     }
 }
 
+// --- core/body-classifier.js ---
+// Classify whether an extracted source body is usable for downstream LLM
+// verification. Returns { usable: true, reason: 'ok' } for content that should
+// proceed, or { usable: false, reason: <pattern-name> } for structurally-bad
+// bodies (Wayback chrome, CSS leak, JSON-LD blob, anti-bot challenge, etc.).
+//
+// When the classifier returns usable:false, the caller (userscript / benchmark)
+// should short-circuit to a "Source unavailable" verdict without invoking an
+// LLM. This pulls the SU-vs-Not-Supported decision out of the LLM's
+// responsibility in cases where the answer is mechanically determinable — the
+// LLM only needs to handle support-or-not-support on usable content.
+//
+// Patterns are derived from real failure cases observed in a 185-row × 9-provider
+// citation-verification benchmark (combined-integration treatment), where both
+// Claude Sonnet 4.5 and Claude Opus 4.7 agreed on a wrong "Source unavailable"
+// verdict against a ground-truth "Not supported" label. Each pattern has at
+// least one matching regression-test fixture in tests/body_classifier.test.js.
+
+const SIGNATURE_LEN = 500;
+const SHORT_BODY_FLOOR = 300;
+// Upper length bound for "chrome-dominated" detectors. Above this, even if a
+// chrome marker is present at the top, we assume substantive content follows
+// (e.g., row_9: 912 chars of "The Wayback Machine - …" prefix + USCIS article).
+// Tuned conservatively to favor false negatives (let body through, LLM handles)
+// over false positives (real content discarded as unusable).
+const CHROME_LENGTH_CAP = 600;
+
+const PATTERNS = [
+  {
+    reason: 'json_ld_leak',
+    // Body is a JSON-LD blob (schema.org structured data picked up by Defuddle
+    // instead of the article body).
+    test: (text) =>
+      /^\s*\{[^{}]{0,200}"@(context|type|graph)"\s*:/.test(text),
+  },
+  {
+    reason: 'css_leak',
+    // Body is CSS rules (Defuddle picked up a <style> element).
+    // Confirmed with CSS-glyph density in the signature window.
+    test: (text) => {
+      const head = text.slice(0, SIGNATURE_LEN);
+      if (!/^[\s.#@\w-]+\{[^{}]{10,}/.test(head)) return false;
+      const cssGlyphs = (head.match(/[{};:]/g) || []).length;
+      return cssGlyphs / head.length > 0.05;
+    },
+  },
+  {
+    reason: 'anti_bot_challenge',
+    // Cloudflare / Anubis / generic JS-challenge interstitials.
+    test: (text) =>
+      /(Making sure you('|&#39;)re not a bot|Anubis uses a Proof-of-Work|Just a moment\.\.\.|Verifying you are human|Please enable JavaScript and cookies|Checking your browser before accessing)/i
+        .test(text.slice(0, 1500)),
+  },
+  {
+    reason: 'wayback_redirect_notice',
+    // Wayback "page redirected at crawl time" interstitial.
+    test: (text) =>
+      /Got an HTTP \d{3} response at crawl time/.test(text.slice(0, 1500)),
+  },
+  {
+    reason: 'wayback_chrome',
+    // Wayback Machine wrapper captured without the inner archived content.
+    // Fire only when the body is too short to contain substantive content
+    // after the chrome — a Wayback prefix on a long body indicates the real
+    // article follows (see row_9: 912 chars, USCIS glossary entry).
+    // The id_-flag URL rewrite in PAP reduces incidence but doesn't eliminate
+    // it (PDF-too-large, JS-only archives still produce chrome).
+    test: (text) => {
+      if (text.length >= CHROME_LENGTH_CAP) return false;
+      const head = text.slice(0, SIGNATURE_LEN);
+      return (
+        /^The Wayback Machine - https?:\/\//.test(head) ||
+        /\d+ captures\s+\d{1,2} \w+ \d{4}/.test(head) ||
+        /\bCOLLECTED BY\s+Collection:/.test(head)
+      );
+    },
+  },
+  {
+    reason: 'amazon_stub',
+    // Amazon listing page rendered without product details (JS-loaded).
+    test: (text) =>
+      /Conditions of Use(?: & Sale)?\s*\n?\s*Privacy Notice\s*\n?\s*©\s*\d{4}-\d{4},?\s*Amazon\.com/i
+        .test(text),
+  },
+  {
+    reason: 'short_body',
+    // Catch-all for bodies too short to be substantive. Conservative floor —
+    // false positives (real short content flagged as unusable) directly hurt
+    // accuracy; false negatives are recoverable (LLM still handles).
+    test: (text) => text.length < SHORT_BODY_FLOOR,
+  },
+];
+
+function classifyBody(text) {
+  if (text == null) return { usable: false, reason: 'short_body' };
+  const trimmed = text.trim();
+  for (const { reason, test } of PATTERNS) {
+    if (test(trimmed)) return { usable: false, reason };
+  }
+  return { usable: true, reason: 'ok' };
+}
+
 // --- core/worker.js ---
 // Calls to the Cloudflare Worker proxy: source fetching and verification logging.
 
 
+// fetchSourceContent return shapes:
+//   string                                  — usable body, formatted as
+//                                             "Source URL: <u>\n\nSource Content:\n<body>"
+//   null                                    — fetch failed (network/proxy/Google Books skip)
+//   { sourceUnavailable, reason }           — body is structurally bad (Wayback chrome,
+//                                             CSS leak, JSON-LD blob, anti-bot challenge,
+//                                             etc.). Callers should record a deterministic
+//                                             "Source unavailable" verdict without invoking
+//                                             the LLM. See core/body-classifier.js.
 async function fetchSourceContent(url, pageNum, { workerBase = 'https://publicai-proxy.alaexis.workers.dev' } = {}) {
     if (isGoogleBooksUrl(url)) {
         console.log('[CitationVerifier] Skipping Google Books URL:', url);
@@ -694,6 +805,10 @@ async function fetchSourceContent(url, pageNum, { workerBase = 'https://publicai
         }
 
         if (data.content && data.content.length > 100) {
+            const classification = classifyBody(data.content);
+            if (!classification.usable) {
+                return { sourceUnavailable: true, reason: classification.reason };
+            }
             // Proxy caps fetched content around 12k chars. If we're at or
             // above that, the source was almost certainly truncated and
             // only partially sent to the model.
@@ -2260,6 +2375,15 @@ function logVerification(payload, { workerBase = 'https://publicai-proxy.alaexis
                     return;
                 }
 
+                if (typeof sourceInfo === 'object' && sourceInfo.sourceUnavailable) {
+                    // Body classifier flagged the extracted content as structurally
+                    // unusable (Wayback chrome, JS-only skeleton, anti-bot challenge,
+                    // etc.). The verdict is determined here without invoking the LLM.
+                    this.showSourceTextInput();
+                    this.updateStatus(`Source unavailable (${sourceInfo.reason}). Paste the source text below if you have it.`);
+                    return;
+                }
+
                 this.activeSource = sourceInfo;
                 const sourceElement = document.getElementById('verifier-source-text');
 
@@ -3419,6 +3543,19 @@ function logVerification(payload, { workerBase = 'https://publicai-proxy.alaexis
                             verdict: 'SOURCE UNAVAILABLE',
                             confidence: 0,
                             comments: 'Could not fetch source content',
+                            truncated: false
+                        };
+                    } else if (typeof sourceContent === 'object' && sourceContent.sourceUnavailable) {
+                        // Body classifier flagged the extracted content as structurally
+                        // unusable. Record SU verdict without invoking the LLM.
+                        result = {
+                            citationNumber: citation.citationNumber,
+                            claimText: citation.claimText,
+                            url: citation.url,
+                            refElement: citation.refElement,
+                            verdict: 'SOURCE UNAVAILABLE',
+                            confidence: 0,
+                            comments: `Pipeline-attributed (${sourceContent.reason})`,
                             truncated: false
                         };
                     } else {
