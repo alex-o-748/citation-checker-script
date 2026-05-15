@@ -79,6 +79,13 @@ function parseCSV(content) {
         headers.forEach((header, i) => {
             row[header.trim()] = values[i]?.trim() || '';
         });
+        // FRAGILE: row_<_rowIndex> is the stable id propagated into dataset.json
+        // and results.json (via entry_id). Any CSV reorder shifts every id at
+        // or after the insertion point, and results.json is NOT automatically
+        // remapped — entries silently misalign with the new dataset. When
+        // regenerating dataset.json after a CSV reorder, audit results.json
+        // (and historical-runs) for entry_id drift. See "Benchmark row_id
+        // fragility" in repo-level CLAUDE.md.
         row._rowIndex = index + 2; // 1-based, accounting for header
         return row;
     });

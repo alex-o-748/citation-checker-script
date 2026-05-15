@@ -130,6 +130,17 @@ npm run compare               # Compare two results.json runs (delegates to `ccs
 - The system prompt contains 9 carefully tuned few-shot examples — changes affect benchmark accuracy
 - Claim extraction uses "between citations" logic by design (not full sentences) for precision
 
+### Benchmark row_id fragility (read before reordering the CSV)
+
+`extract_dataset.js` derives each row's stable id as `row_<csv_line>`, where `csv_line` is the line number in `Benchmarking_data_Citations.csv` (`_rowIndex = index + 2`, accounting for the header). Two consequences a future regenerate must handle:
+
+1. **Any CSV reorder shifts every id at or after the insertion point.** Inserting a row at line 50 shifts every row 50+ by +1 in `dataset.json`. Removing a blank/empty line does the same in reverse.
+2. **`results.json` (and any other artifact storing `entry_id`) is NOT automatically remapped** when `dataset.json` is regenerated. The entries keep their old ids and silently misalign with the new dataset.
+
+When you regenerate `dataset.json` after a CSV reorder, you must also walk `results.json` and update each entry's `entry_id` to the new value. The 2026-05-01 `a4973d7` regenerate caught the v3 +33 shift but missed a parallel −1 shift on the v1 rows around the v2 insertion boundary — the resulting misalignment was found two weeks later (rows 75/76/77 in `results.json` had content from what is now rows 74/75/76 in `dataset.json`). A content-based audit (match the entry's `comments` against current `claim_text` candidates) is reliable for catching this.
+
+A stable-id refactor (content hash, or a CSV-supplied id column independent of line number) would eliminate the class of bug entirely.
+
 ## Common Tasks
 
 **Modifying the user script:** Edit `main.js` directly. Test by loading on Wikipedia via the browser console or user script page.

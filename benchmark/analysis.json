@@ -1,5 +1,5 @@
 {
-  "generated": "2026-05-15T19:52:37.842Z",
+  "generated": "2026-05-15T20:32:42.422Z",
   "overview": {
     "datasetVersion": "all",
     "totalEntries": 186,
@@ -21,14 +21,14 @@
         "valid": 155,
         "errors": 31,
         "exactMatches": 84,
-        "partialMatches": 47,
+        "partialMatches": 46,
         "exactAccuracy": 0.5419354838709678,
-        "lenientAccuracy": 0.8451612903225807,
-        "binaryAccuracy": 0.8516129032258064,
+        "lenientAccuracy": 0.8387096774193549,
+        "binaryAccuracy": 0.8451612903225807,
         "confusionMatrix": {
           "Supported": {
             "Supported": 50,
-            "Partially supported": 21,
+            "Partially supported": 20,
             "Not supported": 7,
             "Source unavailable": 2
           },
@@ -40,7 +40,7 @@
           },
           "Not supported": {
             "Supported": 2,
-            "Partially supported": 10,
+            "Partially supported": 11,
             "Not supported": 9,
             "Source unavailable": 1
           },
@@ -72,14 +72,14 @@
         "total": 186,
         "valid": 155,
         "errors": 31,
-        "exactMatches": 94,
+        "exactMatches": 93,
         "partialMatches": 40,
-        "exactAccuracy": 0.6064516129032258,
-        "lenientAccuracy": 0.864516129032258,
-        "binaryAccuracy": 0.8774193548387097,
+        "exactAccuracy": 0.6,
+        "lenientAccuracy": 0.8580645161290322,
+        "binaryAccuracy": 0.8709677419354839,
         "confusionMatrix": {
           "Supported": {
-            "Supported": 68,
+            "Supported": 67,
             "Partially supported": 4,
             "Not supported": 2,
             "Source unavailable": 6
@@ -91,7 +91,7 @@
             "Source unavailable": 1
           },
           "Not supported": {
-            "Supported": 4,
+            "Supported": 5,
             "Partially supported": 3,
             "Not supported": 13,
             "Source unavailable": 2
@@ -110,9 +110,9 @@
         },
         "confidence": {
           "avg": 77.65517241379311,
-          "avgWhenCorrect": 76.43617021276596,
-          "avgWhenWrong": 66.80327868852459,
-          "calibration": 9.632891524241373
+          "avgWhenCorrect": 76.34408602150538,
+          "avgWhenWrong": 67.09677419354838,
+          "calibration": 9.247311827956992
         }
       }
     },
@@ -124,14 +124,14 @@
         "total": 186,
         "valid": 186,
         "errors": 0,
-        "exactMatches": 92,
+        "exactMatches": 91,
         "partialMatches": 37,
-        "exactAccuracy": 0.4946236559139785,
-        "lenientAccuracy": 0.6935483870967742,
-        "binaryAccuracy": 0.8548387096774194,
+        "exactAccuracy": 0.489247311827957,
+        "lenientAccuracy": 0.6881720430107527,
+        "binaryAccuracy": 0.8494623655913979,
         "confusionMatrix": {
           "Supported": {
-            "Supported": 68,
+            "Supported": 67,
             "Partially supported": 6,
             "Not supported": 2,
             "Source unavailable": 5
@@ -143,7 +143,7 @@
             "Source unavailable": 6
           },
           "Not supported": {
-            "Supported": 3,
+            "Supported": 4,
             "Partially supported": 6,
             "Not supported": 7,
             "Source unavailable": 30
@@ -162,9 +162,9 @@
         },
         "confidence": {
           "avg": 79.93055555555556,
-          "avgWhenCorrect": 81.84782608695652,
-          "avgWhenWrong": 42.340425531914896,
-          "calibration": 39.50740055504162
+          "avgWhenCorrect": 81.81318681318682,
+          "avgWhenWrong": 42.78947368421053,
+          "calibration": 39.02371312897629
         }
       }
     },
@@ -177,14 +177,14 @@
         "valid": 186,
         "errors": 0,
         "exactMatches": 124,
-        "partialMatches": 36,
+        "partialMatches": 35,
         "exactAccuracy": 0.6666666666666666,
-        "lenientAccuracy": 0.8602150537634409,
-        "binaryAccuracy": 0.8602150537634409,
+        "lenientAccuracy": 0.8548387096774194,
+        "binaryAccuracy": 0.8548387096774194,
         "confusionMatrix": {
           "Supported": {
             "Supported": 52,
-            "Partially supported": 21,
+            "Partially supported": 20,
             "Not supported": 6,
             "Source unavailable": 2
           },
@@ -196,7 +196,7 @@
           },
           "Not supported": {
             "Supported": 1,
-            "Partially supported": 6,
+            "Partially supported": 7,
             "Not supported": 39,
             "Source unavailable": 0
           },

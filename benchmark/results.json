@@ -3484,7 +3484,7 @@
     "timestamp": "2026-04-30T22:45:36.869Z"
   },
   {
-    "entry_id": "row_75",
+    "entry_id": "row_74",
     "provider": "apertus-70b",
     "model": "swiss-ai/apertus-70b-instruct",
     "ground_truth": "Not supported",
@@ -3497,7 +3497,7 @@
     "timestamp": "2026-04-30T22:45:40.763Z"
   },
   {
-    "entry_id": "row_75",
+    "entry_id": "row_74",
     "provider": "qwen-sealion",
     "model": "aisingapore/Qwen-SEA-LION-v4-32B-IT",
     "ground_truth": "Not supported",
@@ -3510,7 +3510,7 @@
     "timestamp": "2026-04-30T22:45:45.213Z"
   },
   {
-    "entry_id": "row_75",
+    "entry_id": "row_74",
     "provider": "claude-sonnet-4-5",
     "model": "claude-sonnet-4-5-20250929",
     "ground_truth": "Not supported",
@@ -3523,7 +3523,7 @@
     "timestamp": "2026-04-30T22:45:49.772Z"
   },
   {
-    "entry_id": "row_75",
+    "entry_id": "row_74",
     "provider": "gemini-2.5-flash",
     "model": "gemini-2.5-flash",
     "ground_truth": "Not supported",
@@ -3536,10 +3536,10 @@
     "timestamp": "2026-04-30T22:45:53.765Z"
   },
   {
-    "entry_id": "row_76",
+    "entry_id": "row_75",
     "provider": "apertus-70b",
     "model": "swiss-ai/apertus-70b-instruct",
-    "ground_truth": "Supported",
+    "ground_truth": "Not supported",
     "predicted_verdict": "Partially supported",
     "confidence": 80,
     "comments": "The source provides estimates of civilian casualties in Chechnya, ranging from 40,000 to 120,000 for the period from 1994 to 2002. However, the claim from Wikipedia mentions a range of 50,000 to 100,000, which is within the range provided by the source. The source also mentions military casualties but does not provide a specific range for the total number of dead or missing Chechens, which makes it difficult to directly confirm the claim. The source does not provide a clear total number of dead or missing Chechens but provides various estimates for different groups (civilians, soldiers, rebels). The claim from Wikipedia may be an aggregate of these estimates, but the source does not provide a clear confirmation of the exact range.",
@@ -3549,36 +3549,36 @@
     "timestamp": "2026-04-30T22:45:59.607Z"
   },
   {
-    "entry_id": "row_76",
+    "entry_id": "row_75",
     "provider": "qwen-sealion",
     "model": "aisingapore/Qwen-SEA-LION-v4-32B-IT",
-    "ground_truth": "Supported",
+    "ground_truth": "Not supported",
     "predicted_verdict": "Supported",
     "confidence": 85,
     "comments": "The source states that 'for the period from 1994 to 2002 estimates range from 40,000 to 120,000 civilians' and later provides a plausible estimate of '70,000-90,000 civilians,' which falls within the Wikipedia claim's range of 50,000 to 100,000 dead or missing Chechens.",
     "latency_ms": 4109,
     "error": null,
-    "correct": true,
+    "correct": false,
     "timestamp": "2026-04-30T22:46:04.722Z"
   },
   {
-    "entry_id": "row_76",
+    "entry_id": "row_75",
     "provider": "claude-sonnet-4-5",
     "model": "claude-sonnet-4-5-20250929",
-    "ground_truth": "Supported",
+    "ground_truth": "Not supported",
     "predicted_verdict": "Supported",
     "confidence": 85,
     "comments": "Source states 'for the period from 1994 to 2002 estimates range from 40.000 to 120.000 civilians' and provides a plausible estimate of '70.000-90.000 civilians' dead. The claim's range of 50,000-100,000 dead or missing falls within and closely aligns with these estimates from the source.",
     "latency_ms": 3808,
     "error": null,
-    "correct": true,
+    "correct": false,
     "timestamp": "2026-04-30T22:46:09.535Z"
   },
   {
-    "entry_id": "row_76",
+    "entry_id": "row_75",
     "provider": "gemini-2.5-flash",
     "model": "gemini-2.5-flash",
-    "ground_truth": "Supported",
+    "ground_truth": "Not supported",
     "predicted_verdict": "Partially supported",
     "confidence": 0,
     "comments": "Failed to parse JSON response",
@@ -3588,7 +3588,7 @@
     "timestamp": "2026-04-30T22:46:15.679Z"
   },
   {
-    "entry_id": "row_77",
+    "entry_id": "row_76",
     "provider": "apertus-70b",
     "model": "swiss-ai/apertus-70b-instruct",
     "ground_truth": "Not supported",
@@ -3601,7 +3601,7 @@
     "timestamp": "2026-04-30T22:46:21.870Z"
   },
   {
-    "entry_id": "row_77",
+    "entry_id": "row_76",
     "provider": "qwen-sealion",
     "model": "aisingapore/Qwen-SEA-LION-v4-32B-IT",
     "ground_truth": "Not supported",
@@ -3614,7 +3614,7 @@
     "timestamp": "2026-04-30T22:46:29.078Z"
   },
   {
-    "entry_id": "row_77",
+    "entry_id": "row_76",
     "provider": "claude-sonnet-4-5",
     "model": "claude-sonnet-4-5-20250929",
     "ground_truth": "Not supported",
@@ -3627,7 +3627,7 @@
     "timestamp": "2026-04-30T22:46:35.033Z"
   },
   {
-    "entry_id": "row_77",
+    "entry_id": "row_76",
     "provider": "gemini-2.5-flash",
     "model": "gemini-2.5-flash",
     "ground_truth": "Not supported",
