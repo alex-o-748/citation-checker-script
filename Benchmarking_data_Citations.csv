@@ -74,7 +74,7 @@ Citation number,Citation instance,Article,Ground truth,Dataset version,WMF claim
 70,1,https://en.wikipedia.org/w/index.php?title=Freedom_Flotilla_II&oldid=1320167236,Not supported,v1,,,
 61,4,https://en.wikipedia.org/w/index.php?title=First_Chechen_War&oldid=1325376850,Not supported,v1,,,
 64,1,https://en.wikipedia.org/w/index.php?title=Second_Congo_War&oldid=1324841474,Not supported,v1,,,
-739,1,https://en.wikipedia.org/w/index.php?title=Gaza_war&oldid=1324234133,Not supported,v1,,,
+739,1,https://en.wikipedia.org/w/index.php?title=Gaza_war&oldid=1324234133,Supported,v1,,,
 6,1,https://en.wikipedia.org/w/index.php?title=Agnes_Gund&oldid=1329750129,Partially supported,v2,,,
 4,1,https://en.wikipedia.org/w/index.php?title=Arlo_Hemphill&oldid=1329709078,Not supported,v2,,,
 40,1,https://en.wikipedia.org/w/index.php?title=Central_Bank_of_Sri_Lanka_bond_scandal&oldid=1319126614,Not supported,v2,,,
@@ -108,7 +108,7 @@ Citation number,Citation instance,Article,Ground truth,Dataset version,WMF claim
 8,1,https://en.wikipedia.org/w/index.php?title=The_Phoenix_(magazine)&oldid=1263003668,Not supported,v2,,,
 2,1,https://en.wikipedia.org/w/index.php?title=Wes_Olson&oldid=1261635737,Not supported,v2,,,
 2,1,https://en.wikipedia.org/w/index.php?title=You'll_Never_Know&oldid=1263012631,Not supported,v2,,,
-13,1,https://en.wikipedia.org/w/index.php?title=Zealandia_(wildlife_sanctuary)&oldid=1259406891,Not supported,v2,,,
+13,1,https://en.wikipedia.org/w/index.php?title=Zealandia_(wildlife_sanctuary)&oldid=1259406891,Source unavailable,v2,,,
 3,1,https://en.wikipedia.org/w/index.php?title=Aida_Turturro&oldid=1325699710,Partially supported,v3,"Since 2013, she has guest-starred in several episodes of Law & Order: Special Victims Unit as Judge Felicia Catano.",https://www.nbc.com/nbc-insider/sopranos-star-aida-turturro-law-order-svu-role,human-annotation:source-verification-2026-04-25
 5,1,https://en.wikipedia.org/w/index.php?title=Fireworks_policy_of_the_United_States&oldid=1327752468,Partially supported,v3,The primary reasons for the decrease in injury when looking at the amount of fireworks consumed are a result of an increase in firework testing and governmental policy that targeted violations of standards and illegal fireworks.,https://www.cpsc.gov/Newsroom/News-Releases/1988/FEDERAL-OFFICIALS-ANNOUNCE-SEIZURE-OF-MILLIONS-OF-ILLEGAL-IMPORTED-FIREWORKS-DURING-OPERATION-MIDWEST-THUNDER,human-annotation:source-verification-2026-04-25
 2,1,https://en.wikipedia.org/w/index.php?title=The_Orphan_(1920_film)&oldid=1329204404,Supported,v3,The American Film Institute cites 6 contemporary reviews of the film.,https://catalog.afi.com/Film/17850-THE-ORPHAN?cxt=filmography,human-annotation:source-verification-2026-04-25
@@ -185,6 +185,6 @@ Citation number,Citation instance,Article,Ground truth,Dataset version,WMF claim
 2,5,https://en.wikipedia.org/w/index.php?title=Graham_Craig&oldid=1325530156,Not supported,v3,"As of the 2025 season, Craig’s head coaching record at Valdosta State stands at 6–5.",https://en.wikipedia.org/w/index.php?title=Graham_Craig_(American_football)&oldid=1325528100,human-annotation:source-verification-2026-04-25
 3,1,https://en.wikipedia.org/w/index.php?title=Combat_Zone_Wrestling&oldid=1329482180,Partially supported,v3,Combat Zone Wrestling (CZW) is an American independent professional wrestling promotion founded in 1999 by John Zandig.,https://lastwordonsports.com/prowrestling/2022/06/28/combat-zone-wrestling/,human-annotation:source-verification-2026-04-25
 1,3,https://en.wikipedia.org/w/index.php?title=1973_Arab_League_summit&oldid=1329436269,Partially supported,v3,"The summit also called upon Israel to relinquish it's occupation of all territories taken after the Six-Day War of 1967, including Jerusalem.",https://www.palquest.org/en/historictext/21793/sixth-arab-summit-policy-statement,human-annotation:source-verification-2026-04-25
-193,1,https://en.wikipedia.org/w/index.php?title=Ewing_Township%2C_New_Jersey&oldid=1329731974,Not supported,v3,"The current church building, dating from 1867, had been under threat of demolition but is now preserved.",http://www.nj.com/mercer/index.ssf/2009/08/church_rejects_restoration_off.html,human-annotation:source-verification-2026-04-25
+193,1,https://en.wikipedia.org/w/index.php?title=Ewing_Township%2C_New_Jersey&oldid=1329731974,Partially supported,v3,"The current church building, dating from 1867, had been under threat of demolition but is now preserved.",http://www.nj.com/mercer/index.ssf/2009/08/church_rejects_restoration_off.html,human-annotation:source-verification-2026-04-25
 42,1,https://en.wikipedia.org/w/index.php?title=Marjane_Satrapi&oldid=1326410990,Supported,v3,ISBN 9781936393466.,https://www.goodreads.com/book/show/12541221-the-sigh,human-annotation:source-verification-2026-04-25
 5,1,https://en.wikipedia.org/w/index.php?title=Ohaozara&oldid=1326547268,Supported,v3,Trade and hunting further contribute to the economic life of the LGA.,https://www.manpower.com.ng/places/lga/259/ohaozara,human-annotation:source-verification-2026-04-25
