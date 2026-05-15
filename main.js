@@ -11,95 +11,147 @@
 // Also injected byte-identically into main.js between <core-injected> markers.
 
 function generateSystemPrompt() {
-    return `You are a fact-checking assistant for Wikipedia. Analyze whether claims are supported by the provided source text.
+    return `You are a fact-checking assistant for Wikipedia. Verify whether claims are supported by the provided source text.
+
+Use this two-step process for every claim:
+
+STEP 1 — Source check (provenance):
+Determine whether the source text contains usable article body content.
+
+The source text may begin with a JSON metadata block (publication, author, published date, title, url) followed by a '---' separator and then the article body. This metadata is PROVENANCE only — it confirms the article exists and was published, but it is NOT itself evidence about the claim's content. Step 1 evaluates the article body, which is everything after the '---' separator (or the entire source text if no metadata block is present).
+
+The article body is usable if it contains real article content: paragraphs, quotes, narrative passages, or factual statements. This is true even when surrounded by navigation, headers, footers, captures from web.archive.org, or other page chrome.
+
+The article body is NOT usable if it contains only:
+- A library catalog or database metadata (Google Books, WorldCat, JSTOR previews)
+- A paywall, login wall, 404 page, cookie consent notice, or JavaScript error
+- Bibliographic metadata only (publication name, title, date, author) without article body content
+- Just the metadata block at the top with no body content following
+
+If Step 1 fails, return verdict SOURCE UNAVAILABLE. Do not attempt Step 2.
+
+STEP 2 — Claim verification:
+If Step 1 passes, identify what the claim asserts (specific dates, numbers, names, events, attributions). Then look in the article body for support, contradiction, or partial coverage.
 
 Rules:
-- ONLY use the provided source text. Never use outside knowledge.
-- First identify what the claim asserts, then look for information that supports or contradicts it.
-- Accept paraphrasing and straightforward implications, but not speculative inferences or logical leaps.
-- Distinguish between definitive statements and uncertain/hedged language. Claims stated as facts require sources that make definitive statements, not speculation or tentative assertions.
-- Names from languages using non-Latin scripts (Arabic, Chinese, Japanese, Korean, Russian, Hindi, etc.) may have multiple valid romanizations/transliterations. For example, "Yasmin" and "Yazmeen," or "Chekhov" and "Tchekhov," are variant spellings of the same name. Do not treat transliteration differences as factual errors.
+- ONLY use the article body. The metadata block is provenance, NOT evidence about the claim's content. NEVER use outside knowledge.
+- The metadata IS evidence only if the claim is specifically about provenance — that is, who published it (matches metadata 'publication'), who wrote it (matches 'author'), or when it was published (matches 'published'). For all other claims, the body must contain the specific assertion.
+- For claims with dates: the body must contain the date in some form. Equivalent expressions count — "Wednesday" supports a "January 7, 2026" claim if the article is dated January 7, 2026; abbreviated formats like "7 Jan 2026" count as evidence for "7 January 2026".
+- For claims with specific numbers, names, or quoted statements: the body must contain that specific number/name/quote, or a directly equivalent paraphrase.
+- Accept paraphrasing and direct implications, but not speculative inferences or logical leaps.
+- Distinguish definitive statements from hedged language ("it is believed", "some sources suggest"). Claims stated as facts require body text that makes definitive statements.
+- Names from non-Latin scripts (Arabic, Chinese, Japanese, Korean, Russian, Hindi, etc.) may have multiple valid romanizations. "Yasmin"/"Yazmeen", "Chekhov"/"Tchekhov" are variant spellings of the same name; do not treat transliteration differences as factual errors.
 
-Source text evaluation:
-Before analyzing, check if the provided "source text" is actually usable content.
+Choose ONE verdict based on what the article body says (NOT how confident you feel):
 
-It IS usable if it's:
-- Article text from any website, including archive.org snapshots
-- News articles, blog posts, press releases
-- Actual content from the original source, even if it includes navigation, boilerplate, or Internet Archive/Wayback Machine framing
-
-It is NOT usable if it's:
-- A library catalog, database record, or book metadata (e.g., WorldCat, Google Books, JSTOR preview pages)
-- Google Books, also Google Books in Internet Archive
-- A paywall, login page, or access denied message
-- A cookie consent notice or JavaScript error
-- A 404 page or redirect notice
-- Just bibliographic information without the actual content being cited
-
-IMPORTANT: If the source text contains actual article content (paragraphs of text, quotes, factual statements), it IS usable even if it also contains archive navigation, headers, footers, or other page chrome. Only return SOURCE UNAVAILABLE when there is genuinely no article content to analyze.
-
-If the source text is not usable, you MUST return verdict SOURCE UNAVAILABLE with confidence 0. Do not attempt to verify the claim - if you cannot find actual article or book content to quote, the source is unavailable.
+- SUPPORTED: The article body contains all of the claim's specific assertions. Paraphrasing OK if substance matches.
+- PARTIALLY SUPPORTED: The article body addresses the claim but contains only some of its specific assertions, OR makes the assertion only with hedged/uncertain language.
+- NOT SUPPORTED: The article body addresses the claim's topic but contradicts it, or has no evidence for the claim's specific assertions despite covering the same general subject.
+- SOURCE UNAVAILABLE: Step 1 failed — no usable article body content.
 
 Respond in JSON format:
 {
-  "confidence": <number 0-100>,
-  "verdict": "<verdict>",
-  "comments": "<relevant quote and brief explanation>"
+  "verdict": "<SUPPORTED | PARTIALLY SUPPORTED | NOT SUPPORTED | SOURCE UNAVAILABLE>",
+  "comments": "<direct quote from article body, then brief explanation>"
 }
-
-Confidence guide:
-- 80-100: SUPPORTED
-- 50-79: PARTIALLY SUPPORTED
-- 1-49: NOT SUPPORTED
-- 0: SOURCE UNAVAILABLE
 
 <example>
 Claim: "The committee published its findings in 1932."
-Source text: "History of Modern Economics - Economic Research Council - Google Books Sign in Hidden fields Books Try the new Google Books Check out the new look and enjoy easier access to your favorite features Try it now No thanks My library Help Advanced Book Search Download EPUB Download PDF Plain text Read eBook Get this book in print AbeBooks On Demand Books Amazon Find in a library All sellers About this book Terms of Service Plain text PDF EPUB"
+Source text: "History of Modern Economics - Economic Research Council - Google Books Sign in Hidden fields Books Try the new Google Books Check out the new look and enjoy easier access to your favorite features Try it now No thanks My library Help Advanced Book Search"
 
-{"source_quote": "", "confidence": 0, "verdict": "SOURCE UNAVAILABLE", "comments": "Google Books interface with no actual book content, only navigation and metadata."}
+{"verdict": "SOURCE UNAVAILABLE", "comments": "Google Books interface only — no article body content to verify the claim against."}
 </example>
 
 <example>
 Claim: "The bridge was completed in 1998."
 Source text: "Skip to main content Web Archive toolbar... Capture date: 2015-03-12 ... City Tribune - Local News ... The Morrison Bridge project broke ground in 1994 after years of planning. Construction faced multiple delays due to funding shortages. The bridge was finally opened to traffic in August 2002, four years behind schedule. Mayor Davis called it 'a triumph of persistence.'"
 
-{"confidence": 15, "verdict": "NOT SUPPORTED", "comments": "\"finally opened to traffic in August 2002, four years behind schedule\" - Source says the bridge opened in 2002, not 1998. The article is accessible despite being an Internet Archive capture."}
+{"verdict": "NOT SUPPORTED", "comments": "Body: 'finally opened to traffic in August 2002, four years behind schedule.' Body addresses the bridge's completion but contradicts 1998."}
 </example>
 
 <example>
 Claim: "The company was founded in 1985 by John Smith."
 Source text: "Acme Corp was established in 1985. Its founder, John Smith, served as CEO until 2001."
 
-{"confidence": 95, "verdict": "SUPPORTED", "comments": "\"Acme Corp was established in 1985. Its founder, John Smith\" - Definitive match with paraphrasing."}
+{"verdict": "SUPPORTED", "comments": "Body: 'Acme Corp was established in 1985. Its founder, John Smith.' Both 1985 founding and John Smith as founder match."}
 </example>
 
 <example>
 Claim: "The treaty was signed by 45 countries."
 Source text: "The treaty, finalized in March, was signed by over 30 nations, though the exact number remains disputed."
 
-{"confidence": 20, "verdict": "NOT SUPPORTED", "comments": "\"signed by over 30 nations\" - Source says \"over 30,\" not 45."}
+{"verdict": "NOT SUPPORTED", "comments": "Body: 'signed by over 30 nations.' Body addresses signatory count but says 'over 30,' not 45."}
 </example>
 
 <example>
 Claim: "The treaty was signed in Paris."
 Source text: "It is believed the treaty was signed in Paris, though some historians dispute this."
 
-{"confidence": 60, "verdict": "PARTIALLY SUPPORTED", "comments": "\"It is believed... though some historians dispute this\" - Source hedges this as uncertain; Wikipedia states it as fact."}
+{"verdict": "PARTIALLY SUPPORTED", "comments": "Body: 'It is believed the treaty was signed in Paris, though some historians dispute this.' Body hedges this as uncertain; claim states it as fact."}
 </example>
 
 <example>
 Claim: "The population increased by 12% between 2010 and 2020."
 Source text: "Census data shows significant population growth in the region during the 2010s."
 
-{"confidence": 55, "verdict": "PARTIALLY SUPPORTED", "comments": "\"significant population growth\" - Source confirms growth but doesn't specify 12%."}
+{"verdict": "PARTIALLY SUPPORTED", "comments": "Body: 'significant population growth in the region during the 2010s.' Body confirms growth but does not specify 12%."}
+</example>
+
+<example>
+Claim: "On 7 January 2026, Yemeni government forces captured Aden."
+Source text: "{
+  \\"source_citation_metadata\\": {
+    \\"publication\\": \\"Al Jazeera\\",
+    \\"published\\": \\"2026-01-07\\",
+    \\"title\\": \\"Saudi-led coalition strikes Yemen\\"
+  }
+}
+
+---
+
+Saudi-backed forces move on Aden as Yemen secessionist leader vanishes | News | Al Jazeera ... Published On 7 Jan 2026 ... Saudi-backed ground forces on Wednesday moved on the Yemeni city of Aden, a stronghold of the southern secessionists."
+
+{"verdict": "SUPPORTED", "comments": "Body: 'Published On 7 Jan 2026 ... Saudi-backed ground forces on Wednesday moved on the Yemeni city of Aden.' Body contains both the date (in abbreviated form) and the event."}
+</example>
+
+<example>
+Claim: "The Wildlife Area has logged the sighting of more than 280 species of birds."
+Source text: "{
+  \\"source_citation_metadata\\": {
+    \\"publication\\": \\"Nature Reserve of Orange County\\",
+    \\"title\\": \\"Wildlife Area Overview\\"
+  }
+}
+
+---
+
+The Wildlife Area is managed as part of the Nature Reserve of Orange County. With both water and upland dry parcels for habitat, the Wildlife Area has logged the sighting of many bird species over the years. The area also supports field instruction and ecological research."
+
+{"verdict": "PARTIALLY SUPPORTED", "comments": "Body: 'has logged the sighting of many bird species.' Body addresses bird species sightings but says 'many' — does not confirm the specific number 280. Metadata is provenance only and contains no species count."}
+</example>
+
+<example>
+Claim: "According to The New Yorker, Bettencourt resigned in December 2008."
+Source text: "{
+  \\"source_citation_metadata\\": {
+    \\"publication\\": \\"The New Yorker\\",
+    \\"published\\": \\"2008-12-15\\",
+    \\"title\\": \\"Texas Tax Assessor Steps Down\\"
+  }
+}
+
+---
+
+Bettencourt's resignation came after months of speculation. The decision shocked many in the Texas political world. He decided to step down shortly after winning re-election."
+
+{"verdict": "SUPPORTED", "comments": "Metadata: publication = 'The New Yorker', published = '2008-12-15' — both match the claim's provenance assertion (in The New Yorker, December 2008). Body confirms Bettencourt resigned. Both provenance and content elements verified."}
 </example>
 
 <example>
 Claim: "The president resigned on March 3."
 Source text: "The president remained in office throughout March."
 
-{"confidence": 5, "verdict": "NOT SUPPORTED", "comments": "\"remained in office throughout March\" - Source directly contradicts the claim."}
+{"verdict": "NOT SUPPORTED", "comments": "Body: 'remained in office throughout March.' Body directly contradicts the claim of a March 3 resignation."}
 </example>`;
 }
 
@@ -420,6 +472,141 @@ function extractClaimText(refElement) {
     return claimText;
 }
 
+// --- core/citoid.js ---
+// Pure Citoid metadata fetching + header prepending. Imported by core/ consumers
+// (benchmark, userscript). Browser-safe — uses the standard `fetch` API only.
+// Also injected byte-identically into main.js between <core-injected> markers.
+
+const CITOID_ENDPOINT = 'https://en.wikipedia.org/api/rest_v1/data/citation/mediawiki-basefields/';
+const DEFAULT_USER_AGENT = 'citation-checker-script/1.0 (+https://github.com/alex-o-748/citation-checker-script)';
+const DEFAULT_TIMEOUT_MS = 10000;
+
+/**
+ * Fetch Citoid metadata for a source URL. Returns the first translator entry
+ * (Citoid returns a JSON array; we use element [0]) or null on any failure.
+ *
+ * Citoid's `mediawiki-basefields` format returns Zotero base fields, which is
+ * more consistent across source types than the bare `mediawiki` format.
+ *
+ * @param {string} sourceUrl - URL to look up.
+ * @param {object} [opts]
+ * @param {number} [opts.timeoutMs=10000] - Per-request timeout.
+ * @param {string} [opts.userAgent] - User-Agent header. Wikimedia's rate-limit
+ *   policy is more lenient with identifying user-agents.
+ * @returns {Promise<object|null>}
+ */
+async function fetchCitoidMetadata(sourceUrl, opts = {}) {
+    if (!sourceUrl) return null;
+    const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    const userAgent = opts.userAgent ?? DEFAULT_USER_AGENT;
+    const url = CITOID_ENDPOINT + encodeURIComponent(sourceUrl);
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+        const response = await fetch(url, {
+            headers: { 'User-Agent': userAgent },
+            signal: controller.signal,
+        });
+        clearTimeout(timer);
+        if (!response.ok) return null;
+        const data = await response.json();
+        return Array.isArray(data) && data.length > 0 ? data[0] : null;
+    } catch (e) {
+        clearTimeout(timer);
+        return null;
+    }
+}
+
+/**
+ * Build the 5-field metadata header from Citoid data. Returns null if no
+ * meaningful fields are populated (in which case no header should be prepended).
+ *
+ * Field selection is deliberately minimal — `publication`, `published`,
+ * `author`, `title`, `url`. Excluded fields (abstractNote, accessDate, ISSN,
+ * DOI, libraryCatalog, etc.) either duplicate body content or contribute no
+ * claim-verification signal.
+ *
+ * @param {object|null} citoidData - Result of fetchCitoidMetadata.
+ * @param {string} sourceUrl - Echoed into the header for the model's convenience.
+ * @returns {object|null} Header object, or null if no meaningful fields.
+ */
+function buildCitoidHeader(citoidData, sourceUrl) {
+    if (!citoidData) return null;
+    const header = {};
+
+    if (citoidData.publicationTitle) {
+        header.publication = String(citoidData.publicationTitle).trim();
+    } else if (citoidData.websiteTitle) {
+        header.publication = String(citoidData.websiteTitle).trim();
+    }
+
+    if (citoidData.date) {
+        const d = String(citoidData.date).trim();
+        if (d) header.published = d;
+    }
+
+    // Citoid returns author/creators as arrays of [first, last] pairs.
+    const authorArray = Array.isArray(citoidData.author) ? citoidData.author
+        : Array.isArray(citoidData.creators) ? citoidData.creators
+        : null;
+    if (authorArray) {
+        const formatted = authorArray
+            .filter(a => Array.isArray(a) && a.length >= 2)
+            .map(([first, last]) => `${first} ${last}`.trim())
+            .filter(s => s.length > 0)
+            .join(', ');
+        if (formatted) header.author = formatted;
+    }
+
+    if (citoidData.title) {
+        const t = String(citoidData.title).trim();
+        if (t) header.title = t;
+    }
+
+    header.url = sourceUrl;
+
+    // Suppress headers that have nothing useful (URL alone is not enough — we
+    // do not want to teach the model that the metadata block existing means
+    // anything special when no actual provenance fields were extracted).
+    const hasMeaningful = header.publication || header.published || header.author || header.title;
+    if (!hasMeaningful) return null;
+    return header;
+}
+
+/**
+ * Prepend a metadata header to source text using the canonical format:
+ * pretty-printed JSON block, blank line, '---' separator, blank line, body.
+ *
+ * If the header is null, returns the source text unchanged.
+ *
+ * @param {object|null} header - Result of buildCitoidHeader.
+ * @param {string} sourceText - The article body text.
+ * @returns {string}
+ */
+function prependMetadataHeader(header, sourceText) {
+    if (!header) return sourceText;
+    const headerJson = JSON.stringify({ source_citation_metadata: header }, null, 2);
+    return `${headerJson}\n\n---\n\n${sourceText}`;
+}
+
+/**
+ * Convenience: fetch Citoid metadata and prepend the header to source text in
+ * one call. On any Citoid failure (timeout, 4xx, network error, empty data,
+ * no useful fields) the source text is returned unchanged — Citoid is purely
+ * additive and never blocks verification.
+ *
+ * @param {string} sourceText - The article body text.
+ * @param {string} sourceUrl - URL the source text was fetched from.
+ * @param {object} [opts] - Forwarded to fetchCitoidMetadata.
+ * @returns {Promise<string>} Augmented source text (or original on failure).
+ */
+async function augmentWithCitoid(sourceText, sourceUrl, opts = {}) {
+    const citoid = await fetchCitoidMetadata(sourceUrl, opts);
+    const header = buildCitoidHeader(citoid, sourceUrl);
+    return prependMetadataHeader(header, sourceText);
+}
+
 // --- core/providers.js ---
 // LLM provider dispatch. Pure HTTP routing — callers build the prompt.
 
@@ -674,7 +861,7 @@ async function callProviderAPI(name, config) {
 // Calls to the Cloudflare Worker proxy: source fetching and verification logging.
 
 
-async function fetchSourceContent(url, pageNum, { workerBase = 'https://publicai-proxy.alaexis.workers.dev' } = {}) {
+async function fetchSourceContent(url, pageNum, { workerBase = 'https://publicai-proxy.alaexis.workers.dev', augment = true } = {}) {
     if (isGoogleBooksUrl(url)) {
         console.log('[CitationVerifier] Skipping Google Books URL:', url);
         return null;
@@ -708,7 +895,8 @@ async function fetchSourceContent(url, pageNum, { workerBase = 'https://publicai
             if (isTruncated) {
                 meta += `\nTruncated: true`;
             }
-            return `${meta}\n\nSource Content:\n${data.content}`;
+            const body = augment ? await augmentWithCitoid(data.content, url) : data.content;
+            return `${meta}\n\nSource Content:\n${body}`;
         }
 
         // If PDF was large and we didn't request a specific page, retry

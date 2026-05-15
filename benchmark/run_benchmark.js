@@ -28,6 +28,7 @@ import {
     callHuggingFaceAPI,
 } from '../core/providers.js';
 import { parseVerificationResult } from '../core/parsing.js';
+import { augmentWithCitoid } from '../core/citoid.js';
 import { loadRows, loadMetadata, todayIso } from './io.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -617,7 +618,14 @@ async function main() {
     await Promise.all(
         [...tasksByHost.entries()].map(([host, hostTasks]) =>
             runPool(hostTasks, CONCURRENCY, async ({ entry, provider }) => {
-                const userPrompt = generateUserPrompt(entry.claim_text, entry.source_text);
+                // Augment source text with Citoid bibliographic metadata when enabled
+                // (default ON; set CITOID_AUGMENT=0 to disable).
+                const augmentEnabled = process.env.CITOID_AUGMENT !== '0';
+                const sourceText = augmentEnabled
+                    ? await augmentWithCitoid(entry.source_text, entry.source_url)
+                    : entry.source_text;
+
+                const userPrompt = generateUserPrompt(entry.claim_text, sourceText);
 
                 const result = await callProvider(provider, systemPrompt, userPrompt);
 

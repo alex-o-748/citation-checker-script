@@ -18,6 +18,7 @@ const CORE_ORDER = [
   'parsing.js',
   'urls.js',
   'claim.js',
+  'citoid.js',
   'providers.js',
   'worker.js',
 ];
