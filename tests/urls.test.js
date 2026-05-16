@@ -16,6 +16,26 @@ test('extractHttpUrl pulls href from a direct <a>', () => {
   assert.equal(url, 'https://example.com/page');
 });
 
+test('extractHttpUrl prefers live URLs over archive snapshots', () => {
+  const jsdom = new JSDOM(`<!DOCTYPE html><body><span id="container">
+    <a href="https://web.archive.org/web/20250515222512/https://example.com/page">archived</a>
+    <a href="https://example.com/page">live</a>
+  </span></body>`);
+  const element = jsdom.window.document.getElementById('container');
+  const url = extractHttpUrl(element);
+  assert.equal(url, 'https://example.com/page');
+});
+
+test('extractHttpUrl falls back to archive URL when no live URL exists', () => {
+  const archiveUrl = 'https://web.archive.org/web/20250515222512/https://example.com/page';
+  const jsdom = new JSDOM(`<!DOCTYPE html><body><span id="container">
+    <a href="${archiveUrl}">archived</a>
+  </span></body>`);
+  const element = jsdom.window.document.getElementById('container');
+  const url = extractHttpUrl(element);
+  assert.equal(url, archiveUrl);
+});
+
 test('isGoogleBooksUrl recognizes books.google.com URLs', () => {
   assert.equal(isGoogleBooksUrl('https://books.google.com/books?id=abc'), true);
   assert.equal(isGoogleBooksUrl('https://example.com/'), false);
