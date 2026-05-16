@@ -334,15 +334,23 @@ async function withRetry(fn, {
 // when called without one — that's the userscript path, where the browser
 // supplies the global.
 
+const ARCHIVE_HOST_PATTERN = /web\.archive\.org|archive\.today|archive\.is|archive\.ph|webcitation\.org/i;
+
+function isArchiveUrl(href) {
+    return ARCHIVE_HOST_PATTERN.test(href);
+}
+
 function extractHttpUrl(element) {
     if (!element) return null;
-    // First look for archive links (prioritize these)
-    const archiveLink = element.querySelector('a[href*="web.archive.org"], a[href*="archive.today"], a[href*="archive.is"], a[href*="archive.ph"], a[href*="webcitation.org"]');
-    if (archiveLink) return archiveLink.href;
-
-    // Fall back to any http link
     const links = element.querySelectorAll('a[href^="http"]');
     if (links.length === 0) return null;
+    // Prefer live URLs over archive snapshots. archive.org rate-limits the
+    // proxy's Cloudflare egress IPs aggressively (429 on most requests),
+    // so archive snapshots are only used as a last-resort fallback when no
+    // live link exists in the citation.
+    for (const link of links) {
+        if (!isArchiveUrl(link.href)) return link.href;
+    }
     return links[0].href;
 }
 
