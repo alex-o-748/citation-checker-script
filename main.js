@@ -3292,8 +3292,11 @@ function buildDatasetSubmissionUrl(
             if (revId) {
                 wikitext += `Revision checked: [[Special:PermanentLink/${revId}|${revId}]]\n\n`;
             }
+            const submissionConfigured = this.isDatasetSubmissionConfigured();
             wikitext += `{| class="wikitable sortable"\n`;
-            wikitext += `|-\n! # !! Verdict !! Source !! Comments\n`;
+            wikitext += submissionConfigured
+                ? `|-\n! # !! Verdict !! Source !! Comments !! class="unsortable" | Submit\n`
+                : `|-\n! # !! Verdict !! Source !! Comments\n`;
 
             for (const r of this.reportResults) {
                 let verdictWiki;
@@ -3325,7 +3328,14 @@ function buildDatasetSubmissionUrl(
                     const groupToken = r.groupCitationNumbers.map(n => `[${n}]`).join('');
                     citationCell += ` <small>(group ${groupToken})</small>`;
                 }
-                wikitext += `|-\n| ${citationCell} || ${verdictWiki} || ${sourceStr} || ${commentsClean}\n`;
+                if (submissionConfigured) {
+                    const submitCell = (r.verdict && r.verdict !== 'ERROR')
+                        ? `[${this.buildDatasetSubmissionUrl(r)} Submit]`
+                        : '—';
+                    wikitext += `|-\n| ${citationCell} || ${verdictWiki} || ${sourceStr} || ${commentsClean} || ${submitCell}\n`;
+                } else {
+                    wikitext += `|-\n| ${citationCell} || ${verdictWiki} || ${sourceStr} || ${commentsClean}\n`;
+                }
             }
 
             wikitext += `|}\n\n`;
