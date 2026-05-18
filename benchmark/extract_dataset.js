@@ -165,13 +165,20 @@ function fetchURL(url) {
 }
 
 /**
- * Fetch source content via proxy, with direct fetch fallback
+ * Fetch source content via proxy, with direct fetch fallback.
+ *
+ * When `claim` is supplied, it is forwarded as `&query=<encoded>` so the
+ * proxy can return claim-relevant excerpts from long sources instead of
+ * head-of-page truncation. Mirrors the userscript-side change in
+ * core/worker.js so the benchmark exercises the same fetch contract as
+ * the deployed userscript.
  */
-async function fetchSourceContent(url) {
+async function fetchSourceContent(url, claim) {
     // Try proxy first
     try {
         log(`    Trying proxy fetch...`);
-        const proxyUrl = `${PROXY_URL}?fetch=${encodeURIComponent(url)}`;
+        const queryParam = claim ? `&query=${encodeURIComponent(claim)}` : '';
+        const proxyUrl = `${PROXY_URL}?fetch=${encodeURIComponent(url)}${queryParam}`;
         const response = await fetchWithRetry(proxyUrl);
         const data = JSON.parse(response);
 
@@ -479,7 +486,7 @@ async function main() {
             let sourceText = '';
             if (sourceUrl && !DRY_RUN) {
                 console.log(`    Fetching source: ${sourceUrl.substring(0, 60)}...`);
-                sourceText = await fetchSourceContent(sourceUrl) || '';
+                sourceText = await fetchSourceContent(sourceUrl, claimText) || '';
                 await sleep(500); // Rate limiting
             }
 

@@ -38,6 +38,66 @@ test('fetchSourceContent returns formatted source text on success', async () => 
   }
 });
 
+test('fetchSourceContent forwards claim as URL-encoded &query=', async () => {
+  const mock = mockFetch(async () => ({
+    ok: true,
+    json: async () => ({ content: 'a'.repeat(500), truncated: false }),
+  }));
+  try {
+    await fetchSourceContent('https://example.com/doc', null, {
+      claim: 'foo & bar = baz?',
+    });
+    const url = mock.calls[0].url;
+    assert.ok(url.includes('&query=foo%20%26%20bar%20%3D%20baz%3F'),
+      `expected URL-encoded &query=, got: ${url}`);
+  } finally {
+    mock.restore();
+  }
+});
+
+test('fetchSourceContent omits &query= when no claim is supplied', async () => {
+  const mock = mockFetch(async () => ({
+    ok: true,
+    json: async () => ({ content: 'a'.repeat(500), truncated: false }),
+  }));
+  try {
+    await fetchSourceContent('https://example.com/doc', null);
+    assert.ok(!mock.calls[0].url.includes('query='),
+      `did not expect &query=, got: ${mock.calls[0].url}`);
+  } finally {
+    mock.restore();
+  }
+});
+
+test('fetchSourceContent combines &page= and &query= when both supplied', async () => {
+  const mock = mockFetch(async () => ({
+    ok: true,
+    json: async () => ({ content: 'a'.repeat(500), truncated: false }),
+  }));
+  try {
+    await fetchSourceContent('https://example.com/doc', 7, { claim: 'hello' });
+    const url = mock.calls[0].url;
+    assert.ok(url.includes('&page=7'), `missing &page=7: ${url}`);
+    assert.ok(url.includes('&query=hello'), `missing &query=hello: ${url}`);
+  } finally {
+    mock.restore();
+  }
+});
+
+test('fetchSourceContent omits &query= for empty-string claim', async () => {
+  const mock = mockFetch(async () => ({
+    ok: true,
+    json: async () => ({ content: 'a'.repeat(500), truncated: false }),
+  }));
+  try {
+    await fetchSourceContent('https://example.com/doc', null, { claim: '' });
+    assert.ok(!mock.calls[0].url.includes('query='),
+      `expected empty claim to be skipped: ${mock.calls[0].url}`);
+  } finally {
+    mock.restore();
+  }
+});
+
 test('logVerification posts payload and swallows failures', async () => {
   const mock = mockFetch(async () => ({ ok: true, json: async () => ({}) }));
   try {

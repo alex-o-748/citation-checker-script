@@ -2,7 +2,12 @@
 
 import { isGoogleBooksUrl } from './urls.js';
 
-export async function fetchSourceContent(url, pageNum, { workerBase = 'https://publicai-proxy.alaexis.workers.dev' } = {}) {
+// claim is optional. When supplied, the proxy may use it to extract
+// claim-relevant excerpts from long sources instead of returning
+// only the first ~12k chars. The proxy MUST gracefully ignore the
+// `query` param if it does not yet support it, so this is safe to
+// ship before the Worker is updated.
+export async function fetchSourceContent(url, pageNum, { claim, workerBase = 'https://publicai-proxy.alaexis.workers.dev' } = {}) {
     if (isGoogleBooksUrl(url)) {
         console.log('[CitationVerifier] Skipping Google Books URL:', url);
         return null;
@@ -12,6 +17,9 @@ export async function fetchSourceContent(url, pageNum, { workerBase = 'https://p
         let proxyUrl = `${workerBase}/?fetch=${encodeURIComponent(url)}`;
         if (pageNum) {
             proxyUrl += `&page=${pageNum}`;
+        }
+        if (claim) {
+            proxyUrl += `&query=${encodeURIComponent(claim)}`;
         }
         const response = await fetch(proxyUrl);
         const data = await response.json();
