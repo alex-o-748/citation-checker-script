@@ -3161,14 +3161,10 @@ function buildDatasetSubmissionUrl(
 
             this.attachRefScrollHandler(card, result.refElement);
 
-            if (result.verdict && result.verdict !== 'ERROR' && this.isDatasetSubmissionConfigured()) {
-                const submitBtn = this.buildSubmitToDatasetButton(result, { label: 'Submit report' });
-                card.querySelector('.report-card-header-actions').appendChild(submitBtn.$element[0]);
-            }
+            const actionDiv = document.createElement('div');
+            actionDiv.className = 'report-card-action';
 
             if (result.refElement && (result.verdict === 'NOT SUPPORTED' || result.verdict === 'PARTIALLY SUPPORTED' || result.verdict === 'SOURCE UNAVAILABLE')) {
-                const actionDiv = document.createElement('div');
-                actionDiv.className = 'report-card-action';
                 const editBtn = new OO.ui.ButtonWidget({
                     label: 'Edit Section',
                     flags: ['progressive'],
@@ -3178,6 +3174,14 @@ function buildDatasetSubmissionUrl(
                     framed: false
                 });
                 actionDiv.appendChild(editBtn.$element[0]);
+            }
+
+            if (result.verdict && result.verdict !== 'ERROR' && this.isDatasetSubmissionConfigured()) {
+                const submitBtn = this.buildSubmitToDatasetButton(result, { label: 'Submit report' });
+                actionDiv.appendChild(submitBtn.$element[0]);
+            }
+
+            if (actionDiv.children.length) {
                 card.appendChild(actionDiv);
             }
             return card;
@@ -3236,8 +3240,11 @@ function buildDatasetSubmissionUrl(
             this.attachRefScrollHandler(row, result.refElement);
 
             if (result.verdict && result.verdict !== 'ERROR' && this.isDatasetSubmissionConfigured()) {
+                const actionDiv = document.createElement('div');
+                actionDiv.className = 'report-card-action';
                 const submitBtn = this.buildSubmitToDatasetButton(result, { label: 'Submit report' });
-                row.querySelector('.report-card-header-actions').appendChild(submitBtn.$element[0]);
+                actionDiv.appendChild(submitBtn.$element[0]);
+                row.appendChild(actionDiv);
             }
 
             return row;
@@ -3722,8 +3729,7 @@ function buildDatasetSubmissionUrl(
         buildSubmitToDatasetButton(result, { label = 'Submit to dataset' } = {}) {
             return new OO.ui.ButtonWidget({
                 label,
-                flags: ['progressive'],
-                icon: 'upload',
+                icon: 'feedback',
                 framed: false,
                 href: this.buildDatasetSubmissionUrl(result),
                 target: '_blank',
