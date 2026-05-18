@@ -1415,7 +1415,7 @@ function buildDatasetSubmissionUrl(
                     font-weight: normal;
                 }
                 .report-card-action .report-card-feedback-action .oo-ui-iconElement-icon {
-                    opacity: 0.4;
+                    opacity: 0.4 !important;
                 }
                 .report-card-header-actions {
                     display: flex;
