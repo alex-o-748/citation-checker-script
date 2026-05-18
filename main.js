@@ -1415,7 +1415,7 @@ function buildDatasetSubmissionUrl(
                     font-weight: normal;
                 }
                 .report-card-action .report-card-feedback-action .oo-ui-iconElement-icon {
-                    opacity: 0.65;
+                    opacity: 0.4;
                 }
                 .report-card-header-actions {
                     display: flex;
@@ -3184,7 +3184,7 @@ function buildDatasetSubmissionUrl(
             }
 
             if (result.verdict && result.verdict !== 'ERROR' && this.isDatasetSubmissionConfigured()) {
-                const submitBtn = this.buildSubmitToDatasetButton(result, { label: 'Submit report' });
+                const submitBtn = this.buildSubmitToDatasetButton(result);
                 submitBtn.$element.addClass('report-card-feedback-action');
                 actionDiv.appendChild(submitBtn.$element[0]);
             }
@@ -3250,7 +3250,7 @@ function buildDatasetSubmissionUrl(
             if (result.verdict && result.verdict !== 'ERROR' && this.isDatasetSubmissionConfigured()) {
                 const actionDiv = document.createElement('div');
                 actionDiv.className = 'report-card-action';
-                const submitBtn = this.buildSubmitToDatasetButton(result, { label: 'Submit report' });
+                const submitBtn = this.buildSubmitToDatasetButton(result);
                 submitBtn.$element.addClass('report-card-feedback-action');
                 actionDiv.appendChild(submitBtn.$element[0]);
                 row.appendChild(actionDiv);
@@ -3735,7 +3735,7 @@ function buildDatasetSubmissionUrl(
             });
         }
 
-        buildSubmitToDatasetButton(result, { label = 'Submit to dataset' } = {}) {
+        buildSubmitToDatasetButton(result, { label = 'Give feedback' } = {}) {
             return new OO.ui.ButtonWidget({
                 label,
                 icon: 'feedback',
