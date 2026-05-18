@@ -874,7 +874,7 @@ function buildDatasetSubmissionUrl(
         }
         
         async loadOOUI() {
-            await mw.loader.using(['oojs-ui-core', 'oojs-ui-widgets', 'oojs-ui-windows']);
+            await mw.loader.using(['oojs-ui-core', 'oojs-ui-widgets', 'oojs-ui-windows', 'oojs-ui.styles.icons-interactions']);
         }
         
         getCurrentApiKey() {
@@ -1409,6 +1409,13 @@ function buildDatasetSubmissionUrl(
                 .report-card-action .oo-ui-buttonElement-button {
                     font-size: 11px;
                     padding: 2px 4px;
+                }
+                .report-card-action .report-card-feedback-action .oo-ui-buttonElement-button .oo-ui-labelElement-label {
+                    color: #54595d;
+                    font-weight: normal;
+                }
+                .report-card-action .report-card-feedback-action .oo-ui-iconElement-icon {
+                    opacity: 0.65;
                 }
                 .report-card-header-actions {
                     display: flex;
@@ -3178,6 +3185,7 @@ function buildDatasetSubmissionUrl(
 
             if (result.verdict && result.verdict !== 'ERROR' && this.isDatasetSubmissionConfigured()) {
                 const submitBtn = this.buildSubmitToDatasetButton(result, { label: 'Submit report' });
+                submitBtn.$element.addClass('report-card-feedback-action');
                 actionDiv.appendChild(submitBtn.$element[0]);
             }
 
@@ -3243,6 +3251,7 @@ function buildDatasetSubmissionUrl(
                 const actionDiv = document.createElement('div');
                 actionDiv.className = 'report-card-action';
                 const submitBtn = this.buildSubmitToDatasetButton(result, { label: 'Submit report' });
+                submitBtn.$element.addClass('report-card-feedback-action');
                 actionDiv.appendChild(submitBtn.$element[0]);
                 row.appendChild(actionDiv);
             }
@@ -3781,7 +3790,7 @@ function buildDatasetSubmissionUrl(
     }
     
     if (typeof mw !== 'undefined' && [0, 118].includes(mw.config.get('wgNamespaceNumber'))) {
-        mw.loader.using(['mediawiki.util', 'mediawiki.api', 'oojs-ui-core', 'oojs-ui-widgets', 'oojs-ui-windows']).then(function() {
+        mw.loader.using(['mediawiki.util', 'mediawiki.api', 'oojs-ui-core', 'oojs-ui-widgets', 'oojs-ui-windows', 'oojs-ui.styles.icons-interactions']).then(function() {
             $(function() {
                 new WikipediaSourceVerifier();
             });
