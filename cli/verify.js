@@ -11,18 +11,38 @@ import { fetchSourceContent, logVerification } from '../core/worker.js';
 import { generateSystemPrompt, generateUserPrompt } from '../core/prompts.js';
 import { callProviderAPI } from '../core/providers.js';
 import { parseVerificationResult } from '../core/parsing.js';
+import { parseCompareArgs, COMPARE_HELP_TEXT, runCompare } from './compare.js';
 
 const KNOWN_PROVIDERS = ['publicai', 'huggingface', 'claude', 'gemini', 'openai'];
 
 export function parseCliArgs(argv) {
     const raw = argv.slice(2);
 
-    if (raw.length === 0) {
-        return { help: true };
+    if (raw.length === 0) return { help: true, scope: 'top' };
+    if (raw[0] === '-h' || raw[0] === '--help') return { help: true, scope: 'top' };
+
+    const subcommand = raw[0];
+    const subArgs = raw.slice(1);
+
+    if (subcommand === 'verify') {
+        const opts = parseVerifyArgs(subArgs);
+        return { ...opts, subcommand: 'verify' };
+    }
+    if (subcommand === 'compare') {
+        const opts = parseCompareArgs(subArgs);
+        return { ...opts, subcommand: 'compare' };
+    }
+
+    throw new UsageError(`unknown subcommand: ${subcommand}`);
+}
+
+function parseVerifyArgs(args) {
+    if (args.includes('-h') || args.includes('--help')) {
+        return { help: true, scope: 'verify' };
     }
 
     const { values, positionals } = parseArgs({
-        args: raw,
+        args,
         options: {
             provider: { type: 'string', default: 'huggingface' },
             'no-log': { type: 'boolean', default: false },
@@ -32,20 +52,8 @@ export function parseCliArgs(argv) {
         strict: true,
     });
 
-    if (values.help) {
-        return { help: true };
-    }
-
-    const subcommand = positionals[0];
-    if (!subcommand) {
-        return { help: true };
-    }
-    if (subcommand !== 'verify') {
-        throw new UsageError(`unknown subcommand: ${subcommand}`);
-    }
-
-    const url = positionals[1];
-    const citationStr = positionals[2];
+    const url = positionals[0];
+    const citationStr = positionals[1];
     if (!url || !citationStr) {
         throw new UsageError('usage: ccs verify <wikipedia-url> <citation-number> [--provider <name>] [--no-log]');
     }
@@ -62,7 +70,6 @@ export function parseCliArgs(argv) {
 
     return {
         help: false,
-        subcommand: 'verify',
         url,
         citationNumber,
         provider,
@@ -165,7 +172,7 @@ const PROVIDER_OPTIONAL_ENV_VARS = {
     huggingface: 'HF_API_KEY',
 };
 
-export const HELP_TEXT = `usage: ccs verify <wikipedia-url> <citation-number> [options]
+export const VERIFY_HELP_TEXT = `usage: ccs verify <wikipedia-url> <citation-number> [options]
 
 Verify a Wikipedia citation by fetching its source and asking an LLM
 whether the cited claim is supported.
@@ -208,6 +215,17 @@ Examples:
   ccs verify https://en.wikipedia.org/wiki/Great_Migration_(African_American) 14
   ccs verify https://en.wikipedia.org/wiki/Foo 3 --provider claude
   ccs verify https://en.wikipedia.org/wiki/Foo?oldid=1234567 3 --no-log
+`;
+
+export const TOP_LEVEL_HELP_TEXT = `usage: ccs <subcommand> [...]
+
+Subcommands:
+  verify    Verify a Wikipedia citation by fetching its source and asking
+            an LLM whether the cited claim is supported.
+  compare   Compare two benchmark results.json files and produce a
+            per-provider accuracy + flip report (Markdown, HTML, or JSON).
+
+Run \`ccs <subcommand> --help\` for subcommand-specific options.
 `;
 
 async function fetchWikipediaHtml(restUrl) {
@@ -331,7 +349,7 @@ export async function runVerify(opts, { stdout = process.stdout, stderr = proces
 
     // 10. Parse the verdict.
     const verdict = parseVerificationResult(providerResult.text);
-    if (verdict.verdict === 'ERROR') {
+    if (verdict.verdict === 'PARSE_ERROR') {
         stderr.write(`ccs: LLM returned malformed JSON. Raw (first 200 chars): ${providerResult.text.slice(0, 200)}\n`);
         return 11;
     }
@@ -372,11 +390,26 @@ export async function main(argv, { stdout = process.stdout, stderr = process.std
     }
 
     if (opts.help) {
-        stdout.write(HELP_TEXT);
+        if (opts.scope === 'verify') {
+            stdout.write(VERIFY_HELP_TEXT);
+        } else if (opts.scope === 'compare') {
+            stdout.write(COMPARE_HELP_TEXT);
+        } else {
+            stdout.write(TOP_LEVEL_HELP_TEXT);
+        }
         return 0;
     }
 
-    return await runVerify(opts, { stdout, stderr, env });
+    if (opts.subcommand === 'verify') {
+        return await runVerify(opts, { stdout, stderr, env });
+    }
+
+    if (opts.subcommand === 'compare') {
+        return await runCompare(opts, { stdout, stderr });
+    }
+
+    // Unreachable — parseCliArgs would have thrown.
+    throw new Error(`unhandled subcommand: ${opts.subcommand}`);
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

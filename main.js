@@ -129,25 +129,101 @@ Source text:
 ${sourceText}`;
 }
 
+// --- core/verdicts.js ---
+// Single source of truth for the four canonical verdict categories and
+// the case/short-form conversions that the userscript, CLI, and benchmark
+// pipeline each consume. Pre-consolidation, normalizeVerdict was
+// reimplemented separately in run_benchmark.js, analyze_results.js,
+// compare_results.js, and extract_dataset.js — each with a different
+// return-value shape and a different fallback for unrecognized input.
+// This module centralizes the recognition logic; callers compose it with
+// the presenter that matches their downstream schema.
+
+// Canonical UPPERCASE form. Matches the prompt's verdict spec and the
+// userscript's existing inline comparisons.
+const VERDICTS = Object.freeze({
+    SUPPORTED:           'SUPPORTED',
+    PARTIALLY_SUPPORTED: 'PARTIALLY SUPPORTED',
+    NOT_SUPPORTED:       'NOT SUPPORTED',
+    SOURCE_UNAVAILABLE:  'SOURCE UNAVAILABLE',
+});
+
+// Ordered by the confidence guide in core/prompts.js. Confusion-matrix
+// rows/columns in analyze_results.js iterate this list.
+const VERDICT_LIST = Object.freeze([
+    VERDICTS.SUPPORTED,
+    VERDICTS.PARTIALLY_SUPPORTED,
+    VERDICTS.NOT_SUPPORTED,
+    VERDICTS.SOURCE_UNAVAILABLE,
+]);
+
+// Map any reasonable variant ('not_supported', 'Not Supported', 'PARTIALLY',
+// 'unavailable', 'partial', ...) to one of the four canonical UPPERCASE
+// values. Returns null for unrecognized input — callers decide whether to
+// substitute a sentinel, pass through, or treat as 'Unknown'.
+function canonicalizeVerdict(raw) {
+    if (raw == null) return null;
+    const v = String(raw).toUpperCase().replace(/_/g, ' ').replace(/\s+/g, ' ').trim();
+    if (!v) return null;
+    // NOT-prefix matches both 'NOT' (compare_results short code) and
+    // 'NOT SUPPORTED'. Order doesn't matter for correctness here because
+    // the canonical forms start with distinct letters; the ordering below
+    // mirrors the historical order in run_benchmark.js for readability.
+    if (v.startsWith('NOT'))     return VERDICTS.NOT_SUPPORTED;
+    if (v.startsWith('PARTIAL')) return VERDICTS.PARTIALLY_SUPPORTED;
+    if (v.startsWith('UNAVAIL')) return VERDICTS.SOURCE_UNAVAILABLE;
+    if (v.startsWith('SOURCE'))  return VERDICTS.SOURCE_UNAVAILABLE;
+    if (v.startsWith('SUPPORT')) return VERDICTS.SUPPORTED;
+    return null;
+}
+
+// Presenter: canonical UPPERCASE -> title case ('Supported', 'Not supported', ...).
+// Used by benchmark results.json schema and analyze_results.js's confusion matrix.
+const TITLE_CASE = Object.freeze({
+    [VERDICTS.SUPPORTED]:           'Supported',
+    [VERDICTS.PARTIALLY_SUPPORTED]: 'Partially supported',
+    [VERDICTS.NOT_SUPPORTED]:       'Not supported',
+    [VERDICTS.SOURCE_UNAVAILABLE]:  'Source unavailable',
+});
+function toTitleCase(canonical) {
+    return TITLE_CASE[canonical] ?? canonical;
+}
+
+// Presenter: canonical UPPERCASE -> short lowercase code ('support', 'not', ...).
+// Used by compare_results.js for run-vs-run comparison.
+const SHORT_CODE = Object.freeze({
+    [VERDICTS.SUPPORTED]:           'support',
+    [VERDICTS.PARTIALLY_SUPPORTED]: 'partial',
+    [VERDICTS.NOT_SUPPORTED]:       'not',
+    [VERDICTS.SOURCE_UNAVAILABLE]:  'unavailable',
+});
+function toShortCode(canonical) {
+    return SHORT_CODE[canonical] ?? canonical;
+}
+
 // --- core/parsing.js ---
 // Parses raw LLM response text into a structured verdict object.
+//
+// Happy path: JSON, optionally inside a ```json code fence or surrounded by
+// prose. Falls back to a markdown-emphasis recovery regex for small
+// open-weight models (e.g. Granite 4.1 8B) that occasionally emit
+// "**Verdict:** SUPPORTED" prose instead of the requested JSON. On total
+// failure, returns the 'PARSE_ERROR' sentinel — chosen to match what the
+// benchmark already records for unrecoverable responses.
+
 
 function parseVerificationResult(response) {
-    try {
-        let jsonStr = response.trim();
+    const trimmed = response.trim();
 
+    try {
+        let jsonStr = trimmed;
         const codeBlockMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
         if (codeBlockMatch) {
             jsonStr = codeBlockMatch[1].trim();
-        }
-
-        if (!codeBlockMatch) {
+        } else {
             const jsonMatch = jsonStr.match(/\{[\s\S]*\}/);
-            if (jsonMatch) {
-                jsonStr = jsonMatch[0];
-            }
+            if (jsonMatch) jsonStr = jsonMatch[0];
         }
-
         const result = JSON.parse(jsonStr);
         return {
             verdict: result.verdict || 'UNKNOWN',
@@ -155,8 +231,100 @@ function parseVerificationResult(response) {
             comments: result.comments || ''
         };
     } catch (e) {
-        return { verdict: 'ERROR', confidence: null, comments: `Failed to parse AI response: ${response.substring(0, 200)}` };
+        // fall through to the markdown-emphasis recovery
     }
+
+    // Strip "**" and "__"-style emphasis so e.g. "**Verdict:** SUPPORTED"
+    // becomes "Verdict: SUPPORTED", then capture the canonical word(s).
+    const stripped = trimmed.replace(/\*+|__+/g, '');
+    const match = stripped.match(/verdict[\s:"']+([A-Z][A-Z _]*)/i);
+    if (match) {
+        const verdict = canonicalizeVerdict(match[1]);
+        if (verdict) {
+            return { verdict, confidence: null, comments: '<extracted from non-JSON response>' };
+        }
+    }
+
+    return {
+        verdict: 'PARSE_ERROR',
+        confidence: null,
+        comments: `Failed to parse AI response: ${response.substring(0, 200)}`
+    };
+}
+
+// --- core/retry.js ---
+// Retry-with-backoff helper shared by the benchmark runner and the
+// userscript's batch verify-all-citations path. Pre-consolidation, the
+// benchmark used `withRetry` (5 attempts, exponential backoff, retries
+// on 429 / 500 / 502 / 503 / 504 / network errors) while main.js's batch
+// path had its own inline loop (3 attempts, fixed linear backoff,
+// retries only on 429). The userscript's narrower trigger meant a single
+// 503 during a batch run errored out the whole citation; the benchmark
+// would have recovered. Sharing the impl widens the userscript to the
+// benchmark's retry set.
+//
+// Defaults match the benchmark (1s base, exponential, ≤30s cap, 5
+// attempts) — callers tune via options.
+
+const RETRYABLE_STATUS = /^HTTP (429|500|502|503|504)\b/;
+const RETRYABLE_NETWORK = /timeout|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|socket hang up/i;
+
+function defaultSleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function isRetryableError(error) {
+    const msg = error?.message ?? '';
+    return RETRYABLE_STATUS.test(msg) || RETRYABLE_NETWORK.test(msg);
+}
+
+/**
+ * Retry `fn` on transient failures (429, 5xx, network) with exponential
+ * backoff + jitter.
+ *
+ * Options:
+ *   maxRetries       Total attempt budget incl. the initial call (default 5).
+ *   minBackoffMs     Base for the exponential curve (default 1000).
+ *   maxBackoffMs     Cap on a single sleep (default 30000).
+ *   jitterMs         Upper bound of additive random jitter (default 500).
+ *   sleepFn          Injectable sleep — tests pass a no-op so they run instantly.
+ *   shouldAbort      Optional callback; truthy return short-circuits the loop
+ *                    (e.g. user cancellation in the userscript's batch path).
+ *   onAttemptFailed  Optional callback invoked after each failed attempt with
+ *                    { error, attempt, backoff, willRetry } — for progress UI.
+ *                    `backoff` is the sleep duration about to elapse (0 if no retry).
+ *
+ * Throws the last error if every attempt fails or the failure isn't retryable.
+ */
+async function withRetry(fn, {
+    maxRetries = 5,
+    minBackoffMs = 1000,
+    maxBackoffMs = 30000,
+    jitterMs = 500,
+    sleepFn = defaultSleep,
+    shouldAbort,
+    onAttemptFailed,
+} = {}) {
+    let lastError = null;
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+        if (shouldAbort && shouldAbort()) break;
+        try {
+            return await fn();
+        } catch (error) {
+            lastError = error;
+            const retryable = isRetryableError(error);
+            const willRetry = retryable && attempt < maxRetries - 1
+                && !(shouldAbort && shouldAbort());
+            const backoff = willRetry
+                ? Math.min(maxBackoffMs, minBackoffMs * Math.pow(2, attempt))
+                  + Math.random() * jitterMs
+                : 0;
+            if (onAttemptFailed) onAttemptFailed({ error, attempt, backoff, willRetry });
+            if (!willRetry) break;
+            await sleepFn(backoff);
+        }
+    }
+    throw lastError;
 }
 
 // --- core/urls.js ---
@@ -166,15 +334,23 @@ function parseVerificationResult(response) {
 // when called without one — that's the userscript path, where the browser
 // supplies the global.
 
+const ARCHIVE_HOST_PATTERN = /web\.archive\.org|archive\.today|archive\.is|archive\.ph|webcitation\.org/i;
+
+function isArchiveUrl(href) {
+    return ARCHIVE_HOST_PATTERN.test(href);
+}
+
 function extractHttpUrl(element) {
     if (!element) return null;
-    // First look for archive links (prioritize these)
-    const archiveLink = element.querySelector('a[href*="web.archive.org"], a[href*="archive.today"], a[href*="archive.is"], a[href*="archive.ph"], a[href*="webcitation.org"]');
-    if (archiveLink) return archiveLink.href;
-
-    // Fall back to any http link
     const links = element.querySelectorAll('a[href^="http"]');
     if (links.length === 0) return null;
+    // Prefer live URLs over archive snapshots. archive.org rate-limits the
+    // proxy's Cloudflare egress IPs aggressively (429 on most requests),
+    // so archive snapshots are only used as a last-resort fallback when no
+    // live link exists in the citation.
+    for (const link of links) {
+        if (!isArchiveUrl(link.href)) return link.href;
+    }
     return links[0].href;
 }
 
@@ -393,7 +569,15 @@ function extractClaimText(refElement) {
 // OpenRouter (which adds attribution headers and surfaces per-call cost),
 // and the benchmark runner (which calls direct PublicAI/OpenAI endpoints
 // with bearer auth from environment variables).
-async function callOpenAICompatibleChat({ url, apiKey, model, systemPrompt, userContent, label, extraHeaders, maxTokens = 2048, temperature = 0.1 }) {
+// `responseFormat` is OpenAI-compatible structured-output: pass
+// `{ type: 'json_object' }` to force JSON-only output, or a JSON-schema
+// object on backends that support it. OpenRouter passes the param
+// through to the underlying model; backends that don't recognise it
+// generally ignore it rather than error. Small / weaker instruction-tuned
+// models benefit most — Granite 4.1 8B in particular regressed from
+// ~0.5% to 13% JSON-parse failures under terser prompts until this
+// hint was supplied, after which parse failures returned to 0.
+async function callOpenAICompatibleChat({ url, apiKey, model, systemPrompt, userContent, label, extraHeaders, extraBody, maxTokens = 2048, temperature = 0.1, responseFormat }) {
     const requestBody = {
         model: model,
         messages: [
@@ -403,6 +587,8 @@ async function callOpenAICompatibleChat({ url, apiKey, model, systemPrompt, user
         max_tokens: maxTokens,
         temperature: temperature
     };
+    if (extraBody) Object.assign(requestBody, extraBody);
+    if (responseFormat) requestBody.response_format = responseFormat;
 
     const headers = { 'Content-Type': 'application/json' };
     if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
@@ -471,11 +657,11 @@ async function callHuggingFaceAPI({ apiKey, model, systemPrompt, userContent, wo
 // as of 2026; the older `usage: { include: true }` parameter is deprecated).
 // Attribution headers (HTTP-Referer + X-Title) are recommended by OpenRouter
 // for analytics; they don't affect routing.
-async function callOpenRouterAPI({ apiKey, model, systemPrompt, userContent, maxTokens, temperature }) {
+async function callOpenRouterAPI({ apiKey, model, systemPrompt, userContent, maxTokens, temperature, extraBody, responseFormat }) {
     return callOpenAICompatibleChat({
         url: 'https://openrouter.ai/api/v1/chat/completions',
         apiKey,
-        model, systemPrompt, userContent, maxTokens, temperature,
+        model, systemPrompt, userContent, maxTokens, temperature, extraBody, responseFormat,
         label: 'OpenRouter',
         extraHeaders: {
             'HTTP-Referer': 'https://github.com/alex-o-748/citation-checker-script',
@@ -2818,7 +3004,7 @@ function buildDatasetSubmissionUrl(
 	        verdictEl.classList.add('partially-supported');
 	    } else if (result.verdict === 'NOT SUPPORTED') {
 	        verdictEl.classList.add('not-supported');
-	    } else if (result.verdict === 'SOURCE UNAVAILABLE' || result.verdict === 'ERROR') {
+	    } else if (result.verdict === 'SOURCE UNAVAILABLE' || result.verdict === 'PARSE_ERROR') {
 	        verdictEl.classList.add('source-unavailable');
 	    }
 
@@ -3534,10 +3720,34 @@ function buildDatasetSubmissionUrl(
                         };
                     } else {
                         const sourceTruncated = sourceContent.includes('\nTruncated: true');
-                        // Verify via LLM
+                        // Verify via LLM. Retry transient failures (429 + 5xx +
+                        // network) through the shared core/retry.js helper —
+                        // pre-consolidation, this path only retried on 429 and
+                        // surfaced 5xx as a hard ERROR even though the benchmark
+                        // would have recovered. The [5s, 10s, 20s] backoff curve
+                        // is preserved via minBackoffMs/jitterMs, and Cancel
+                        // still short-circuits via shouldAbort.
                         this.updateReportProgress(i, citations.length, `Verifying citation [${citation.citationNumber}]`, startTime);
                         try {
-                            const apiResult = await this.callProviderAPI(citation.claimText, sourceContent);
+                            const apiResult = await withRetry(
+                                () => this.callProviderAPI(citation.claimText, sourceContent),
+                                {
+                                    maxRetries: 4,
+                                    minBackoffMs: 5000,
+                                    maxBackoffMs: 30000,
+                                    jitterMs: 0,
+                                    shouldAbort: () => this.reportCancelled,
+                                    onAttemptFailed: ({ backoff, willRetry }) => {
+                                        if (willRetry) {
+                                            this.updateReportProgress(
+                                                i, citations.length,
+                                                `Rate limited, retrying in ${Math.round(backoff / 1000)}s...`,
+                                                startTime
+                                            );
+                                        }
+                                    },
+                                }
+                            );
                             const parsed = this.parseVerificationResult(apiResult.text);
                             this.reportTokenUsage.input += apiResult.usage.input;
                             this.reportTokenUsage.output += apiResult.usage.output;
@@ -3563,50 +3773,16 @@ function buildDatasetSubmissionUrl(
                                 this.activeSourceUrl = savedSourceUrl;
                             } catch (e) {}
                         } catch (e) {
-                            // Check for rate limiting (429)
-                            let retried = false;
-                            if (e.message && e.message.includes('429')) {
-                                for (let attempt = 0; attempt < 3; attempt++) {
-                                    if (this.reportCancelled) break;
-                                    const backoff = [5000, 10000, 20000][attempt];
-                                    this.updateReportProgress(i, citations.length, `Rate limited, retrying in ${backoff/1000}s...`, startTime);
-                                    await new Promise(r => setTimeout(r, backoff));
-                                    try {
-                                        const retryApiResult = await this.callProviderAPI(citation.claimText, sourceContent);
-                                        const parsed = this.parseVerificationResult(retryApiResult.text);
-                                        this.reportTokenUsage.input += retryApiResult.usage.input;
-                                        this.reportTokenUsage.output += retryApiResult.usage.output;
-                                        result = {
-                                            citationNumber: citation.citationNumber,
-                                            claimText: citation.claimText,
-                                            url: citation.url,
-                                            refElement: citation.refElement,
-                                            verdict: parsed.verdict,
-                                            confidence: parsed.confidence,
-                                            comments: parsed.comments,
-                                            truncated: sourceTruncated
-                                        };
-                                        retried = true;
-                                        break;
-                                    } catch (retryErr) {
-                                        if (!retryErr.message?.includes('429')) {
-                                            break;
-                                        }
-                                    }
-                                }
-                            }
-                            if (!retried) {
-                                result = {
-                                    citationNumber: citation.citationNumber,
-                                    claimText: citation.claimText,
-                                    url: citation.url,
-                                    refElement: citation.refElement,
-                                    verdict: 'ERROR',
-                                    confidence: null,
-                                    comments: e.message,
-                                    truncated: sourceTruncated
-                                };
-                            }
+                            result = {
+                                citationNumber: citation.citationNumber,
+                                claimText: citation.claimText,
+                                url: citation.url,
+                                refElement: citation.refElement,
+                                verdict: 'ERROR',
+                                confidence: null,
+                                comments: e.message,
+                                truncated: sourceTruncated
+                            };
                         }
 
                         // Rate limit delay after LLM call

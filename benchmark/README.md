@@ -309,14 +309,17 @@ Example in dataset.json:
 ## Open-weights voting panel
 
 `run_benchmark.js` ships with five OpenRouter providers chosen as a voting
-panel for the citation-verification task. All five carry an OSI-compliant
-weights license and are not reasoning-tuned, so they emit short JSON
-verdicts that fit comfortably within the runner's token budget.
+panel for the citation-verification task. OSI-compliant weights licenses
+are preferred; the Nemotron slot is the exception (NVIDIA Open Model
+License) and was added when AllenAI's OLMo 3.1 dropped from OpenRouter's
+provider catalog. The panel targets short-JSON verdict output: members
+that ship with reasoning enabled by default are configured to disable it
+so completion stays within the runner's token budget.
 
 | Provider key | Model | License |
 |---|---|---|
 | `openrouter-mistral-small-3.2` | `mistralai/mistral-small-3.2-24b-instruct` | Apache 2.0 |
-| `openrouter-olmo-3.1-32b` | `allenai/olmo-3.1-32b-instruct` | Apache 2.0 |
+| `openrouter-nemotron-nano-9b-v2` | `nvidia/nemotron-nano-9b-v2` | NVIDIA Open Model License (reasoning disabled) |
 | `openrouter-granite-4.1-8b` | `ibm-granite/granite-4.1-8b` | Apache 2.0 |
 | `openrouter-gemma-4-26b-a4b` | `google/gemma-4-26b-a4b-it` | Apache 2.0 |
 | `openrouter-qwen-3-32b` | `qwen/qwen3-32b` | Apache 2.0 |

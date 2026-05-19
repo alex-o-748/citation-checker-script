@@ -12,7 +12,13 @@
  * When both override columns on a row are filled, the article fetch is skipped
  * for that row (the row's full identity comes from the CSV + a fresh source fetch).
  *
- * Usage: node extract_dataset.js [--dry-run] [--limit N] [--version v1|v2|v3|all]
+ * Usage: node extract_dataset.js [--dry-run] [--limit N] [--version v1|v2|v3|all] [--rows row_77,row_111,...]
+ *
+ * --rows takes a comma-separated list of row IDs (matching the `row_<csv_line>`
+ * scheme) and re-extracts only those rows. When set, the existing dataset.json
+ * is loaded and the newly-extracted entries are merged in by id, preserving all
+ * other entries unchanged. Useful for targeted re-fetches (e.g. retrying a row
+ * that hit a transient source-fetch failure) without churning all 189 rows.
  *
  * Output:
  *   - dataset.json: Complete enriched dataset
@@ -27,7 +33,8 @@ import { JSDOM } from 'jsdom';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import { extractClaimText as extractClaimTextFromRef } from '../core/claim.js';
-import { writeWithMetadata, todayIso } from './io.js';
+import { canonicalizeVerdict, toTitleCase } from '../core/verdicts.js';
+import { writeWithMetadata, todayIso, loadRows } from './io.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -48,6 +55,12 @@ const versionIndex = args.indexOf('--version');
 // VERSION_FILTER: 'all' | 'v1' | 'v2' | ... — restricts which dataset rows to process.
 // 'all' (default) keeps everything; specific tags (e.g. 'v1') reproduce a frozen subset.
 const VERSION_FILTER = versionIndex !== -1 ? args[versionIndex + 1] : 'all';
+const rowsIndex = args.indexOf('--rows');
+// ROW_FILTER: null | Set<string> — when set, restricts processing to the named
+// row IDs and merges results back into existing dataset.json by id.
+const ROW_FILTER = rowsIndex !== -1
+    ? new Set(args[rowsIndex + 1].split(',').map(s => s.trim()).filter(Boolean))
+    : null;
 
 function log(msg) {
     if (VERBOSE) console.log(msg);
@@ -66,6 +79,13 @@ function parseCSV(content) {
         headers.forEach((header, i) => {
             row[header.trim()] = values[i]?.trim() || '';
         });
+        // FRAGILE: row_<_rowIndex> is the stable id propagated into dataset.json
+        // and results.json (via entry_id). Any CSV reorder shifts every id at
+        // or after the insertion point, and results.json is NOT automatically
+        // remapped — entries silently misalign with the new dataset. When
+        // regenerating dataset.json after a CSV reorder, audit results.json
+        // (and historical-runs) for entry_id drift. See "Benchmark row_id
+        // fragility" in repo-level CLAUDE.md.
         row._rowIndex = index + 2; // 1-based, accounting for header
         return row;
     });
@@ -294,15 +314,14 @@ function sleep(ms) {
 }
 
 /**
- * Normalize ground truth values
+ * Normalize ground-truth values from the CSV. Returns title case for any
+ * recognized verdict; unrecognized input passes through unchanged so that
+ * dataset extraction surfaces unexpected GT values visibly rather than
+ * silently coercing them.
  */
 function normalizeVerdict(verdict) {
-    const v = verdict.toLowerCase().trim();
-    if (v.includes('not supported') || v === 'not_supported') return 'Not supported';
-    if (v.includes('partially')) return 'Partially supported';
-    if (v.includes('supported')) return 'Supported';
-    if (v.includes('unavailable')) return 'Source unavailable';
-    return verdict;
+    const canonical = canonicalizeVerdict(verdict);
+    return canonical ? toTitleCase(canonical) : verdict;
 }
 
 /**
@@ -324,6 +343,21 @@ async function main() {
         // with CSVs predating the column.
         rows = rows.filter(r => (r['Dataset version'] || 'v1') === VERSION_FILTER);
         console.log(`Filtered to dataset version "${VERSION_FILTER}": ${rows.length}/${before} rows`);
+    }
+
+    if (ROW_FILTER) {
+        const before = rows.length;
+        rows = rows.filter(r => ROW_FILTER.has(`row_${r._rowIndex}`));
+        console.log(`Filtered to rows [${[...ROW_FILTER].join(', ')}]: ${rows.length}/${before} rows`);
+        if (rows.length === 0) {
+            console.error('No matching rows found for --rows filter. Aborting.');
+            process.exit(1);
+        }
+        const matched = new Set(rows.map(r => `row_${r._rowIndex}`));
+        const unmatched = [...ROW_FILTER].filter(id => !matched.has(id));
+        if (unmatched.length > 0) {
+            console.warn(`Warning: --rows ids not found in CSV: ${unmatched.join(', ')}`);
+        }
     }
 
     if (LIMIT) {
@@ -484,18 +518,32 @@ async function main() {
         extracted_at: todayIso(),
         version_filter: VERSION_FILTER
     };
-    writeWithMetadata(OUTPUT_JSON, datasetMetadata, dataset);
+
+    // When --rows is used, merge the newly-extracted entries into the existing
+    // dataset.json (preserving all unmentioned rows). Without this, dataset.json
+    // would be truncated to only the filtered rows.
+    let finalDataset = dataset;
+    if (ROW_FILTER && fs.existsSync(OUTPUT_JSON)) {
+        const existingRows = loadRows(OUTPUT_JSON);
+        const newIds = new Set(dataset.map(e => e.id));
+        const kept = existingRows.filter(e => !newIds.has(e.id));
+        finalDataset = [...kept, ...dataset].sort((a, b) =>
+            parseInt(a.id.replace('row_', ''), 10) - parseInt(b.id.replace('row_', ''), 10)
+        );
+        console.log(`Merged ${dataset.length} re-extracted rows into ${existingRows.length} existing entries (${finalDataset.length} total)`);
+    }
+    writeWithMetadata(OUTPUT_JSON, datasetMetadata, finalDataset);
 
     // Write review CSV
     console.log(`Writing: ${OUTPUT_REVIEW_CSV}`);
-    writeReviewCSV(dataset);
+    writeReviewCSV(finalDataset);
 
     // Summary
-    const needsReview = dataset.filter(d => d.needs_manual_review).length;
-    const complete = dataset.filter(d => !d.needs_manual_review).length;
+    const needsReview = finalDataset.filter(d => d.needs_manual_review).length;
+    const complete = finalDataset.filter(d => !d.needs_manual_review).length;
 
     console.log('\n=== Summary ===');
-    console.log(`Total entries: ${dataset.length}`);
+    console.log(`Total entries: ${finalDataset.length}`);
     console.log(`Complete: ${complete}`);
     console.log(`Needs manual review: ${needsReview}`);
 

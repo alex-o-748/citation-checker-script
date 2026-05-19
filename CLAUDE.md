@@ -1,5 +1,7 @@
 # CLAUDE.md
 
+Last verified: 2026-05-06
+
 ## Project Overview
 
 Wikipedia citation verification user script. An AI-powered sidebar tool that lets Wikipedia editors verify whether citations actually support the claims they're attached to. Users click citation numbers, the tool fetches source content via a CORS proxy, sends claim+source to an LLM, and displays a verdict (Supported / Partially Supported / Not Supported / Source Unavailable).
@@ -23,6 +25,8 @@ benchmark/
   run_benchmark.js               # Run LLM verification on dataset (parallelized; see Benchmark Suite)
   analyze_results.js             # Calculate metrics and confusion matrices
   generate_comparison.js         # Generate comparison CSV
+  compare_results.js             # Pure-ESM comparison engine for two results.json runs (control vs treatment)
+  render_compare.js              # JSON / Markdown / self-contained HTML renderers for ComparisonResult
   dataset.json                   # Current dataset (189 entries: v1: 76 + v2: 34 + v3: 79; counts drift as rows are added)
   dataset_v1.json                # Frozen v1 snapshot for reproducing original analysis
   dataset_v3.json                # Frozen v3 snapshot (post strict-rubric audit, 2026-04-30)
@@ -93,11 +97,14 @@ npm run analyze:v1-snapshot   # Re-derive analysis from frozen v1 snapshots
 npm run analyze:v3            # Analyze results filtered to v3 entries
 npm run analyze:v3-snapshot   # Re-derive analysis from frozen v3 snapshots
 npm run report                # Generate markdown report
+npm run compare               # Compare two results.json runs (delegates to `ccs compare`; see docs/comparing-benchmark-runs.md)
 ```
 
 ### Module system and shared logic
 
 `benchmark/` is ESM (`"type": "module"` in `benchmark/package.json`) and imports `extractClaimText` from `../core/claim.js`. Editing claim-extraction logic in `core/` automatically affects both the userscript (`main.js`, via the sync script) and the benchmark — no second copy to keep in sync.
+
+`benchmark/compare_results.js` and `benchmark/render_compare.js` are self-contained — they take already-loaded `results.json` / `dataset.json` shapes and don't import from `core/`. The `ccs compare` CLI in `cli/compare.js` is the file-IO layer that wires them up.
 
 **Required environment variables:**
 - `ANTHROPIC_API_KEY` - Claude
@@ -122,6 +129,17 @@ npm run report                # Generate markdown report
 - The system prompt contains 9 carefully tuned few-shot examples — changes affect benchmark accuracy
 - Claim extraction uses "between citations" logic by design (not full sentences) for precision
 
+### Benchmark row_id fragility (read before reordering the CSV)
+
+`extract_dataset.js` derives each row's stable id as `row_<csv_line>`, where `csv_line` is the line number in `Benchmarking_data_Citations.csv` (`_rowIndex = index + 2`, accounting for the header). Two consequences a future regenerate must handle:
+
+1. **Any CSV reorder shifts every id at or after the insertion point.** Inserting a row at line 50 shifts every row 50+ by +1 in `dataset.json`. Removing a blank/empty line does the same in reverse.
+2. **`results.json` (and any other artifact storing `entry_id`) is NOT automatically remapped** when `dataset.json` is regenerated. The entries keep their old ids and silently misalign with the new dataset.
+
+When you regenerate `dataset.json` after a CSV reorder, you must also walk `results.json` and update each entry's `entry_id` to the new value. The 2026-05-01 `a4973d7` regenerate caught the v3 +33 shift but missed a parallel −1 shift on the v1 rows around the v2 insertion boundary — the resulting misalignment was found two weeks later (rows 75/76/77 in `results.json` had content from what is now rows 74/75/76 in `dataset.json`). A content-based audit (match the entry's `comments` against current `claim_text` candidates) is reliable for catching this.
+
+A stable-id refactor (content hash, or a CSV-supplied id column independent of line number) would eliminate the class of bug entirely.
+
 ## Common Tasks
 
 **Modifying the user script:** Edit `main.js` directly. Test by loading on Wikipedia via the browser console or user script page.
@@ -129,5 +147,7 @@ npm run report                # Generate markdown report
 **Adding a new LLM provider:** Add provider config to `this.providers` in the constructor, implement a `callXxxAPI()` method, and add routing in `callProviderAPI()`.
 
 **Updating the benchmark:** Edit `dataset.json` or re-extract with `npm run extract`, then run `npm run benchmark` and `npm run analyze`.
+
+**Comparing two benchmark runs:** `npx ccs compare <control.json> <treatment.json> --dataset <dataset.json>` (or `npm run compare -- ...` from `benchmark/`). Emits JSON / Markdown / HTML with per-provider accuracy deltas and flip counts; supports subset filters and a `--noise-floor` threshold. See `docs/comparing-benchmark-runs.md`.
 
 **Running tests:** `npm test` from the repo root. Tests use `node:test` + `node:assert/strict` and import the modules they cover directly — a script that runs work on import (e.g. `main()` at module load) needs to gate that behind `if (process.argv[1] === fileURLToPath(import.meta.url))` so importing it for tests doesn't trigger the runner. `extract_dataset.js` and `benchmark/run_benchmark.js` follow this pattern.

@@ -15,7 +15,7 @@
  *                             axes.
  *
  * Three panels are recognized:
- *   PANEL_FULL — Mistral + OLMo + Granite + Gemma + Qwen (openrouter-vote-5)
+ *   PANEL_FULL — Mistral + Nemotron + Granite + Gemma + Qwen (openrouter-vote-5)
  *   PANEL_FAST — Mistral + Granite + Gemma             (openrouter-vote-3)
  *   PANEL_HF   — Qwen3-32B + gpt-oss-20b + DeepSeek-V3 (hf-vote-3)
  * PANEL_FAST drops the two slowest OR members for smoketesting; PANEL_HF
@@ -44,15 +44,15 @@ const __dirname = dirname(__filename);
 
 export const PANEL_FULL = [
     'openrouter-mistral-small-3.2',
-    'openrouter-olmo-3.1-32b',
+    'openrouter-nemotron-nano-9b-v2',
     'openrouter-granite-4.1-8b',
     'openrouter-gemma-4-26b-a4b',
     'openrouter-qwen-3-32b'
 ];
 
 // PANEL_FAST drops the two slowest members of the full panel (Qwen and
-// OLMo). Used for smoketesting prompt or pipeline changes — finishes a
-// whole-dataset sweep in ~1/3 of the full-panel wall time while still
+// Nemotron). Used for smoketesting prompt or pipeline changes — finishes
+// a whole-dataset sweep in ~1/3 of the full-panel wall time while still
 // producing a usable ensemble verdict.
 export const PANEL_FAST = [
     'openrouter-mistral-small-3.2',

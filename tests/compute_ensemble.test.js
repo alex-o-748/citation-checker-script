@@ -146,7 +146,7 @@ test('PANEL constant matches the chosen 5-model panel', () => {
         'openrouter-gemma-4-26b-a4b',
         'openrouter-granite-4.1-8b',
         'openrouter-mistral-small-3.2',
-        'openrouter-olmo-3.1-32b',
+        'openrouter-nemotron-nano-9b-v2',
         'openrouter-qwen-3-32b'
     ]);
 });
@@ -155,12 +155,13 @@ test('PANEL re-exports PANEL_FULL for backward compatibility', () => {
     assert.deepEqual([...PANEL].sort(), [...PANEL_FULL].sort());
 });
 
-// PANEL_FAST drops Qwen-3-32b (~9s/call) and OLMo-3.1-32b (~2.5s/call but
-// individually weakest). The remaining three — Mistral, Granite, Gemma —
-// stay near the panel-leader band on accuracy and run sub-3.5s each, so the
-// fast set finishes whole-dataset sweeps in roughly 1/3 of the full-panel
-// time. Used for smoketesting prompt or pipeline changes without paying the
-// full-panel latency.
+// PANEL_FAST drops Qwen-3-32b (~9s/call) and Nemotron-Nano-9B-v2 (the
+// reasoning-capable member; even with reasoning disabled it carries
+// per-call overhead). The remaining three — Mistral, Granite, Gemma —
+// stay near the panel-leader band on accuracy and run sub-3.5s each, so
+// the fast set finishes whole-dataset sweeps in roughly 1/3 of the
+// full-panel time. Used for smoketesting prompt or pipeline changes
+// without paying the full-panel latency.
 
 test('PANEL_FAST is a 3-member panel (Mistral, Granite, Gemma)', () => {
     assert.equal(PANEL_FAST.length, 3);
@@ -174,8 +175,8 @@ test('PANEL_FAST is a 3-member panel (Mistral, Granite, Gemma)', () => {
 test('PANEL_FAST excludes the slow/weakest panel members', () => {
     assert.ok(!PANEL_FAST.includes('openrouter-qwen-3-32b'),
         'Qwen-3-32b is the slowest panel member, must be excluded from fast set');
-    assert.ok(!PANEL_FAST.includes('openrouter-olmo-3.1-32b'),
-        'OLMo-3.1-32b is the weakest panel member, must be excluded from fast set');
+    assert.ok(!PANEL_FAST.includes('openrouter-nemotron-nano-9b-v2'),
+        'Nemotron-Nano-9B-v2 carries reasoning-model overhead, must be excluded from fast set');
 });
 
 function fastPanelRows(entry_id, ground_truth, verdicts, costs = []) {

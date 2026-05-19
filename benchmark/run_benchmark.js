@@ -27,14 +27,13 @@ import {
     callOpenRouterAPI,
     callHuggingFaceAPI,
 } from '../core/providers.js';
+import { parseVerificationResult } from '../core/parsing.js';
+import { canonicalizeVerdict, toTitleCase } from '../core/verdicts.js';
+import { withRetry } from '../core/retry.js';
 import { loadRows, loadMetadata, todayIso } from './io.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-
-const MAX_RETRIES = 5;
-const RETRYABLE_STATUS = /^HTTP (429|500|502|503|504)\b/;
-const RETRYABLE_NETWORK = /timeout|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|socket hang up/i;
 
 // Configuration
 const DATASET_PATH = path.join(__dirname, 'dataset.json');
@@ -95,13 +94,21 @@ const PROVIDERS = {
         keyEnv: 'OPENROUTER_API_KEY',
         type: 'openrouter'
     },
-    'openrouter-olmo-3.1-32b': {
-        name: 'OLMo 3.1 32B (OpenRouter)',
-        model: 'allenai/olmo-3.1-32b-instruct',
+    // Nemotron Nano 9B v2 is a unified reasoning/non-reasoning model. We
+    // disable reasoning via OpenRouter's `reasoning: { enabled: false }`
+    // flag because the panel's verdict task is short-form JSON; reasoning
+    // tokens add latency and cost without measurable accuracy gain on
+    // this task. Verified 2026-05-14: with the flag, completion_tokens
+    // ~36 and reasoning_tokens 0; without it, reasoning_tokens ~100+ on
+    // even trivial inputs.
+    'openrouter-nemotron-nano-9b-v2': {
+        name: 'Nemotron Nano 9B v2 (OpenRouter)',
+        model: 'nvidia/nemotron-nano-9b-v2',
         endpoint: 'https://openrouter.ai/api/v1/chat/completions',
         requiresKey: true,
         keyEnv: 'OPENROUTER_API_KEY',
-        type: 'openrouter'
+        type: 'openrouter',
+        extraBody: { reasoning: { enabled: false } }
     },
     'openrouter-deepseek-v3.2': {
         name: 'DeepSeek V3.2 (OpenRouter)',
@@ -117,7 +124,11 @@ const PROVIDERS = {
         endpoint: 'https://openrouter.ai/api/v1/chat/completions',
         requiresKey: true,
         keyEnv: 'OPENROUTER_API_KEY',
-        type: 'openrouter'
+        type: 'openrouter',
+        // Forces JSON-only output. Granite-8B's parse-error rate jumps from
+        // ~0.5% to 13% under terser prompts without this hint; with it
+        // supplied, parse failures return to 0.
+        responseFormat: { type: 'json_object' },
     },
     'openrouter-gemma-4-26b-a4b': {
         name: 'Gemma 4 26B-A4B (OpenRouter)',
@@ -223,27 +234,6 @@ function getSystemPrompt() {
 }
 
 /**
- * Retry `fn` on transient failures (429, 5xx, network) with exponential
- * backoff + jitter. `sleepFn` is injectable so tests can run instantly.
- */
-export async function withRetry(fn, { maxRetries = MAX_RETRIES, sleepFn = sleep } = {}) {
-    let lastError = null;
-    for (let attempt = 0; attempt < maxRetries; attempt++) {
-        try {
-            return await fn();
-        } catch (error) {
-            lastError = error;
-            const retryable = RETRYABLE_STATUS.test(error.message)
-                || RETRYABLE_NETWORK.test(error.message);
-            if (!retryable || attempt === maxRetries - 1) break;
-            const backoff = Math.min(30000, 1000 * Math.pow(2, attempt)) + Math.random() * 500;
-            await sleepFn(backoff);
-        }
-    }
-    throw lastError;
-}
-
-/**
  * Make API call to provider. Delegates HTTP transport to core/providers.js
  * (single source of truth shared with main.js + cli/verify.js); the runner
  * adds env-var auth, latency timing, retry, and error-to-verdict-shape conversion.
@@ -279,10 +269,25 @@ export async function callProvider(provider, systemPrompt, userPrompt) {
     }
 }
 
-// Shim helper: parse the raw response text into the verdict shape and
-// attach the usage object captured by core/providers.js.
-function shapeResult({ text, usage }) {
-    return { ...parseResponse(text), usage };
+// Shim helper: parse the raw response text into the benchmark's verdict
+// shape and attach the usage object captured by core/providers.js.
+//
+// Verdict parsing is delegated to core/parsing.js (single source of truth
+// shared with main.js + cli/verify.js). The runner then post-processes the
+// core parser's output: title-cases the verdict via the benchmark-local
+// normalizeVerdict ('SUPPORTED' → 'Supported') for results.json schema
+// compatibility, defaults missing confidence to 0 (the benchmark's
+// historical default; core returns null), and stitches in raw_response /
+// usage for downstream analysis.
+export function shapeResult({ text, usage }) {
+    const parsed = parseVerificationResult(text);
+    return {
+        verdict: normalizeVerdict(parsed.verdict),
+        confidence: parsed.confidence ?? 0,
+        comments: parsed.comments,
+        raw_response: text,
+        usage,
+    };
 }
 
 // Benchmark-side knobs preserved verbatim from the pre-consolidation runner.
@@ -365,6 +370,8 @@ async function callOpenRouter(config, systemPrompt, userPrompt) {
         userContent: userPrompt,
         maxTokens: BENCHMARK_MAX_TOKENS,
         temperature: BENCHMARK_TEMPERATURE,
+        extraBody: config.extraBody,
+        responseFormat: config.responseFormat,
     }));
 }
 
@@ -381,62 +388,15 @@ async function callHuggingFace(config, systemPrompt, userPrompt) {
     }));
 }
 
-/**
- * Parse LLM response to extract verdict
- */
-function parseResponse(content) {
-    // Try to extract JSON from response
-    let jsonStr = content;
-
-    // Handle markdown code blocks
-    const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/);
-    if (jsonMatch) {
-        jsonStr = jsonMatch[1];
-    }
-
-    // Try to find JSON object
-    const objMatch = jsonStr.match(/\{[\s\S]*\}/);
-    if (objMatch) {
-        jsonStr = objMatch[0];
-    }
-
-    try {
-        const parsed = JSON.parse(jsonStr);
-        return {
-            verdict: normalizeVerdict(parsed.verdict || ''),
-            confidence: parsed.confidence || 0,
-            comments: parsed.comments || '',
-            raw_response: content
-        };
-    } catch (e) {
-        // Fallback: try to extract verdict from text
-        const verdictMatch = content.match(/verdict["\s:]+([A-Z_ ]+)/i);
-        return {
-            verdict: verdictMatch ? normalizeVerdict(verdictMatch[1]) : 'PARSE_ERROR',
-            confidence: 0,
-            comments: 'Failed to parse JSON response',
-            raw_response: content
-        };
-    }
-}
-
-/**
- * Normalize verdict string
- */
+// Title-case the canonical verdict for the benchmark's results.json schema,
+// preserving the runner's historical 'PARSE_ERROR' fallback for inputs the
+// shared canonicalizer doesn't recognize (e.g. the 'UNKNOWN' / 'PARSE_ERROR'
+// sentinels emitted by core/parsing.js, or a raw LLM string like 'options'
+// that the pre-1a12753 code would have silently propagated as a predicted
+// verdict — see the commit for the rationale).
 function normalizeVerdict(verdict) {
-    const v = verdict.toUpperCase().trim();
-    if (v.includes('NOT SUPPORTED') || v.includes('NOT_SUPPORTED')) return 'Not supported';
-    if (v.includes('PARTIALLY')) return 'Partially supported';
-    if (v.includes('UNAVAILABLE')) return 'Source unavailable';
-    if (v.includes('SUPPORTED')) return 'Supported';
-    return 'PARSE_ERROR';
-}
-
-/**
- * Sleep helper
- */
-function sleep(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
+    const canonical = canonicalizeVerdict(verdict);
+    return canonical ? toTitleCase(canonical) : 'PARSE_ERROR';
 }
 
 /**

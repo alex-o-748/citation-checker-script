@@ -275,6 +275,48 @@ test('callOpenRouterAPI hits OpenRouter API with attribution headers and surface
   }
 });
 
+test('callOpenRouterAPI forwards responseFormat as request_body.response_format', async () => {
+  const mock = withMockFetch(async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      choices: [{ message: { content: '{"verdict":"SUPPORTED"}' } }],
+      usage: { prompt_tokens: 10, completion_tokens: 2 },
+    }),
+  }));
+  try {
+    await callOpenRouterAPI({
+      apiKey: 'k',
+      model: 'ibm-granite/granite-4.1-8b',
+      systemPrompt: 's',
+      userContent: 'u',
+      responseFormat: { type: 'json_object' },
+    });
+    const body = JSON.parse(mock.calls[0].opts.body);
+    assert.deepEqual(body.response_format, { type: 'json_object' });
+  } finally {
+    mock.restore();
+  }
+});
+
+test('callOpenRouterAPI omits response_format when not supplied', async () => {
+  const mock = withMockFetch(async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      choices: [{ message: { content: 'x' } }],
+      usage: { prompt_tokens: 10, completion_tokens: 2 },
+    }),
+  }));
+  try {
+    await callOpenRouterAPI({ apiKey: 'k', model: 'm', systemPrompt: 's', userContent: 'u' });
+    const body = JSON.parse(mock.calls[0].opts.body);
+    assert.equal(body.response_format, undefined);
+  } finally {
+    mock.restore();
+  }
+});
+
 test('callOpenRouterAPI returns cost_usd: null when usage.cost missing', async () => {
   const mock = withMockFetch(async () => ({
     ok: true,
@@ -292,6 +334,54 @@ test('callOpenRouterAPI returns cost_usd: null when usage.cost missing', async (
       userContent: 'u',
     });
     assert.equal(result.usage.cost_usd, null);
+  } finally {
+    mock.restore();
+  }
+});
+
+test('callOpenRouterAPI forwards extraBody fields into the request body', async () => {
+  const mock = withMockFetch(async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      choices: [{ message: { content: 'ok' } }],
+      usage: { prompt_tokens: 1, completion_tokens: 1 },
+    }),
+  }));
+  try {
+    await callOpenRouterAPI({
+      apiKey: 'k',
+      model: 'nvidia/nemotron-nano-9b-v2',
+      systemPrompt: 's',
+      userContent: 'u',
+      extraBody: { reasoning: { enabled: false } },
+    });
+    const body = JSON.parse(mock.calls[0].opts.body);
+    assert.deepEqual(body.reasoning, { enabled: false });
+    assert.equal(body.model, 'nvidia/nemotron-nano-9b-v2');
+  } finally {
+    mock.restore();
+  }
+});
+
+test('callOpenRouterAPI omits extraBody fields when not provided', async () => {
+  const mock = withMockFetch(async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      choices: [{ message: { content: 'ok' } }],
+      usage: { prompt_tokens: 1, completion_tokens: 1 },
+    }),
+  }));
+  try {
+    await callOpenRouterAPI({
+      apiKey: 'k',
+      model: 'm',
+      systemPrompt: 's',
+      userContent: 'u',
+    });
+    const body = JSON.parse(mock.calls[0].opts.body);
+    assert.equal(body.reasoning, undefined);
   } finally {
     mock.restore();
   }

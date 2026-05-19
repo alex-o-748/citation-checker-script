@@ -6,7 +6,15 @@
 // OpenRouter (which adds attribution headers and surfaces per-call cost),
 // and the benchmark runner (which calls direct PublicAI/OpenAI endpoints
 // with bearer auth from environment variables).
-export async function callOpenAICompatibleChat({ url, apiKey, model, systemPrompt, userContent, label, extraHeaders, maxTokens = 2048, temperature = 0.1 }) {
+// `responseFormat` is OpenAI-compatible structured-output: pass
+// `{ type: 'json_object' }` to force JSON-only output, or a JSON-schema
+// object on backends that support it. OpenRouter passes the param
+// through to the underlying model; backends that don't recognise it
+// generally ignore it rather than error. Small / weaker instruction-tuned
+// models benefit most — Granite 4.1 8B in particular regressed from
+// ~0.5% to 13% JSON-parse failures under terser prompts until this
+// hint was supplied, after which parse failures returned to 0.
+export async function callOpenAICompatibleChat({ url, apiKey, model, systemPrompt, userContent, label, extraHeaders, extraBody, maxTokens = 2048, temperature = 0.1, responseFormat }) {
     const requestBody = {
         model: model,
         messages: [
@@ -16,6 +24,8 @@ export async function callOpenAICompatibleChat({ url, apiKey, model, systemPromp
         max_tokens: maxTokens,
         temperature: temperature
     };
+    if (extraBody) Object.assign(requestBody, extraBody);
+    if (responseFormat) requestBody.response_format = responseFormat;
 
     const headers = { 'Content-Type': 'application/json' };
     if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
@@ -84,11 +94,11 @@ export async function callHuggingFaceAPI({ apiKey, model, systemPrompt, userCont
 // as of 2026; the older `usage: { include: true }` parameter is deprecated).
 // Attribution headers (HTTP-Referer + X-Title) are recommended by OpenRouter
 // for analytics; they don't affect routing.
-export async function callOpenRouterAPI({ apiKey, model, systemPrompt, userContent, maxTokens, temperature }) {
+export async function callOpenRouterAPI({ apiKey, model, systemPrompt, userContent, maxTokens, temperature, extraBody, responseFormat }) {
     return callOpenAICompatibleChat({
         url: 'https://openrouter.ai/api/v1/chat/completions',
         apiKey,
-        model, systemPrompt, userContent, maxTokens, temperature,
+        model, systemPrompt, userContent, maxTokens, temperature, extraBody, responseFormat,
         label: 'OpenRouter',
         extraHeaders: {
             'HTTP-Referer': 'https://github.com/alex-o-748/citation-checker-script',

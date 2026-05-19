@@ -12,7 +12,7 @@
     "benchmark:publicai": "node run_benchmark.js --providers=publicai",
     "benchmark:v1": "node run_benchmark.js --version v1",
     "benchmark:v3": "node run_benchmark.js --version v3",
-    "benchmark:openrouter-panel": "node run_benchmark.js --providers=openrouter-mistral-small-3.2,openrouter-olmo-3.1-32b,openrouter-granite-4.1-8b,openrouter-gemma-4-26b-a4b,openrouter-qwen-3-32b",
+    "benchmark:openrouter-panel": "node run_benchmark.js --providers=openrouter-mistral-small-3.2,openrouter-nemotron-nano-9b-v2,openrouter-granite-4.1-8b,openrouter-gemma-4-26b-a4b,openrouter-qwen-3-32b",
     "benchmark:openrouter-fast": "node run_benchmark.js --providers=openrouter-mistral-small-3.2,openrouter-granite-4.1-8b,openrouter-gemma-4-26b-a4b",
     "benchmark:hf-panel": "node run_benchmark.js --providers=hf-qwen3-32b,hf-gpt-oss-20b,hf-deepseek-v3",
     "ensemble": "node compute_ensemble.js",
@@ -22,7 +22,8 @@
     "analyze:v1-snapshot": "node analyze_results.js --results results_v1.json --dataset dataset_v1.json --analysis analysis_v1_recomputed.json",
     "analyze:v3": "node analyze_results.js --version v3",
     "analyze:v3-snapshot": "node analyze_results.js --results results_v3.json --dataset dataset_v3.json --analysis analysis_v3_recomputed.json",
-    "report": "node analyze_results.js --output report.md"
+    "report": "node analyze_results.js --output report.md",
+    "compare": "node ../bin/ccs compare"
   },
   "dependencies": {
     "jsdom": "^24.0.0"

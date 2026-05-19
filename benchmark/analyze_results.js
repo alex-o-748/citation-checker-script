@@ -23,6 +23,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import { loadRows } from './io.js';
+import { canonicalizeVerdict, toTitleCase, VERDICT_LIST } from '../core/verdicts.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -44,20 +45,19 @@ const RESULTS_PATH = path.resolve(__dirname, flagValue('--results') || 'results.
 const DATASET_PATH = path.resolve(__dirname, flagValue('--dataset') || 'dataset.json');
 const ANALYSIS_PATH = path.resolve(__dirname, flagValue('--analysis') || 'analysis.json');
 
-// Verdict categories for confusion matrix
-const VERDICT_CATEGORIES = ['Supported', 'Partially supported', 'Not supported', 'Source unavailable'];
+// Confusion-matrix categories — title-cased mirror of core's VERDICT_LIST.
+const VERDICT_CATEGORIES = VERDICT_LIST.map(toTitleCase);
 
-/**
- * Normalize verdict to standard categories
- */
+// Map any verdict-shaped value to the title-case category used in the
+// confusion matrix and accuracy metrics. Inputs the shared canonicalizer
+// rejects fall through to 'Error' (for the 'PARSE_ERROR' / 'ERROR'
+// sentinels emitted by core/parsing.js and benchmark/run_benchmark.js's
+// API-failure path) or 'Unknown' (for empty / unrecognized values).
 function normalizeVerdict(verdict) {
-    if (!verdict) return 'Unknown';
-    const v = verdict.toLowerCase().trim();
-    if (v.includes('not supported') || v.includes('not_supported')) return 'Not supported';
-    if (v.includes('partially')) return 'Partially supported';
-    if (v.includes('unavailable')) return 'Source unavailable';
-    if (v.includes('supported')) return 'Supported';
-    if (v.includes('error')) return 'Error';
+    const canonical = canonicalizeVerdict(verdict);
+    if (canonical) return toTitleCase(canonical);
+    if (verdict == null || !String(verdict).trim()) return 'Unknown';
+    if (String(verdict).toLowerCase().includes('error')) return 'Error';
     return 'Unknown';
 }
 

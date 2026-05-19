@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { runPool, withRetry, makeSaver, hostForProvider } from '../benchmark/run_benchmark.js';
+import { runPool, makeSaver, hostForProvider, shapeResult } from '../benchmark/run_benchmark.js';
 
 // ---- runPool ----------------------------------------------------------------
 
@@ -46,100 +46,9 @@ test('runPool: caps worker count at items.length when concurrency > items', asyn
     assert.equal(peak, 2);
 });
 
-// ---- withRetry --------------------------------------------------------------
-
-const noSleep = () => Promise.resolve();
-
-test('withRetry: returns the value on first success without retrying', async () => {
-    let calls = 0;
-    const result = await withRetry(async () => { calls++; return 'ok'; }, { sleepFn: noSleep });
-    assert.equal(result, 'ok');
-    assert.equal(calls, 1);
-});
-
-test('withRetry: retries on HTTP 429 and eventually succeeds', async () => {
-    let calls = 0;
-    const result = await withRetry(async () => {
-        calls++;
-        if (calls < 3) throw new Error('HTTP 429: rate limited');
-        return 'ok';
-    }, { sleepFn: noSleep });
-    assert.equal(result, 'ok');
-    assert.equal(calls, 3);
-});
-
-test('withRetry: retries on HTTP 503', async () => {
-    let calls = 0;
-    const result = await withRetry(async () => {
-        calls++;
-        if (calls < 2) throw new Error('HTTP 503: backend unavailable');
-        return 'ok';
-    }, { sleepFn: noSleep });
-    assert.equal(calls, 2);
-    assert.equal(result, 'ok');
-});
-
-test('withRetry: retries on network timeout', async () => {
-    let calls = 0;
-    await withRetry(async () => {
-        calls++;
-        if (calls < 2) throw new Error('Request timeout');
-        return 'ok';
-    }, { sleepFn: noSleep });
-    assert.equal(calls, 2);
-});
-
-test('withRetry: does NOT retry on HTTP 400', async () => {
-    let calls = 0;
-    await assert.rejects(
-        withRetry(async () => {
-            calls++;
-            throw new Error('HTTP 400: bad request');
-        }, { sleepFn: noSleep }),
-        /HTTP 400/
-    );
-    assert.equal(calls, 1);
-});
-
-test('withRetry: does NOT retry on parse errors', async () => {
-    let calls = 0;
-    await assert.rejects(
-        withRetry(async () => {
-            calls++;
-            throw new Error('Parse error: unexpected token');
-        }, { sleepFn: noSleep }),
-        /Parse error/
-    );
-    assert.equal(calls, 1);
-});
-
-test('withRetry: gives up after maxRetries and throws the last error', async () => {
-    let calls = 0;
-    await assert.rejects(
-        withRetry(async () => {
-            calls++;
-            throw new Error(`HTTP 429: try ${calls}`);
-        }, { sleepFn: noSleep, maxRetries: 3 }),
-        /HTTP 429: try 3/
-    );
-    assert.equal(calls, 3);
-});
-
-test('withRetry: backoff schedule is exponential and uses sleepFn', async () => {
-    const delays = [];
-    let calls = 0;
-    await assert.rejects(
-        withRetry(async () => {
-            calls++;
-            throw new Error('HTTP 429');
-        }, { maxRetries: 4, sleepFn: async (ms) => { delays.push(ms); } })
-    );
-    // 4 attempts → 3 sleeps between them. Base values: 1000, 2000, 4000 (+ up to 500 jitter).
-    assert.equal(delays.length, 3);
-    assert.ok(delays[0] >= 1000 && delays[0] < 1500, `attempt 0 sleep was ${delays[0]}`);
-    assert.ok(delays[1] >= 2000 && delays[1] < 2500, `attempt 1 sleep was ${delays[1]}`);
-    assert.ok(delays[2] >= 4000 && delays[2] < 4500, `attempt 2 sleep was ${delays[2]}`);
-});
+// withRetry tests live in tests/retry.test.js — withRetry was lifted into
+// core/retry.js so the userscript's batch verify-all-citations path can
+// share it with the benchmark runner.
 
 // ---- makeSaver --------------------------------------------------------------
 
@@ -259,4 +168,31 @@ test('hostForProvider: real PROVIDERS — PublicAI models share one host', () =>
 test('hostForProvider: Anthropic and Gemini are independent hosts', () => {
     assert.equal(hostForProvider('claude-sonnet-4-5'), 'api.anthropic.com');
     assert.equal(hostForProvider('gemini-2.5-flash'), 'generativelanguage.googleapis.com');
+});
+
+// ---- shapeResult (parse delegation to core/parsing.js) ----------------------
+// Behavioral wiring tests — full parser coverage lives in tests/parsing.test.js.
+
+test('shapeResult: delegates JSON parsing to core and title-cases the verdict', () => {
+    const text = JSON.stringify({ verdict: 'SUPPORTED', confidence: 90, comments: 'ok' });
+    const out = shapeResult({ text, usage: { input: 10, output: 5, cost_usd: null } });
+    assert.equal(out.verdict, 'Supported');
+    assert.equal(out.confidence, 90);
+    assert.equal(out.raw_response, text);
+    assert.deepEqual(out.usage, { input: 10, output: 5, cost_usd: null });
+});
+
+test('shapeResult: recovers verdict from the Granite-style markdown fallback', () => {
+    // Regression guard: pre-consolidation, the benchmark's local regex
+    // (/verdict["\s:]+([A-Z_ ]+)/i) could not advance past "**" in
+    // "**Verdict:** SUPPORTED". The shared parser now strips emphasis first.
+    const text = '**Verdict:** SUPPORTED\n**Comments:** matches the source.';
+    const out = shapeResult({ text, usage: null });
+    assert.equal(out.verdict, 'Supported');
+});
+
+test('shapeResult: returns PARSE_ERROR sentinel on unrecoverable prose', () => {
+    const out = shapeResult({ text: 'I cannot determine this.', usage: null });
+    assert.equal(out.verdict, 'PARSE_ERROR');
+    assert.equal(out.confidence, 0);
 });
