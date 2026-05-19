@@ -14,9 +14,8 @@ Wikipedia citation verification user script. An AI-powered sidebar tool that let
 main.js                          # Main Wikipedia user script (~2,700 lines, single class)
 package.json                     # Top-level deps + `npm test` / `npm run build` scripts
 core/                            # Shared pure logic, imported by both benchmark/ and main.js (via sync)
-  claim.js, parsing.js, prompts.js, providers.js, urls.js, worker.js
-cli/verify.js                    # `ccs verify` subcommand + top-level dispatcher (parseCliArgs, runVerify, main)
-cli/compare.js                   # `ccs compare` subcommand (parseCompareArgs, runCompare)
+  claim.js, parsing.js, prompts.js, providers.js, submission.js, urls.js, worker.js
+cli/verify.js                    # Node CLI front-end (verify a single citation from the command line)
 bin/ccs                          # Executable shim for the CLI
 scripts/sync-main.js             # Inlines core/ modules into main.js for the userscript build
 tests/                           # `node --test` suite (run via `npm test`)

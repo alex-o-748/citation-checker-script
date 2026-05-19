@@ -312,21 +312,23 @@ export async function runVerify(opts, { stdout = process.stdout, stderr = proces
     }
 
     // 8. Fetch the source content via the worker proxy.
-    const sourceInfo = await fetchSourceContent(sourceUrl, pageNum);
-    if (!sourceInfo) {
-        stderr.write(`ccs: source unavailable: ${sourceUrl}\n`);
+    const fetchResult = await fetchSourceContent(sourceUrl, pageNum);
+    if (!fetchResult.content) {
+        const detail = fetchResult.status != null ? ` (HTTP ${fetchResult.status})` : '';
+        const reason = fetchResult.error ? `: ${fetchResult.error}` : '';
+        stderr.write(`ccs: source unavailable${detail}${reason}\n  url: ${sourceUrl}\n`);
         return 7;
     }
 
     // 9. Build prompts and call the LLM.
-    //    fetchSourceContent returns a string shaped "Source URL: <u>\n\n
-    //    Source Content:\n<body>"; generateUserPrompt parses that shape,
-    //    so we pass it through unchanged.
+    //    fetchSourceContent returns { content, error, status }; on success
+    //    `content` is shaped "Source URL: <u>\n\nSource Content:\n<body>",
+    //    which generateUserPrompt parses, so we pass it through unchanged.
     //    callProviderAPI returns { text, usage } on success; extra keys in
     //    providerConfig are ignored by the destructure so it's safe to
     //    include apiKey for publicai (which won't read it).
     const systemPrompt = generateSystemPrompt();
-    const userContent = generateUserPrompt(claim, sourceInfo);
+    const userContent = generateUserPrompt(claim, fetchResult.content);
     const optionalEnvVar = PROVIDER_OPTIONAL_ENV_VARS[provider];
     const providerConfig = {
         model: PROVIDER_MODELS[provider],

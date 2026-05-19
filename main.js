@@ -823,10 +823,15 @@ async function callProviderAPI(name, config) {
 // Calls to the Cloudflare Worker proxy: source fetching and verification logging.
 
 
+// Always returns { content, error, status }. `content` is the formatted source
+// text on success and null on any failure; `error` is a short human-readable
+// reason when content is null; `status` is the upstream HTTP status code if the
+// proxy reports one (`data.status`), otherwise the proxy's own response status,
+// or null if we never got a response at all.
 async function fetchSourceContent(url, pageNum, { workerBase = 'https://publicai-proxy.alaexis.workers.dev' } = {}) {
     if (isGoogleBooksUrl(url)) {
         console.log('[CitationVerifier] Skipping Google Books URL:', url);
-        return null;
+        return { content: null, error: 'Google Books URL skipped (no fetchable content)', status: null };
     }
 
     try {
@@ -835,11 +840,19 @@ async function fetchSourceContent(url, pageNum, { workerBase = 'https://publicai
             proxyUrl += `&page=${pageNum}`;
         }
         const response = await fetch(proxyUrl);
-        const data = await response.json();
+        const proxyStatus = response.status;
+        let data = null;
+        try {
+            data = await response.json();
+        } catch (_) {
+            return { content: null, error: `Proxy returned non-JSON response (HTTP ${proxyStatus})`, status: proxyStatus };
+        }
+
+        const status = (data && typeof data.status === 'number') ? data.status : proxyStatus;
 
         if (data.error) {
             console.warn('[CitationVerifier] Proxy error:', data.error);
-            return null;
+            return { content: null, error: data.error, status };
         }
 
         if (data.content && data.content.length > 100) {
@@ -857,7 +870,7 @@ async function fetchSourceContent(url, pageNum, { workerBase = 'https://publicai
             if (isTruncated) {
                 meta += `\nTruncated: true`;
             }
-            return `${meta}\n\nSource Content:\n${data.content}`;
+            return { content: `${meta}\n\nSource Content:\n${data.content}`, error: null, status };
         }
 
         // If PDF was large and we didn't request a specific page, retry
@@ -865,10 +878,11 @@ async function fetchSourceContent(url, pageNum, { workerBase = 'https://publicai
         if (data.pdf && !pageNum && data.totalPages > 15) {
             console.log('[CitationVerifier] Large PDF without page param, content may be truncated');
         }
+        return { content: null, error: 'Source content was empty or too short to verify', status };
     } catch (error) {
         console.error('Proxy fetch failed:', error);
+        return { content: null, error: error?.message || String(error), status: null };
     }
-    return null; // Falls back to manual input
 }
 
 function logVerification(payload, { workerBase = 'https://publicai-proxy.alaexis.workers.dev' } = {}) {
@@ -884,6 +898,74 @@ function logVerification(payload, { workerBase = 'https://publicai-proxy.alaexis
     } catch (e) {
         // logging should never break the main flow
     }
+}
+
+// --- core/submission.js ---
+// Dataset-submission helpers. Pure logic for building a prefilled Google Form
+// URL so Wikipedia editors can contribute citation/ground-truth examples
+// without an API or auth. Inlined into main.js between <core-injected>
+// markers, and importable from tests.
+//
+// To activate the feature once a Form exists:
+//   1. Create a Google Form whose questions correspond to the keys in
+//      DATASET_SUBMISSION_ENTRY_IDS (articleUrl, citationNumber, claimText,
+//      sourceUrl, llmVerdict, llmRationale, llmProvider, llmModel,
+//      editorHandle, notes).
+//   2. Use the Form's "Get pre-filled link" tool, fill every field with a
+//      unique sentinel, and copy the resulting URL.
+//   3. Replace DATASET_SUBMISSION_FORM_URL with the /viewform URL, and
+//      replace each `entry.PLACEHOLDER_*` value with the matching
+//      `entry.<numeric-id>` from the pre-filled link.
+//   4. Run `npm run build` so the constants are re-inlined into main.js.
+
+// Sentinel substring that marks scaffolded values as not-yet-configured.
+// isDatasetSubmissionConfigured() looks for this exact token; don't reuse it
+// anywhere else in this file.
+const DATASET_SUBMISSION_PLACEHOLDER = 'PLACEHOLDER';
+
+const DATASET_SUBMISSION_FORM_URL =
+    'https://docs.google.com/forms/d/e/1FAIpQLSdn0mnTHLV7NQZSmEbQXgLRzkJEfd6tcvVffLdInGpVyySkBA/viewform';
+
+const DATASET_SUBMISSION_ENTRY_IDS = {
+    articleUrl:     'entry.1530874375',
+    citationNumber: 'entry.1417860793',
+    claimText:      'entry.1673425995',
+    sourceUrl:      'entry.1675972910',
+    llmVerdict:     'entry.270831712',
+    llmRationale:   'entry.805615048',
+    llmProvider:    'entry.230272168',
+    llmModel:       'entry.166995',
+    // Populated only for SOURCE UNAVAILABLE rows where the proxy reported an
+    // HTTP status — lets the dataset distinguish "we never fetched" from
+    // "we fetched and the source returned 4xx/5xx".
+    fetchStatus:    'entry.375255643',
+    editorHandle:   'entry.362287943',
+    notes:          'entry.133790832',
+};
+
+function isDatasetSubmissionConfigured(
+    formUrl = DATASET_SUBMISSION_FORM_URL,
+    entryIds = DATASET_SUBMISSION_ENTRY_IDS,
+) {
+    if (!formUrl || formUrl.includes(DATASET_SUBMISSION_PLACEHOLDER)) return false;
+    return Object.values(entryIds).every(
+        id => typeof id === 'string' && id && !id.includes(DATASET_SUBMISSION_PLACEHOLDER)
+    );
+}
+
+function buildDatasetSubmissionUrl(
+    fields,
+    formUrl = DATASET_SUBMISSION_FORM_URL,
+    entryIds = DATASET_SUBMISSION_ENTRY_IDS,
+) {
+    const params = new URLSearchParams();
+    params.set('usp', 'pp_url');
+    for (const key of Object.keys(entryIds)) {
+        const value = fields == null ? undefined : fields[key];
+        if (value === undefined || value === null || value === '') continue;
+        params.set(entryIds[key], String(value));
+    }
+    return `${formUrl}?${params.toString()}`;
 }
 // </core-injected>
 
@@ -978,7 +1060,7 @@ function logVerification(payload, { workerBase = 'https://publicai-proxy.alaexis
         }
         
         async loadOOUI() {
-            await mw.loader.using(['oojs-ui-core', 'oojs-ui-widgets', 'oojs-ui-windows']);
+            await mw.loader.using(['oojs-ui-core', 'oojs-ui-widgets', 'oojs-ui-windows', 'oojs-ui.styles.icons-interactions']);
         }
         
         getCurrentApiKey() {
@@ -1513,6 +1595,27 @@ function logVerification(payload, { workerBase = 'https://publicai-proxy.alaexis
                 .report-card-action .oo-ui-buttonElement-button {
                     font-size: 11px;
                     padding: 2px 4px;
+                }
+                .report-card-action .report-card-feedback-action .oo-ui-buttonElement-button .oo-ui-labelElement-label {
+                    color: #54595d;
+                    font-weight: normal;
+                }
+                .report-card-action .report-card-feedback-action .oo-ui-iconElement-icon {
+                    opacity: 0.4 !important;
+                }
+                .report-card-header-actions {
+                    display: flex;
+                    align-items: center;
+                    gap: 6px;
+                    min-width: 0;
+                }
+                .report-card-header-actions .oo-ui-buttonElement {
+                    margin: 0;
+                }
+                .report-card-header-actions .oo-ui-buttonElement-button {
+                    font-size: 11px;
+                    padding: 1px 6px;
+                    white-space: nowrap;
                 }
                 .verifier-report-group {
                     border: 1px solid #cdd5e0;
@@ -2397,18 +2500,21 @@ function logVerification(payload, { workerBase = 'https://publicai-proxy.alaexis
                 this.updateStatus('Fetching source content...');
                 const fetchId = ++this.currentFetchId;
                 const pageNum = this.extractPageNumber(refElement);
-                const sourceInfo = await this.fetchSourceContent(refUrl, pageNum);
+                const fetchResult = await this.fetchSourceContent(refUrl, pageNum);
 
                 if (fetchId !== this.currentFetchId) {
                     return;
                 }
 
-                if (!sourceInfo) {
+                if (!fetchResult.content) {
                     this.showSourceTextInput();
-                    this.updateStatus('Could not fetch source. Please paste the source text below.');
+                    const status = fetchResult.status != null ? ` (HTTP ${fetchResult.status})` : '';
+                    const reason = fetchResult.error ? `: ${fetchResult.error}` : '';
+                    this.updateStatus(`Could not fetch source${status}${reason}. Please paste the source text below.`, true);
                     return;
                 }
 
+                const sourceInfo = fetchResult.content;
                 this.activeSource = sourceInfo;
                 const sourceElement = document.getElementById('verifier-source-text');
 
@@ -2904,7 +3010,7 @@ function logVerification(payload, { workerBase = 'https://publicai-proxy.alaexis
 
 	    commentsEl.textContent = result.comments;
 	    console.log('[Verifier] Verdict for action button:', JSON.stringify(result.verdict));
-	    this.showActionButton(result.verdict);
+	    this.showActionButton(result.verdict, result.comments);
 	}
         
         // ========================================
@@ -3196,7 +3302,7 @@ function logVerification(payload, { workerBase = 'https://publicai-proxy.alaexis
         attachRefScrollHandler(el, refElement) {
             if (!refElement) return;
             el.addEventListener('click', (e) => {
-                if (e.target.closest('.report-card-action') || e.target.closest('.verifier-report-group-edit')) return;
+                if (e.target.closest('.report-card-action') || e.target.closest('.report-card-header-actions') || e.target.closest('.verifier-report-group-edit')) return;
                 refElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
                 this.clearHighlights();
                 const parentRef = refElement.closest('.reference');
@@ -3237,7 +3343,9 @@ function logVerification(payload, { workerBase = 'https://publicai-proxy.alaexis
             card.innerHTML = `
                 <div class="report-card-header">
                     <span class="report-card-citation">[${result.citationNumber}]</span>
-                    <span class="report-card-verdict ${verdictClass}">${verdictLabel}</span>
+                    <span class="report-card-header-actions">
+                        <span class="report-card-verdict ${verdictClass}">${verdictLabel}</span>
+                    </span>
                 </div>
                 <div class="report-card-claim">${this.escapeHtml(claimExcerpt)}</div>
                 ${result.comments ? `<div class="report-card-comment">${this.escapeHtml(result.comments)}</div>` : ''}
@@ -3246,9 +3354,10 @@ function logVerification(payload, { workerBase = 'https://publicai-proxy.alaexis
 
             this.attachRefScrollHandler(card, result.refElement);
 
+            const actionDiv = document.createElement('div');
+            actionDiv.className = 'report-card-action';
+
             if (result.refElement && (result.verdict === 'NOT SUPPORTED' || result.verdict === 'PARTIALLY SUPPORTED' || result.verdict === 'SOURCE UNAVAILABLE')) {
-                const actionDiv = document.createElement('div');
-                actionDiv.className = 'report-card-action';
                 const editBtn = new OO.ui.ButtonWidget({
                     label: 'Edit Section',
                     flags: ['progressive'],
@@ -3258,6 +3367,15 @@ function logVerification(payload, { workerBase = 'https://publicai-proxy.alaexis
                     framed: false
                 });
                 actionDiv.appendChild(editBtn.$element[0]);
+            }
+
+            if (result.verdict && result.verdict !== 'ERROR' && this.isDatasetSubmissionConfigured()) {
+                const submitBtn = this.buildSubmitToDatasetButton(result);
+                submitBtn.$element.addClass('report-card-feedback-action');
+                actionDiv.appendChild(submitBtn.$element[0]);
+            }
+
+            if (actionDiv.children.length) {
                 card.appendChild(actionDiv);
             }
             return card;
@@ -3306,12 +3424,24 @@ function logVerification(payload, { workerBase = 'https://publicai-proxy.alaexis
             row.innerHTML = `
                 <div class="verifier-report-group-row-header">
                     <span class="report-card-citation">[${result.citationNumber}]</span>
-                    <span class="report-card-verdict ${verdictClass}">${verdictLabel}</span>
+                    <span class="report-card-header-actions">
+                        <span class="report-card-verdict ${verdictClass}">${verdictLabel}</span>
+                    </span>
                 </div>
                 ${result.comments ? `<div class="report-card-comment">${this.escapeHtml(result.comments)}</div>` : ''}
                 ${truncationHtml}
             `;
             this.attachRefScrollHandler(row, result.refElement);
+
+            if (result.verdict && result.verdict !== 'ERROR' && this.isDatasetSubmissionConfigured()) {
+                const actionDiv = document.createElement('div');
+                actionDiv.className = 'report-card-action';
+                const submitBtn = this.buildSubmitToDatasetButton(result);
+                submitBtn.$element.addClass('report-card-feedback-action');
+                actionDiv.appendChild(submitBtn.$element[0]);
+                row.appendChild(actionDiv);
+            }
+
             return row;
         }
 
@@ -3364,8 +3494,11 @@ function logVerification(payload, { workerBase = 'https://publicai-proxy.alaexis
             if (revId) {
                 wikitext += `Revision checked: [[Special:PermanentLink/${revId}|${revId}]]\n\n`;
             }
+            const submissionConfigured = this.isDatasetSubmissionConfigured();
             wikitext += `{| class="wikitable sortable"\n`;
-            wikitext += `|-\n! # !! Verdict !! Source !! Comments\n`;
+            wikitext += submissionConfigured
+                ? `|-\n! # !! Verdict !! Source !! Comments !! class="unsortable" | Submit\n`
+                : `|-\n! # !! Verdict !! Source !! Comments\n`;
 
             for (const r of this.reportResults) {
                 let verdictWiki;
@@ -3397,7 +3530,14 @@ function logVerification(payload, { workerBase = 'https://publicai-proxy.alaexis
                     const groupToken = r.groupCitationNumbers.map(n => `[${n}]`).join('');
                     citationCell += ` <small>(group ${groupToken})</small>`;
                 }
-                wikitext += `|-\n| ${citationCell} || ${verdictWiki} || ${sourceStr} || ${commentsClean}\n`;
+                if (submissionConfigured) {
+                    const submitCell = (r.verdict && r.verdict !== 'ERROR')
+                        ? `[${this.buildDatasetSubmissionUrl(r)} Submit]`
+                        : '—';
+                    wikitext += `|-\n| ${citationCell} || ${verdictWiki} || ${sourceStr} || ${commentsClean} || ${submitCell}\n`;
+                } else {
+                    wikitext += `|-\n| ${citationCell} || ${verdictWiki} || ${sourceStr} || ${commentsClean}\n`;
+                }
             }
 
             wikitext += `|}\n\n`;
@@ -3538,16 +3678,18 @@ function logVerification(payload, { workerBase = 'https://publicai-proxy.alaexis
                         truncated: false
                     };
                 } else {
-                    // Fetch source if not cached
+                    // Fetch source if not cached. Cache value is always the
+                    // full { content, error, status } shape so retries on the
+                    // same URL preserve the diagnostic for the submission link.
                     const cacheKey = citation.pageNum ? `${citation.url}|page=${citation.pageNum}` : citation.url;
 
                     if (!this.sourceCache.has(cacheKey)) {
                         this.updateReportProgress(i, citations.length, `Fetching source for [${citation.citationNumber}]`, startTime);
                         try {
-                            const sourceContent = await this.fetchSourceContent(citation.url, citation.pageNum);
-                            this.sourceCache.set(cacheKey, sourceContent);
+                            const fetchResult = await this.fetchSourceContent(citation.url, citation.pageNum);
+                            this.sourceCache.set(cacheKey, fetchResult);
                         } catch (e) {
-                            this.sourceCache.set(cacheKey, null);
+                            this.sourceCache.set(cacheKey, { content: null, error: e?.message || 'fetch threw', status: null });
                         }
                         // Rate limit delay after fetch
                         if (!this.reportCancelled) {
@@ -3557,9 +3699,13 @@ function logVerification(payload, { workerBase = 'https://publicai-proxy.alaexis
 
                     if (this.reportCancelled) break;
 
-                    const sourceContent = this.sourceCache.get(cacheKey);
+                    const fetchResult = this.sourceCache.get(cacheKey) || { content: null, error: null, status: null };
+                    const sourceContent = fetchResult.content;
 
                     if (!sourceContent) {
+                        const statusPart = fetchResult.status != null ? `HTTP ${fetchResult.status}` : null;
+                        const reasonPart = fetchResult.error || 'Could not fetch source content';
+                        const comments = statusPart ? `${statusPart}: ${reasonPart}` : reasonPart;
                         result = {
                             citationNumber: citation.citationNumber,
                             claimText: citation.claimText,
@@ -3567,7 +3713,9 @@ function logVerification(payload, { workerBase = 'https://publicai-proxy.alaexis
                             refElement: citation.refElement,
                             verdict: 'SOURCE UNAVAILABLE',
                             confidence: 0,
-                            comments: 'Could not fetch source content',
+                            comments,
+                            fetchStatus: fetchResult.status,
+                            fetchError: fetchResult.error,
                             truncated: false
                         };
                     } else {
@@ -3652,6 +3800,12 @@ function logVerification(payload, { workerBase = 'https://publicai-proxy.alaexis
                     result.groupSize = citation.groupSize;
                     result.groupIndex = citation.groupIndex;
                     result.groupCitationNumbers = citation.groupCitationNumbers;
+                    // Snapshot the provider/model used for this row so that
+                    // dataset-submission links stay accurate even if the user
+                    // switches providers after the report runs.
+                    const providerConfig = this.providers[this.currentProvider] || {};
+                    result.providerName = providerConfig.name || this.currentProvider || '';
+                    result.model = providerConfig.model || '';
                     this.reportResults.push(result);
                     this.renderReportCard(result, this.reportResults.length - 1);
                     this.renderReportSummary();
@@ -3706,23 +3860,65 @@ function logVerification(payload, { workerBase = 'https://publicai-proxy.alaexis
         }
 
 
-        showActionButton(verdict) {
+        showActionButton(verdict, comments = '') {
             const container = document.getElementById('verifier-action-container');
             if (!container) return;
 
             container.innerHTML = '';
 
-            if (verdict !== 'NOT SUPPORTED' && verdict !== 'PARTIALLY SUPPORTED' && verdict !== 'SOURCE UNAVAILABLE') return;
+            if (verdict === 'NOT SUPPORTED' || verdict === 'PARTIALLY SUPPORTED' || verdict === 'SOURCE UNAVAILABLE') {
+                const btn = new OO.ui.ButtonWidget({
+                    label: 'Edit Section',
+                    flags: ['progressive'],
+                    icon: 'edit',
+                    href: this.buildEditUrl(),
+                    target: '_blank'
+                });
+                container.appendChild(btn.$element[0]);
+            }
 
-            const btn = new OO.ui.ButtonWidget({
-                label: 'Edit Section',
-                flags: ['progressive'],
-                icon: 'edit',
-                href: this.buildEditUrl(),
-                target: '_blank'
+            if (verdict && verdict !== 'ERROR' && this.isDatasetSubmissionConfigured()) {
+                const submitBtn = this.buildSubmitToDatasetButton({
+                    citationNumber: this.activeCitationNumber,
+                    claimText: this.activeClaim,
+                    url: this.activeSourceUrl,
+                    verdict,
+                    comments,
+                });
+                container.appendChild(submitBtn.$element[0]);
+            }
+        }
+
+        isDatasetSubmissionConfigured() {
+            return isDatasetSubmissionConfigured();
+        }
+
+        buildDatasetSubmissionUrl(result) {
+            const provider = this.providers[this.currentProvider] || {};
+            const articleUrl = (typeof window !== 'undefined' && window.location)
+                ? `${window.location.origin}${window.location.pathname}`
+                : '';
+            return buildDatasetSubmissionUrl({
+                articleUrl,
+                citationNumber: result?.citationNumber ?? '',
+                claimText: result?.claimText ?? '',
+                sourceUrl: result?.url ?? '',
+                llmVerdict: result?.verdict ?? '',
+                llmRationale: result?.comments ?? '',
+                llmProvider: result?.providerName ?? provider.name ?? '',
+                llmModel: result?.model ?? provider.model ?? '',
+                fetchStatus: result?.fetchStatus ?? '',
             });
+        }
 
-            container.appendChild(btn.$element[0]);
+        buildSubmitToDatasetButton(result, { label = 'Give feedback' } = {}) {
+            return new OO.ui.ButtonWidget({
+                label,
+                icon: 'feedback',
+                framed: false,
+                href: this.buildDatasetSubmissionUrl(result),
+                target: '_blank',
+            });
         }
 
         clearResult() {
@@ -3770,7 +3966,7 @@ function logVerification(payload, { workerBase = 'https://publicai-proxy.alaexis
     }
     
     if (typeof mw !== 'undefined' && [0, 118].includes(mw.config.get('wgNamespaceNumber'))) {
-        mw.loader.using(['mediawiki.util', 'mediawiki.api', 'oojs-ui-core', 'oojs-ui-widgets', 'oojs-ui-windows']).then(function() {
+        mw.loader.using(['mediawiki.util', 'mediawiki.api', 'oojs-ui-core', 'oojs-ui-widgets', 'oojs-ui-windows', 'oojs-ui.styles.icons-interactions']).then(function() {
             $(function() {
                 new WikipediaSourceVerifier();
             });

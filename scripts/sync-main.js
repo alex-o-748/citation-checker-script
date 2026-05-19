@@ -22,6 +22,7 @@ const CORE_ORDER = [
   'claim.js',
   'providers.js',
   'worker.js',
+  'submission.js',
 ];
 
 function stripEsm(source) {
