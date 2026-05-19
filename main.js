@@ -874,7 +874,7 @@ function buildDatasetSubmissionUrl(
         }
         
         async loadOOUI() {
-            await mw.loader.using(['oojs-ui-core', 'oojs-ui-widgets', 'oojs-ui-windows']);
+            await mw.loader.using(['oojs-ui-core', 'oojs-ui-widgets', 'oojs-ui-windows', 'oojs-ui.styles.icons-interactions']);
         }
         
         getCurrentApiKey() {
@@ -1409,6 +1409,13 @@ function buildDatasetSubmissionUrl(
                 .report-card-action .oo-ui-buttonElement-button {
                     font-size: 11px;
                     padding: 2px 4px;
+                }
+                .report-card-action .report-card-feedback-action .oo-ui-buttonElement-button .oo-ui-labelElement-label {
+                    color: #54595d;
+                    font-weight: normal;
+                }
+                .report-card-action .report-card-feedback-action .oo-ui-iconElement-icon {
+                    opacity: 0.4 !important;
                 }
                 .report-card-header-actions {
                     display: flex;
@@ -3161,14 +3168,10 @@ function buildDatasetSubmissionUrl(
 
             this.attachRefScrollHandler(card, result.refElement);
 
-            if (result.verdict && result.verdict !== 'ERROR' && this.isDatasetSubmissionConfigured()) {
-                const submitBtn = this.buildSubmitToDatasetButton(result, { label: 'Submit report' });
-                card.querySelector('.report-card-header-actions').appendChild(submitBtn.$element[0]);
-            }
+            const actionDiv = document.createElement('div');
+            actionDiv.className = 'report-card-action';
 
             if (result.refElement && (result.verdict === 'NOT SUPPORTED' || result.verdict === 'PARTIALLY SUPPORTED' || result.verdict === 'SOURCE UNAVAILABLE')) {
-                const actionDiv = document.createElement('div');
-                actionDiv.className = 'report-card-action';
                 const editBtn = new OO.ui.ButtonWidget({
                     label: 'Edit Section',
                     flags: ['progressive'],
@@ -3178,6 +3181,15 @@ function buildDatasetSubmissionUrl(
                     framed: false
                 });
                 actionDiv.appendChild(editBtn.$element[0]);
+            }
+
+            if (result.verdict && result.verdict !== 'ERROR' && this.isDatasetSubmissionConfigured()) {
+                const submitBtn = this.buildSubmitToDatasetButton(result);
+                submitBtn.$element.addClass('report-card-feedback-action');
+                actionDiv.appendChild(submitBtn.$element[0]);
+            }
+
+            if (actionDiv.children.length) {
                 card.appendChild(actionDiv);
             }
             return card;
@@ -3236,8 +3248,12 @@ function buildDatasetSubmissionUrl(
             this.attachRefScrollHandler(row, result.refElement);
 
             if (result.verdict && result.verdict !== 'ERROR' && this.isDatasetSubmissionConfigured()) {
-                const submitBtn = this.buildSubmitToDatasetButton(result, { label: 'Submit report' });
-                row.querySelector('.report-card-header-actions').appendChild(submitBtn.$element[0]);
+                const actionDiv = document.createElement('div');
+                actionDiv.className = 'report-card-action';
+                const submitBtn = this.buildSubmitToDatasetButton(result);
+                submitBtn.$element.addClass('report-card-feedback-action');
+                actionDiv.appendChild(submitBtn.$element[0]);
+                row.appendChild(actionDiv);
             }
 
             return row;
@@ -3719,11 +3735,10 @@ function buildDatasetSubmissionUrl(
             });
         }
 
-        buildSubmitToDatasetButton(result, { label = 'Submit to dataset' } = {}) {
+        buildSubmitToDatasetButton(result, { label = 'Give feedback' } = {}) {
             return new OO.ui.ButtonWidget({
                 label,
-                flags: ['progressive'],
-                icon: 'upload',
+                icon: 'feedback',
                 framed: false,
                 href: this.buildDatasetSubmissionUrl(result),
                 target: '_blank',
@@ -3775,7 +3790,7 @@ function buildDatasetSubmissionUrl(
     }
     
     if (typeof mw !== 'undefined' && [0, 118].includes(mw.config.get('wgNamespaceNumber'))) {
-        mw.loader.using(['mediawiki.util', 'mediawiki.api', 'oojs-ui-core', 'oojs-ui-widgets', 'oojs-ui-windows']).then(function() {
+        mw.loader.using(['mediawiki.util', 'mediawiki.api', 'oojs-ui-core', 'oojs-ui-widgets', 'oojs-ui-windows', 'oojs-ui.styles.icons-interactions']).then(function() {
             $(function() {
                 new WikipediaSourceVerifier();
             });
