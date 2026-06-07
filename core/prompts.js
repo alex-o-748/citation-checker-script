@@ -35,8 +35,11 @@ Respond in JSON format:
 {
   "confidence": <number 0-100>,
   "verdict": "<verdict>",
+  "reason_type": "<only for NOT SUPPORTED: 'contradiction' or 'omission'>",
   "comments": "<relevant quote and brief explanation>"
 }
+
+For NOT SUPPORTED verdicts, include a "reason_type" field: use "contradiction" when the source explicitly states something incompatible with the claim, or "omission" when the source simply does not mention or address the claim. If both apply (source contradicts one part and omits another), use "contradiction". Do not include reason_type for other verdicts.
 
 Confidence guide:
 - 80-100: SUPPORTED
@@ -55,7 +58,7 @@ Source text: "History of Modern Economics - Economic Research Council - Google B
 Claim: "The bridge was completed in 1998."
 Source text: "Skip to main content Web Archive toolbar... Capture date: 2015-03-12 ... City Tribune - Local News ... The Morrison Bridge project broke ground in 1994 after years of planning. Construction faced multiple delays due to funding shortages. The bridge was finally opened to traffic in August 2002, four years behind schedule. Mayor Davis called it 'a triumph of persistence.'"
 
-{"confidence": 15, "verdict": "NOT SUPPORTED", "comments": "\"finally opened to traffic in August 2002, four years behind schedule\" - Source says the bridge opened in 2002, not 1998. The article is accessible despite being an Internet Archive capture."}
+{"confidence": 15, "verdict": "NOT SUPPORTED", "reason_type": "contradiction", "comments": "\"finally opened to traffic in August 2002, four years behind schedule\" - Source says the bridge opened in 2002, not 1998. The article is accessible despite being an Internet Archive capture."}
 </example>
 
 <example>
@@ -69,7 +72,7 @@ Source text: "Acme Corp was established in 1985. Its founder, John Smith, served
 Claim: "The treaty was signed by 45 countries."
 Source text: "The treaty, finalized in March, was signed by over 30 nations, though the exact number remains disputed."
 
-{"confidence": 20, "verdict": "NOT SUPPORTED", "comments": "\"signed by over 30 nations\" - Source says \"over 30,\" not 45."}
+{"confidence": 20, "verdict": "NOT SUPPORTED", "reason_type": "contradiction", "comments": "\"signed by over 30 nations\" - Source says \"over 30,\" not 45."}
 </example>
 
 <example>
@@ -90,7 +93,14 @@ Source text: "Census data shows significant population growth in the region duri
 Claim: "The president resigned on March 3."
 Source text: "The president remained in office throughout March."
 
-{"confidence": 5, "verdict": "NOT SUPPORTED", "comments": "\"remained in office throughout March\" - Source directly contradicts the claim."}
+{"confidence": 5, "verdict": "NOT SUPPORTED", "reason_type": "contradiction", "comments": "\"remained in office throughout March\" - Source directly contradicts the claim."}
+</example>
+
+<example>
+Claim: "She received the Nobel Prize in Chemistry in 2015."
+Source text: "Professor Martin completed her PhD at Oxford in 1998 and joined the faculty at Cambridge in 2003. Her research focuses on organic synthesis and catalysis. She has published over 200 papers and received several university teaching awards."
+
+{"confidence": 10, "verdict": "NOT SUPPORTED", "reason_type": "omission", "comments": "The source discusses her academic career and publications but makes no mention of a Nobel Prize."}
 </example>`;
 }
 

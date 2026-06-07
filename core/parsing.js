@@ -25,7 +25,8 @@ export function parseVerificationResult(response) {
         return {
             verdict: result.verdict || 'UNKNOWN',
             confidence: result.confidence ?? null,
-            comments: result.comments || ''
+            comments: result.comments || '',
+            reason_type: result.reason_type || null
         };
     } catch (e) {
         // fall through to the markdown-emphasis recovery
