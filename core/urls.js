@@ -6,18 +6,26 @@
 
 const ARCHIVE_HOST_PATTERN = /web\.archive\.org|archive\.today|archive\.is|archive\.ph|webcitation\.org/i;
 
-function isArchiveUrl(href) {
+export function isArchiveUrl(href) {
     return ARCHIVE_HOST_PATTERN.test(href);
+}
+
+export function parseArchiveOrgUrl(url) {
+    const match = url.match(/^https?:\/\/web\.archive\.org\/web\/(\d+)(?:id_)?\/(https?:\/\/.+)$/);
+    if (!match) return null;
+    return { timestamp: match[1], originalUrl: match[2] };
 }
 
 export function extractHttpUrl(element) {
     if (!element) return null;
     const links = element.querySelectorAll('a[href^="http"]');
     if (links.length === 0) return null;
-    // Prefer live URLs over archive snapshots. archive.org rate-limits the
-    // proxy's Cloudflare egress IPs aggressively (429 on most requests),
-    // so archive snapshots are only used as a last-resort fallback when no
-    // live link exists in the citation.
+    // Prefer Internet Archive URLs — we fetch via the Wayback raw endpoint
+    // (id_) which returns clean original content without toolbar framing.
+    for (const link of links) {
+        if (/web\.archive\.org/.test(link.href)) return link.href;
+    }
+    // Then any live URL; other archive services (archive.today etc.) last.
     for (const link of links) {
         if (!isArchiveUrl(link.href)) return link.href;
     }

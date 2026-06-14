@@ -340,14 +340,22 @@ function isArchiveUrl(href) {
     return ARCHIVE_HOST_PATTERN.test(href);
 }
 
+function parseArchiveOrgUrl(url) {
+    const match = url.match(/^https?:\/\/web\.archive\.org\/web\/(\d+)(?:id_)?\/(https?:\/\/.+)$/);
+    if (!match) return null;
+    return { timestamp: match[1], originalUrl: match[2] };
+}
+
 function extractHttpUrl(element) {
     if (!element) return null;
     const links = element.querySelectorAll('a[href^="http"]');
     if (links.length === 0) return null;
-    // Prefer live URLs over archive snapshots. archive.org rate-limits the
-    // proxy's Cloudflare egress IPs aggressively (429 on most requests),
-    // so archive snapshots are only used as a last-resort fallback when no
-    // live link exists in the citation.
+    // Prefer Internet Archive URLs — we fetch via the Wayback raw endpoint
+    // (id_) which returns clean original content without toolbar framing.
+    for (const link of links) {
+        if (/web\.archive\.org/.test(link.href)) return link.href;
+    }
+    // Then any live URL; other archive services (archive.today etc.) last.
     for (const link of links) {
         if (!isArchiveUrl(link.href)) return link.href;
     }
@@ -823,19 +831,9 @@ async function callProviderAPI(name, config) {
 // Calls to the Cloudflare Worker proxy: source fetching and verification logging.
 
 
-// Always returns { content, error, status }. `content` is the formatted source
-// text on success and null on any failure; `error` is a short human-readable
-// reason when content is null; `status` is the upstream HTTP status code if the
-// proxy reports one (`data.status`), otherwise the proxy's own response status,
-// or null if we never got a response at all.
-async function fetchSourceContent(url, pageNum, { workerBase = 'https://publicai-proxy.alaexis.workers.dev' } = {}) {
-    if (isGoogleBooksUrl(url)) {
-        console.log('[CitationVerifier] Skipping Google Books URL:', url);
-        return { content: null, error: 'Google Books URL skipped (no fetchable content)', status: null };
-    }
-
+async function fetchViaProxy(fetchUrl, pageNum, workerBase, sourceUrl) {
     try {
-        let proxyUrl = `${workerBase}/?fetch=${encodeURIComponent(url)}`;
+        let proxyUrl = `${workerBase}/?fetch=${encodeURIComponent(fetchUrl)}`;
         if (pageNum) {
             proxyUrl += `&page=${pageNum}`;
         }
@@ -856,11 +854,8 @@ async function fetchSourceContent(url, pageNum, { workerBase = 'https://publicai
         }
 
         if (data.content && data.content.length > 100) {
-            // Proxy caps fetched content around 12k chars. If we're at or
-            // above that, the source was almost certainly truncated and
-            // only partially sent to the model.
             const isTruncated = data.truncated === true || data.content.length >= 12000;
-            let meta = `Source URL: ${url}`;
+            let meta = `Source URL: ${sourceUrl}`;
             if (data.pdf) {
                 meta += `\nPDF: ${data.totalPages} pages`;
                 if (data.page) {
@@ -873,8 +868,6 @@ async function fetchSourceContent(url, pageNum, { workerBase = 'https://publicai
             return { content: `${meta}\n\nSource Content:\n${data.content}`, error: null, status };
         }
 
-        // If PDF was large and we didn't request a specific page, retry
-        // with the citation page if available
         if (data.pdf && !pageNum && data.totalPages > 15) {
             console.log('[CitationVerifier] Large PDF without page param, content may be truncated');
         }
@@ -883,6 +876,52 @@ async function fetchSourceContent(url, pageNum, { workerBase = 'https://publicai
         console.error('Proxy fetch failed:', error);
         return { content: null, error: error?.message || String(error), status: null };
     }
+}
+
+async function findWaybackSnapshot(url) {
+    try {
+        const apiUrl = `https://archive.org/wayback/available?url=${encodeURIComponent(url)}`;
+        const response = await fetch(apiUrl);
+        const data = await response.json();
+        const snapshot = data?.archived_snapshots?.closest;
+        if (snapshot?.available && snapshot.timestamp) {
+            return `https://web.archive.org/web/${snapshot.timestamp}id_/${url}`;
+        }
+    } catch (e) {
+        console.warn('[CitationVerifier] Wayback availability check failed:', e?.message);
+    }
+    return null;
+}
+
+// Always returns { content, error, status }. `content` is the formatted source
+// text on success and null on any failure; `error` is a short human-readable
+// reason when content is null; `status` is the upstream HTTP status code if the
+// proxy reports one (`data.status`), otherwise the proxy's own response status,
+// or null if we never got a response at all.
+async function fetchSourceContent(url, pageNum, { workerBase = 'https://publicai-proxy.alaexis.workers.dev' } = {}) {
+    if (isGoogleBooksUrl(url)) {
+        console.log('[CitationVerifier] Skipping Google Books URL:', url);
+        return { content: null, error: 'Google Books URL skipped (no fetchable content)', status: null };
+    }
+
+    const archiveInfo = parseArchiveOrgUrl(url);
+    if (archiveInfo) {
+        const rawUrl = `https://web.archive.org/web/${archiveInfo.timestamp}id_/${archiveInfo.originalUrl}`;
+        console.log('[CitationVerifier] Fetching via Wayback raw endpoint');
+        return fetchViaProxy(rawUrl, pageNum, workerBase, url);
+    }
+
+    const result = await fetchViaProxy(url, pageNum, workerBase, url);
+
+    if (!result.content) {
+        const waybackUrl = await findWaybackSnapshot(url);
+        if (waybackUrl) {
+            console.log('[CitationVerifier] Live fetch failed, trying Wayback snapshot');
+            return fetchViaProxy(waybackUrl, pageNum, workerBase, url);
+        }
+    }
+
+    return result;
 }
 
 function logVerification(payload, { workerBase = 'https://publicai-proxy.alaexis.workers.dev' } = {}) {
