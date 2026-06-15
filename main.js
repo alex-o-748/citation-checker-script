@@ -878,19 +878,8 @@ async function fetchViaProxy(fetchUrl, pageNum, workerBase, sourceUrl) {
     }
 }
 
-async function findWaybackSnapshot(url) {
-    try {
-        const apiUrl = `https://archive.org/wayback/available?url=${encodeURIComponent(url)}`;
-        const response = await fetch(apiUrl);
-        const data = await response.json();
-        const snapshot = data?.archived_snapshots?.closest;
-        if (snapshot?.available && snapshot.timestamp) {
-            return `https://web.archive.org/web/${snapshot.timestamp}id_/${url}`;
-        }
-    } catch (e) {
-        console.warn('[CitationVerifier] Wayback availability check failed:', e?.message);
-    }
-    return null;
+function waybackRawUrl(url) {
+    return `https://web.archive.org/web/2id_/${url}`;
 }
 
 // Always returns { content, error, status }. `content` is the formatted source
@@ -914,11 +903,10 @@ async function fetchSourceContent(url, pageNum, { workerBase = 'https://publicai
     const result = await fetchViaProxy(url, pageNum, workerBase, url);
 
     if (!result.content) {
-        const waybackUrl = await findWaybackSnapshot(url);
-        if (waybackUrl) {
-            console.log('[CitationVerifier] Live fetch failed, trying Wayback snapshot');
-            return fetchViaProxy(waybackUrl, pageNum, workerBase, url);
-        }
+        const fallbackUrl = waybackRawUrl(url);
+        console.log('[CitationVerifier] Live fetch failed, trying Wayback snapshot');
+        const waybackResult = await fetchViaProxy(fallbackUrl, pageNum, workerBase, url);
+        if (waybackResult.content) return waybackResult;
     }
 
     return result;
