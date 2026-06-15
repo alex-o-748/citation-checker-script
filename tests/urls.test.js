@@ -5,6 +5,8 @@ import {
   extractHttpUrl,
   extractReferenceUrl,
   isGoogleBooksUrl,
+  isArchiveUrl,
+  parseArchiveOrgUrl,
 } from '../core/urls.js';
 
 test('extractHttpUrl pulls href from a direct <a>', () => {
@@ -16,14 +18,15 @@ test('extractHttpUrl pulls href from a direct <a>', () => {
   assert.equal(url, 'https://example.com/page');
 });
 
-test('extractHttpUrl prefers live URLs over archive snapshots', () => {
+test('extractHttpUrl prefers Internet Archive URLs over live URLs', () => {
+  const archiveUrl = 'https://web.archive.org/web/20250515222512/https://example.com/page';
   const jsdom = new JSDOM(`<!DOCTYPE html><body><span id="container">
-    <a href="https://web.archive.org/web/20250515222512/https://example.com/page">archived</a>
     <a href="https://example.com/page">live</a>
+    <a href="${archiveUrl}">archived</a>
   </span></body>`);
   const element = jsdom.window.document.getElementById('container');
   const url = extractHttpUrl(element);
-  assert.equal(url, 'https://example.com/page');
+  assert.equal(url, archiveUrl);
 });
 
 test('extractHttpUrl falls back to archive URL when no live URL exists', () => {
@@ -90,4 +93,43 @@ test('extractReferenceUrl handles Wikipedia REST API relative hrefs like ./Page#
   const refElement = doc.getElementById('ref-1');
   const url = extractReferenceUrl(refElement, doc);
   assert.equal(url, 'https://example.com/sky-source');
+});
+
+test('parseArchiveOrgUrl extracts timestamp and original URL', () => {
+  const result = parseArchiveOrgUrl('https://web.archive.org/web/20250515222512/https://example.com/page');
+  assert.deepEqual(result, { timestamp: '20250515222512', originalUrl: 'https://example.com/page' });
+});
+
+test('parseArchiveOrgUrl handles id_ URLs', () => {
+  const result = parseArchiveOrgUrl('https://web.archive.org/web/20250515222512id_/https://example.com/page');
+  assert.deepEqual(result, { timestamp: '20250515222512', originalUrl: 'https://example.com/page' });
+});
+
+test('parseArchiveOrgUrl returns null for non-archive URLs', () => {
+  assert.equal(parseArchiveOrgUrl('https://example.com/page'), null);
+  assert.equal(parseArchiveOrgUrl('https://archive.today/abc'), null);
+});
+
+test('isArchiveUrl detects all archive hosts', () => {
+  assert.equal(isArchiveUrl('https://web.archive.org/web/2025/https://x.com'), true);
+  assert.equal(isArchiveUrl('https://archive.today/abc'), true);
+  assert.equal(isArchiveUrl('https://archive.is/abc'), true);
+  assert.equal(isArchiveUrl('https://example.com'), false);
+});
+
+test('extractHttpUrl falls back to live URL when no archive.org link exists', () => {
+  const jsdom = new JSDOM(`<!DOCTYPE html><body><span id="container">
+    <a href="https://example.com/page">live</a>
+  </span></body>`);
+  const element = jsdom.window.document.getElementById('container');
+  assert.equal(extractHttpUrl(element), 'https://example.com/page');
+});
+
+test('extractHttpUrl uses other archive services only as last resort', () => {
+  const jsdom = new JSDOM(`<!DOCTYPE html><body><span id="container">
+    <a href="https://archive.today/abc">archive.today</a>
+    <a href="https://example.com/page">live</a>
+  </span></body>`);
+  const element = jsdom.window.document.getElementById('container');
+  assert.equal(extractHttpUrl(element), 'https://example.com/page');
 });

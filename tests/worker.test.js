@@ -119,6 +119,115 @@ test('fetchSourceContent reports network failures with a null status', async () 
   }
 });
 
+test('fetchSourceContent converts archive.org URLs to raw id_ endpoint', async () => {
+  const mock = mockFetch(async (url) => {
+    assert.ok(url.includes(encodeURIComponent('https://web.archive.org/web/20250515id_/https://example.com/page')),
+      'should fetch via id_ raw endpoint');
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({ content: 'a'.repeat(500), truncated: false }),
+    };
+  });
+  try {
+    const result = await fetchSourceContent(
+      'https://web.archive.org/web/20250515/https://example.com/page', null);
+    assert.ok(result.content);
+    assert.ok(result.content.includes('Source URL: https://web.archive.org/web/20250515/https://example.com/page'),
+      'metadata should show the original archive URL');
+  } finally {
+    mock.restore();
+  }
+});
+
+test('fetchSourceContent tries Wayback fallback when live fetch fails', async () => {
+  let callCount = 0;
+  const mock = mockFetch(async (url) => {
+    callCount++;
+    if (callCount === 1) {
+      // Live fetch fails
+      return {
+        ok: true, status: 200,
+        json: async () => ({ error: 'upstream returned 404', status: 404 }),
+      };
+    }
+    if (callCount === 2) {
+      // Wayback availability API
+      assert.ok(url.includes('archive.org/wayback/available'));
+      return {
+        ok: true, status: 200,
+        json: async () => ({
+          archived_snapshots: {
+            closest: { available: true, timestamp: '20240101120000', url: 'http://web.archive.org/web/20240101120000/https://example.com/doc' }
+          }
+        }),
+      };
+    }
+    // Wayback fetch via proxy
+    return {
+      ok: true, status: 200,
+      json: async () => ({ content: 'b'.repeat(500), truncated: false }),
+    };
+  });
+  try {
+    const result = await fetchSourceContent('https://example.com/doc', null);
+    assert.ok(result.content);
+    assert.ok(result.content.includes('Source URL: https://example.com/doc'));
+    assert.equal(callCount, 3);
+  } finally {
+    mock.restore();
+  }
+});
+
+test('fetchSourceContent skips Wayback fallback when no snapshot exists', async () => {
+  let callCount = 0;
+  const mock = mockFetch(async () => {
+    callCount++;
+    if (callCount === 1) {
+      return {
+        ok: true, status: 200,
+        json: async () => ({ error: 'upstream returned 404', status: 404 }),
+      };
+    }
+    // Wayback says no snapshot
+    return {
+      ok: true, status: 200,
+      json: async () => ({ archived_snapshots: {} }),
+    };
+  });
+  try {
+    const result = await fetchSourceContent('https://example.com/doc', null);
+    assert.equal(result.content, null);
+    assert.equal(result.error, 'upstream returned 404');
+    assert.equal(callCount, 2);
+  } finally {
+    mock.restore();
+  }
+});
+
+test('fetchSourceContent handles Wayback API failure gracefully', async () => {
+  let callCount = 0;
+  const mock = mockFetch(async () => {
+    callCount++;
+    if (callCount === 1) {
+      return {
+        ok: true, status: 200,
+        json: async () => ({ error: 'upstream returned 503', status: 503 }),
+      };
+    }
+    // Wayback API itself fails
+    throw new Error('network error');
+  });
+  try {
+    const result = await fetchSourceContent('https://example.com/doc', null);
+    assert.equal(result.content, null);
+    assert.equal(result.error, 'upstream returned 503');
+    assert.equal(callCount, 2);
+  } finally {
+    mock.restore();
+  }
+});
+
 test('logVerification posts payload and swallows failures', async () => {
   const mock = mockFetch(async () => ({ ok: true, json: async () => ({}) }));
   try {
