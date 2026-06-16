@@ -6,6 +6,21 @@
     'use strict';
 
 // <core-injected>
+// --- core/errors.js ---
+class ProviderHTTPError extends Error {
+    constructor(status, detail, label) {
+        const prefix = label ? `${label} ` : '';
+        super(`${prefix}API request failed (${status}): ${detail}`);
+        this.status = status;
+    }
+}
+
+class InvalidResponseError extends Error {
+    constructor(detail) {
+        super(detail || 'Invalid API response format');
+    }
+}
+
 // --- core/prompts.js ---
 // Pure prompt-generation logic. Imported by core/ consumers (CLI, benchmark).
 // Also injected byte-identically into main.js between <core-injected> markers.
@@ -266,7 +281,9 @@ function parseVerificationResult(response) {
 // Defaults match the benchmark (1s base, exponential, ≤30s cap, 5
 // attempts) — callers tune via options.
 
-const RETRYABLE_STATUS = /^HTTP (429|500|502|503|504)\b/;
+
+const RETRYABLE_STATUSES = new Set([429, 500, 502, 503, 504]);
+const RETRYABLE_STATUS_RE = /\b(429|500|502|503|504)\b/;
 const RETRYABLE_NETWORK = /timeout|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|socket hang up/i;
 
 function defaultSleep(ms) {
@@ -274,8 +291,11 @@ function defaultSleep(ms) {
 }
 
 function isRetryableError(error) {
-    const msg = error?.message ?? '';
-    return RETRYABLE_STATUS.test(msg) || RETRYABLE_NETWORK.test(msg);
+    if (!error) return false;
+    if (error instanceof InvalidResponseError) return false;
+    if (error instanceof ProviderHTTPError) return RETRYABLE_STATUSES.has(error.status);
+    const msg = error.message ?? '';
+    return RETRYABLE_STATUS_RE.test(msg) || RETRYABLE_NETWORK.test(msg);
 }
 
 /**
@@ -617,13 +637,13 @@ async function callOpenAICompatibleChat({ url, apiKey, model, systemPrompt, user
         } catch {
             errorMessage = errorText;
         }
-        throw new Error(`${label} API request failed (${response.status}): ${errorMessage}`);
+        throw new ProviderHTTPError(response.status, errorMessage, label);
     }
 
     const data = await response.json();
 
     if (!data.choices?.[0]?.message?.content) {
-        throw new Error('Invalid API response format');
+        throw new InvalidResponseError();
     }
 
     return {
@@ -699,7 +719,7 @@ async function callClaudeAPI({ apiKey, model, systemPrompt, userContent, maxToke
 
     if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(`API request failed (${response.status}): ${errorText}`);
+        throw new ProviderHTTPError(response.status, errorText);
     }
 
     const data = await response.json();
@@ -750,11 +770,11 @@ async function callGeminiAPI({ apiKey, model, systemPrompt, userContent, maxToke
 
     if (!response.ok) {
         const errorDetail = responseData.error?.message || response.statusText;
-        throw new Error(`API request failed (${response.status}): ${errorDetail}`);
+        throw new ProviderHTTPError(response.status, errorDetail);
     }
 
     if (!responseData.candidates?.[0]?.content?.parts?.[0]?.text) {
-        throw new Error('Invalid API response format or no content generated.');
+        throw new InvalidResponseError('Invalid API response format or no content generated.');
     }
 
     return {
@@ -796,13 +816,13 @@ async function callOpenAIAPI({ apiKey, model, systemPrompt, userContent, maxToke
         } catch {
             errorMessage = errorText;
         }
-        throw new Error(`API request failed (${response.status}): ${errorMessage}`);
+        throw new ProviderHTTPError(response.status, errorMessage);
     }
 
     const data = await response.json();
 
     if (!data.choices?.[0]?.message?.content) {
-        throw new Error('Invalid API response format');
+        throw new InvalidResponseError();
     }
 
     return {
@@ -925,9 +945,6 @@ async function fetchSourceContent(url, pageNum, { workerBase = 'https://publicai
 }
 
 function logVerification(payload, { workerBase = 'https://publicai-proxy.alaexis.workers.dev' } = {}) {
-    // Wrap the fetch POST in try/catch exactly as main.js does.
-    // `payload` replaces the constructed object in main.js — caller supplies
-    //   { article_url, article_title, citation_number, source_url, provider, verdict, confidence }.
     try {
         fetch(`${workerBase}/log`, {
             method: 'POST',

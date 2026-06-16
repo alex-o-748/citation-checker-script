@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { withRetry, isRetryableError } from '../core/retry.js';
+import { ProviderHTTPError, InvalidResponseError } from '../core/errors.js';
 
 const noSleep = () => Promise.resolve();
 
@@ -205,4 +206,23 @@ test('isRetryableError: tolerates null/undefined errors', () => {
     assert.equal(isRetryableError(null), false);
     assert.equal(isRetryableError(undefined), false);
     assert.equal(isRetryableError({}), false);
+});
+
+test('isRetryableError: typed ProviderHTTPError with retryable status', () => {
+    assert.equal(isRetryableError(new ProviderHTTPError(429, 'rate limited')), true);
+    assert.equal(isRetryableError(new ProviderHTTPError(500, 'internal')), true);
+    assert.equal(isRetryableError(new ProviderHTTPError(502, 'bad gateway')), true);
+    assert.equal(isRetryableError(new ProviderHTTPError(503, 'unavailable')), true);
+    assert.equal(isRetryableError(new ProviderHTTPError(504, 'timeout')), true);
+});
+
+test('isRetryableError: typed ProviderHTTPError with non-retryable status', () => {
+    assert.equal(isRetryableError(new ProviderHTTPError(400, 'bad request')), false);
+    assert.equal(isRetryableError(new ProviderHTTPError(401, 'unauthorized')), false);
+    assert.equal(isRetryableError(new ProviderHTTPError(404, 'not found')), false);
+});
+
+test('isRetryableError: InvalidResponseError is never retryable', () => {
+    assert.equal(isRetryableError(new InvalidResponseError()), false);
+    assert.equal(isRetryableError(new InvalidResponseError('custom message')), false);
 });

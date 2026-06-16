@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 import { VERIFY_HELP_TEXT, TOP_LEVEL_HELP_TEXT, main, parseCliArgs, parseWikiUrl, deriveRestUrl, findReferenceByCitationNumber, classifyProviderError, runVerify } from '../cli/verify.js';
+import { ProviderHTTPError, InvalidResponseError } from '../core/errors.js';
 
 function args(...rest) {
   return ['node', 'bin/ccs', ...rest];
@@ -215,23 +216,19 @@ test('findReferenceByCitationNumber: returns the first match when a ref is reuse
 });
 
 test('classifyProviderError: 401 maps to 9 (provider 4xx)', () => {
-  const err = new Error('API request failed (401): unauthorized');
-  assert.equal(classifyProviderError(err), 9);
+  assert.equal(classifyProviderError(new ProviderHTTPError(401, 'unauthorized')), 9);
 });
 
 test('classifyProviderError: 429 maps to 9 (provider 4xx)', () => {
-  const err = new Error('PublicAI API request failed (429): rate limited');
-  assert.equal(classifyProviderError(err), 9);
+  assert.equal(classifyProviderError(new ProviderHTTPError(429, 'rate limited', 'PublicAI')), 9);
 });
 
 test('classifyProviderError: 500 maps to 10 (provider 5xx)', () => {
-  const err = new Error('API request failed (500): internal error');
-  assert.equal(classifyProviderError(err), 10);
+  assert.equal(classifyProviderError(new ProviderHTTPError(500, 'internal error')), 10);
 });
 
 test('classifyProviderError: 502 maps to 10 (provider 5xx)', () => {
-  const err = new Error('API request failed (502): bad gateway');
-  assert.equal(classifyProviderError(err), 10);
+  assert.equal(classifyProviderError(new ProviderHTTPError(502, 'bad gateway')), 10);
 });
 
 test('classifyProviderError: network error without status maps to 10', () => {
@@ -239,9 +236,8 @@ test('classifyProviderError: network error without status maps to 10', () => {
   assert.equal(classifyProviderError(err), 10);
 });
 
-test('classifyProviderError: "Invalid API response format" maps to 11 (malformed JSON)', () => {
-  const err = new Error('Invalid API response format');
-  assert.equal(classifyProviderError(err), 11);
+test('classifyProviderError: InvalidResponseError maps to 11 (malformed JSON)', () => {
+  assert.equal(classifyProviderError(new InvalidResponseError()), 11);
 });
 
 function mkFetchMock(routes) {

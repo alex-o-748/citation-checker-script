@@ -1,3 +1,5 @@
+import { ProviderHTTPError, InvalidResponseError } from './errors.js';
+
 // LLM provider dispatch. Pure HTTP routing — callers build the prompt.
 
 // Shared call shape for OpenAI-compatible chat-completion upstreams.
@@ -46,13 +48,13 @@ export async function callOpenAICompatibleChat({ url, apiKey, model, systemPromp
         } catch {
             errorMessage = errorText;
         }
-        throw new Error(`${label} API request failed (${response.status}): ${errorMessage}`);
+        throw new ProviderHTTPError(response.status, errorMessage, label);
     }
 
     const data = await response.json();
 
     if (!data.choices?.[0]?.message?.content) {
-        throw new Error('Invalid API response format');
+        throw new InvalidResponseError();
     }
 
     return {
@@ -128,7 +130,7 @@ export async function callClaudeAPI({ apiKey, model, systemPrompt, userContent, 
 
     if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(`API request failed (${response.status}): ${errorText}`);
+        throw new ProviderHTTPError(response.status, errorText);
     }
 
     const data = await response.json();
@@ -179,11 +181,11 @@ export async function callGeminiAPI({ apiKey, model, systemPrompt, userContent, 
 
     if (!response.ok) {
         const errorDetail = responseData.error?.message || response.statusText;
-        throw new Error(`API request failed (${response.status}): ${errorDetail}`);
+        throw new ProviderHTTPError(response.status, errorDetail);
     }
 
     if (!responseData.candidates?.[0]?.content?.parts?.[0]?.text) {
-        throw new Error('Invalid API response format or no content generated.');
+        throw new InvalidResponseError('Invalid API response format or no content generated.');
     }
 
     return {
@@ -225,13 +227,13 @@ export async function callOpenAIAPI({ apiKey, model, systemPrompt, userContent, 
         } catch {
             errorMessage = errorText;
         }
-        throw new Error(`API request failed (${response.status}): ${errorMessage}`);
+        throw new ProviderHTTPError(response.status, errorMessage);
     }
 
     const data = await response.json();
 
     if (!data.choices?.[0]?.message?.content) {
-        throw new Error('Invalid API response format');
+        throw new InvalidResponseError();
     }
 
     return {

@@ -10,6 +10,7 @@ import { extractReferenceUrl, extractPageNumber } from '../core/urls.js';
 import { fetchSourceContent, logVerification } from '../core/worker.js';
 import { generateSystemPrompt, generateUserPrompt } from '../core/prompts.js';
 import { callProviderAPI } from '../core/providers.js';
+import { ProviderHTTPError, InvalidResponseError } from '../core/errors.js';
 import { parseVerificationResult } from '../core/parsing.js';
 import { parseCompareArgs, COMPARE_HELP_TEXT, runCompare } from './compare.js';
 
@@ -130,23 +131,11 @@ export function findReferenceByCitationNumber(document, citationNumber) {
     return null;
 }
 
-// COUPLING NOTE: This function parses exit codes out of the string format
-// that core/providers.js uses for its error messages ("API request failed
-// (<status>): ..." and "Invalid API response format"). If someone rewords
-// those messages in core/providers.js, this function silently stops
-// mapping to the right exit code. A typed-error refactor across core/ is
-// the proper long-term fix; until then, keep this and core/providers.js
-// in sync.
 export function classifyProviderError(err) {
-    const message = err?.message || '';
-    if (/Invalid API response format/i.test(message)) return 11;
-    const statusMatch = message.match(/\((\d{3})\)/);
-    if (statusMatch) {
-        const status = Number(statusMatch[1]);
-        if (status >= 400 && status < 500) return 9;
-        if (status >= 500) return 10;
+    if (err instanceof InvalidResponseError) return 11;
+    if (err instanceof ProviderHTTPError) {
+        return err.status >= 500 ? 10 : 9;
     }
-    // No status in message => treat as network/5xx-class failure.
     return 10;
 }
 

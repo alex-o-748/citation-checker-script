@@ -11,7 +11,10 @@
 // Defaults match the benchmark (1s base, exponential, ≤30s cap, 5
 // attempts) — callers tune via options.
 
-const RETRYABLE_STATUS = /^HTTP (429|500|502|503|504)\b/;
+import { ProviderHTTPError, InvalidResponseError } from './errors.js';
+
+const RETRYABLE_STATUSES = new Set([429, 500, 502, 503, 504]);
+const RETRYABLE_STATUS_RE = /\b(429|500|502|503|504)\b/;
 const RETRYABLE_NETWORK = /timeout|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|socket hang up/i;
 
 function defaultSleep(ms) {
@@ -19,8 +22,11 @@ function defaultSleep(ms) {
 }
 
 export function isRetryableError(error) {
-    const msg = error?.message ?? '';
-    return RETRYABLE_STATUS.test(msg) || RETRYABLE_NETWORK.test(msg);
+    if (!error) return false;
+    if (error instanceof InvalidResponseError) return false;
+    if (error instanceof ProviderHTTPError) return RETRYABLE_STATUSES.has(error.status);
+    const msg = error.message ?? '';
+    return RETRYABLE_STATUS_RE.test(msg) || RETRYABLE_NETWORK.test(msg);
 }
 
 /**

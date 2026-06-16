@@ -14,6 +14,7 @@ const END = '// </core-injected>';
 
 // Order matters: declarations must precede uses within the IIFE.
 const CORE_ORDER = [
+  'errors.js',
   'prompts.js',
   'verdicts.js',
   'parsing.js',
@@ -32,6 +33,7 @@ function stripEsm(source) {
     .map(line => line
       .replace(/^(\s*)export\s+(async\s+)?function\b/, '$1$2function')
       .replace(/^(\s*)export\s+const\b/, '$1const')
+      .replace(/^(\s*)export\s+class\b/, '$1class')
       .replace(/^(\s*)export\s+\{[^}]*\};?\s*$/, ''))
     .join('\n');
 }
