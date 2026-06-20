@@ -28,7 +28,7 @@ test('parseCliArgs: verify subcommand with url and citation number', () => {
   assert.equal(result.subcommand, 'verify');
   assert.equal(result.url, 'https://en.wikipedia.org/wiki/Foo');
   assert.equal(result.citationNumber, 3);
-  assert.equal(result.provider, 'publicai');
+  assert.equal(result.provider, 'huggingface');
   assert.equal(result.noLog, false);
 });
 
@@ -369,6 +369,78 @@ test('runVerify: missing citation number returns 5', async () => {
   }
 });
 
+test('runVerify: provider=huggingface without HF_API_KEY routes via worker /hf', async () => {
+  const mock = mkFetchMock([
+    {
+      match: (url) => String(url).startsWith('https://en.wikipedia.org/api/rest_v1/'),
+      respond: async () => ({ ok: true, status: 200, text: async () => WIKI_HTML_WITH_ONE_CITATION }),
+    },
+    {
+      match: (url) => String(url).includes('?fetch='),
+      respond: async () => ({ ok: true, json: async () => ({ content: 'x'.repeat(300) }) }),
+    },
+    {
+      match: (url, opts) => String(url) === 'https://publicai-proxy.alaexis.workers.dev/hf' && opts?.method === 'POST',
+      respond: async (_url, opts) => {
+        assert.equal(opts.headers['Authorization'], undefined,
+          'proxy path must not forward an Authorization header');
+        return {
+          ok: true, status: 200, json: async () => ({
+            choices: [{ message: { content: '{"verdict":"SUPPORTED","confidence":80,"comments":"ok"}' } }],
+            usage: { prompt_tokens: 10, completion_tokens: 5 },
+          }),
+        };
+      },
+    },
+  ]);
+  const stdout = mkStream();
+  const stderr = mkStream();
+  try {
+    const code = await runVerify(
+      { url: 'https://en.wikipedia.org/wiki/Sky', citationNumber: 1, provider: 'huggingface', noLog: true },
+      { stdout, stderr, env: {} },
+    );
+    assert.equal(code, 0, `stderr: ${stderr.value()}`);
+  } finally {
+    mock.restore();
+  }
+});
+
+test('runVerify: provider=huggingface with HF_API_KEY hits HF router with Bearer header', async () => {
+  const mock = mkFetchMock([
+    {
+      match: (url) => String(url).startsWith('https://en.wikipedia.org/api/rest_v1/'),
+      respond: async () => ({ ok: true, status: 200, text: async () => WIKI_HTML_WITH_ONE_CITATION }),
+    },
+    {
+      match: (url) => String(url).includes('?fetch='),
+      respond: async () => ({ ok: true, json: async () => ({ content: 'x'.repeat(300) }) }),
+    },
+    {
+      match: (url, opts) => String(url) === 'https://router.huggingface.co/v1/chat/completions' && opts?.method === 'POST',
+      respond: async (_url, opts) => {
+        assert.equal(opts.headers['Authorization'], 'Bearer hf_test_key');
+        return {
+          ok: true, status: 200, json: async () => ({
+            choices: [{ message: { content: '{"verdict":"SUPPORTED","confidence":80,"comments":"ok"}' } }],
+            usage: { prompt_tokens: 10, completion_tokens: 5 },
+          }),
+        };
+      },
+    },
+  ]);
+  const stdout = mkStream();
+  const stderr = mkStream();
+  try {
+    const code = await runVerify(
+      { url: 'https://en.wikipedia.org/wiki/Sky', citationNumber: 1, provider: 'huggingface', noLog: true },
+      { stdout, stderr, env: { HF_API_KEY: 'hf_test_key' } },
+    );
+    assert.equal(code, 0, `stderr: ${stderr.value()}`);
+  } finally {
+    mock.restore();
+  }
+});
 
 test('runVerify: provider 500 returns 10', async () => {
   const mock = mkFetchMock([

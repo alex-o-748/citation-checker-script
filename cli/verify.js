@@ -13,7 +13,7 @@ import { callProviderAPI } from '../core/providers.js';
 import { parseVerificationResult } from '../core/parsing.js';
 import { parseCompareArgs, COMPARE_HELP_TEXT, runCompare } from './compare.js';
 
-const KNOWN_PROVIDERS = ['publicai', 'claude', 'gemini', 'openai'];
+const KNOWN_PROVIDERS = ['publicai', 'huggingface', 'claude', 'gemini', 'openai'];
 
 export function parseCliArgs(argv) {
     const raw = argv.slice(2);
@@ -44,7 +44,7 @@ function parseVerifyArgs(args) {
     const { values, positionals } = parseArgs({
         args,
         options: {
-            provider: { type: 'string', default: 'publicai' },
+            provider: { type: 'string', default: 'huggingface' },
             'no-log': { type: 'boolean', default: false },
             help:     { type: 'boolean', short: 'h', default: false },
         },
@@ -152,6 +152,7 @@ export function classifyProviderError(err) {
 
 const PROVIDER_MODELS = {
     publicai:    'aisingapore/Qwen-SEA-LION-v4-32B-IT',
+    huggingface: 'openai/gpt-oss-20b',
     claude:      'claude-sonnet-4-6',
     gemini:      'gemini-flash-latest',
     openai:      'gpt-4o',
@@ -159,6 +160,7 @@ const PROVIDER_MODELS = {
 
 const PROVIDER_ENV_VARS = {
     publicai:    null, // routed through the worker proxy; no client-side key
+    huggingface: null, // proxy by default; HF_API_KEY (optional) opts into direct
     claude:      'CLAUDE_API_KEY',
     gemini:      'GEMINI_API_KEY',
     openai:      'OPENAI_API_KEY',
@@ -167,6 +169,7 @@ const PROVIDER_ENV_VARS = {
 // Optional env vars: when present, switch the provider to a direct-call path.
 // Absent is fine — the call falls back to PROVIDER_ENV_VARS' default routing.
 const PROVIDER_OPTIONAL_ENV_VARS = {
+    huggingface: 'HF_API_KEY',
 };
 
 export const VERIFY_HELP_TEXT = `usage: ccs verify <wikipedia-url> <citation-number> [options]
@@ -182,7 +185,11 @@ Arguments:
 
 Options:
   --provider <name>  LLM provider to use. One of:
-                       publicai    (default; routed via the worker proxy,
+                       huggingface (default; routed via the worker proxy,
+                                    no API key needed; set HF_API_KEY to
+                                    call HF directly and unlock any
+                                    HF-hosted model)
+                       publicai    (routed via the worker proxy,
                                     no API key needed)
                        claude      (requires CLAUDE_API_KEY)
                        gemini      (requires GEMINI_API_KEY)

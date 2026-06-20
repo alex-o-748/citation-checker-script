@@ -1018,6 +1018,16 @@ function buildDatasetSubmissionUrl(
                     model: 'aisingapore/Qwen-SEA-LION-v4-32B-IT',
                     requiresKey: false
                 },
+                huggingface: {
+                    name: 'HuggingFace',
+                    // Optional key: free via the proxy without one; direct call
+                    // to HF (any model) when stored.
+                    storageKey: 'hf_api_key',
+                    color: '#6B21A8', // HF yellow-orange
+                    model: 'openai/gpt-oss-20b',
+                    requiresKey: false,
+                    optionalKey: true
+                },
                 claude: {
                     name: 'Claude',
                     storageKey: 'claude_api_key',
@@ -1041,13 +1051,14 @@ function buildDatasetSubmissionUrl(
                 }
             };
             
-            // Migrate legacy provider selections to the current default.
+            // Migrate legacy provider selections ('apertus', 'publicai') to
+            // the current default ('huggingface').
             let storedProvider = localStorage.getItem('source_verifier_provider');
-            if (storedProvider === 'apertus' || storedProvider === 'huggingface') {
-                storedProvider = 'publicai';
-                localStorage.setItem('source_verifier_provider', 'publicai');
+            if (storedProvider === 'apertus' || storedProvider === 'publicai') {
+                storedProvider = 'huggingface';
+                localStorage.setItem('source_verifier_provider', 'huggingface');
             }
-            this.currentProvider = storedProvider || 'publicai';
+            this.currentProvider = storedProvider || 'huggingface';
             this.sidebarWidth = localStorage.getItem('verifier_sidebar_width') || '400px';
             this.isVisible = localStorage.getItem('verifier_sidebar_visible') === 'true';
             this.buttons = {};
@@ -3583,6 +3594,8 @@ function buildDatasetSubmissionUrl(
             let modelDesc;
             if (this.currentProvider === 'publicai') {
                 modelDesc = 'a PublicAI-hosted open-source LLM';
+            } else if (this.currentProvider === 'huggingface') {
+                modelDesc = `a HuggingFace-hosted open-source LLM (${provider.model})`;
             } else {
                 modelDesc = provider.model;
             }
