@@ -78,3 +78,25 @@ test('returns PARSE_ERROR sentinel on completely malformed input', () => {
   assert.equal(out.confidence, null);
   assert.match(out.comments, /Failed to parse/);
 });
+
+test('extracts reason_type from NOT SUPPORTED JSON response', () => {
+  const raw = JSON.stringify({
+    verdict: 'NOT SUPPORTED',
+    confidence: 15,
+    reason_type: 'contradiction',
+    comments: 'Source says 2002, not 1998.'
+  });
+  const out = parseVerificationResult(raw);
+  assert.equal(out.verdict, 'NOT SUPPORTED');
+  assert.equal(out.reason_type, 'contradiction');
+});
+
+test('reason_type defaults to null when not present', () => {
+  const raw = JSON.stringify({
+    verdict: 'SUPPORTED',
+    confidence: 90,
+    comments: 'Matches.'
+  });
+  const out = parseVerificationResult(raw);
+  assert.equal(out.reason_type, null);
+});
