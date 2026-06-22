@@ -110,6 +110,13 @@ Claim: "She received the Nobel Prize in Chemistry in 2015."
 Source text: "Professor Martin completed her PhD at Oxford in 1998 and joined the faculty at Cambridge in 2003. Her research focuses on organic synthesis and catalysis. She has published over 200 papers and received several university teaching awards."
 
 {"confidence": 10, "verdict": "NOT SUPPORTED", "reason_type": "omission", "comments": "The source discusses her academic career and publications but makes no mention of a Nobel Prize."}
+</example>
+
+<example>
+Claim: "She married him in 1952."
+Source text: "He married her at a ceremony in Bristol in 1952."
+
+{"confidence": 90, "verdict": "SUPPORTED", "comments": "\"He married her... in 1952\" — marriage is a symmetric relationship; reversing subject and object describes the same event."}
 </example>`;
 }
 
@@ -936,9 +943,6 @@ async function fetchSourceContent(url, pageNum, { workerBase = 'https://publicai
 }
 
 function logVerification(payload, { workerBase = 'https://publicai-proxy.alaexis.workers.dev' } = {}) {
-    // Wrap the fetch POST in try/catch exactly as main.js does.
-    // `payload` replaces the constructed object in main.js — caller supplies
-    //   { article_url, article_title, citation_number, source_url, provider, verdict, confidence }.
     try {
         fetch(`${workerBase}/log`, {
             method: 'POST',

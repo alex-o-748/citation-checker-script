@@ -22,3 +22,8 @@ test('generateUserPrompt embeds claim and source text', () => {
   assert.ok(out.includes(claim));
   assert.ok(out.includes(source));
 });
+
+test('generateSystemPrompt covers symmetric relationship facts', () => {
+  const out = generateSystemPrompt();
+  assert.ok(out.includes('symmetric'), 'prompt should explain that symmetric relationships (e.g. marriage) support either subject/object ordering');
+});
