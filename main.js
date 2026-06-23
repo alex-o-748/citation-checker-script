@@ -2443,7 +2443,7 @@ function buildDatasetSubmissionUrl(
         }
         
         createVerifierTab() {
-            if (typeof mw !== 'undefined' && [0, 118].includes(mw.config.get('wgNamespaceNumber'))) {
+            if (typeof mw !== 'undefined' && [0, 2, 118].includes(mw.config.get('wgNamespaceNumber'))) {
                 const skin = mw.config.get('skin');
                 let portletId;
                 
@@ -4059,7 +4059,7 @@ function buildDatasetSubmissionUrl(
         }
     }
     
-    if (typeof mw !== 'undefined' && [0, 118].includes(mw.config.get('wgNamespaceNumber'))) {
+    if (typeof mw !== 'undefined' && [0, 2, 118].includes(mw.config.get('wgNamespaceNumber'))) {
         mw.loader.using(['mediawiki.util', 'mediawiki.api', 'oojs-ui-core', 'oojs-ui-widgets', 'oojs-ui-windows', 'oojs-ui.styles.icons-interactions']).then(function() {
             $(function() {
                 new WikipediaSourceVerifier();
