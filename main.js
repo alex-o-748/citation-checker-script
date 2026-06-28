@@ -3689,6 +3689,15 @@ function buildDatasetSubmissionUrl(
             }
         }
 
+        hideGroupCollectiveSlot(groupId) {
+            const resultsEl = document.getElementById('verifier-report-results');
+            if (!resultsEl) return;
+            const groupEl = resultsEl.querySelector(`.verifier-report-group[data-group-id="${CSS.escape(groupId)}"]`);
+            if (!groupEl) return;
+            const slot = groupEl.querySelector('.verifier-report-group-collective');
+            if (slot) slot.style.display = 'none';
+        }
+
         buildGroupRow(result) {
             const { cls: verdictClass, label: verdictLabel } = this.verdictClassFor(result.verdict);
             const row = document.createElement('div');
@@ -3971,6 +3980,15 @@ function buildDatasetSubmissionUrl(
             const truncated = entries.some(e => e.content && e.content.includes('\nTruncated: true'));
             const { text: assembledText, anyAvailable } = assembleGroupSources(entries);
 
+            // When only one source is available the collective verdict would
+            // duplicate the individual per-source result, so skip it.
+            const availableCount = entries.filter(e => e.content && extractSourceText(e.content).trim()).length;
+            if (availableCount <= 1) {
+                this.reportGroupResults.set(groupId, { skipped: true, groupId });
+                this.hideGroupCollectiveSlot(groupId);
+                return;
+            }
+
             const providerConfig = this.providers[this.currentProvider] || {};
             const base = {
                 groupId,
@@ -4045,7 +4063,13 @@ function buildDatasetSubmissionUrl(
                     if (seenGroups.has(r.groupId)) continue;
                     seenGroups.add(r.groupId);
                     const collective = this.reportGroupResults.get(r.groupId);
-                    if (collective) units.push(collective);
+                    if (collective && !collective.skipped) {
+                        units.push(collective);
+                    } else if (collective && collective.skipped) {
+                        for (const x of this.reportResults) {
+                            if (x.groupId === r.groupId) units.push(x);
+                        }
+                    }
                 } else {
                     units.push(r);
                 }
