@@ -1876,6 +1876,20 @@ function buildDatasetSubmissionUrl(
                 .verifier-report-group-row.verdict-not-supported { border-left-color: #dc3545; }
                 .verifier-report-group-row.verdict-unavailable { border-left-color: #6c757d; }
                 .verifier-report-group-row.verdict-error { border-left-color: #adb5bd; }
+                .verifier-report-group[data-collective-verdict] .verifier-report-group-rows {
+                    opacity: 0.55;
+                }
+                .verifier-report-group[data-collective-verdict] .verifier-report-group-rows:hover {
+                    opacity: 0.85;
+                }
+                .verifier-report-group[data-collective-verdict] .verifier-report-group-row .report-card-verdict {
+                    font-size: 10px;
+                    padding: 1px 5px;
+                }
+                .verifier-report-group[data-collective-verdict] .verifier-report-group-row .report-card-comment {
+                    font-size: 10px;
+                    color: #888;
+                }
                 .verifier-report-group-row-header {
                     display: flex;
                     justify-content: space-between;
@@ -1905,6 +1919,9 @@ function buildDatasetSubmissionUrl(
                 html.skin-theme-clientpref-night .verifier-report-group-claim,
                 html.skin-theme-clientpref-night .verifier-report-group-collective-label {
                     color: #d0d0d8 !important;
+                }
+                html.skin-theme-clientpref-night .verifier-report-group[data-collective-verdict] .verifier-report-group-row .report-card-comment {
+                    color: #888 !important;
                 }
                 html.skin-theme-clientpref-night #verifier-claim-group-indicator {
                     color: #b0b0c0 !important;
