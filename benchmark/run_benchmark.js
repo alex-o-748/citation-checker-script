@@ -4,7 +4,11 @@
  *
  * Runs the enriched dataset through multiple LLM providers and records results.
  *
- * Usage: node run_benchmark.js [--providers claude,openai,gemini] [--limit N] [--resume] [--version v1|v2|v3|all] [--concurrency N]
+ * Usage: node run_benchmark.js [--providers claude,openai,gemini] [--limit N] [--resume] [--version v1|v2|v3|all] [--concurrency N] [--no-context]
+ *
+ *   --no-context  Suppress the article/section/paragraph disambiguation block
+ *                 (control arm of the context A/B; prompt matches the pre-
+ *                 context runner). Compare with a normal run via `ccs compare`.
  *
  * Environment variables for API keys:
  *   ANTHROPIC_API_KEY - Claude API key
@@ -187,6 +191,11 @@ const selectedProviders = providerArg
 const limitIndex = args.indexOf('--limit');
 const LIMIT = limitIndex !== -1 ? parseInt(args[limitIndex + 1], 10) : null;
 const RESUME = args.includes('--resume');
+// --no-context runs the control arm of the disambiguation-context A/B: it
+// suppresses the article/section/paragraph block so the prompt is byte-
+// identical to the pre-context runner. Run once with and once without against
+// the same dataset, then `ccs compare` the two results.json files.
+const NO_CONTEXT = args.includes('--no-context');
 const versionIndex = args.indexOf('--version');
 // VERSION_FILTER: 'all' | 'v1' | 'v2' | ... — restricts which dataset entries
 // to benchmark, so the original 76-row v1 analysis can be reproduced on demand.
@@ -540,7 +549,9 @@ async function main() {
         prompt_date: process.env.BENCHMARK_PROMPT_DATE || todayIso(),
         prompt_source: process.env.BENCHMARK_PROMPT_OVERRIDE_FILE || 'core/prompts.js',
         dataset_extracted_at: datasetMetadata.extracted_at || null,
-        dataset_version_filter: VERSION_FILTER
+        dataset_version_filter: VERSION_FILTER,
+        // Which arm of the disambiguation-context A/B this run is.
+        context_mode: NO_CONTEXT ? 'none' : 'article+section+paragraph'
     };
 
     // Build the task list, skipping anything already completed (resume).
@@ -589,8 +600,9 @@ async function main() {
             runPool(hostTasks, CONCURRENCY, async ({ entry, provider }) => {
                 // Disambiguation context from the dataset entry. section_title
                 // is populated by re-extraction; older datasets omit it and the
-                // context formatter simply skips absent fields.
-                const context = {
+                // context formatter simply skips absent fields. --no-context
+                // passes undefined for the control arm of the A/B.
+                const context = NO_CONTEXT ? undefined : {
                     articleTitle: entry.article_title,
                     sectionTitle: entry.section_title,
                     paragraph: entry.claim_container,
