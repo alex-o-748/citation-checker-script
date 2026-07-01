@@ -32,7 +32,7 @@ import http from 'http';
 import { JSDOM } from 'jsdom';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
-import { extractClaimText as extractClaimTextFromRef } from '../core/claim.js';
+import { extractClaimText as extractClaimTextFromRef, extractSectionTitle } from '../core/claim.js';
 import { canonicalizeVerdict, toTitleCase } from '../core/verdicts.js';
 import { writeWithMetadata, todayIso, loadRows } from './io.js';
 
@@ -245,10 +245,12 @@ export function extractClaimsForCitation(document, citationNumber) {
         const containerText = container
             ? container.textContent.replace(/\s+/g, ' ').trim()
             : '';
+        const sectionTitle = extractSectionTitle(ref);
         return {
             occurrence: i + 1,
             text,
             containerText,
+            sectionTitle,
         };
     });
 }
@@ -459,16 +461,18 @@ async function main() {
             console.log(`  Citation [${citationNumber}] (instance ${occurrence})...`);
 
             // Claim text: WMF override takes precedence; otherwise extract from article.
-            let claimText, claimContainer, totalOccurrences;
+            let claimText, claimContainer, sectionTitle, totalOccurrences;
             if (wmfClaimText) {
                 claimText = wmfClaimText;
                 claimContainer = '';
+                sectionTitle = '';
                 totalOccurrences = null;
             } else {
                 const claims = extractClaimsForCitation(document, citationNumber);
                 const claimData = claims[occurrence - 1] || claims[0] || { text: '', occurrence: 1 };
                 claimText = claimData.text;
                 claimContainer = claimData.containerText || '';
+                sectionTitle = claimData.sectionTitle || '';
                 totalOccurrences = claims.length;
             }
 
@@ -492,6 +496,7 @@ async function main() {
                 total_occurrences: totalOccurrences,
                 claim_text: claimText,
                 claim_container: claimContainer,
+                section_title: sectionTitle,
                 source_url: sourceUrl || '',
                 source_text: sourceText,
                 ground_truth: normalizeVerdict(row['Ground truth']),

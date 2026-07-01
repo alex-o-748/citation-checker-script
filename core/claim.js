@@ -3,6 +3,22 @@
 
 export const MAINTENANCE_MARKER_RE = /\[(failed verification|verification needed|citation needed|better source[^\]]*|dubious[^\]]*|unreliable source[^\]]*|clarification needed|disputed[^\]]*|page needed|when\??|where\??|who\??|why\??|by whom\??|according to whom\??|original research[^\]]*|specify[^\]]*|vague|opinion|fact)\]/gi;
 
+// Normalizes a raw DOM text run into clean prose: strips reference numbers and
+// maintenance markers, collapses whitespace. Whitespace must be normalized
+// BEFORE the marker strip (Wikipedia's {{failed verification}} et al. use
+// white-space:nowrap and emit U+00A0 between the words, which the literal-space
+// alternatives in MAINTENANCE_MARKER_RE would otherwise fail to match) AND
+// AFTER (removing a marker that had a leading/trailing space leaves a double
+// space behind).
+export function cleanProse(text) {
+    return text
+        .replace(/\[\d+\]/g, '')            // Remove reference numbers like [1], [2]
+        .replace(/\s+/g, ' ')               // Normalize whitespace (incl. NBSP) so the marker regex matches
+        .replace(MAINTENANCE_MARKER_RE, '') // Remove maintenance markers like [failed verification]
+        .replace(/\s+/g, ' ')               // Collapse the gap left by the marker strip
+        .trim();
+}
+
 // True iff the DOM range strictly between two .reference wrapper elements (in
 // document order: refA before refB) contains no non-whitespace text. This is
 // the rule that defines whether two adjacent citations attach to the same
@@ -92,31 +108,90 @@ export function extractClaimText(refElement) {
     }
     extractionRange.setEndBefore(currentRef);
 
-    // Get the text content
-    let claimText = extractionRange.toString();
-
-    // Clean up the text. Whitespace must be normalized BEFORE the marker
-    // strip (Wikipedia's {{failed verification}} et al. use white-space:nowrap
-    // and emit U+00A0 between the words, which the literal-space alternatives
-    // in MAINTENANCE_MARKER_RE would otherwise fail to match) AND AFTER the
-    // strip (removing a marker that had a leading/trailing space leaves a
-    // double space behind).
-    claimText = claimText
-        .replace(/\[\d+\]/g, '')                 // Remove reference numbers like [1], [2]
-        .replace(/\s+/g, ' ')                    // Normalize whitespace (incl. NBSP) so the marker regex matches
-        .replace(MAINTENANCE_MARKER_RE, '')      // Remove maintenance markers like [failed verification]
-        .replace(/\s+/g, ' ')                    // Collapse the gap left by the marker strip
-        .trim();
+    // Get the text content and clean it up.
+    let claimText = cleanProse(extractionRange.toString());
 
     // If we got nothing meaningful, fall back to the container text
     if (!claimText || claimText.length < 10) {
-        claimText = container.textContent
-            .replace(/\[\d+\]/g, '')
-            .replace(/\s+/g, ' ')
-            .replace(MAINTENANCE_MARKER_RE, '')
-            .replace(/\s+/g, ' ')
-            .trim();
+        claimText = cleanProse(container.textContent);
     }
 
     return claimText;
+}
+
+// Text of a Wikipedia section heading, minus the [edit] section-edit
+// affordance. Handles both the legacy shape (`<h2><span class="mw-headline">…
+// </span><span class="mw-editsection">[edit]</span></h2>`) and the modern
+// `.mw-heading` wrapper shape (edit link is a sibling of the bare <h2>).
+function headingText(h) {
+    const headline = h.querySelector('.mw-headline');
+    let text;
+    if (headline) {
+        text = headline.textContent;
+    } else {
+        const clone = h.cloneNode(true);
+        clone.querySelectorAll('.mw-editsection').forEach(n => n.remove());
+        text = clone.textContent;
+    }
+    return text.replace(/\[edit\]/gi, '').replace(/\s+/g, ' ').trim();
+}
+
+// True iff `a` precedes `b` in document order. 4 === DOCUMENT_POSITION_FOLLOWING
+// (b follows a), spelled numerically to avoid depending on a `Node` global that
+// isn't present under the JSDOM/Node path the benchmark and CLI use.
+function precedesInDocument(a, b) {
+    return (a.compareDocumentPosition(b) & 4) !== 0;
+}
+
+// Returns a breadcrumb of the section heading(s) the claim sits under, e.g.
+// "Club career › Wolverhampton Wanderers", or '' if the claim is above the
+// first heading. Walks the headings preceding the claim's container and keeps
+// each step up to a strictly higher-level heading (lower numeric level) to
+// reconstruct the H2 › H3 › … ancestry.
+export function extractSectionTitle(refElement) {
+    const document = refElement.ownerDocument;
+    const container = refElement.closest('p, li, td, div, section') || refElement;
+    const root = refElement.closest('#mw-content-text')
+        || (document && document.body)
+        || (document && document.documentElement);
+    if (!root) return '';
+
+    const headings = Array.from(root.querySelectorAll('h1, h2, h3, h4, h5, h6'));
+
+    // Nearest heading (in document order) that precedes the claim's container.
+    let nearestIdx = -1;
+    for (let i = 0; i < headings.length; i++) {
+        if (precedesInDocument(headings[i], container)) {
+            nearestIdx = i;
+        } else {
+            break;
+        }
+    }
+    if (nearestIdx === -1) return '';
+
+    const crumbs = [];
+    let level = Infinity;
+    for (let i = nearestIdx; i >= 0; i--) {
+        const h = headings[i];
+        const hLevel = parseInt(h.tagName.charAt(1), 10);
+        if (hLevel < level) {
+            const text = headingText(h);
+            if (text) crumbs.unshift(text);
+            level = hLevel;
+            if (hLevel <= 2) break; // reached the top-level section
+        }
+    }
+    return crumbs.join(' › ');
+}
+
+// Gathers disambiguation context around a claim for the LLM prompt: the full
+// surrounding paragraph and the section-heading breadcrumb. The article title
+// is environment-specific (mw.config in the browser, URL in the CLI/benchmark)
+// so callers supply it; this stays pure DOM-in, strings-out.
+export function extractClaimContext(refElement) {
+    const container = refElement.closest('p, li, td, div, section');
+    return {
+        paragraph: container ? cleanProse(container.textContent) : '',
+        sectionTitle: extractSectionTitle(refElement),
+    };
 }

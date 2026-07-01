@@ -16,6 +16,7 @@ function generateSystemPrompt() {
 Rules:
 - ONLY use the provided source text. Never use outside knowledge.
 - First identify what the claim asserts, then look for information that supports or contradicts it.
+- The Claim may be a short fragment with pronouns or references that depend on surrounding prose (e.g. "the Premier League" or "She won the award"). When an Article, Section, or Context block is provided, use it only to resolve who or what the Claim refers to — then verify only the Claim itself against the source, never the surrounding context.
 - Accept paraphrasing and straightforward implications, but not speculative inferences or logical leaps.
 - Distinguish between definitive statements and uncertain/hedged language. Claims stated as facts require sources that make definitive statements, not speculation or tentative assertions.
 - Names from languages using non-Latin scripts (Arabic, Chinese, Japanese, Korean, Russian, Hindi, etc.) may have multiple valid romanizations/transliterations. For example, "Yasmin" and "Yazmeen," or "Chekhov" and "Tchekhov," are variant spellings of the same name. Do not treat transliteration differences as factual errors.
@@ -114,12 +115,37 @@ Source text: "Professor Martin completed her PhD at Oxford in 1998 and joined th
 }
 
 /**
+ * Formats the optional disambiguation-context block that precedes the Claim.
+ * Emits only the fields that are present, and returns '' (byte-identical to the
+ * pre-context prompt) when no usable context is supplied.
+ * @param {{articleTitle?: string, sectionTitle?: string, paragraph?: string}} [context]
+ * @returns {string} The context block, trailing blank line included, or ''
+ */
+function formatContextBlock(context) {
+    if (!context) return '';
+    const { articleTitle, sectionTitle, paragraph } = context;
+    const lines = [];
+    if (articleTitle) lines.push(`Article: ${articleTitle}`);
+    if (sectionTitle) lines.push(`Section: ${sectionTitle}`);
+    if (paragraph) {
+        lines.push('Context (for disambiguation only — verify only the Claim below, not this context):');
+        lines.push(`"${paragraph}"`);
+    }
+    if (lines.length === 0) return '';
+    return lines.join('\n') + '\n\n';
+}
+
+/**
  * Parses source info and generates the user message
  * @param {string} claim - The claim to verify
  * @param {string} sourceInfo - The source information
+ * @param {{articleTitle?: string, sectionTitle?: string, paragraph?: string}} [context]
+ *   Optional surrounding context (article title, section heading, paragraph)
+ *   used by the model to resolve pronouns and abbreviated references in the
+ *   Claim. Omitting it reproduces the original prompt exactly.
  * @returns {string} The user message content
  */
-function generateUserPrompt(claim, sourceInfo) {
+function generateUserPrompt(claim, sourceInfo, context) {
     let sourceText;
 
     if (sourceInfo.startsWith('Manual source text:')) {
@@ -133,7 +159,7 @@ function generateUserPrompt(claim, sourceInfo) {
 
     console.log('[Verifier] Source text (first 2000 chars):', sourceText.substring(0, 2000));
 
-    return `Claim: "${claim}"
+    return `${formatContextBlock(context)}Claim: "${claim}"
 
 Source text:
 ${sourceText}`;
@@ -461,6 +487,22 @@ function isGoogleBooksUrl(url) {
 
 const MAINTENANCE_MARKER_RE = /\[(failed verification|verification needed|citation needed|better source[^\]]*|dubious[^\]]*|unreliable source[^\]]*|clarification needed|disputed[^\]]*|page needed|when\??|where\??|who\??|why\??|by whom\??|according to whom\??|original research[^\]]*|specify[^\]]*|vague|opinion|fact)\]/gi;
 
+// Normalizes a raw DOM text run into clean prose: strips reference numbers and
+// maintenance markers, collapses whitespace. Whitespace must be normalized
+// BEFORE the marker strip (Wikipedia's {{failed verification}} et al. use
+// white-space:nowrap and emit U+00A0 between the words, which the literal-space
+// alternatives in MAINTENANCE_MARKER_RE would otherwise fail to match) AND
+// AFTER (removing a marker that had a leading/trailing space leaves a double
+// space behind).
+function cleanProse(text) {
+    return text
+        .replace(/\[\d+\]/g, '')            // Remove reference numbers like [1], [2]
+        .replace(/\s+/g, ' ')               // Normalize whitespace (incl. NBSP) so the marker regex matches
+        .replace(MAINTENANCE_MARKER_RE, '') // Remove maintenance markers like [failed verification]
+        .replace(/\s+/g, ' ')               // Collapse the gap left by the marker strip
+        .trim();
+}
+
 // True iff the DOM range strictly between two .reference wrapper elements (in
 // document order: refA before refB) contains no non-whitespace text. This is
 // the rule that defines whether two adjacent citations attach to the same
@@ -550,33 +592,92 @@ function extractClaimText(refElement) {
     }
     extractionRange.setEndBefore(currentRef);
 
-    // Get the text content
-    let claimText = extractionRange.toString();
-
-    // Clean up the text. Whitespace must be normalized BEFORE the marker
-    // strip (Wikipedia's {{failed verification}} et al. use white-space:nowrap
-    // and emit U+00A0 between the words, which the literal-space alternatives
-    // in MAINTENANCE_MARKER_RE would otherwise fail to match) AND AFTER the
-    // strip (removing a marker that had a leading/trailing space leaves a
-    // double space behind).
-    claimText = claimText
-        .replace(/\[\d+\]/g, '')                 // Remove reference numbers like [1], [2]
-        .replace(/\s+/g, ' ')                    // Normalize whitespace (incl. NBSP) so the marker regex matches
-        .replace(MAINTENANCE_MARKER_RE, '')      // Remove maintenance markers like [failed verification]
-        .replace(/\s+/g, ' ')                    // Collapse the gap left by the marker strip
-        .trim();
+    // Get the text content and clean it up.
+    let claimText = cleanProse(extractionRange.toString());
 
     // If we got nothing meaningful, fall back to the container text
     if (!claimText || claimText.length < 10) {
-        claimText = container.textContent
-            .replace(/\[\d+\]/g, '')
-            .replace(/\s+/g, ' ')
-            .replace(MAINTENANCE_MARKER_RE, '')
-            .replace(/\s+/g, ' ')
-            .trim();
+        claimText = cleanProse(container.textContent);
     }
 
     return claimText;
+}
+
+// Text of a Wikipedia section heading, minus the [edit] section-edit
+// affordance. Handles both the legacy shape (`<h2><span class="mw-headline">…
+// </span><span class="mw-editsection">[edit]</span></h2>`) and the modern
+// `.mw-heading` wrapper shape (edit link is a sibling of the bare <h2>).
+function headingText(h) {
+    const headline = h.querySelector('.mw-headline');
+    let text;
+    if (headline) {
+        text = headline.textContent;
+    } else {
+        const clone = h.cloneNode(true);
+        clone.querySelectorAll('.mw-editsection').forEach(n => n.remove());
+        text = clone.textContent;
+    }
+    return text.replace(/\[edit\]/gi, '').replace(/\s+/g, ' ').trim();
+}
+
+// True iff `a` precedes `b` in document order. 4 === DOCUMENT_POSITION_FOLLOWING
+// (b follows a), spelled numerically to avoid depending on a `Node` global that
+// isn't present under the JSDOM/Node path the benchmark and CLI use.
+function precedesInDocument(a, b) {
+    return (a.compareDocumentPosition(b) & 4) !== 0;
+}
+
+// Returns a breadcrumb of the section heading(s) the claim sits under, e.g.
+// "Club career › Wolverhampton Wanderers", or '' if the claim is above the
+// first heading. Walks the headings preceding the claim's container and keeps
+// each step up to a strictly higher-level heading (lower numeric level) to
+// reconstruct the H2 › H3 › … ancestry.
+function extractSectionTitle(refElement) {
+    const document = refElement.ownerDocument;
+    const container = refElement.closest('p, li, td, div, section') || refElement;
+    const root = refElement.closest('#mw-content-text')
+        || (document && document.body)
+        || (document && document.documentElement);
+    if (!root) return '';
+
+    const headings = Array.from(root.querySelectorAll('h1, h2, h3, h4, h5, h6'));
+
+    // Nearest heading (in document order) that precedes the claim's container.
+    let nearestIdx = -1;
+    for (let i = 0; i < headings.length; i++) {
+        if (precedesInDocument(headings[i], container)) {
+            nearestIdx = i;
+        } else {
+            break;
+        }
+    }
+    if (nearestIdx === -1) return '';
+
+    const crumbs = [];
+    let level = Infinity;
+    for (let i = nearestIdx; i >= 0; i--) {
+        const h = headings[i];
+        const hLevel = parseInt(h.tagName.charAt(1), 10);
+        if (hLevel < level) {
+            const text = headingText(h);
+            if (text) crumbs.unshift(text);
+            level = hLevel;
+            if (hLevel <= 2) break; // reached the top-level section
+        }
+    }
+    return crumbs.join(' › ');
+}
+
+// Gathers disambiguation context around a claim for the LLM prompt: the full
+// surrounding paragraph and the section-heading breadcrumb. The article title
+// is environment-specific (mw.config in the browser, URL in the CLI/benchmark)
+// so callers supply it; this stays pure DOM-in, strings-out.
+function extractClaimContext(refElement) {
+    const container = refElement.closest('p, li, td, div, section');
+    return {
+        paragraph: container ? cleanProse(container.textContent) : '',
+        sectionTitle: extractSectionTitle(refElement),
+    };
 }
 
 // --- core/providers.js ---
@@ -936,9 +1037,6 @@ async function fetchSourceContent(url, pageNum, { workerBase = 'https://publicai
 }
 
 function logVerification(payload, { workerBase = 'https://publicai-proxy.alaexis.workers.dev' } = {}) {
-    // Wrap the fetch POST in try/catch exactly as main.js does.
-    // `payload` replaces the constructed object in main.js — caller supplies
-    //   { article_url, article_title, citation_number, source_url, provider, verdict, confidence }.
     try {
         fetch(`${workerBase}/log`, {
             method: 'POST',
@@ -2550,6 +2648,10 @@ function buildDatasetSubmissionUrl(
                 refElement.parentElement.classList.add('verifier-active');
                 
                 this.activeClaim = claim;
+                // Surrounding context (paragraph + section) plus the article
+                // title, so the model can resolve pronouns and short references
+                // in the claim fragment (e.g. "the Premier League").
+                this.activeContext = { articleTitle: this.getArticleTitle(), ...extractClaimContext(refElement) };
                 this.activeCitationNumber = refElement.textContent.replace(/[\[\]]/g, '').trim() || null;
                 this.activeRefElement = refElement;
 
@@ -2977,14 +3079,20 @@ function buildDatasetSubmissionUrl(
             return generateSystemPrompt();
         }
         
-        generateUserPrompt(claim, sourceInfo) {
-            return generateUserPrompt(claim, sourceInfo);
+        generateUserPrompt(claim, sourceInfo, context) {
+            return generateUserPrompt(claim, sourceInfo, context);
+        }
+
+        // Article title for prompt context and logging. mw.config in the
+        // browser; document.title in headless environments (tests/CLI shim).
+        getArticleTitle() {
+            return typeof mw !== 'undefined' ? mw.config.get('wgTitle') : document.title;
         }
 
         logVerification(verdict, confidence) {
             logVerification({
                 article_url: window.location.href,
-                article_title: typeof mw !== 'undefined' ? mw.config.get('wgTitle') : document.title,
+                article_title: this.getArticleTitle(),
                 citation_number: this.activeCitationNumber,
                 source_url: this.activeSourceUrl,
                 provider: this.currentProvider,
@@ -3010,7 +3118,7 @@ function buildDatasetSubmissionUrl(
                 this.buttons.verify.setIcon('clock');
                 this.updateStatus('Verifying claim against source...');
 
-                const apiResult = await this.callProviderAPI(this.activeClaim, this.activeSource);
+                const apiResult = await this.callProviderAPI(this.activeClaim, this.activeSource, this.activeContext);
                 const result = apiResult.text;
 
                 if (verifyId !== this.currentVerifyId) {
@@ -3121,8 +3229,9 @@ function buildDatasetSubmissionUrl(
 
                 const url = this.extractReferenceUrl(refElement);
                 const pageNum = this.extractPageNumber(refElement);
+                const context = { articleTitle: this.getArticleTitle(), ...extractClaimContext(refElement) };
 
-                citations.push({ refElement, citationNumber, claimText, url, pageNum, refId });
+                citations.push({ refElement, citationNumber, claimText, url, pageNum, refId, context });
             });
 
             // Attach group metadata: every citation in a contiguous run of refs
@@ -3706,8 +3815,8 @@ function buildDatasetSubmissionUrl(
             }
         }
 
-        async callProviderAPI(claim, sourceInfo) {
-            return callProviderAPI(this.currentProvider, { apiKey: this.getCurrentApiKey(), model: this.providers[this.currentProvider].model, systemPrompt: generateSystemPrompt(), userContent: generateUserPrompt(claim, sourceInfo) });
+        async callProviderAPI(claim, sourceInfo, context) {
+            return callProviderAPI(this.currentProvider, { apiKey: this.getCurrentApiKey(), model: this.providers[this.currentProvider].model, systemPrompt: generateSystemPrompt(), userContent: generateUserPrompt(claim, sourceInfo, context) });
         }
 
         async verifyAllCitations() {
@@ -3823,7 +3932,7 @@ function buildDatasetSubmissionUrl(
                         this.updateReportProgress(i, citations.length, `Verifying citation [${citation.citationNumber}]`, startTime);
                         try {
                             const apiResult = await withRetry(
-                                () => this.callProviderAPI(citation.claimText, sourceContent),
+                                () => this.callProviderAPI(citation.claimText, sourceContent, citation.context),
                                 {
                                     maxRetries: 4,
                                     minBackoffMs: 5000,

@@ -5,7 +5,7 @@
 
 import { parseArgs } from 'node:util';
 import { JSDOM } from 'jsdom';
-import { extractClaimText } from '../core/claim.js';
+import { extractClaimText, extractClaimContext } from '../core/claim.js';
 import { extractReferenceUrl, extractPageNumber } from '../core/urls.js';
 import { fetchSourceContent, logVerification } from '../core/worker.js';
 import { generateSystemPrompt, generateUserPrompt } from '../core/prompts.js';
@@ -328,7 +328,11 @@ export async function runVerify(opts, { stdout = process.stdout, stderr = proces
     //    providerConfig are ignored by the destructure so it's safe to
     //    include apiKey for publicai (which won't read it).
     const systemPrompt = generateSystemPrompt();
-    const userContent = generateUserPrompt(claim, fetchResult.content);
+    // Disambiguation context: surrounding paragraph + section heading (from the
+    // parsed article) plus the article title (from the URL), so the model can
+    // resolve pronouns / short references in the claim fragment.
+    const context = { articleTitle: parsedWikiUrl.title.replace(/_/g, ' '), ...extractClaimContext(refSup) };
+    const userContent = generateUserPrompt(claim, fetchResult.content, context);
     const optionalEnvVar = PROVIDER_OPTIONAL_ENV_VARS[provider];
     const providerConfig = {
         model: PROVIDER_MODELS[provider],

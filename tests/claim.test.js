@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
-import { extractClaimText, getCitationGroup, MAINTENANCE_MARKER_RE } from '../core/claim.js';
+import { extractClaimText, getCitationGroup, extractSectionTitle, extractClaimContext, cleanProse, MAINTENANCE_MARKER_RE } from '../core/claim.js';
 
 function mkDoc(html) {
   return new JSDOM(`<!DOCTYPE html><body>${html}</body>`).window.document;
@@ -161,4 +161,47 @@ test('getCitationGroup handles mixed groups and singletons in the same paragraph
   assert.deepEqual(refIds(getCitationGroup(doc.getElementById('cite_ref-3'))), ['cite_ref-3']);
   assert.deepEqual(refIds(getCitationGroup(doc.getElementById('cite_ref-4'))), ['cite_ref-4', 'cite_ref-5']);
   assert.deepEqual(refIds(getCitationGroup(doc.getElementById('cite_ref-5'))), ['cite_ref-4', 'cite_ref-5']);
+});
+
+test('cleanProse strips reference numbers and maintenance markers', () => {
+  assert.equal(
+    cleanProse('The sky is blue[1][failed verification] on clear days.'),
+    'The sky is blue on clear days.'
+  );
+});
+
+test('extractClaimContext returns the surrounding paragraph and section', () => {
+  // The Jiménez case: the [2] fragment ("and the Premier League") is
+  // uninterpretable alone; the paragraph supplies the subject.
+  const doc = mkDoc(`
+    <div id="mw-content-text">
+      <div class="mw-heading mw-heading2"><h2 id="Club_career">Club career</h2><span class="mw-editsection">[edit]</span></div>
+      <div class="mw-heading mw-heading3"><h3 id="Wolves">Wolverhampton Wanderers</h3><span class="mw-editsection">[edit]</span></div>
+      <p>Jiménez won both Serie A<sup id="cite_ref-1" class="reference"><a href="#cite_note-1">[1]</a></sup> and the Premier League<sup id="cite_ref-2" class="reference"><a href="#cite_note-2">[2]</a></sup>.</p>
+    </div>
+  `);
+  const ctx = extractClaimContext(doc.getElementById('cite_ref-2'));
+  assert.equal(ctx.sectionTitle, 'Club career › Wolverhampton Wanderers');
+  assert.ok(ctx.paragraph.includes('Jiménez won both Serie A and the Premier League'));
+  // The claim fragment itself stays the short between-citations text.
+  assert.equal(extractClaimText(doc.getElementById('cite_ref-2')), 'and the Premier League');
+});
+
+test('extractSectionTitle handles the legacy mw-headline heading shape', () => {
+  const doc = mkDoc(`
+    <div id="mw-content-text">
+      <h2><span class="mw-headline" id="Career">Career</span><span class="mw-editsection">[edit]</span></h2>
+      <p>She received the Nobel Prize in Chemistry in 2015.<sup id="cite_ref-1" class="reference"><a href="#cite_note-1">[1]</a></sup></p>
+    </div>
+  `);
+  assert.equal(extractSectionTitle(doc.getElementById('cite_ref-1')), 'Career');
+});
+
+test('extractSectionTitle returns empty string above the first heading', () => {
+  const doc = mkDoc(`
+    <div id="mw-content-text">
+      <p>Lead sentence before any section.<sup id="cite_ref-1" class="reference"><a href="#cite_note-1">[1]</a></sup></p>
+    </div>
+  `);
+  assert.equal(extractSectionTitle(doc.getElementById('cite_ref-1')), '');
 });

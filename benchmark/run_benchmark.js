@@ -587,7 +587,15 @@ async function main() {
     await Promise.all(
         [...tasksByHost.entries()].map(([host, hostTasks]) =>
             runPool(hostTasks, CONCURRENCY, async ({ entry, provider }) => {
-                const userPrompt = generateUserPrompt(entry.claim_text, entry.source_text);
+                // Disambiguation context from the dataset entry. section_title
+                // is populated by re-extraction; older datasets omit it and the
+                // context formatter simply skips absent fields.
+                const context = {
+                    articleTitle: entry.article_title,
+                    sectionTitle: entry.section_title,
+                    paragraph: entry.claim_container,
+                };
+                const userPrompt = generateUserPrompt(entry.claim_text, entry.source_text, context);
 
                 const result = await callProvider(provider, systemPrompt, userPrompt);
 

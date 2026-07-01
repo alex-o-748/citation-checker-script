@@ -22,3 +22,36 @@ test('generateUserPrompt embeds claim and source text', () => {
   assert.ok(out.includes(claim));
   assert.ok(out.includes(source));
 });
+
+test('generateUserPrompt without context is byte-identical to omitting it', () => {
+  const claim = 'the Premier League';
+  const source = 'THE SOURCE TEXT MARKER';
+  // undefined, null, and an all-empty context object must all reproduce the
+  // original prompt exactly so context is a zero-risk opt-in.
+  const base = generateUserPrompt(claim, source);
+  assert.equal(generateUserPrompt(claim, source, undefined), base);
+  assert.equal(generateUserPrompt(claim, source, null), base);
+  assert.equal(generateUserPrompt(claim, source, { articleTitle: '', sectionTitle: '', paragraph: '' }), base);
+});
+
+test('generateUserPrompt renders context block above the claim in order', () => {
+  const out = generateUserPrompt('the Premier League', 'SRC', {
+    articleTitle: 'Raúl Jiménez',
+    sectionTitle: 'Club career › Wolverhampton Wanderers',
+    paragraph: 'Jiménez won both Serie A and the Premier League.',
+  });
+  assert.ok(out.includes('Article: Raúl Jiménez'));
+  assert.ok(out.includes('Section: Club career › Wolverhampton Wanderers'));
+  assert.ok(out.includes('disambiguation only'));
+  assert.ok(out.includes('Jiménez won both Serie A and the Premier League.'));
+  // Context precedes the Claim, which precedes the Source text.
+  assert.ok(out.indexOf('Article:') < out.indexOf('Claim:'));
+  assert.ok(out.indexOf('Claim:') < out.indexOf('Source text:'));
+});
+
+test('generateUserPrompt emits only the context fields that are present', () => {
+  const out = generateUserPrompt('a claim', 'SRC', { paragraph: 'Surrounding sentence.' });
+  assert.ok(out.includes('Surrounding sentence.'));
+  assert.ok(!out.includes('Article:'));
+  assert.ok(!out.includes('Section:'));
+});

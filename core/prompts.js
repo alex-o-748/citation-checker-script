@@ -7,6 +7,7 @@ export function generateSystemPrompt() {
 Rules:
 - ONLY use the provided source text. Never use outside knowledge.
 - First identify what the claim asserts, then look for information that supports or contradicts it.
+- The Claim may be a short fragment with pronouns or references that depend on surrounding prose (e.g. "the Premier League" or "She won the award"). When an Article, Section, or Context block is provided, use it only to resolve who or what the Claim refers to — then verify only the Claim itself against the source, never the surrounding context.
 - Accept paraphrasing and straightforward implications, but not speculative inferences or logical leaps.
 - Distinguish between definitive statements and uncertain/hedged language. Claims stated as facts require sources that make definitive statements, not speculation or tentative assertions.
 - Names from languages using non-Latin scripts (Arabic, Chinese, Japanese, Korean, Russian, Hindi, etc.) may have multiple valid romanizations/transliterations. For example, "Yasmin" and "Yazmeen," or "Chekhov" and "Tchekhov," are variant spellings of the same name. Do not treat transliteration differences as factual errors.
@@ -105,12 +106,37 @@ Source text: "Professor Martin completed her PhD at Oxford in 1998 and joined th
 }
 
 /**
+ * Formats the optional disambiguation-context block that precedes the Claim.
+ * Emits only the fields that are present, and returns '' (byte-identical to the
+ * pre-context prompt) when no usable context is supplied.
+ * @param {{articleTitle?: string, sectionTitle?: string, paragraph?: string}} [context]
+ * @returns {string} The context block, trailing blank line included, or ''
+ */
+function formatContextBlock(context) {
+    if (!context) return '';
+    const { articleTitle, sectionTitle, paragraph } = context;
+    const lines = [];
+    if (articleTitle) lines.push(`Article: ${articleTitle}`);
+    if (sectionTitle) lines.push(`Section: ${sectionTitle}`);
+    if (paragraph) {
+        lines.push('Context (for disambiguation only — verify only the Claim below, not this context):');
+        lines.push(`"${paragraph}"`);
+    }
+    if (lines.length === 0) return '';
+    return lines.join('\n') + '\n\n';
+}
+
+/**
  * Parses source info and generates the user message
  * @param {string} claim - The claim to verify
  * @param {string} sourceInfo - The source information
+ * @param {{articleTitle?: string, sectionTitle?: string, paragraph?: string}} [context]
+ *   Optional surrounding context (article title, section heading, paragraph)
+ *   used by the model to resolve pronouns and abbreviated references in the
+ *   Claim. Omitting it reproduces the original prompt exactly.
  * @returns {string} The user message content
  */
-export function generateUserPrompt(claim, sourceInfo) {
+export function generateUserPrompt(claim, sourceInfo, context) {
     let sourceText;
 
     if (sourceInfo.startsWith('Manual source text:')) {
@@ -124,7 +150,7 @@ export function generateUserPrompt(claim, sourceInfo) {
 
     console.log('[Verifier] Source text (first 2000 chars):', sourceText.substring(0, 2000));
 
-    return `Claim: "${claim}"
+    return `${formatContextBlock(context)}Claim: "${claim}"
 
 Source text:
 ${sourceText}`;
