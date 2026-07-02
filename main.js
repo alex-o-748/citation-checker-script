@@ -936,9 +936,9 @@ async function fetchSourceContent(url, pageNum, { workerBase = 'https://publicai
 }
 
 function logVerification(payload, { workerBase = 'https://publicai-proxy.alaexis.workers.dev' } = {}) {
-    // Wrap the fetch POST in try/catch exactly as main.js does.
-    // `payload` replaces the constructed object in main.js — caller supplies
-    //   { article_url, article_title, citation_number, source_url, provider, verdict, confidence }.
+    // Caller supplies the payload object:
+    //   { article_url, article_title, citation_number, source_url, provider,
+    //     verdict, confidence, reason_type }.
     try {
         fetch(`${workerBase}/log`, {
             method: 'POST',
@@ -2981,7 +2981,7 @@ function buildDatasetSubmissionUrl(
             return generateUserPrompt(claim, sourceInfo);
         }
 
-        logVerification(verdict, confidence) {
+        logVerification(verdict, confidence, reasonType) {
             logVerification({
                 article_url: window.location.href,
                 article_title: typeof mw !== 'undefined' ? mw.config.get('wgTitle') : document.title,
@@ -2990,6 +2990,7 @@ function buildDatasetSubmissionUrl(
                 provider: this.currentProvider,
                 verdict: verdict,
                 confidence: confidence,
+                reason_type: reasonType ?? null,
             });
         }
 
@@ -3025,7 +3026,7 @@ function buildDatasetSubmissionUrl(
                     const jsonMatch = result.match(/```(?:json)?\s*([\s\S]*?)\s*```/) ||
                                      [null, result.match(/\{[\s\S]*\}/)?.[0]];
                     const parsed = JSON.parse(jsonMatch[1]);
-                    this.logVerification(parsed.verdict, parsed.confidence);
+                    this.logVerification(parsed.verdict, parsed.confidence, parsed.reason_type);
                 } catch (e) {}
 
             } catch (error) {
@@ -3862,7 +3863,7 @@ function buildDatasetSubmissionUrl(
                                 const savedSourceUrl = this.activeSourceUrl;
                                 this.activeCitationNumber = citation.citationNumber;
                                 this.activeSourceUrl = citation.url;
-                                this.logVerification(parsed.verdict, parsed.confidence);
+                                this.logVerification(parsed.verdict, parsed.confidence, parsed.reason_type);
                                 this.activeCitationNumber = savedCitationNumber;
                                 this.activeSourceUrl = savedSourceUrl;
                             } catch (e) {}
