@@ -72,8 +72,10 @@ docs/                            # Reference docs + design plans (see docs/READM
 | `fetchSourceContent()` | Fetch source via CORS proxy |
 | `generateSystemPrompt()` / `generateUserPrompt()` | Build LLM prompts |
 | `verifyClaim()` | Single citation verification flow |
-| `callProviderAPI()` | Route to provider-specific API |
+| `callProviderAPI()` / `callProviderAPIGroup()` | Route to provider-specific API (single source / collective multi-source) |
 | `verifyAllCitations()` | Batch verify all article citations |
+| `verifyGroupCollective()` | Collective verdict for an adjacent-citation group (combines the group's sources into one LLM call; see `docs/design-plans/2026-06-23-collective-group-verification.md`) |
+| `getReportUnits()` | Merge per-source results + collective group verdicts into one entry per claim (drives summary pills + exports) |
 | `generateWikitextReport()` | Generate wiki markup for failed citations |
 
 ## Benchmark Suite

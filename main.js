@@ -1,4 +1,4 @@
-// {{Wikipedia:USync |repo=https://github.com/alex-o-748/citation-checker-script |ref=refs/heads/main|path=main.js}} 
+// {{Wikipedia:USync |repo=https://github.com/alex-o-748/citation-checker-script |ref=refs/heads/dev|path=main.js}} 
 //Inspired by User:Polygnotus/Scripts/AI_Source_Verification.js
 //Inspired by User:Phlsph7/SourceVerificationAIAssistant.js
 
@@ -113,6 +113,21 @@ Source text: "Professor Martin completed her PhD at Oxford in 1998 and joined th
 </example>`;
 }
 
+// Strips the "Source URL: ... Source Content:\n" / "Manual source text:\n"
+// framing that fetchSourceContent and the manual-paste path wrap around the
+// actual source body, returning just the body. Shared by the single-source
+// user prompt and the multi-source group assembler so both see identical text.
+function extractSourceText(sourceInfo) {
+    if (sourceInfo.startsWith('Manual source text:')) {
+        return sourceInfo.replace(/^Manual source text:\s*\n\s*/, '');
+    }
+    if (sourceInfo.includes('Source Content:')) {
+        const contentMatch = sourceInfo.match(/Source Content:\n([\s\S]*)/);
+        return contentMatch ? contentMatch[1] : sourceInfo;
+    }
+    return sourceInfo;
+}
+
 /**
  * Parses source info and generates the user message
  * @param {string} claim - The claim to verify
@@ -120,16 +135,7 @@ Source text: "Professor Martin completed her PhD at Oxford in 1998 and joined th
  * @returns {string} The user message content
  */
 function generateUserPrompt(claim, sourceInfo) {
-    let sourceText;
-
-    if (sourceInfo.startsWith('Manual source text:')) {
-        sourceText = sourceInfo.replace(/^Manual source text:\s*\n\s*/, '');
-    } else if (sourceInfo.includes('Source Content:')) {
-        const contentMatch = sourceInfo.match(/Source Content:\n([\s\S]*)/);
-        sourceText = contentMatch ? contentMatch[1] : sourceInfo;
-    } else {
-        sourceText = sourceInfo;
-    }
+    const sourceText = extractSourceText(sourceInfo);
 
     console.log('[Verifier] Source text (first 2000 chars):', sourceText.substring(0, 2000));
 
@@ -137,6 +143,114 @@ function generateUserPrompt(claim, sourceInfo) {
 
 Source text:
 ${sourceText}`;
+}
+
+// System prompt for the "adjacent citations" / collective-verification path:
+// one claim is cited by several adjacent sources, and we judge whether the
+// sources TOGETHER support it. Kept deliberately close to generateSystemPrompt
+// (same JSON schema, verdict vocabulary, confidence scale, reason_type rules)
+// so verdicts stay comparable; the differences are the "collective" framing and
+// the handling of partially-unavailable source sets. This is a NEW prompt — the
+// single-source benchmark, which uses generateSystemPrompt, is unaffected.
+function generateGroupSystemPrompt() {
+    return `You are a fact-checking assistant for Wikipedia. A single claim is cited by MULTIPLE sources, provided below and each labeled with its citation number(s). Analyze whether the claim is supported by the sources taken TOGETHER.
+
+Rules:
+- ONLY use the provided source texts. Never use outside knowledge.
+- First identify what the claim asserts, then look across ALL the sources for information that supports or contradicts each part.
+- The claim is SUPPORTED if the sources COLLECTIVELY support it. No single source needs to support the whole claim on its own — one source may support one part and a different source another part.
+- Return PARTIALLY SUPPORTED if the sources together back only some of the claim, and NOT SUPPORTED if the sources together contradict it or address none of it.
+- Accept paraphrasing and straightforward implications, but not speculative inferences or logical leaps.
+- Distinguish between definitive statements and uncertain/hedged language. Claims stated as facts require sources that make definitive statements, not speculation or tentative assertions.
+- Names from languages using non-Latin scripts (Arabic, Chinese, Japanese, Korean, Russian, Hindi, etc.) may have multiple valid romanizations/transliterations. For example, "Yasmin" and "Yazmeen," or "Chekhov" and "Tchekhov," are variant spellings of the same name. Do not treat transliteration differences as factual errors.
+
+Source text evaluation:
+Some of the provided sources may be unusable — a paywall, login page, library catalog/metadata page (e.g. WorldCat, Google Books, JSTOR preview), cookie/JavaScript notice, 404/redirect, or an explicit "[This source could not be retrieved: ...]" note. Ignore unusable sources and judge the claim against the sources that DO contain usable article/book content.
+Only return verdict SOURCE UNAVAILABLE with confidence 0 if NONE of the provided sources contain usable content.
+
+Respond in JSON format:
+{
+  "confidence": <number 0-100>,
+  "verdict": "<verdict>",
+  "reason_type": "<only for NOT SUPPORTED: 'contradiction' or 'omission'>",
+  "comments": "<note which source(s) support or contradict which part of the claim>"
+}
+
+For NOT SUPPORTED verdicts, include a "reason_type" field: use "contradiction" when a source explicitly states something incompatible with the claim, or "omission" when the sources simply do not mention or address the claim. If both apply, use "contradiction". Do not include reason_type for other verdicts.
+
+Confidence guide:
+- 80-100: SUPPORTED
+- 50-79: PARTIALLY SUPPORTED
+- 1-49: NOT SUPPORTED
+- 0: SOURCE UNAVAILABLE
+
+<example>
+Claim: "The company was founded in 1985 by John Smith, who led it until 2001."
+Source [1] (https://example.com/a): "Acme Corp was established in 1985 in Ohio."
+Source [2] (https://example.com/b): "John Smith founded Acme Corp and served as its chief executive until 2001."
+
+{"confidence": 92, "verdict": "SUPPORTED", "comments": "Source [1] gives the 1985 founding year; source [2] confirms John Smith as founder and his tenure until 2001. Together they support the whole claim."}
+</example>
+
+<example>
+Claim: "The treaty was signed in Paris in 1990."
+Source [1] (https://example.com/a): [This source could not be retrieved: HTTP 403]
+Source [2] (https://example.com/b): "The accord was signed in the French capital in the spring of 1990."
+
+{"confidence": 88, "verdict": "SUPPORTED", "comments": "Source [1] was unavailable, but source [2] states the accord was signed in the French capital (Paris) in 1990, which supports the claim."}
+</example>
+
+<example>
+Claim: "The bridge, built in 1998, cost $200 million."
+Source [1] (https://example.com/a): "The bridge opened to traffic in 1998 after four years of construction."
+Source [2] (https://example.com/b): "Funding for the project came from a mix of state and federal grants."
+
+{"confidence": 55, "verdict": "PARTIALLY SUPPORTED", "comments": "Source [1] supports the 1998 date. Neither source states the $200 million cost, so that part is unverified."}
+</example>`;
+}
+
+/**
+ * Builds the user message for the collective (multi-source) verification path.
+ * @param {string} claim - The claim cited by the group.
+ * @param {string} assembledText - Labeled source blocks from assembleGroupSources().
+ * @returns {string} The user message content.
+ */
+function generateGroupUserPrompt(claim, assembledText) {
+    return `Claim: "${claim}"
+
+The following sources are all cited for this claim. Evaluate whether they support it together.
+
+${assembledText}`;
+}
+
+/**
+ * Assembles the per-source fetch results of an adjacent-citation group into a
+ * single labeled blob for the collective prompt. Unavailable sources are kept
+ * (labeled) rather than dropped, so the model can reason about partial coverage.
+ *
+ * @param {Array<{citationNumbers: string[], url?: string, content?: string|null,
+ *   error?: string|null, status?: number|null}>} entries - one per distinct
+ *   source (callers should dedupe sources shared by named refs, merging their
+ *   citation numbers into citationNumbers).
+ * @returns {{text: string, anyAvailable: boolean}} Combined text and whether at
+ *   least one source contributed usable content.
+ */
+function assembleGroupSources(entries) {
+    const blocks = [];
+    let anyAvailable = false;
+    for (const e of entries) {
+        const nums = (e.citationNumbers || []).map(n => `[${n}]`).join('');
+        const label = `Source ${nums}${e.url ? ` (${e.url})` : ''}:`;
+        const text = e.content ? extractSourceText(e.content).trim() : '';
+        if (text) {
+            anyAvailable = true;
+            blocks.push(`${label}\n${text}`);
+        } else {
+            const reason = e.status != null ? `HTTP ${e.status}` : (e.error || 'could not be retrieved');
+            blocks.push(`${label}\n[This source could not be retrieved: ${reason}]`);
+        }
+    }
+    return { text: blocks.join('\n\n'), anyAvailable };
 }
 
 // --- core/verdicts.js ---
@@ -936,9 +1050,6 @@ async function fetchSourceContent(url, pageNum, { workerBase = 'https://publicai
 }
 
 function logVerification(payload, { workerBase = 'https://publicai-proxy.alaexis.workers.dev' } = {}) {
-    // Caller supplies the payload object:
-    //   { article_url, article_title, citation_number, source_url, provider,
-    //     verdict, confidence, reason_type }.
     try {
         fetch(`${workerBase}/log`, {
             method: 'POST',
@@ -1089,6 +1200,7 @@ function buildDatasetSubmissionUrl(
             this.reportCancelled = false;
             this.reportRunning = false;
             this.reportResults = [];
+            this.reportGroupResults = new Map();
             this.sourceCache = new Map();
             this.reportTokenUsage = { input: 0, output: 0 };
             this.hasReport = false;
@@ -1706,6 +1818,36 @@ function buildDatasetSubmissionUrl(
                     line-height: 1.4;
                     margin-bottom: 4px;
                 }
+                .verifier-report-group-collective {
+                    background: #fff;
+                    border: 1px solid #e0e4ea;
+                    border-radius: 3px;
+                    padding: 5px 8px;
+                    margin-bottom: 6px;
+                }
+                .verifier-report-group-collective-header {
+                    display: flex;
+                    align-items: center;
+                    gap: 6px;
+                    margin-bottom: 2px;
+                }
+                .verifier-report-group-collective-label {
+                    font-weight: bold;
+                    font-size: 11px;
+                    color: #333;
+                }
+                .verifier-report-group-collective-pending {
+                    font-size: 11px;
+                    color: #888;
+                    font-style: italic;
+                }
+                .verifier-report-group-rows-label {
+                    font-size: 10px;
+                    text-transform: uppercase;
+                    letter-spacing: 0.04em;
+                    color: #888;
+                    margin-bottom: 3px;
+                }
                 .verifier-report-group-edit {
                     margin-top: 2px;
                 }
@@ -1754,12 +1896,14 @@ function buildDatasetSubmissionUrl(
                     background: #232336 !important;
                     border-color: #3a3a4e !important;
                 }
-                html.skin-theme-clientpref-night .verifier-report-group-row {
+                html.skin-theme-clientpref-night .verifier-report-group-row,
+                html.skin-theme-clientpref-night .verifier-report-group-collective {
                     background: #1a1a2e !important;
                     border-color: #3a3a4e !important;
                     color: #e0e0e0 !important;
                 }
-                html.skin-theme-clientpref-night .verifier-report-group-claim {
+                html.skin-theme-clientpref-night .verifier-report-group-claim,
+                html.skin-theme-clientpref-night .verifier-report-group-collective-label {
                     color: #d0d0d8 !important;
                 }
                 html.skin-theme-clientpref-night #verifier-claim-group-indicator {
@@ -3265,19 +3409,17 @@ function buildDatasetSubmissionUrl(
                 resultsEl.classList.toggle(`filter-hide-${cls}`, !!this.reportFilters[cls]);
             }
 
-            // Group blocks are visible iff at least one of their rows has a
-            // verdict whose chip is currently enabled. Inside a visible
-            // group, every row stays visible regardless of its verdict — the
-            // user needs to see how each source contributed to decide
-            // whether collective coverage is adequate.
+            // Group blocks are filtered by their COLLECTIVE verdict (the one
+            // shown in the filter pills), not by the individual per-source
+            // rows. Inside a visible group every row stays visible regardless
+            // of its verdict — the rows are debug detail. A group whose
+            // collective check hasn't finished yet (no data-collective-verdict)
+            // stays visible.
             const groups = resultsEl.querySelectorAll('.verifier-report-group');
             groups.forEach(groupEl => {
-                const rows = groupEl.querySelectorAll('.verifier-report-group-row');
-                const hasVisibleRow = Array.from(rows).some(row => {
-                    const verdictClass = classes.find(cls => row.classList.contains(`verdict-${cls}`));
-                    return verdictClass && !this.reportFilters[verdictClass];
-                });
-                groupEl.style.display = hasVisibleRow ? '' : 'none';
+                const collectiveVerdict = groupEl.dataset.collectiveVerdict;
+                const hidden = collectiveVerdict ? !!this.reportFilters[collectiveVerdict] : false;
+                groupEl.style.display = hidden ? 'none' : '';
             });
 
             // Show an empty-state hint when every rendered solo card and
@@ -3306,17 +3448,22 @@ function buildDatasetSubmissionUrl(
             const summaryEl = document.getElementById('verifier-report-summary');
             if (!summaryEl) return;
 
+            // Counts/pills are driven by the per-claim units: one verdict per
+            // adjacent group (its collective verdict) plus one per solo
+            // citation. The individual per-source rows shown inside group
+            // blocks are debug detail and don't feed the pills.
+            const units = this.getReportUnits();
             const counts = { supported: 0, partial: 0, 'not-supported': 0, unavailable: 0, error: 0 };
-            for (const r of this.reportResults) {
-                if (r.verdict === 'SUPPORTED') counts.supported++;
-                else if (r.verdict === 'PARTIALLY SUPPORTED') counts.partial++;
-                else if (r.verdict === 'NOT SUPPORTED') counts['not-supported']++;
-                else if (r.verdict === 'SOURCE UNAVAILABLE') counts.unavailable++;
+            for (const u of units) {
+                if (u.verdict === 'SUPPORTED') counts.supported++;
+                else if (u.verdict === 'PARTIALLY SUPPORTED') counts.partial++;
+                else if (u.verdict === 'NOT SUPPORTED') counts['not-supported']++;
+                else if (u.verdict === 'SOURCE UNAVAILABLE') counts.unavailable++;
                 else counts.error++;
             }
-            const total = this.reportResults.length;
+            const total = units.length;
 
-            const segHtml = (count, cls) => count > 0 ? `<div class="${cls}" style="width:${(count/total)*100}%"></div>` : '';
+            const segHtml = (count, cls) => (count > 0 && total > 0) ? `<div class="${cls}" style="width:${(count/total)*100}%"></div>` : '';
 
             const chip = (key, count, label, color) => {
                 const hidden = !!this.reportFilters[key];
@@ -3336,17 +3483,11 @@ function buildDatasetSubmissionUrl(
                 (this.reportFilters.unavailable ? counts.unavailable : 0) +
                 (this.reportFilters.error ? counts.error : 0);
 
-            // Count distinct claims (groups). Solo citations are 1-member
-            // groups, so total claims = number of distinct groupIds among
-            // the results so far.
-            const claimIds = new Set();
-            for (const r of this.reportResults) {
-                claimIds.add(r.groupId || r.refId || `__solo_${claimIds.size}`);
-            }
-            const claimCount = claimIds.size;
-            const claimsLabel = claimCount === total
-                ? `${total} citations checked`
-                : `${total} citations across ${claimCount} claim${claimCount === 1 ? '' : 's'}`;
+            // Each unit is one claim; a group unit covers groupSize citations.
+            const citationCount = units.reduce((n, u) => n + (u.groupSize || 1), 0);
+            const claimsLabel = citationCount === total
+                ? `${total} citation${total === 1 ? '' : 's'} checked`
+                : `${citationCount} citations across ${total} claim${total === 1 ? '' : 's'}`;
 
             summaryEl.innerHTML = `
                 <div class="verifier-summary-bar">
@@ -3484,8 +3625,12 @@ function buildDatasetSubmissionUrl(
                         <span class="verifier-report-group-badge">Group of ${firstResult.groupSize} · ${numbers}</span>
                     </div>
                     <div class="verifier-report-group-claim">${this.escapeHtml(claimExcerpt)}</div>
+                    <div class="verifier-report-group-collective">
+                        <div class="verifier-report-group-collective-pending">Checking combined sources…</div>
+                    </div>
                     <div class="verifier-report-group-edit"></div>
                 </div>
+                <div class="verifier-report-group-rows-label">Individual sources</div>
                 <div class="verifier-report-group-rows"></div>
             `;
             // One shared "Edit Section" button per group: every member is in
@@ -3503,6 +3648,55 @@ function buildDatasetSubmissionUrl(
                 groupEl.querySelector('.verifier-report-group-edit').appendChild(editBtn.$element[0]);
             }
             return groupEl;
+        }
+
+        // Fills the collective-verdict slot of an already-rendered group block
+        // and tags the block with data-collective-verdict so the filter logic
+        // can show/hide the whole group by its combined verdict.
+        renderGroupCollectiveResult(result) {
+            const resultsEl = document.getElementById('verifier-report-results');
+            if (!resultsEl) return;
+            const groupEl = resultsEl.querySelector(`.verifier-report-group[data-group-id="${CSS.escape(result.groupId)}"]`);
+            if (!groupEl) return;
+
+            const { cls: verdictClass, label: verdictLabel } = this.verdictClassFor(result.verdict);
+            groupEl.dataset.collectiveVerdict = verdictClass;
+
+            const slot = groupEl.querySelector('.verifier-report-group-collective');
+            if (!slot) return;
+
+            const reasonTypeHtml = (result.verdict === 'NOT SUPPORTED' && result.reason_type)
+                ? `<span class="reason-type-tag reason-type-${result.reason_type}">${result.reason_type === 'contradiction' ? 'Contradiction' : 'Omission'}</span>`
+                : '';
+            const truncationHtml = (result.truncated && result.verdict !== 'SUPPORTED')
+                ? '<div class="report-card-truncated">⚠ Combined sources are long, only partially checked.</div>'
+                : '';
+            slot.innerHTML = `
+                <div class="verifier-report-group-collective-header">
+                    <span class="verifier-report-group-collective-label">Combined verdict</span>
+                    <span class="report-card-verdict ${verdictClass}">${verdictLabel}</span>${reasonTypeHtml}
+                </div>
+                ${result.comments ? `<div class="report-card-comment">${this.escapeHtml(result.comments)}</div>` : ''}
+                ${truncationHtml}
+            `;
+
+            if (result.verdict && result.verdict !== 'ERROR' && this.isDatasetSubmissionConfigured()) {
+                const actionDiv = document.createElement('div');
+                actionDiv.className = 'report-card-action';
+                const submitBtn = this.buildSubmitToDatasetButton(result);
+                submitBtn.$element.addClass('report-card-feedback-action');
+                actionDiv.appendChild(submitBtn.$element[0]);
+                slot.appendChild(actionDiv);
+            }
+        }
+
+        hideGroupCollectiveSlot(groupId) {
+            const resultsEl = document.getElementById('verifier-report-results');
+            if (!resultsEl) return;
+            const groupEl = resultsEl.querySelector(`.verifier-report-group[data-group-id="${CSS.escape(groupId)}"]`);
+            if (!groupEl) return;
+            const slot = groupEl.querySelector('.verifier-report-group-collective');
+            if (slot) slot.style.display = 'none';
         }
 
         buildGroupRow(result) {
@@ -3594,7 +3788,23 @@ function buildDatasetSubmissionUrl(
                 ? `|-\n! # !! Verdict !! Source !! Comments !! class="unsortable" | Submit\n`
                 : `|-\n! # !! Verdict !! Source !! Comments\n`;
 
-            for (const r of this.reportResults) {
+            // Link a citation number to its footnote anchor on the analyzed
+            // revision, so clicks from the report jump to the original citation
+            // even after later edits have shifted numbering. HTML entities are
+            // used for the square brackets so they don't confuse MediaWiki's
+            // wikilink parser.
+            const linkNum = (num, refElement) => {
+                const refHref = refElement && refElement.getAttribute('href');
+                const refAnchor = refHref && refHref.startsWith('#') ? refHref.substring(1) : null;
+                return (revId && refAnchor)
+                    ? `[[Special:PermanentLink/${revId}#${refAnchor}|&#91;${num}&#93;]]`
+                    : `[${num}]`;
+            };
+
+            // One row per claim: solo citations, and adjacent groups collapsed
+            // to their single combined verdict (members linked, sources listed).
+            const reportUnits = this.getReportUnits();
+            for (const r of reportUnits) {
                 let verdictWiki;
                 switch (r.verdict) {
                     case 'SUPPORTED': verdictWiki = '{{tick}} Supported'; break;
@@ -3603,26 +3813,23 @@ function buildDatasetSubmissionUrl(
                     case 'SOURCE UNAVAILABLE': verdictWiki = '{{hmmm}} Source unavailable'; break;
                     default: verdictWiki = r.verdict; break;
                 }
-                const sourceStr = r.url ? `[${r.url} source]` : '—';
                 let commentsClean = (r.comments || '').replace(/\n/g, ' ');
                 if (r.truncated && r.verdict !== 'SUPPORTED') {
-                    commentsClean += (commentsClean ? ' ' : '') + "''(Source is long, only partially checked.)''";
+                    const note = r.isGroup
+                        ? "''(Combined sources are long, only partially checked.)''"
+                        : "''(Source is long, only partially checked.)''";
+                    commentsClean += (commentsClean ? ' ' : '') + note;
                 }
-                // Link the citation number to the footnote anchor on the analyzed revision,
-                // so clicks from the report jump to the original citation even after later edits
-                // have shifted citation numbering. HTML entities are used for the square brackets
-                // in the display text so they don't confuse MediaWiki's wikilink parser.
-                const refHref = r.refElement && r.refElement.getAttribute('href');
-                const refAnchor = refHref && refHref.startsWith('#') ? refHref.substring(1) : null;
-                let citationCell = (revId && refAnchor)
-                    ? `[[Special:PermanentLink/${revId}#${refAnchor}|&#91;${r.citationNumber}&#93;]]`
-                    : `[${r.citationNumber}]`;
-                // Flag grouped citations so editors reading the wikitext can
-                // see which rows belong to the same multi-source claim. Using
-                // a group token rather than rowspan keeps the table sortable.
-                if (r.groupSize && r.groupSize > 1 && r.groupCitationNumbers) {
-                    const groupToken = r.groupCitationNumbers.map(n => `[${n}]`).join('');
-                    citationCell += ` <small>(group ${groupToken})</small>`;
+                let citationCell;
+                let sourceStr;
+                if (r.isGroup) {
+                    citationCell = (r.members || []).map(m => linkNum(m.citationNumber, m.refElement)).join('')
+                        + ' <small>(combined)</small>';
+                    const links = (r.members || []).filter(m => m.url).map(m => `[${m.url} ${m.citationNumber}]`);
+                    sourceStr = links.length ? links.join(' ') : '—';
+                } else {
+                    citationCell = linkNum(r.citationNumber, r.refElement);
+                    sourceStr = r.url ? `[${r.url} source]` : '—';
                 }
                 if (submissionConfigured) {
                     const submitCell = (r.verdict && r.verdict !== 'ERROR')
@@ -3637,13 +3844,17 @@ function buildDatasetSubmissionUrl(
             wikitext += `|}\n\n`;
 
             const counts = { supported: 0, partial: 0, notSupported: 0, unavailable: 0 };
-            for (const r of this.reportResults) {
+            for (const r of reportUnits) {
                 if (r.verdict === 'SUPPORTED') counts.supported++;
                 else if (r.verdict === 'PARTIALLY SUPPORTED') counts.partial++;
                 else if (r.verdict === 'NOT SUPPORTED') counts.notSupported++;
                 else counts.unavailable++;
             }
-            wikitext += `'''Summary:''' ${counts.supported} supported, ${counts.partial} partially supported, ${counts.notSupported} not supported, ${counts.unavailable} source unavailable out of ${this.reportResults.length} citations.\n`;
+            const citationCount = reportUnits.reduce((n, u) => n + (u.groupSize || 1), 0);
+            const claimsPhrase = citationCount === reportUnits.length
+                ? `${reportUnits.length} citation${reportUnits.length === 1 ? '' : 's'}`
+                : `${reportUnits.length} claim${reportUnits.length === 1 ? '' : 's'} (${citationCount} citations)`;
+            wikitext += `'''Summary:''' ${counts.supported} supported, ${counts.partial} partially supported, ${counts.notSupported} not supported, ${counts.unavailable} source unavailable out of ${claimsPhrase}.\n`;
 
             const provider = this.providers[this.currentProvider];
             let modelDesc;
@@ -3674,12 +3885,22 @@ function buildDatasetSubmissionUrl(
             }
             text += `${'='.repeat(60)}\n\n`;
 
-            for (const r of this.reportResults) {
-                text += `[${r.citationNumber}] ${r.verdict}\n`;
-                text += `  Claim: ${r.claimText.substring(0, 100)}${r.claimText.length > 100 ? '...' : ''}\n`;
-                if (r.url) text += `  Source: ${r.url}\n`;
-                if (r.comments) text += `  Comments: ${r.comments}\n`;
-                if (r.truncated && r.verdict !== 'SUPPORTED') text += `  Note: Source is long, only partially checked.\n`;
+            for (const r of this.getReportUnits()) {
+                if (r.isGroup) {
+                    const token = (r.groupCitationNumbers || []).map(n => `[${n}]`).join('');
+                    text += `${token} (combined) ${r.verdict}\n`;
+                    text += `  Claim: ${r.claimText.substring(0, 100)}${r.claimText.length > 100 ? '...' : ''}\n`;
+                    const urls = (r.members || []).filter(m => m.url).map(m => `[${m.citationNumber}] ${m.url}`);
+                    if (urls.length) text += `  Sources: ${urls.join(' | ')}\n`;
+                    if (r.comments) text += `  Comments: ${r.comments}\n`;
+                    if (r.truncated && r.verdict !== 'SUPPORTED') text += `  Note: Combined sources are long, only partially checked.\n`;
+                } else {
+                    text += `[${r.citationNumber}] ${r.verdict}\n`;
+                    text += `  Claim: ${r.claimText.substring(0, 100)}${r.claimText.length > 100 ? '...' : ''}\n`;
+                    if (r.url) text += `  Source: ${r.url}\n`;
+                    if (r.comments) text += `  Comments: ${r.comments}\n`;
+                    if (r.truncated && r.verdict !== 'SUPPORTED') text += `  Note: Source is long, only partially checked.\n`;
+                }
                 text += `\n`;
             }
 
@@ -3711,6 +3932,152 @@ function buildDatasetSubmissionUrl(
             return callProviderAPI(this.currentProvider, { apiKey: this.getCurrentApiKey(), model: this.providers[this.currentProvider].model, systemPrompt: generateSystemPrompt(), userContent: generateUserPrompt(claim, sourceInfo) });
         }
 
+        // Collective (multi-source) variant of callProviderAPI: same provider
+        // routing, but the group system prompt and a pre-assembled multi-source
+        // user message. `assembledText` comes from assembleGroupSources().
+        async callProviderAPIGroup(claim, assembledText) {
+            return callProviderAPI(this.currentProvider, { apiKey: this.getCurrentApiKey(), model: this.providers[this.currentProvider].model, systemPrompt: generateGroupSystemPrompt(), userContent: generateGroupUserPrompt(claim, assembledText) });
+        }
+
+        // Runs the single collective verification for one adjacent-citation
+        // group and renders its verdict into the existing group block. Reads
+        // each member's already-fetched source from sourceCache, dedupes sources
+        // shared by named refs, and falls back to SOURCE UNAVAILABLE (no LLM
+        // call) when none of the grouped sources yielded usable content.
+        async verifyGroupCollective(triggerCitation, citations, startTime, delayBetweenCalls, progressCurrent, progressTotal) {
+            const groupId = triggerCitation.groupId;
+            const members = citations
+                .filter(c => c.groupId === groupId)
+                .sort((a, b) => (a.groupIndex ?? 0) - (b.groupIndex ?? 0));
+            if (members.length === 0) return;
+
+            const claimText = members[0].claimText;
+            const groupCitationNumbers = triggerCitation.groupCitationNumbers || members.map(m => m.citationNumber);
+
+            // Dedupe by cache key so a source cited twice in the group (named
+            // refs) is sent once, with both citation numbers on its label.
+            const byKey = new Map();
+            for (const m of members) {
+                const cacheKey = m.url
+                    ? (m.pageNum ? `${m.url}|page=${m.pageNum}` : m.url)
+                    : `__nourl_${m.citationNumber}`;
+                let entry = byKey.get(cacheKey);
+                if (!entry) {
+                    const fetchResult = m.url
+                        ? (this.sourceCache.get(cacheKey) || { content: null, error: null, status: null })
+                        : { content: null, error: 'No URL found in reference', status: null };
+                    entry = {
+                        citationNumbers: [],
+                        url: m.url || null,
+                        content: fetchResult.content,
+                        error: fetchResult.error,
+                        status: fetchResult.status,
+                    };
+                    byKey.set(cacheKey, entry);
+                }
+                entry.citationNumbers.push(m.citationNumber);
+            }
+            const entries = Array.from(byKey.values());
+            const truncated = entries.some(e => e.content && e.content.includes('\nTruncated: true'));
+            const { text: assembledText, anyAvailable } = assembleGroupSources(entries);
+
+            // When only one source is available the collective verdict would
+            // duplicate the individual per-source result, so skip it.
+            const availableCount = entries.filter(e => e.content && extractSourceText(e.content).trim()).length;
+            if (availableCount <= 1) {
+                this.reportGroupResults.set(groupId, { skipped: true, groupId });
+                this.hideGroupCollectiveSlot(groupId);
+                return;
+            }
+
+            const providerConfig = this.providers[this.currentProvider] || {};
+            const base = {
+                groupId,
+                isGroup: true,
+                groupSize: members.length,
+                groupCitationNumbers,
+                citationNumber: groupCitationNumbers.join(', '),
+                claimText,
+                refElement: members[0].refElement,
+                members: members.map(m => ({ citationNumber: m.citationNumber, url: m.url || null, refElement: m.refElement })),
+                memberUrls: entries.map(e => e.url).filter(Boolean),
+                url: (entries.find(e => e.url) || {}).url || null,
+                truncated,
+                providerName: providerConfig.name || this.currentProvider || '',
+                model: providerConfig.model || '',
+            };
+
+            let result;
+            if (!anyAvailable) {
+                result = { ...base, verdict: 'SOURCE UNAVAILABLE', confidence: 0, comments: 'None of the grouped sources could be retrieved.' };
+            } else {
+                try {
+                    const apiResult = await withRetry(
+                        () => this.callProviderAPIGroup(claimText, assembledText),
+                        {
+                            maxRetries: 4,
+                            minBackoffMs: 5000,
+                            maxBackoffMs: 30000,
+                            jitterMs: 0,
+                            shouldAbort: () => this.reportCancelled,
+                            onAttemptFailed: ({ backoff, willRetry }) => {
+                                if (willRetry) {
+                                    this.updateReportProgress(
+                                        progressCurrent, progressTotal,
+                                        `Rate limited, retrying in ${Math.round(backoff / 1000)}s...`,
+                                        startTime
+                                    );
+                                }
+                            },
+                        }
+                    );
+                    const parsed = this.parseVerificationResult(apiResult.text);
+                    this.reportTokenUsage.input += apiResult.usage.input;
+                    this.reportTokenUsage.output += apiResult.usage.output;
+                    result = { ...base, verdict: parsed.verdict, confidence: parsed.confidence, comments: parsed.comments, reason_type: parsed.reason_type };
+                } catch (e) {
+                    result = { ...base, verdict: 'ERROR', confidence: null, comments: e.message };
+                }
+            }
+
+            this.reportGroupResults.set(groupId, result);
+            this.renderGroupCollectiveResult(result);
+            this.renderReportSummary();
+            this.applyReportFilters();
+
+            // Rate-limit pause after the collective call, matching the per-source path.
+            if (!this.reportCancelled) {
+                await new Promise(r => setTimeout(r, delayBetweenCalls));
+            }
+        }
+
+        // Merges per-source results and collective group verdicts into one
+        // entry per claim (document order): solo citations pass through; an
+        // adjacent group collapses to its collective verdict. Groups whose
+        // collective check hasn't completed yet are omitted until it does.
+        // Used by the summary counts and the wikitext/plaintext exporters.
+        getReportUnits() {
+            const units = [];
+            const seenGroups = new Set();
+            for (const r of this.reportResults) {
+                if (r.groupSize && r.groupSize > 1) {
+                    if (seenGroups.has(r.groupId)) continue;
+                    seenGroups.add(r.groupId);
+                    const collective = this.reportGroupResults.get(r.groupId);
+                    if (collective && !collective.skipped) {
+                        units.push(collective);
+                    } else if (collective && collective.skipped) {
+                        for (const x of this.reportResults) {
+                            if (x.groupId === r.groupId) units.push(x);
+                        }
+                    }
+                } else {
+                    units.push(r);
+                }
+            }
+            return units;
+        }
+
         async verifyAllCitations() {
             const citations = this.collectAllCitations();
             if (citations.length === 0) {
@@ -3718,14 +4085,21 @@ function buildDatasetSubmissionUrl(
                 return;
             }
 
-            // Estimate time and show confirmation
+            // Estimate time and show confirmation. Adjacent citations that
+            // share a claim get one extra "collective" LLM call per group (in
+            // addition to the per-source calls), so account for those.
             const uniqueUrls = new Set(citations.filter(c => c.url).map(c => c.url));
-            const estimatedSeconds = citations.length * 7;
+            const multiGroupIds = new Set(citations.filter(c => c.groupSize > 1).map(c => c.groupId));
+            const multiGroupCount = multiGroupIds.size;
+            const estimatedSeconds = citations.length * 7 + multiGroupCount * 8;
             const estimatedMinutes = Math.ceil(estimatedSeconds / 60);
+            const groupNote = multiGroupCount > 0
+                ? `\n\nThis includes ${multiGroupCount} combined-source check${multiGroupCount === 1 ? '' : 's'} for adjacent citation groups.`
+                : '';
 
             const confirmed = await new Promise(resolve => {
                 OO.ui.confirm(
-                    `This will verify ${citations.length} citations from ${uniqueUrls.size} unique sources.\n\nEstimated time: ~${estimatedMinutes} minute${estimatedMinutes > 1 ? 's' : ''}.\n\nContinue?`
+                    `This will verify ${citations.length} citations from ${uniqueUrls.size} unique sources.${groupNote}\n\nEstimated time: ~${estimatedMinutes} minute${estimatedMinutes > 1 ? 's' : ''}.\n\nContinue?`
                 ).done(result => resolve(result));
             });
             if (!confirmed) return;
@@ -3735,6 +4109,10 @@ function buildDatasetSubmissionUrl(
             this.reportRunning = true;
             this.reportCancelled = false;
             this.reportResults = [];
+            // Collective (multi-source) verdicts for adjacent-citation groups,
+            // keyed by groupId. Kept separate from reportResults (which stays
+            // per-source for the debug rows); getReportUnits() merges them.
+            this.reportGroupResults = new Map();
             this.sourceCache = new Map();
             this.reportTokenUsage = { input: 0, output: 0 };
             this.hasReport = true;
@@ -3751,11 +4129,17 @@ function buildDatasetSubmissionUrl(
             const useProxy = this.currentProvider === 'publicai';
             const delayBetweenCalls = useProxy ? 3000 : 1000;
 
+            // Progress counts every LLM step: one per citation, plus one
+            // collective check per adjacent group. `completed` tracks finished
+            // steps so the bar/ETA stay sensible across both phases.
+            const progressTotal = citations.length + multiGroupCount;
+            let completed = 0;
+
             for (let i = 0; i < citations.length; i++) {
                 if (this.reportCancelled) break;
 
                 const citation = citations[i];
-                this.updateReportProgress(i, citations.length, `Checking citation [${citation.citationNumber}]`, startTime);
+                this.updateReportProgress(completed, progressTotal, `Checking citation [${citation.citationNumber}]`, startTime);
 
                 let result;
 
@@ -3778,7 +4162,7 @@ function buildDatasetSubmissionUrl(
                     const cacheKey = citation.pageNum ? `${citation.url}|page=${citation.pageNum}` : citation.url;
 
                     if (!this.sourceCache.has(cacheKey)) {
-                        this.updateReportProgress(i, citations.length, `Fetching source for [${citation.citationNumber}]`, startTime);
+                        this.updateReportProgress(completed, progressTotal, `Fetching source for [${citation.citationNumber}]`, startTime);
                         try {
                             const fetchResult = await this.fetchSourceContent(citation.url, citation.pageNum);
                             this.sourceCache.set(cacheKey, fetchResult);
@@ -3821,7 +4205,7 @@ function buildDatasetSubmissionUrl(
                         // would have recovered. The [5s, 10s, 20s] backoff curve
                         // is preserved via minBackoffMs/jitterMs, and Cancel
                         // still short-circuits via shouldAbort.
-                        this.updateReportProgress(i, citations.length, `Verifying citation [${citation.citationNumber}]`, startTime);
+                        this.updateReportProgress(completed, progressTotal, `Verifying citation [${citation.citationNumber}]`, startTime);
                         try {
                             const apiResult = await withRetry(
                                 () => this.callProviderAPI(citation.claimText, sourceContent),
@@ -3834,7 +4218,7 @@ function buildDatasetSubmissionUrl(
                                     onAttemptFailed: ({ backoff, willRetry }) => {
                                         if (willRetry) {
                                             this.updateReportProgress(
-                                                i, citations.length,
+                                                completed, progressTotal,
                                                 `Rate limited, retrying in ${Math.round(backoff / 1000)}s...`,
                                                 startTime
                                             );
@@ -3906,6 +4290,19 @@ function buildDatasetSubmissionUrl(
                     this.renderReportSummary();
                     this.applyReportFilters();
                 }
+
+                completed++;
+
+                // When this citation closes an adjacent-citation group, run the
+                // collective check: the whole group's sources are cached by now
+                // (group members are contiguous and processed in order), so we
+                // assemble them and ask for a single verdict over the combination.
+                if (citation.groupSize > 1 && citation.groupIndex === citation.groupSize - 1 && !this.reportCancelled) {
+                    const groupToken = (citation.groupCitationNumbers || []).map(n => `[${n}]`).join('');
+                    this.updateReportProgress(completed, progressTotal, `Checking combined sources ${groupToken}`, startTime);
+                    await this.verifyGroupCollective(citation, citations, startTime, delayBetweenCalls, completed, progressTotal);
+                    completed++;
+                }
             }
 
             // Finalize
@@ -3913,7 +4310,7 @@ function buildDatasetSubmissionUrl(
             const finalPhase = this.reportCancelled
                 ? `Cancelled after ${this.reportResults.length} of ${citations.length} citations`
                 : `Completed: ${this.reportResults.length} citations checked`;
-            this.updateReportProgress(this.reportResults.length, citations.length, finalPhase, startTime);
+            this.updateReportProgress(completed, progressTotal, finalPhase, startTime);
             this.renderReportSummary();
             this.renderReportActions();
             this.updateButtonVisibility();
