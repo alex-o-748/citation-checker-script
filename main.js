@@ -1902,6 +1902,9 @@ function buildDatasetSubmissionUrl(
                     border-color: #3a3a4e !important;
                     color: #e0e0e0 !important;
                 }
+                html.skin-theme-clientpref-night .verifier-report-group-row:hover {
+                    background: #232336 !important;
+                }
                 html.skin-theme-clientpref-night .verifier-report-group-claim,
                 html.skin-theme-clientpref-night .verifier-report-group-collective-label {
                     color: #d0d0d8 !important;
@@ -2389,6 +2392,26 @@ function buildDatasetSubmissionUrl(
                     html.skin-theme-clientpref-os #source-verifier-sidebar .oo-ui-optionWidget-selected {
                         background: ${this.getCurrentColor()} !important;
                         color: white !important;
+                    }
+                    html.skin-theme-clientpref-os .verifier-report-group {
+                        background: #232336 !important;
+                        border-color: #3a3a4e !important;
+                    }
+                    html.skin-theme-clientpref-os .verifier-report-group-row,
+                    html.skin-theme-clientpref-os .verifier-report-group-collective {
+                        background: #1a1a2e !important;
+                        border-color: #3a3a4e !important;
+                        color: #e0e0e0 !important;
+                    }
+                    html.skin-theme-clientpref-os .verifier-report-group-row:hover {
+                        background: #232336 !important;
+                    }
+                    html.skin-theme-clientpref-os .verifier-report-group-claim,
+                    html.skin-theme-clientpref-os .verifier-report-group-collective-label {
+                        color: #d0d0d8 !important;
+                    }
+                    html.skin-theme-clientpref-os #verifier-claim-group-indicator {
+                        color: #b0b0c0 !important;
                     }
                 }
             `;

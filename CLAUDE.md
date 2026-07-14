@@ -142,6 +142,17 @@ When you regenerate `dataset.json` after a CSV reorder, you must also walk `resu
 
 A stable-id refactor (content hash, or a CSV-supplied id column independent of line number) would eliminate the class of bug entirely.
 
+### Dark mode has TWO independent paths — style every new UI element in both (read before touching CSS)
+
+`createStyles()` in `main.js` supports dark mode through **two separate selector prefixes**, and a new element only looks right in dark mode if it gets overrides under *both*:
+
+1. **`html.skin-theme-clientpref-night`** — the user explicitly picked Wikipedia's night theme. These rules live inline (search `skin-theme-clientpref-night`).
+2. **`@media (prefers-color-scheme: dark) { html.skin-theme-clientpref-os ... }`** — the user picked "follow OS" and the OS is dark. These rules live inside the `@media` block near the end of `createStyles()`.
+
+The two blocks are hand-mirrored — there is no shared variable, so an override added to one is **not** inherited by the other. The recurring bug (e.g. grouped-citation blocks looking wrong in dark mode) is a new component that got light-mode CSS plus `-night` overrides but was never added to the `-os` `@media` block, so it stays light-on-light for every "follow OS" reader.
+
+**Whenever you add or restyle a component with a non-transparent `background`, `border-color`, `color`, or `:hover` background, add matching overrides in BOTH dark blocks.** Don't forget `:hover` backgrounds — a light hover color (e.g. `#f0f4ff`) flashes jarringly over a dark card. Provider-tinted values should use `${this.getCurrentColor()}` rather than a hardcoded hex so they track the selected provider color (see the re-create-on-provider-change note near the bottom of `createStyles()`).
+
 ## Common Tasks
 
 **Modifying the user script:** Edit `main.js` directly. Test by loading on Wikipedia via the browser console or user script page.
