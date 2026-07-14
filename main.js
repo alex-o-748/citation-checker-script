@@ -1,4 +1,4 @@
-// {{Wikipedia:USync |repo=https://github.com/alex-o-748/citation-checker-script |ref=refs/heads/main|path=main.js}} 
+// {{Wikipedia:USync |repo=https://github.com/alex-o-748/citation-checker-script |ref=refs/heads/dev|path=main.js}} 
 //Inspired by User:Polygnotus/Scripts/AI_Source_Verification.js
 //Inspired by User:Phlsph7/SourceVerificationAIAssistant.js  
 
@@ -1655,7 +1655,7 @@ function buildDatasetSubmissionUrl(
                     background: #eef2ff;
                     border-color: #99a;
                 }
-                .verifier-filter-chip.hidden {
+                .verifier-filter-chip.verifier-chip-off {
                     opacity: 0.5;
                     text-decoration: line-through;
                     background: #f0f0f0;
@@ -1902,6 +1902,9 @@ function buildDatasetSubmissionUrl(
                     border-color: #3a3a4e !important;
                     color: #e0e0e0 !important;
                 }
+                html.skin-theme-clientpref-night .verifier-report-group-row:hover {
+                    background: #232336 !important;
+                }
                 html.skin-theme-clientpref-night .verifier-report-group-claim,
                 html.skin-theme-clientpref-night .verifier-report-group-collective-label {
                     color: #d0d0d8 !important;
@@ -2046,7 +2049,7 @@ function buildDatasetSubmissionUrl(
                     background: #3a3a5e !important;
                     border-color: #5a5a7e !important;
                 }
-                html.skin-theme-clientpref-night .verifier-filter-chip.hidden {
+                html.skin-theme-clientpref-night .verifier-filter-chip.verifier-chip-off {
                     background: #1f1f2e !important;
                     color: #8a8a9e !important;
                 }
@@ -2272,7 +2275,7 @@ function buildDatasetSubmissionUrl(
                         background: #3a3a5e !important;
                         border-color: #5a5a7e !important;
                     }
-                    html.skin-theme-clientpref-os .verifier-filter-chip.hidden {
+                    html.skin-theme-clientpref-os .verifier-filter-chip.verifier-chip-off {
                         background: #1f1f2e !important;
                         color: #8a8a9e !important;
                     }
@@ -2389,6 +2392,26 @@ function buildDatasetSubmissionUrl(
                     html.skin-theme-clientpref-os #source-verifier-sidebar .oo-ui-optionWidget-selected {
                         background: ${this.getCurrentColor()} !important;
                         color: white !important;
+                    }
+                    html.skin-theme-clientpref-os .verifier-report-group {
+                        background: #232336 !important;
+                        border-color: #3a3a4e !important;
+                    }
+                    html.skin-theme-clientpref-os .verifier-report-group-row,
+                    html.skin-theme-clientpref-os .verifier-report-group-collective {
+                        background: #1a1a2e !important;
+                        border-color: #3a3a4e !important;
+                        color: #e0e0e0 !important;
+                    }
+                    html.skin-theme-clientpref-os .verifier-report-group-row:hover {
+                        background: #232336 !important;
+                    }
+                    html.skin-theme-clientpref-os .verifier-report-group-claim,
+                    html.skin-theme-clientpref-os .verifier-report-group-collective-label {
+                        color: #d0d0d8 !important;
+                    }
+                    html.skin-theme-clientpref-os #verifier-claim-group-indicator {
+                        color: #b0b0c0 !important;
                     }
                 }
             `;
@@ -3468,7 +3491,7 @@ function buildDatasetSubmissionUrl(
             const chip = (key, count, label, color) => {
                 const hidden = !!this.reportFilters[key];
                 return `<button type="button"
-                    class="verifier-filter-chip${hidden ? ' hidden' : ''}"
+                    class="verifier-filter-chip${hidden ? ' verifier-chip-off' : ''}"
                     data-filter="${key}"
                     title="${hidden ? 'Show' : 'Hide'} ${this.escapeHtml(label)} citations"
                     aria-pressed="${hidden ? 'false' : 'true'}">
