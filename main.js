@@ -1655,7 +1655,7 @@ function buildDatasetSubmissionUrl(
                     background: #eef2ff;
                     border-color: #99a;
                 }
-                .verifier-filter-chip.hidden {
+                .verifier-filter-chip.verifier-chip-off {
                     opacity: 0.5;
                     text-decoration: line-through;
                     background: #f0f0f0;
@@ -2046,7 +2046,7 @@ function buildDatasetSubmissionUrl(
                     background: #3a3a5e !important;
                     border-color: #5a5a7e !important;
                 }
-                html.skin-theme-clientpref-night .verifier-filter-chip.hidden {
+                html.skin-theme-clientpref-night .verifier-filter-chip.verifier-chip-off {
                     background: #1f1f2e !important;
                     color: #8a8a9e !important;
                 }
@@ -2272,7 +2272,7 @@ function buildDatasetSubmissionUrl(
                         background: #3a3a5e !important;
                         border-color: #5a5a7e !important;
                     }
-                    html.skin-theme-clientpref-os .verifier-filter-chip.hidden {
+                    html.skin-theme-clientpref-os .verifier-filter-chip.verifier-chip-off {
                         background: #1f1f2e !important;
                         color: #8a8a9e !important;
                     }
@@ -3468,7 +3468,7 @@ function buildDatasetSubmissionUrl(
             const chip = (key, count, label, color) => {
                 const hidden = !!this.reportFilters[key];
                 return `<button type="button"
-                    class="verifier-filter-chip${hidden ? ' hidden' : ''}"
+                    class="verifier-filter-chip${hidden ? ' verifier-chip-off' : ''}"
                     data-filter="${key}"
                     title="${hidden ? 'Show' : 'Hide'} ${this.escapeHtml(label)} citations"
                     aria-pressed="${hidden ? 'false' : 'true'}">
