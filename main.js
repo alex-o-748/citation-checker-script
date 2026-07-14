@@ -1130,8 +1130,227 @@ function buildDatasetSubmissionUrl(
 }
 // </core-injected>
 
+    // ========================================
+    // UI LOCALIZATION (i18n)
+    // ========================================
+    // The interface is English by default. When the script runs on a French
+    // wiki (wgContentLanguage === 'fr'), user-facing strings are shown in
+    // French. Only the on-screen UI, notifications, dialogs and report output
+    // are localized — the LLM prompts (in core/prompts.js) stay in English by
+    // design, since the few-shot examples are tuned against the benchmark.
+    //
+    // Strings are keyed by their English source text: `this.t('Verify Claim')`.
+    // FR_MESSAGES supplies the French override; a missing key falls back to the
+    // English key itself, so untranslated strings degrade gracefully. Use
+    // `{name}`-style placeholders for interpolation: t('Set {name} API Key', {name}).
+    function detectUiLang() {
+        try {
+            if (typeof mw !== 'undefined') {
+                const lang = mw.config.get('wgContentLanguage')
+                    || mw.config.get('wgUserLanguage') || 'en';
+                if (String(lang).toLowerCase().startsWith('fr')) return 'fr';
+            }
+        } catch (e) { /* non-MediaWiki context: keep English */ }
+        return 'en';
+    }
+
+    const FR_MESSAGES = {
+        // Sidebar structure
+        'Source Verifier': 'Vérificateur de sources',
+        'Selected Claim': 'Affirmation sélectionnée',
+        'Click on a reference number [1] next to a claim to verify it against its source.':
+            'Cliquez sur un numéro de référence [1] à côté d’une affirmation pour la vérifier par rapport à sa source.',
+        'Source Content': 'Contenu de la source',
+        'No source loaded yet.': 'Aucune source chargée pour le moment.',
+        'Verification Result': 'Résultat de la vérification',
+
+        // Buttons and inputs
+        'Close': 'Fermer',
+        'Set API Key': 'Définir la clé API',
+        'Verify Claim': 'Vérifier l’affirmation',
+        'Verifying...': 'Vérification…',
+        'Change Key': 'Modifier la clé',
+        'Remove API Key': 'Supprimer la clé API',
+        'Paste the source text here...': 'Collez le texte de la source ici…',
+        'Load Text': 'Charger le texte',
+        'Cancel': 'Annuler',
+        'Paste source text manually': 'Coller le texte de la source manuellement',
+        'Replace the fetched source content with text you paste in (e.g., the full article from The Wikipedia Library)':
+            'Remplacer le contenu récupéré de la source par un texte que vous collez (par ex. l’article complet de la Bibliothèque Wikipédia)',
+        'Verify All Citations': 'Vérifier toutes les citations',
+        'Stop': 'Arrêter',
+        'Back to Report': 'Retour au rapport',
+        'Save': 'Enregistrer',
+        'Give feedback': 'Donner un avis',
+        'Edit Section': 'Modifier la section',
+        'Copy Report (Wikitext)': 'Copier le rapport (wikicode)',
+        'Copy Report (Plain Text)': 'Copier le rapport (texte brut)',
+
+        // Provider info
+        '✓ Using your {name} API key': '✓ Utilisation de votre clé API {name}',
+        '✓ Free to use. Optional: ': '✓ Gratuit. Facultatif : ',
+        'add your {name} API key': 'ajouter votre clé API {name}',
+        '✓ Free to use': '✓ Gratuit',
+        'API key configured for {name}': 'Clé API configurée pour {name}',
+        'API key required for {name}': 'Clé API requise pour {name}',
+        'Results are logged for research. Your username is not recorded.':
+            'Les résultats sont enregistrés à des fins de recherche. Votre nom d’utilisateur n’est pas enregistré.',
+
+        // Verifier tab + first-run notification
+        'Verify': 'Vérifier',
+        'Verify claims against sources': 'Vérifier les affirmations par rapport aux sources',
+        'Citation Verifier': 'Vérificateur de citations',
+        'Citation Verifier installed — click the ':
+            'Vérificateur de citations installé — cliquez sur l’onglet ',
+        ' tab to get started.': ' pour commencer.',
+
+        // Source display
+        '✓ PDF content extracted{pageInfo}': '✓ Contenu PDF extrait{pageInfo}',
+        ' (page {page} of {total})': ' (page {page} sur {total})',
+        ' ({pages} pages)': ' ({pages} pages)',
+        '✓ Content fetched successfully': '✓ Contenu récupéré avec succès',
+        'Content will be fetched by AI during verification.':
+            'Le contenu sera récupéré par l’IA lors de la vérification.',
+        '⚠ The source is long and can only be checked partially.':
+            '⚠ La source est longue et ne peut être vérifiée que partiellement.',
+        'Source URL:': 'URL de la source :',
+        'No URL found. Please paste the source text below:':
+            'Aucune URL trouvée. Veuillez coller le texte de la source ci-dessous :',
+        'Manual Source Text:': 'Texte de source manuel :',
+        'No source loaded.': 'Aucune source chargée.',
+        'Click "Verify Claim" to verify the selected claim against the source.':
+            'Cliquez sur « Vérifier l’affirmation » pour vérifier l’affirmation sélectionnée par rapport à la source.',
+        'Part of a group of {count} citations: {numbers}':
+            'Fait partie d’un groupe de {count} citations : {numbers}',
+
+        // Verdicts (full, shown for a single verification)
+        'SUPPORTED': 'CONFIRMÉE',
+        'PARTIALLY SUPPORTED': 'PARTIELLEMENT CONFIRMÉE',
+        'NOT SUPPORTED': 'NON CONFIRMÉE',
+        'SOURCE UNAVAILABLE': 'SOURCE INDISPONIBLE',
+        'ERROR': 'ERREUR',
+        // Verdicts (short, shown on report cards/chips)
+        'Supported': 'Confirmée',
+        'Partial': 'Partielle',
+        'Not Supported': 'Non confirmée',
+        'Unavailable': 'Indisponible',
+
+        // Report progress
+        'Checking citation [{num}]': 'Vérification de la citation [{num}]',
+        'Fetching source for [{num}]': 'Récupération de la source pour [{num}]',
+        'Verifying citation [{num}]': 'Analyse de la citation [{num}]',
+        'Rate limited, retrying in {secs}s...':
+            'Limite de débit atteinte, nouvelle tentative dans {secs}s…',
+        'Checking combined sources {token}': 'Vérification des sources combinées {token}',
+        ' · ~{duration} remaining': ' · ~{duration} restant',
+
+        // Report summary
+        'supported': 'confirmées',
+        'partial': 'partielles',
+        'not supported': 'non confirmées',
+        'unavailable': 'indisponibles',
+        'errors': 'erreurs',
+        'Show {label} citations': 'Afficher les citations {label}',
+        'Hide {label} citations': 'Masquer les citations {label}',
+        '{count} citations checked': '{count} citations vérifiées',
+        '{count} citation checked': '{count} citation vérifiée',
+        '{citations} citations across {claims} claims':
+            '{citations} citations réparties sur {claims} affirmations',
+        '{citations} citations across {claims} claim':
+            '{citations} citations réparties sur {claims} affirmation',
+        ' · {count} hidden by filter': ' · {count} masquées par le filtre',
+        ' · {input} input + {output} output tokens':
+            ' · {input} jetons d’entrée + {output} jetons de sortie',
+        'Revision: ': 'Révision : ',
+
+        // Report cards / groups
+        '⚠ Source is long, only partially checked.':
+            '⚠ Source longue, vérifiée partiellement seulement.',
+        '⚠ Combined sources are long, only partially checked.':
+            '⚠ Sources combinées longues, vérifiées partiellement seulement.',
+        'Group of {size} · {numbers}': 'Groupe de {size} · {numbers}',
+        'Checking combined sources…': 'Vérification des sources combinées…',
+        'Individual sources': 'Sources individuelles',
+        'Combined verdict': 'Verdict combiné',
+        'All citations are hidden by the current filters. Click a filter chip above to show them.':
+            'Toutes les citations sont masquées par les filtres actuels. Cliquez sur une puce de filtre ci-dessus pour les afficher.',
+
+        // Notifications / dialogs
+        'Report copied to clipboard!': 'Rapport copié dans le presse-papiers !',
+        'No citations found on this page.': 'Aucune citation trouvée sur cette page.',
+        'Are you sure you want to remove the stored API key?':
+            'Voulez-vous vraiment supprimer la clé API enregistrée ?',
+        'Enter your {name} API Key...': 'Saisissez votre clé API {name}…',
+        'Set {name} API Key': 'Définir la clé API {name}',
+        'Enter your {name} API Key to enable source verification:':
+            'Saisissez votre clé API {name} pour activer la vérification des sources :',
+        'This will verify {citations} citations from {sources} unique sources.{groupNote}\n\nEstimated time: ~{minutes} minutes.\n\nContinue?':
+            'Cette action vérifiera {citations} citations provenant de {sources} sources uniques.{groupNote}\n\nDurée estimée : ~{minutes} minutes.\n\nContinuer ?',
+        'This will verify {citations} citations from {sources} unique sources.{groupNote}\n\nEstimated time: ~{minutes} minute.\n\nContinue?':
+            'Cette action vérifiera {citations} citations provenant de {sources} sources uniques.{groupNote}\n\nDurée estimée : ~{minutes} minute.\n\nContinuer ?',
+        '\n\nThis includes {count} combined-source checks for adjacent citation groups.':
+            '\n\nCela inclut {count} vérifications de sources combinées pour les groupes de citations adjacentes.',
+        '\n\nThis includes {count} combined-source check for adjacent citation groups.':
+            '\n\nCela inclut {count} vérification de sources combinées pour les groupes de citations adjacentes.',
+
+        // Generated result comments
+        'No URL found in reference': 'Aucune URL trouvée dans la référence',
+        'None of the grouped sources could be retrieved.':
+            'Aucune des sources groupées n’a pu être récupérée.',
+        'Could not fetch source content': 'Impossible de récupérer le contenu de la source',
+
+        // Exported reports (wikitext + plain text)
+        'Submit': 'Soumettre',
+        'Citation verification report': 'Rapport de vérification des citations',
+        'This is an experimental check of the article sources by [[User:Alaexis/AI_Source_Verification|Citation Verifier]]. Treat it with caution, be aware of its [[User:Alaexis/AI_Source_Verification#Limitations|limitations]] and feel free to leave feedback at [[User_talk:Alaexis/AI_Source_Verification|the talk page]].':
+            'Ceci est une vérification expérimentale des sources de l’article par [[User:Alaexis/AI_Source_Verification|Citation Verifier]]. À prendre avec précaution : tenez compte de ses [[User:Alaexis/AI_Source_Verification#Limitations|limites]] et n’hésitez pas à laisser un retour sur [[User_talk:Alaexis/AI_Source_Verification|la page de discussion]].',
+        'Revision checked: ': 'Révision vérifiée : ',
+        '! # !! Verdict !! Source !! Comments !! class="unsortable" | Submit':
+            '! # !! Verdict !! Source !! Commentaires !! class="unsortable" | Soumettre',
+        '! # !! Verdict !! Source !! Comments':
+            '! # !! Verdict !! Source !! Commentaires',
+        '{{tick}} Supported': '{{tick}} Confirmée',
+        '{{bang}} Partially supported': '{{bang}} Partiellement confirmée',
+        '{{cross}} Not supported': '{{cross}} Non confirmée',
+        '{{hmmm}} Source unavailable': '{{hmmm}} Source indisponible',
+        "''(Combined sources are long, only partially checked.)''":
+            "''(Sources combinées longues, vérifiées partiellement seulement.)''",
+        "''(Source is long, only partially checked.)''":
+            "''(Source longue, vérifiée partiellement seulement.)''",
+        '(combined)': '(combiné)',
+        "'''Summary:''' {supported} supported, {partial} partially supported, {notSupported} not supported, {unavailable} source unavailable out of {claims}.":
+            "'''Résumé :''' {supported} confirmées, {partial} partiellement confirmées, {notSupported} non confirmées, {unavailable} source indisponible sur {claims}.",
+        '{count} citations': '{count} citations',
+        '{count} citation': '{count} citation',
+        '{claims} claims ({citations} citations)': '{claims} affirmations ({citations} citations)',
+        '{claims} claim ({citations} citations)': '{claims} affirmation ({citations} citations)',
+        'a PublicAI-hosted open-source LLM': 'un LLM open source hébergé par PublicAI',
+        'a HuggingFace-hosted open-source LLM ({model})':
+            'un LLM open source hébergé par HuggingFace ({model})',
+        'Generated by [[User:Alaexis/AI_Source_Verification|Citation Verifier]] using {model} on ~~~~~.':
+            'Généré par [[User:Alaexis/AI_Source_Verification|Citation Verifier]] avec {model} le ~~~~~.',
+        ' Tokens used: {input} input, {output} output.':
+            ' Jetons utilisés : {input} en entrée, {output} en sortie.',
+        'Citation Verification Report: {title}': 'Rapport de vérification des citations : {title}',
+        'Provider: {name}': 'Fournisseur : {name}',
+        'Revision: {rev}': 'Révision : {rev}',
+        'Claim: {text}': 'Affirmation : {text}',
+        'Sources: {urls}': 'Sources : {urls}',
+        'Source: {url}': 'Source : {url}',
+        'Comments: {text}': 'Commentaires : {text}',
+        'Note: Combined sources are long, only partially checked.':
+            'Note : Sources combinées longues, vérifiées partiellement seulement.',
+        'Note: Source is long, only partially checked.':
+            'Note : Source longue, vérifiée partiellement seulement.',
+        'Tokens used: {input} input, {output} output':
+            'Jetons utilisés : {input} en entrée, {output} en sortie',
+    };
+
     class WikipediaSourceVerifier {
         constructor() {
+            // UI language: 'fr' on French wikis, 'en' everywhere else.
+            this.lang = detectUiLang();
+
             this.providers = {
                 publicai: {
                     name: 'PublicAI',
@@ -1255,6 +1474,19 @@ function buildDatasetSubmissionUrl(
             return this.providers[this.currentProvider].requiresKey;
         }
         
+        // Translate an English source string to the active UI language.
+        // Missing French keys fall back to the English text. Supports
+        // `{placeholder}` interpolation from an optional params object.
+        t(en, params) {
+            let s = (this.lang === 'fr' && FR_MESSAGES[en] != null) ? FR_MESSAGES[en] : en;
+            if (params) {
+                for (const key of Object.keys(params)) {
+                    s = s.split('{' + key + '}').join(String(params[key]));
+                }
+            }
+            return s;
+        }
+
         createUI() {
             const sidebar = document.createElement('div');
             sidebar.id = 'source-verifier-sidebar';
@@ -1263,7 +1495,7 @@ function buildDatasetSubmissionUrl(
             
             sidebar.innerHTML = `
                 <div id="verifier-sidebar-header">
-                    <h3><a href="https://en.wikipedia.org/wiki/User:Alaexis/AI_Source_Verification" target="_blank" id="verifier-title-link">Source Verifier</a></h3>
+                    <h3><a href="https://en.wikipedia.org/wiki/User:Alaexis/AI_Source_Verification" target="_blank" id="verifier-title-link">${this.t('Source Verifier')}</a></h3>
                     <div id="verifier-sidebar-controls">
                         <div id="verifier-close-btn-container"></div>
                     </div>
@@ -1275,13 +1507,13 @@ function buildDatasetSubmissionUrl(
                         <div id="verifier-buttons-container"></div>
                     </div>
                     <div id="verifier-claim-section">
-                        <h4>Selected Claim</h4>
-                        <div id="verifier-claim-text">Click on a reference number [1] next to a claim to verify it against its source.</div>
+                        <h4>${this.t('Selected Claim')}</h4>
+                        <div id="verifier-claim-text">${this.t('Click on a reference number [1] next to a claim to verify it against its source.')}</div>
                         <div id="verifier-claim-group-indicator" style="display: none;"></div>
                     </div>
                     <div id="verifier-source-section">
-                        <h4>Source Content</h4>
-                        <div id="verifier-source-text">No source loaded yet.</div>
+                        <h4>${this.t('Source Content')}</h4>
+                        <div id="verifier-source-text">${this.t('No source loaded yet.')}</div>
                         <div id="verifier-source-override-container" style="display: none; margin-top: 8px;"></div>
                         <div id="verifier-source-input-container" style="display: none; margin-top: 10px;">
                             <div id="verifier-source-textarea-container"></div>
@@ -1292,7 +1524,7 @@ function buildDatasetSubmissionUrl(
                         </div>
                     </div>
                     <div id="verifier-results">
-                        <h4>Verification Result</h4>
+                        <h4>${this.t('Verification Result')}</h4>
                         <div id="verifier-verdict"></div>
                         <div id="verifier-comments"></div>
                         <div id="verifier-action-container"></div>
@@ -2398,7 +2630,7 @@ function buildDatasetSubmissionUrl(
         createOOUIButtons() {
             this.buttons.close = new OO.ui.ButtonWidget({
                 icon: 'close',
-                title: 'Close',
+                title: this.t('Close'),
                 framed: false,
                 classes: ['verifier-close-button']
             });
@@ -2417,72 +2649,72 @@ function buildDatasetSubmissionUrl(
             this.buttons.providerSelect.getMenu().selectItemByData(this.currentProvider);
             
             this.buttons.setKey = new OO.ui.ButtonWidget({
-                label: 'Set API Key',
+                label: this.t('Set API Key'),
                 flags: ['primary', 'progressive'],
                 disabled: false
             });
-            
+
             this.buttons.verify = new OO.ui.ButtonWidget({
-                label: 'Verify Claim',
+                label: this.t('Verify Claim'),
                 flags: ['primary', 'progressive'],
                 icon: 'check',
                 disabled: true
             });
-            
+
             this.buttons.changeKey = new OO.ui.ButtonWidget({
-                label: 'Change Key',
+                label: this.t('Change Key'),
                 flags: ['safe'],
                 icon: 'edit',
                 disabled: false
             });
-            
+
             this.buttons.removeKey = new OO.ui.ButtonWidget({
-                label: 'Remove API Key',
+                label: this.t('Remove API Key'),
                 flags: ['destructive'],
                 icon: 'trash',
                 disabled: false
             });
-            
+
             // Source text input widgets
             this.sourceTextInput = new OO.ui.MultilineTextInputWidget({
-                placeholder: 'Paste the source text here...',
+                placeholder: this.t('Paste the source text here...'),
                 rows: 6,
                 autosize: true,
                 maxRows: 15
             });
-            
+
             this.buttons.loadText = new OO.ui.ButtonWidget({
-                label: 'Load Text',
+                label: this.t('Load Text'),
                 flags: ['primary', 'progressive']
             });
-            
+
             this.buttons.cancelText = new OO.ui.ButtonWidget({
-                label: 'Cancel',
+                label: this.t('Cancel'),
                 flags: ['safe']
             });
 
             this.buttons.overrideText = new OO.ui.ButtonWidget({
-                label: 'Paste source text manually',
+                label: this.t('Paste source text manually'),
                 framed: false,
-                title: 'Replace the fetched source content with text you paste in (e.g., the full article from The Wikipedia Library)'
+                title: this.t('Replace the fetched source content with text you paste in (e.g., the full article from The Wikipedia Library)')
             });
             this.buttons.overrideText.$element.addClass('verifier-override-link');
 
             // Article report buttons
             this.buttons.verifyAll = new OO.ui.ButtonWidget({
-                label: 'Verify All Citations',
+                label: this.t('Verify All Citations'),
                 flags: ['primary', 'progressive'],
                 icon: 'articles'
             });
 
             this.buttons.stopAll = new OO.ui.ButtonWidget({
-                label: 'Stop',
+                label: this.t('Stop'),
                 flags: ['destructive'],
                 icon: 'cancel'
             });
 
             this.buttons.backToReport = new OO.ui.ButtonWidget({
-                label: 'Back to Report',
+                label: this.t('Back to Report'),
                 flags: ['safe'],
                 icon: 'arrowPrevious'
             });
@@ -2512,26 +2744,26 @@ function buildDatasetSubmissionUrl(
             infoEl.textContent = '';
             if (!provider.requiresKey) {
                 if (provider.optionalKey && this.getCurrentApiKey()) {
-                    infoEl.textContent = `✓ Using your ${provider.name} API key`;
+                    infoEl.textContent = this.t('✓ Using your {name} API key', { name: provider.name });
                 } else if (provider.optionalKey) {
-                    infoEl.appendChild(document.createTextNode('✓ Free to use. Optional: '));
+                    infoEl.appendChild(document.createTextNode(this.t('✓ Free to use. Optional: ')));
                     const link = document.createElement('a');
                     link.href = '#';
-                    link.textContent = `add your ${provider.name} API key`;
+                    link.textContent = this.t('add your {name} API key', { name: provider.name });
                     link.addEventListener('click', (e) => {
                         e.preventDefault();
                         this.setApiKey();
                     });
                     infoEl.appendChild(link);
                 } else {
-                    infoEl.textContent = '✓ Free to use';
+                    infoEl.textContent = this.t('✓ Free to use');
                 }
                 infoEl.className = 'free-provider';
             } else if (this.getCurrentApiKey()) {
-                infoEl.textContent = `API key configured for ${provider.name}`;
+                infoEl.textContent = this.t('API key configured for {name}', { name: provider.name });
                 infoEl.className = '';
             } else {
-                infoEl.textContent = `API key required for ${provider.name}`;
+                infoEl.textContent = this.t('API key required for {name}', { name: provider.name });
                 infoEl.className = '';
             }
         }
@@ -2563,7 +2795,7 @@ function buildDatasetSubmissionUrl(
 
                 const privacyNote = document.createElement('div');
                 privacyNote.style.cssText = 'font-size: 11px; color: #72777d; margin-top: 4px;';
-                privacyNote.textContent = 'Results are logged for research. Your username is not recorded.';
+                privacyNote.textContent = this.t('Results are logged for research. Your username is not recorded.');
                 container.appendChild(privacyNote);
 
                 // Key-management buttons: required-key providers always show
@@ -2615,9 +2847,9 @@ function buildDatasetSubmissionUrl(
                     const verifierLink = mw.util.addPortletLink(
                         portletId,
                         '#',
-                        'Verify',
+                        this.t('Verify'),
                         't-verifier',
-                        'Verify claims against sources',
+                        this.t('Verify claims against sources'),
                         'v',
                     );
                     
@@ -2639,11 +2871,11 @@ function buildDatasetSubmissionUrl(
             localStorage.setItem('verifier_first_run_done', 'true');
             mw.notify(
                 $('<span>').append(
-                    'Citation Verifier installed — click the ',
-                    $('<strong>').text('Verify'),
-                    ' tab to get started.'
+                    this.t('Citation Verifier installed — click the '),
+                    $('<strong>').text(this.t('Verify')),
+                    this.t(' tab to get started.')
                 ),
-                { title: 'Citation Verifier', type: 'info', autoHide: true, autoHideSeconds: 8 }
+                { title: this.t('Citation Verifier'), type: 'info', autoHide: true, autoHideSeconds: 8 }
             );
         }
 
@@ -2749,19 +2981,19 @@ function buildDatasetSubmissionUrl(
                     let statusHtml;
                     if (contentFetched && pdfMatch) {
                         const pageInfo = pageMatch
-                            ? ` (page ${pageMatch[1]} of ${pdfMatch[1]})`
-                            : ` (${pdfMatch[1]} pages)`;
-                        statusHtml = `<span style="color: #2e7d32;">✓ PDF content extracted${pageInfo}</span>`;
+                            ? this.t(' (page {page} of {total})', { page: pageMatch[1], total: pdfMatch[1] })
+                            : this.t(' ({pages} pages)', { pages: pdfMatch[1] });
+                        statusHtml = `<span style="color: #2e7d32;">${this.escapeHtml(this.t('✓ PDF content extracted{pageInfo}', { pageInfo }))}</span>`;
                     } else if (contentFetched) {
-                        statusHtml = '<span style="color: #2e7d32;">✓ Content fetched successfully</span>';
+                        statusHtml = `<span style="color: #2e7d32;">${this.t('✓ Content fetched successfully')}</span>`;
                     } else {
-                        statusHtml = '<em>Content will be fetched by AI during verification.</em>';
+                        statusHtml = `<em>${this.t('Content will be fetched by AI during verification.')}</em>`;
                     }
                     const truncationHtml = isTruncated
-                        ? '<div class="verifier-truncation-warning">⚠ The source is long and can only be checked partially.</div>'
+                        ? `<div class="verifier-truncation-warning">${this.t('⚠ The source is long and can only be checked partially.')}</div>`
                         : '';
                     sourceElement.innerHTML = `
-                        <strong>Source URL:</strong><br>
+                        <strong>${this.t('Source URL:')}</strong><br>
                         <a href="${urlMatch[1]}" target="_blank" style="word-break: break-all;">${urlMatch[1]}</a><br><br>
                         ${statusHtml}
                         ${truncationHtml}
@@ -2784,7 +3016,7 @@ function buildDatasetSubmissionUrl(
             this.sourceInputForOverride = forOverride;
             document.getElementById('verifier-source-input-container').style.display = 'block';
             if (!forOverride) {
-                document.getElementById('verifier-source-text').textContent = 'No URL found. Please paste the source text below:';
+                document.getElementById('verifier-source-text').textContent = this.t('No URL found. Please paste the source text below:');
             }
             this.sourceTextInput.setValue('');
             this.hideOverrideButton();
@@ -2824,7 +3056,7 @@ function buildDatasetSubmissionUrl(
             }
 
             this.activeSource = `Manual source text:\n\n${text}`;
-            document.getElementById('verifier-source-text').innerHTML = `<strong>Manual Source Text:</strong><br><em>${text.substring(0, 200)}${text.length > 200 ? '...' : ''}</em>`;
+            document.getElementById('verifier-source-text').innerHTML = `<strong>${this.t('Manual Source Text:')}</strong><br><em>${this.escapeHtml(text.substring(0, 200))}${text.length > 200 ? '...' : ''}</em>`;
             this.sourceInputForOverride = false;
             this.hideSourceTextInput();
             this.updateButtonVisibility();
@@ -2838,7 +3070,7 @@ function buildDatasetSubmissionUrl(
             this.hideSourceTextInput();
             if (!wasOverride) {
                 this.activeSource = null;
-                document.getElementById('verifier-source-text').textContent = 'No source loaded.';
+                document.getElementById('verifier-source-text').textContent = this.t('No source loaded.');
             }
             this.updateButtonVisibility();
             this.updateStatus('Cancelled');
@@ -3037,7 +3269,7 @@ function buildDatasetSubmissionUrl(
             const dialog = new OO.ui.MessageDialog();
             
             const textInput = new OO.ui.TextInputWidget({
-                placeholder: `Enter your ${provider.name} API Key...`,
+                placeholder: this.t('Enter your {name} API Key...', { name: provider.name }),
                 type: 'password',
                 value: (provider.storageKey ? localStorage.getItem(provider.storageKey) : '') || ''
             });
@@ -3051,20 +3283,20 @@ function buildDatasetSubmissionUrl(
             windowManager.addWindows([dialog]);
             
             windowManager.openWindow(dialog, {
-                title: `Set ${provider.name} API Key`,
+                title: this.t('Set {name} API Key', { name: provider.name }),
                 message: $('<div>').append(
-                    $('<p>').text(`Enter your ${provider.name} API Key to enable source verification:`),
+                    $('<p>').text(this.t('Enter your {name} API Key to enable source verification:', { name: provider.name })),
                     textInput.$element
                 ),
                 actions: [
                     {
                         action: 'save',
-                        label: 'Save',
+                        label: this.t('Save'),
                         flags: ['primary', 'progressive']
                     },
                     {
                         action: 'cancel',
-                        label: 'Cancel',
+                        label: this.t('Cancel'),
                         flags: ['safe']
                     }
                 ]
@@ -3092,7 +3324,7 @@ function buildDatasetSubmissionUrl(
                 return;
             }
             
-            OO.ui.confirm('Are you sure you want to remove the stored API key?').done((confirmed) => {
+            OO.ui.confirm(this.t('Are you sure you want to remove the stored API key?')).done((confirmed) => {
                 if (confirmed) {
                     this.removeCurrentApiKey();
                     this.updateButtonVisibility();
@@ -3151,7 +3383,7 @@ function buildDatasetSubmissionUrl(
             const verifyId = ++this.currentVerifyId;
             try {
                 this.buttons.verify.setDisabled(true);
-                this.buttons.verify.setLabel('Verifying...');
+                this.buttons.verify.setLabel(this.t('Verifying...'));
                 this.buttons.verify.setIcon('clock');
                 this.updateStatus('Verifying claim against source...');
 
@@ -3179,12 +3411,12 @@ function buildDatasetSubmissionUrl(
                 }
                 console.error('Verification error:', error);
                 this.updateStatus(`Error: ${error.message}`, true);
-                document.getElementById('verifier-verdict').textContent = 'ERROR';
+                document.getElementById('verifier-verdict').textContent = this.t('ERROR');
                 document.getElementById('verifier-verdict').className = 'source-unavailable';
                 document.getElementById('verifier-comments').textContent = error.message;
             } finally {
                 if (verifyId === this.currentVerifyId) {
-                    this.buttons.verify.setLabel('Verify Claim');
+                    this.buttons.verify.setLabel(this.t('Verify Claim'));
                     this.buttons.verify.setIcon('check');
                     this.updateButtonVisibility();
                 }
@@ -3217,7 +3449,7 @@ function buildDatasetSubmissionUrl(
 
 	    const result = this.parseVerificationResult(response);
 
-	    verdictEl.textContent = result.verdict;
+	    verdictEl.textContent = this.t(result.verdict);
 	    verdictEl.className = '';
 
 	    if (result.verdict === 'SUPPORTED') {
@@ -3351,7 +3583,7 @@ function buildDatasetSubmissionUrl(
             let etaStr = '';
             if (current > 0) {
                 const remaining = ((elapsed / current) * (total - current));
-                etaStr = ` · ~${this.formatDuration(remaining)} remaining`;
+                etaStr = this.t(' · ~{duration} remaining', { duration: this.formatDuration(remaining) });
             }
 
             progressEl.innerHTML = `
@@ -3436,7 +3668,7 @@ function buildDatasetSubmissionUrl(
                 if (!emptyEl) {
                     emptyEl = document.createElement('div');
                     emptyEl.className = 'verifier-filter-empty';
-                    emptyEl.textContent = 'All citations are hidden by the current filters. Click a filter chip above to show them.';
+                    emptyEl.textContent = this.t('All citations are hidden by the current filters. Click a filter chip above to show them.');
                     resultsEl.appendChild(emptyEl);
                 }
             } else if (emptyEl) {
@@ -3467,12 +3699,16 @@ function buildDatasetSubmissionUrl(
 
             const chip = (key, count, label, color) => {
                 const hidden = !!this.reportFilters[key];
+                const localizedLabel = this.t(label);
+                const titleText = hidden
+                    ? this.t('Show {label} citations', { label: localizedLabel })
+                    : this.t('Hide {label} citations', { label: localizedLabel });
                 return `<button type="button"
                     class="verifier-filter-chip${hidden ? ' hidden' : ''}"
                     data-filter="${key}"
-                    title="${hidden ? 'Show' : 'Hide'} ${this.escapeHtml(label)} citations"
+                    title="${this.escapeHtml(titleText)}"
                     aria-pressed="${hidden ? 'false' : 'true'}">
-                    <span class="dot" style="background:${color}"></span>${count} ${this.escapeHtml(label)}
+                    <span class="dot" style="background:${color}"></span>${count} ${this.escapeHtml(localizedLabel)}
                 </button>`;
             };
 
@@ -3486,8 +3722,8 @@ function buildDatasetSubmissionUrl(
             // Each unit is one claim; a group unit covers groupSize citations.
             const citationCount = units.reduce((n, u) => n + (u.groupSize || 1), 0);
             const claimsLabel = citationCount === total
-                ? `${total} citation${total === 1 ? '' : 's'} checked`
-                : `${citationCount} citations across ${total} claim${total === 1 ? '' : 's'}`;
+                ? this.t(total === 1 ? '{count} citation checked' : '{count} citations checked', { count: total })
+                : this.t(total === 1 ? '{citations} citations across {claims} claim' : '{citations} citations across {claims} claims', { citations: citationCount, claims: total });
 
             summaryEl.innerHTML = `
                 <div class="verifier-summary-bar">
@@ -3505,9 +3741,9 @@ function buildDatasetSubmissionUrl(
                     ${counts.error > 0 ? chip('error', counts.error, 'errors', '#adb5bd') : ''}
                 </div>
                 <div class="verifier-summary-meta">
-                    ${claimsLabel}${hiddenCount > 0 ? ` · ${hiddenCount} hidden by filter` : ''}${this.reportTokenUsage.input + this.reportTokenUsage.output > 0 ? ` · ${this.reportTokenUsage.input.toLocaleString()} input + ${this.reportTokenUsage.output.toLocaleString()} output tokens` : ''}
+                    ${claimsLabel}${hiddenCount > 0 ? this.t(' · {count} hidden by filter', { count: hiddenCount }) : ''}${this.reportTokenUsage.input + this.reportTokenUsage.output > 0 ? this.t(' · {input} input + {output} output tokens', { input: this.reportTokenUsage.input.toLocaleString(), output: this.reportTokenUsage.output.toLocaleString() }) : ''}
                 </div>
-                ${this.reportRevisionId ? `<div class="verifier-summary-meta">Revision: <a href="${this.escapeHtml(this.getRevisionPermalinkUrl(this.reportRevisionId) || '#')}" target="_blank" rel="noopener">${this.reportRevisionId}</a></div>` : ''}
+                ${this.reportRevisionId ? `<div class="verifier-summary-meta">${this.t('Revision: ')}<a href="${this.escapeHtml(this.getRevisionPermalinkUrl(this.reportRevisionId) || '#')}" target="_blank" rel="noopener">${this.reportRevisionId}</a></div>` : ''}
             `;
 
             summaryEl.querySelectorAll('.verifier-filter-chip').forEach(btn => {
@@ -3520,11 +3756,11 @@ function buildDatasetSubmissionUrl(
 
         verdictClassFor(verdict) {
             switch (verdict) {
-                case 'SUPPORTED': return { cls: 'supported', label: 'Supported' };
-                case 'PARTIALLY SUPPORTED': return { cls: 'partial', label: 'Partial' };
-                case 'NOT SUPPORTED': return { cls: 'not-supported', label: 'Not Supported' };
-                case 'SOURCE UNAVAILABLE': return { cls: 'unavailable', label: 'Unavailable' };
-                default: return { cls: 'error', label: verdict };
+                case 'SUPPORTED': return { cls: 'supported', label: this.t('Supported') };
+                case 'PARTIALLY SUPPORTED': return { cls: 'partial', label: this.t('Partial') };
+                case 'NOT SUPPORTED': return { cls: 'not-supported', label: this.t('Not Supported') };
+                case 'SOURCE UNAVAILABLE': return { cls: 'unavailable', label: this.t('Unavailable') };
+                default: return { cls: 'error', label: this.t(verdict) };
             }
         }
 
@@ -3567,7 +3803,7 @@ function buildDatasetSubmissionUrl(
             card.className = `verifier-report-card verdict-${verdictClass}`;
             const claimExcerpt = result.claimText.length > 80 ? result.claimText.substring(0, 80) + '…' : result.claimText;
             const truncationHtml = (result.truncated && result.verdict !== 'SUPPORTED')
-                ? '<div class="report-card-truncated">⚠ Source is long, only partially checked.</div>'
+                ? `<div class="report-card-truncated">${this.t('⚠ Source is long, only partially checked.')}</div>`
                 : '';
             const reasonTypeHtml = (result.verdict === 'NOT SUPPORTED' && result.reason_type)
                 ? `<span class="reason-type-tag reason-type-${result.reason_type}">${result.reason_type === 'contradiction' ? 'Contradiction' : 'Omission'}</span>`
@@ -3591,7 +3827,7 @@ function buildDatasetSubmissionUrl(
 
             if (result.refElement && (result.verdict === 'NOT SUPPORTED' || result.verdict === 'PARTIALLY SUPPORTED' || result.verdict === 'SOURCE UNAVAILABLE')) {
                 const editBtn = new OO.ui.ButtonWidget({
-                    label: 'Edit Section',
+                    label: this.t('Edit Section'),
                     flags: ['progressive'],
                     icon: 'edit',
                     href: this.buildEditUrl(result.refElement),
@@ -3622,15 +3858,15 @@ function buildDatasetSubmissionUrl(
             groupEl.innerHTML = `
                 <div class="verifier-report-group-header">
                     <div class="verifier-report-group-title">
-                        <span class="verifier-report-group-badge">Group of ${firstResult.groupSize} · ${numbers}</span>
+                        <span class="verifier-report-group-badge">${this.escapeHtml(this.t('Group of {size} · {numbers}', { size: firstResult.groupSize, numbers }))}</span>
                     </div>
                     <div class="verifier-report-group-claim">${this.escapeHtml(claimExcerpt)}</div>
                     <div class="verifier-report-group-collective">
-                        <div class="verifier-report-group-collective-pending">Checking combined sources…</div>
+                        <div class="verifier-report-group-collective-pending">${this.t('Checking combined sources…')}</div>
                     </div>
                     <div class="verifier-report-group-edit"></div>
                 </div>
-                <div class="verifier-report-group-rows-label">Individual sources</div>
+                <div class="verifier-report-group-rows-label">${this.t('Individual sources')}</div>
                 <div class="verifier-report-group-rows"></div>
             `;
             // One shared "Edit Section" button per group: every member is in
@@ -3638,7 +3874,7 @@ function buildDatasetSubmissionUrl(
             // would just be repetition. Wire it to the first member's ref.
             if (firstResult.refElement) {
                 const editBtn = new OO.ui.ButtonWidget({
-                    label: 'Edit Section',
+                    label: this.t('Edit Section'),
                     flags: ['progressive'],
                     icon: 'edit',
                     href: this.buildEditUrl(firstResult.refElement),
@@ -3669,11 +3905,11 @@ function buildDatasetSubmissionUrl(
                 ? `<span class="reason-type-tag reason-type-${result.reason_type}">${result.reason_type === 'contradiction' ? 'Contradiction' : 'Omission'}</span>`
                 : '';
             const truncationHtml = (result.truncated && result.verdict !== 'SUPPORTED')
-                ? '<div class="report-card-truncated">⚠ Combined sources are long, only partially checked.</div>'
+                ? `<div class="report-card-truncated">${this.t('⚠ Combined sources are long, only partially checked.')}</div>`
                 : '';
             slot.innerHTML = `
                 <div class="verifier-report-group-collective-header">
-                    <span class="verifier-report-group-collective-label">Combined verdict</span>
+                    <span class="verifier-report-group-collective-label">${this.t('Combined verdict')}</span>
                     <span class="report-card-verdict ${verdictClass}">${verdictLabel}</span>${reasonTypeHtml}
                 </div>
                 ${result.comments ? `<div class="report-card-comment">${this.escapeHtml(result.comments)}</div>` : ''}
@@ -3704,7 +3940,7 @@ function buildDatasetSubmissionUrl(
             const row = document.createElement('div');
             row.className = `verifier-report-group-row verdict-${verdictClass}`;
             const truncationHtml = (result.truncated && result.verdict !== 'SUPPORTED')
-                ? '<div class="report-card-truncated">⚠ Source is long, only partially checked.</div>'
+                ? `<div class="report-card-truncated">${this.t('⚠ Source is long, only partially checked.')}</div>`
                 : '';
             const reasonTypeHtml = (result.verdict === 'NOT SUPPORTED' && result.reason_type)
                 ? `<span class="reason-type-tag reason-type-${result.reason_type}">${result.reason_type === 'contradiction' ? 'Contradiction' : 'Omission'}</span>`
@@ -3745,7 +3981,7 @@ function buildDatasetSubmissionUrl(
             actionsEl.innerHTML = '';
 
             const copyWikiBtn = new OO.ui.ButtonWidget({
-                label: 'Copy Report (Wikitext)',
+                label: this.t('Copy Report (Wikitext)'),
                 flags: ['progressive'],
                 icon: 'copy'
             });
@@ -3753,7 +3989,7 @@ function buildDatasetSubmissionUrl(
             actionsEl.appendChild(copyWikiBtn.$element[0]);
 
             const copyTextBtn = new OO.ui.ButtonWidget({
-                label: 'Copy Report (Plain Text)',
+                label: this.t('Copy Report (Plain Text)'),
                 flags: ['safe'],
                 icon: 'copy'
             });
@@ -3777,16 +4013,16 @@ function buildDatasetSubmissionUrl(
         generateWikitextReport() {
             const articleTitle = typeof mw !== 'undefined' ? mw.config.get('wgTitle') : document.title;
             const revId = this.reportRevisionId;
-            let wikitext = `== Citation verification report ==\n`;
-            wikitext += `This is an experimental check of the article sources by [[User:Alaexis/AI_Source_Verification|Citation Verifier]]. Treat it with caution, be aware of its [[User:Alaexis/AI_Source_Verification#Limitations|limitations]] and feel free to leave feedback at [[User_talk:Alaexis/AI_Source_Verification|the talk page]].\n\n`;
+            let wikitext = `== ${this.t('Citation verification report')} ==\n`;
+            wikitext += `${this.t('This is an experimental check of the article sources by [[User:Alaexis/AI_Source_Verification|Citation Verifier]]. Treat it with caution, be aware of its [[User:Alaexis/AI_Source_Verification#Limitations|limitations]] and feel free to leave feedback at [[User_talk:Alaexis/AI_Source_Verification|the talk page]].')}\n\n`;
             if (revId) {
-                wikitext += `Revision checked: [[Special:PermanentLink/${revId}|${revId}]]\n\n`;
+                wikitext += `${this.t('Revision checked: ')}[[Special:PermanentLink/${revId}|${revId}]]\n\n`;
             }
             const submissionConfigured = this.isDatasetSubmissionConfigured();
             wikitext += `{| class="wikitable sortable"\n`;
             wikitext += submissionConfigured
-                ? `|-\n! # !! Verdict !! Source !! Comments !! class="unsortable" | Submit\n`
-                : `|-\n! # !! Verdict !! Source !! Comments\n`;
+                ? `|-\n${this.t('! # !! Verdict !! Source !! Comments !! class="unsortable" | Submit')}\n`
+                : `|-\n${this.t('! # !! Verdict !! Source !! Comments')}\n`;
 
             // Link a citation number to its footnote anchor on the analyzed
             // revision, so clicks from the report jump to the original citation
@@ -3807,33 +4043,33 @@ function buildDatasetSubmissionUrl(
             for (const r of reportUnits) {
                 let verdictWiki;
                 switch (r.verdict) {
-                    case 'SUPPORTED': verdictWiki = '{{tick}} Supported'; break;
-                    case 'PARTIALLY SUPPORTED': verdictWiki = '{{bang}} Partially supported'; break;
-                    case 'NOT SUPPORTED': verdictWiki = '{{cross}} Not supported'; break;
-                    case 'SOURCE UNAVAILABLE': verdictWiki = '{{hmmm}} Source unavailable'; break;
+                    case 'SUPPORTED': verdictWiki = this.t('{{tick}} Supported'); break;
+                    case 'PARTIALLY SUPPORTED': verdictWiki = this.t('{{bang}} Partially supported'); break;
+                    case 'NOT SUPPORTED': verdictWiki = this.t('{{cross}} Not supported'); break;
+                    case 'SOURCE UNAVAILABLE': verdictWiki = this.t('{{hmmm}} Source unavailable'); break;
                     default: verdictWiki = r.verdict; break;
                 }
                 let commentsClean = (r.comments || '').replace(/\n/g, ' ');
                 if (r.truncated && r.verdict !== 'SUPPORTED') {
                     const note = r.isGroup
-                        ? "''(Combined sources are long, only partially checked.)''"
-                        : "''(Source is long, only partially checked.)''";
+                        ? this.t("''(Combined sources are long, only partially checked.)''")
+                        : this.t("''(Source is long, only partially checked.)''");
                     commentsClean += (commentsClean ? ' ' : '') + note;
                 }
                 let citationCell;
                 let sourceStr;
                 if (r.isGroup) {
                     citationCell = (r.members || []).map(m => linkNum(m.citationNumber, m.refElement)).join('')
-                        + ' <small>(combined)</small>';
+                        + ` <small>${this.t('(combined)')}</small>`;
                     const links = (r.members || []).filter(m => m.url).map(m => `[${m.url} ${m.citationNumber}]`);
                     sourceStr = links.length ? links.join(' ') : '—';
                 } else {
                     citationCell = linkNum(r.citationNumber, r.refElement);
-                    sourceStr = r.url ? `[${r.url} source]` : '—';
+                    sourceStr = r.url ? `[${r.url} ${this.t('source')}]` : '—';
                 }
                 if (submissionConfigured) {
                     const submitCell = (r.verdict && r.verdict !== 'ERROR')
-                        ? `[${this.buildDatasetSubmissionUrl(r)} Submit]`
+                        ? `[${this.buildDatasetSubmissionUrl(r)} ${this.t('Submit')}]`
                         : '—';
                     wikitext += `|-\n| ${citationCell} || ${verdictWiki} || ${sourceStr} || ${commentsClean} || ${submitCell}\n`;
                 } else {
@@ -3852,22 +4088,22 @@ function buildDatasetSubmissionUrl(
             }
             const citationCount = reportUnits.reduce((n, u) => n + (u.groupSize || 1), 0);
             const claimsPhrase = citationCount === reportUnits.length
-                ? `${reportUnits.length} citation${reportUnits.length === 1 ? '' : 's'}`
-                : `${reportUnits.length} claim${reportUnits.length === 1 ? '' : 's'} (${citationCount} citations)`;
-            wikitext += `'''Summary:''' ${counts.supported} supported, ${counts.partial} partially supported, ${counts.notSupported} not supported, ${counts.unavailable} source unavailable out of ${claimsPhrase}.\n`;
+                ? this.t(reportUnits.length === 1 ? '{count} citation' : '{count} citations', { count: reportUnits.length })
+                : this.t(reportUnits.length === 1 ? '{claims} claim ({citations} citations)' : '{claims} claims ({citations} citations)', { claims: reportUnits.length, citations: citationCount });
+            wikitext += this.t("'''Summary:''' {supported} supported, {partial} partially supported, {notSupported} not supported, {unavailable} source unavailable out of {claims}.", { supported: counts.supported, partial: counts.partial, notSupported: counts.notSupported, unavailable: counts.unavailable, claims: claimsPhrase }) + `\n`;
 
             const provider = this.providers[this.currentProvider];
             let modelDesc;
             if (this.currentProvider === 'publicai') {
-                modelDesc = 'a PublicAI-hosted open-source LLM';
+                modelDesc = this.t('a PublicAI-hosted open-source LLM');
             } else if (this.currentProvider === 'huggingface') {
-                modelDesc = `a HuggingFace-hosted open-source LLM (${provider.model})`;
+                modelDesc = this.t('a HuggingFace-hosted open-source LLM ({model})', { model: provider.model });
             } else {
                 modelDesc = provider.model;
             }
-            wikitext += `Generated by [[User:Alaexis/AI_Source_Verification|Citation Verifier]] using ${modelDesc} on ~~~~~.`;
+            wikitext += this.t('Generated by [[User:Alaexis/AI_Source_Verification|Citation Verifier]] using {model} on ~~~~~.', { model: modelDesc });
             if (this.reportTokenUsage.input + this.reportTokenUsage.output > 0) {
-                wikitext += ` Tokens used: ${this.reportTokenUsage.input.toLocaleString()} input, ${this.reportTokenUsage.output.toLocaleString()} output.`;
+                wikitext += this.t(' Tokens used: {input} input, {output} output.', { input: this.reportTokenUsage.input.toLocaleString(), output: this.reportTokenUsage.output.toLocaleString() });
             }
             wikitext += `\n`;
 
@@ -3877,35 +4113,36 @@ function buildDatasetSubmissionUrl(
         generatePlainTextReport() {
             const articleTitle = typeof mw !== 'undefined' ? mw.config.get('wgTitle') : document.title;
             const revId = this.reportRevisionId;
-            let text = `Citation Verification Report: ${articleTitle}\n`;
-            text += `Provider: ${this.providers[this.currentProvider].name}\n`;
+            let text = this.t('Citation Verification Report: {title}', { title: articleTitle }) + `\n`;
+            text += this.t('Provider: {name}', { name: this.providers[this.currentProvider].name }) + `\n`;
             if (revId) {
                 const permalink = this.getRevisionPermalinkUrl(revId);
-                text += `Revision: ${revId}${permalink ? ` (${permalink})` : ''}\n`;
+                text += this.t('Revision: {rev}', { rev: `${revId}${permalink ? ` (${permalink})` : ''}` }) + `\n`;
             }
             text += `${'='.repeat(60)}\n\n`;
 
             for (const r of this.getReportUnits()) {
+                const claimExcerpt = `${r.claimText.substring(0, 100)}${r.claimText.length > 100 ? '...' : ''}`;
                 if (r.isGroup) {
                     const token = (r.groupCitationNumbers || []).map(n => `[${n}]`).join('');
-                    text += `${token} (combined) ${r.verdict}\n`;
-                    text += `  Claim: ${r.claimText.substring(0, 100)}${r.claimText.length > 100 ? '...' : ''}\n`;
+                    text += `${token} ${this.t('(combined)')} ${this.t(r.verdict)}\n`;
+                    text += `  ${this.t('Claim: {text}', { text: claimExcerpt })}\n`;
                     const urls = (r.members || []).filter(m => m.url).map(m => `[${m.citationNumber}] ${m.url}`);
-                    if (urls.length) text += `  Sources: ${urls.join(' | ')}\n`;
-                    if (r.comments) text += `  Comments: ${r.comments}\n`;
-                    if (r.truncated && r.verdict !== 'SUPPORTED') text += `  Note: Combined sources are long, only partially checked.\n`;
+                    if (urls.length) text += `  ${this.t('Sources: {urls}', { urls: urls.join(' | ') })}\n`;
+                    if (r.comments) text += `  ${this.t('Comments: {text}', { text: r.comments })}\n`;
+                    if (r.truncated && r.verdict !== 'SUPPORTED') text += `  ${this.t('Note: Combined sources are long, only partially checked.')}\n`;
                 } else {
-                    text += `[${r.citationNumber}] ${r.verdict}\n`;
-                    text += `  Claim: ${r.claimText.substring(0, 100)}${r.claimText.length > 100 ? '...' : ''}\n`;
-                    if (r.url) text += `  Source: ${r.url}\n`;
-                    if (r.comments) text += `  Comments: ${r.comments}\n`;
-                    if (r.truncated && r.verdict !== 'SUPPORTED') text += `  Note: Source is long, only partially checked.\n`;
+                    text += `[${r.citationNumber}] ${this.t(r.verdict)}\n`;
+                    text += `  ${this.t('Claim: {text}', { text: claimExcerpt })}\n`;
+                    if (r.url) text += `  ${this.t('Source: {url}', { url: r.url })}\n`;
+                    if (r.comments) text += `  ${this.t('Comments: {text}', { text: r.comments })}\n`;
+                    if (r.truncated && r.verdict !== 'SUPPORTED') text += `  ${this.t('Note: Source is long, only partially checked.')}\n`;
                 }
                 text += `\n`;
             }
 
             if (this.reportTokenUsage.input + this.reportTokenUsage.output > 0) {
-                text += `Tokens used: ${this.reportTokenUsage.input.toLocaleString()} input, ${this.reportTokenUsage.output.toLocaleString()} output\n`;
+                text += this.t('Tokens used: {input} input, {output} output', { input: this.reportTokenUsage.input.toLocaleString(), output: this.reportTokenUsage.output.toLocaleString() }) + `\n`;
             }
 
             return text;
@@ -3915,7 +4152,7 @@ function buildDatasetSubmissionUrl(
             const text = format === 'wikitext' ? this.generateWikitextReport() : this.generatePlainTextReport();
             try {
                 await navigator.clipboard.writeText(text);
-                mw.notify('Report copied to clipboard!', { type: 'info', autoHide: true, autoHideSeconds: 3 });
+                mw.notify(this.t('Report copied to clipboard!'), { type: 'info', autoHide: true, autoHideSeconds: 3 });
             } catch (e) {
                 // Fallback
                 const textarea = document.createElement('textarea');
@@ -3924,7 +4161,7 @@ function buildDatasetSubmissionUrl(
                 textarea.select();
                 document.execCommand('copy');
                 document.body.removeChild(textarea);
-                mw.notify('Report copied to clipboard!', { type: 'info', autoHide: true, autoHideSeconds: 3 });
+                mw.notify(this.t('Report copied to clipboard!'), { type: 'info', autoHide: true, autoHideSeconds: 3 });
             }
         }
 
@@ -4009,7 +4246,7 @@ function buildDatasetSubmissionUrl(
 
             let result;
             if (!anyAvailable) {
-                result = { ...base, verdict: 'SOURCE UNAVAILABLE', confidence: 0, comments: 'None of the grouped sources could be retrieved.' };
+                result = { ...base, verdict: 'SOURCE UNAVAILABLE', confidence: 0, comments: this.t('None of the grouped sources could be retrieved.') };
             } else {
                 try {
                     const apiResult = await withRetry(
@@ -4081,7 +4318,7 @@ function buildDatasetSubmissionUrl(
         async verifyAllCitations() {
             const citations = this.collectAllCitations();
             if (citations.length === 0) {
-                mw.notify('No citations found on this page.', { type: 'warn', autoHide: true });
+                mw.notify(this.t('No citations found on this page.'), { type: 'warn', autoHide: true });
                 return;
             }
 
@@ -4094,12 +4331,22 @@ function buildDatasetSubmissionUrl(
             const estimatedSeconds = citations.length * 7 + multiGroupCount * 8;
             const estimatedMinutes = Math.ceil(estimatedSeconds / 60);
             const groupNote = multiGroupCount > 0
-                ? `\n\nThis includes ${multiGroupCount} combined-source check${multiGroupCount === 1 ? '' : 's'} for adjacent citation groups.`
+                ? this.t(
+                    multiGroupCount === 1
+                        ? '\n\nThis includes {count} combined-source check for adjacent citation groups.'
+                        : '\n\nThis includes {count} combined-source checks for adjacent citation groups.',
+                    { count: multiGroupCount }
+                  )
                 : '';
 
             const confirmed = await new Promise(resolve => {
                 OO.ui.confirm(
-                    `This will verify ${citations.length} citations from ${uniqueUrls.size} unique sources.${groupNote}\n\nEstimated time: ~${estimatedMinutes} minute${estimatedMinutes > 1 ? 's' : ''}.\n\nContinue?`
+                    this.t(
+                        estimatedMinutes > 1
+                            ? 'This will verify {citations} citations from {sources} unique sources.{groupNote}\n\nEstimated time: ~{minutes} minutes.\n\nContinue?'
+                            : 'This will verify {citations} citations from {sources} unique sources.{groupNote}\n\nEstimated time: ~{minutes} minute.\n\nContinue?',
+                        { citations: citations.length, sources: uniqueUrls.size, groupNote, minutes: estimatedMinutes }
+                    )
                 ).done(result => resolve(result));
             });
             if (!confirmed) return;
@@ -4139,7 +4386,7 @@ function buildDatasetSubmissionUrl(
                 if (this.reportCancelled) break;
 
                 const citation = citations[i];
-                this.updateReportProgress(completed, progressTotal, `Checking citation [${citation.citationNumber}]`, startTime);
+                this.updateReportProgress(completed, progressTotal, this.t('Checking citation [{num}]', { num: citation.citationNumber }), startTime);
 
                 let result;
 
@@ -4152,7 +4399,7 @@ function buildDatasetSubmissionUrl(
                         refElement: citation.refElement,
                         verdict: 'SOURCE UNAVAILABLE',
                         confidence: 0,
-                        comments: 'No URL found in reference',
+                        comments: this.t('No URL found in reference'),
                         truncated: false
                     };
                 } else {
@@ -4162,7 +4409,7 @@ function buildDatasetSubmissionUrl(
                     const cacheKey = citation.pageNum ? `${citation.url}|page=${citation.pageNum}` : citation.url;
 
                     if (!this.sourceCache.has(cacheKey)) {
-                        this.updateReportProgress(completed, progressTotal, `Fetching source for [${citation.citationNumber}]`, startTime);
+                        this.updateReportProgress(completed, progressTotal, this.t('Fetching source for [{num}]', { num: citation.citationNumber }), startTime);
                         try {
                             const fetchResult = await this.fetchSourceContent(citation.url, citation.pageNum);
                             this.sourceCache.set(cacheKey, fetchResult);
@@ -4182,7 +4429,7 @@ function buildDatasetSubmissionUrl(
 
                     if (!sourceContent) {
                         const statusPart = fetchResult.status != null ? `HTTP ${fetchResult.status}` : null;
-                        const reasonPart = fetchResult.error || 'Could not fetch source content';
+                        const reasonPart = fetchResult.error || this.t('Could not fetch source content');
                         const comments = statusPart ? `${statusPart}: ${reasonPart}` : reasonPart;
                         result = {
                             citationNumber: citation.citationNumber,
@@ -4205,7 +4452,7 @@ function buildDatasetSubmissionUrl(
                         // would have recovered. The [5s, 10s, 20s] backoff curve
                         // is preserved via minBackoffMs/jitterMs, and Cancel
                         // still short-circuits via shouldAbort.
-                        this.updateReportProgress(completed, progressTotal, `Verifying citation [${citation.citationNumber}]`, startTime);
+                        this.updateReportProgress(completed, progressTotal, this.t('Verifying citation [{num}]', { num: citation.citationNumber }), startTime);
                         try {
                             const apiResult = await withRetry(
                                 () => this.callProviderAPI(citation.claimText, sourceContent),
@@ -4219,7 +4466,7 @@ function buildDatasetSubmissionUrl(
                                         if (willRetry) {
                                             this.updateReportProgress(
                                                 completed, progressTotal,
-                                                `Rate limited, retrying in ${Math.round(backoff / 1000)}s...`,
+                                                this.t('Rate limited, retrying in {secs}s...', { secs: Math.round(backoff / 1000) }),
                                                 startTime
                                             );
                                         }
@@ -4299,7 +4546,7 @@ function buildDatasetSubmissionUrl(
                 // assemble them and ask for a single verdict over the combination.
                 if (citation.groupSize > 1 && citation.groupIndex === citation.groupSize - 1 && !this.reportCancelled) {
                     const groupToken = (citation.groupCitationNumbers || []).map(n => `[${n}]`).join('');
-                    this.updateReportProgress(completed, progressTotal, `Checking combined sources ${groupToken}`, startTime);
+                    this.updateReportProgress(completed, progressTotal, this.t('Checking combined sources {token}', { token: groupToken }), startTime);
                     await this.verifyGroupCollective(citation, citations, startTime, delayBetweenCalls, completed, progressTotal);
                     completed++;
                 }
@@ -4360,7 +4607,7 @@ function buildDatasetSubmissionUrl(
 
             if (verdict === 'NOT SUPPORTED' || verdict === 'PARTIALLY SUPPORTED' || verdict === 'SOURCE UNAVAILABLE') {
                 const btn = new OO.ui.ButtonWidget({
-                    label: 'Edit Section',
+                    label: this.t('Edit Section'),
                     flags: ['progressive'],
                     icon: 'edit',
                     href: this.buildEditUrl(),
@@ -4405,7 +4652,7 @@ function buildDatasetSubmissionUrl(
 
         buildSubmitToDatasetButton(result, { label = 'Give feedback' } = {}) {
             return new OO.ui.ButtonWidget({
-                label,
+                label: this.t(label),
                 icon: 'feedback',
                 framed: false,
                 href: this.buildDatasetSubmissionUrl(result),
@@ -4422,7 +4669,7 @@ function buildDatasetSubmissionUrl(
                 verdictEl.className = '';
             }
             if (commentsEl) {
-                commentsEl.textContent = 'Click "Verify Claim" to verify the selected claim against the source.';
+                commentsEl.textContent = this.t('Click "Verify Claim" to verify the selected claim against the source.');
             }
             const actionContainer = document.getElementById('verifier-action-container');
             if (actionContainer) {
@@ -4452,7 +4699,7 @@ function buildDatasetSubmissionUrl(
                 const span = `<span class="${isActive ? 'group-active' : ''}">[${this.escapeHtml(text)}]</span>`;
                 return span;
             }).join(' ');
-            indicatorEl.innerHTML = `Part of a group of ${group.length} citations: ${numbers}`;
+            indicatorEl.innerHTML = this.t('Part of a group of {count} citations: {numbers}', { count: group.length, numbers });
             indicatorEl.style.display = '';
         }
     }
