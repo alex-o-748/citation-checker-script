@@ -3357,6 +3357,21 @@ function buildDatasetSubmissionUrl(
             return generateUserPrompt(claim, sourceInfo);
         }
 
+        // When the UI is French, ask the model to write its free-text
+        // explanation in French so the "comments" shown next to each verdict
+        // match the rest of the interface. The verdict and reason_type values
+        // are parsed programmatically, so they must stay in the English enum;
+        // the directive is appended (not spliced) to leave the benchmark-tuned
+        // few-shot prompt in core/prompts.js untouched. English wikis get the
+        // prompt verbatim.
+        localizeSystemPrompt(prompt) {
+            if (this.lang !== 'fr') return prompt;
+            return prompt + '\n\nLANGUAGE: Write the "comments" field in French (français). '
+                + 'You may quote the source verbatim in its original language, but write your own explanation in French. '
+                + 'Keep the "verdict" and "reason_type" values exactly as specified above, in English '
+                + '(SUPPORTED, PARTIALLY SUPPORTED, NOT SUPPORTED, SOURCE UNAVAILABLE, contradiction, omission).';
+        }
+
         logVerification(verdict, confidence, reasonType) {
             logVerification({
                 article_url: window.location.href,
@@ -3424,19 +3439,19 @@ function buildDatasetSubmissionUrl(
         }
         
         async callPublicAIAPI(claim, sourceInfo) {
-            return callPublicAIAPI({ model: this.providers.publicai.model, systemPrompt: generateSystemPrompt(), userContent: generateUserPrompt(claim, sourceInfo) });
+            return callPublicAIAPI({ model: this.providers.publicai.model, systemPrompt: this.localizeSystemPrompt(generateSystemPrompt()), userContent: generateUserPrompt(claim, sourceInfo) });
         }
         
         async callClaudeAPI(claim, sourceInfo) {
-            return callClaudeAPI({ apiKey: this.getCurrentApiKey(), model: this.providers.claude.model, systemPrompt: generateSystemPrompt(), userContent: generateUserPrompt(claim, sourceInfo) });
+            return callClaudeAPI({ apiKey: this.getCurrentApiKey(), model: this.providers.claude.model, systemPrompt: this.localizeSystemPrompt(generateSystemPrompt()), userContent: generateUserPrompt(claim, sourceInfo) });
         }
         
         async callGeminiAPI(claim, sourceInfo) {
-            return callGeminiAPI({ apiKey: this.getCurrentApiKey(), model: this.providers.gemini.model, systemPrompt: generateSystemPrompt(), userContent: generateUserPrompt(claim, sourceInfo) });
+            return callGeminiAPI({ apiKey: this.getCurrentApiKey(), model: this.providers.gemini.model, systemPrompt: this.localizeSystemPrompt(generateSystemPrompt()), userContent: generateUserPrompt(claim, sourceInfo) });
         }
         
         async callOpenAIAPI(claim, sourceInfo) {
-            return callOpenAIAPI({ apiKey: this.getCurrentApiKey(), model: this.providers.openai.model, systemPrompt: generateSystemPrompt(), userContent: generateUserPrompt(claim, sourceInfo) });
+            return callOpenAIAPI({ apiKey: this.getCurrentApiKey(), model: this.providers.openai.model, systemPrompt: this.localizeSystemPrompt(generateSystemPrompt()), userContent: generateUserPrompt(claim, sourceInfo) });
         }
         
 	parseVerificationResult(response) {
@@ -4166,14 +4181,14 @@ function buildDatasetSubmissionUrl(
         }
 
         async callProviderAPI(claim, sourceInfo) {
-            return callProviderAPI(this.currentProvider, { apiKey: this.getCurrentApiKey(), model: this.providers[this.currentProvider].model, systemPrompt: generateSystemPrompt(), userContent: generateUserPrompt(claim, sourceInfo) });
+            return callProviderAPI(this.currentProvider, { apiKey: this.getCurrentApiKey(), model: this.providers[this.currentProvider].model, systemPrompt: this.localizeSystemPrompt(generateSystemPrompt()), userContent: generateUserPrompt(claim, sourceInfo) });
         }
 
         // Collective (multi-source) variant of callProviderAPI: same provider
         // routing, but the group system prompt and a pre-assembled multi-source
         // user message. `assembledText` comes from assembleGroupSources().
         async callProviderAPIGroup(claim, assembledText) {
-            return callProviderAPI(this.currentProvider, { apiKey: this.getCurrentApiKey(), model: this.providers[this.currentProvider].model, systemPrompt: generateGroupSystemPrompt(), userContent: generateGroupUserPrompt(claim, assembledText) });
+            return callProviderAPI(this.currentProvider, { apiKey: this.getCurrentApiKey(), model: this.providers[this.currentProvider].model, systemPrompt: this.localizeSystemPrompt(generateGroupSystemPrompt()), userContent: generateGroupUserPrompt(claim, assembledText) });
         }
 
         // Runs the single collective verification for one adjacent-citation
