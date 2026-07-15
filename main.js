@@ -1242,6 +1242,10 @@ function buildDatasetSubmissionUrl(
         'Rate limited, retrying in {secs}s...':
             'Limite de débit atteinte, nouvelle tentative dans {secs}s…',
         'Checking combined sources {token}': 'Vérification des sources combinées {token}',
+        'Completed: {count} citations checked': 'Terminé : {count} citations vérifiées',
+        'Completed: {count} citation checked': 'Terminé : {count} citation vérifiée',
+        'Cancelled after {done} of {total} citations': 'Annulé après {done} sur {total} citations',
+        'Cancelled after {done} of {total} citation': 'Annulé après {done} sur {total} citation',
         ' · ~{duration} remaining': ' · ~{duration} restant',
 
         // Report summary
@@ -4593,8 +4597,8 @@ function buildDatasetSubmissionUrl(
             // Finalize
             this.reportRunning = false;
             const finalPhase = this.reportCancelled
-                ? `Cancelled after ${this.reportResults.length} of ${citations.length} citations`
-                : `Completed: ${this.reportResults.length} citations checked`;
+                ? this.t(citations.length === 1 ? 'Cancelled after {done} of {total} citation' : 'Cancelled after {done} of {total} citations', { done: this.reportResults.length, total: citations.length })
+                : this.t(this.reportResults.length === 1 ? 'Completed: {count} citation checked' : 'Completed: {count} citations checked', { count: this.reportResults.length });
             this.updateReportProgress(completed, progressTotal, finalPhase, startTime);
             this.renderReportSummary();
             this.renderReportActions();
