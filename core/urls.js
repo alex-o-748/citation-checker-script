@@ -10,6 +10,21 @@ export function isArchiveUrl(href) {
     return ARCHIVE_HOST_PATTERN.test(href);
 }
 
+// Wikimedia-family internal wikilinks (a[href^="http"] resolves to an absolute
+// URL, so blue wikilinks like the "ISBN (identifier)" article, and the
+// Special:BookSources bookseller-list page that ISBN magic links point to, can
+// slip through the http filter). These are never genuine citation sources —
+// verifying a claim against a wikilink is meaningless — so exclude them.
+const WIKIMEDIA_INTERNAL_PATTERN = /^https?:\/\/[a-z0-9-]+\.(?:wikipedia|wikimedia|wiktionary|wikidata|wikisource|wikiquote|wikibooks|wikinews|wikiversity|wikivoyage)\.org\/wiki\//i;
+
+export function isInternalWikiLink(href) {
+    if (!href) return false;
+    // Special:BookSources is the page ISBN magic links target; match it
+    // directly so localized/mirrored hosts are covered too.
+    if (/Special:BookSources/i.test(href)) return true;
+    return WIKIMEDIA_INTERNAL_PATTERN.test(href);
+}
+
 export function parseArchiveOrgUrl(url) {
     const match = url.match(/^https?:\/\/web\.archive\.org\/web\/(\d+)(?:id_)?\/(https?:\/\/.+)$/);
     if (!match) return null;
@@ -18,7 +33,11 @@ export function parseArchiveOrgUrl(url) {
 
 export function extractHttpUrl(element) {
     if (!element) return null;
-    const links = element.querySelectorAll('a[href^="http"]');
+    // Skip internal wikilinks (ISBN article, Special:BookSources, etc.) — a
+    // book-only citation whose sole links are these would otherwise be
+    // "verified" against a Wikipedia navigation page rather than a real source.
+    const links = Array.from(element.querySelectorAll('a[href^="http"]'))
+        .filter(link => !isInternalWikiLink(link.href));
     if (links.length === 0) return null;
     // Prefer Internet Archive URLs — we fetch via the Wayback raw endpoint
     // (id_) which returns clean original content without toolbar framing.
