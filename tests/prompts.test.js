@@ -55,3 +55,23 @@ test('generateUserPrompt emits only the context fields that are present', () => 
   assert.ok(!out.includes('Article:'));
   assert.ok(!out.includes('Section:'));
 });
+
+test('generateUserPrompt ignores context for a standalone claim (parity gate)', () => {
+  // A claim with its own explicit subject does not need disambiguation, so the
+  // context must be dropped and the prompt left byte-identical to no-context —
+  // this is what keeps the feature at parity on claims it cannot help.
+  const claim = 'Al Jazeera launched on 1 November 1996.';
+  const source = 'SRC';
+  const full = { articleTitle: 'Al Jazeera', sectionTitle: 'History', paragraph: 'Al Jazeera launched on 1 November 1996 in Doha.' };
+  assert.equal(generateUserPrompt(claim, source, full), generateUserPrompt(claim, source));
+  assert.ok(!generateUserPrompt(claim, source, full).includes('Article:'));
+});
+
+test('generateUserPrompt attaches context for a dependent-fragment claim', () => {
+  // Pronoun-led claim needs its antecedent → context is attached.
+  const out = generateUserPrompt('She received the Nobel Prize in 2015.', 'SRC', {
+    articleTitle: 'Ada Yonath', paragraph: 'Ada Yonath is a chemist. She received the Nobel Prize in 2015.',
+  });
+  assert.ok(out.includes('Article: Ada Yonath'));
+  assert.ok(out.includes('disambiguation only'));
+});

@@ -1,6 +1,8 @@
 // Pure prompt-generation logic. Imported by core/ consumers (CLI, benchmark).
 // Also injected byte-identically into main.js between <core-injected> markers.
 
+import { claimNeedsDisambiguation } from './claim.js';
+
 export function generateSystemPrompt() {
     return `You are a fact-checking assistant for Wikipedia. Analyze whether claims are supported by the provided source text.
 
@@ -133,7 +135,10 @@ function formatContextBlock(context) {
  * @param {{articleTitle?: string, sectionTitle?: string, paragraph?: string}} [context]
  *   Optional surrounding context (article title, section heading, paragraph)
  *   used by the model to resolve pronouns and abbreviated references in the
- *   Claim. Omitting it reproduces the original prompt exactly.
+ *   Claim. It is attached ONLY when the claim reads as a dependent fragment
+ *   (see claimNeedsDisambiguation); for a standalone claim the context is
+ *   ignored and the prompt is byte-identical to omitting it entirely. Omitting
+ *   it also reproduces the original prompt exactly.
  * @returns {string} The user message content
  */
 export function generateUserPrompt(claim, sourceInfo, context) {
@@ -150,7 +155,11 @@ export function generateUserPrompt(claim, sourceInfo, context) {
 
     console.log('[Verifier] Source text (first 2000 chars):', sourceText.substring(0, 2000));
 
-    return `${formatContextBlock(context)}Claim: "${claim}"
+    // Gate: only dependent-fragment claims get context. Standalone claims keep
+    // the original prompt, so the feature stays at parity where it can't help.
+    const contextBlock = claimNeedsDisambiguation(claim) ? formatContextBlock(context) : '';
+
+    return `${contextBlock}Claim: "${claim}"
 
 Source text:
 ${sourceText}`;

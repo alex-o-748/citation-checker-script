@@ -184,6 +184,26 @@ export function extractSectionTitle(refElement) {
     return crumbs.join(' › ');
 }
 
+// Pronoun/reference or continuation word at the head of a claim — the signal
+// that the claim cannot be interpreted on its own and benefits from surrounding
+// context. The lowercase-start check (a mid-sentence fragment like "and the
+// Premier League") is handled separately so it stays case-sensitive.
+const DEPENDENT_LEAD_WORD_RE = /^(he|she|it|they|him|her|hers|his|its|their|theirs|them|this|that|these|those|who|whom|which|and|but|or|nor|yet|so|having)\b/i;
+
+// Whether a claim reads as a dependent fragment that needs surrounding context
+// to be interpreted — it leads with a pronoun/reference whose antecedent is
+// elsewhere ("She received the Nobel Prize"), or is a mid-sentence continuation
+// ("and the Premier League"). Standalone claims with their own explicit subject
+// return false, so callers can skip attaching context and leave the prompt
+// byte-identical to the no-context path. This is what keeps the feature at
+// parity on the ~85% of claims that don't need disambiguation.
+export function claimNeedsDisambiguation(claim) {
+    const c = (claim || '').trim();
+    if (!c) return false;
+    if (/^[a-z]/.test(c)) return true;          // lowercase start → mid-sentence fragment
+    return DEPENDENT_LEAD_WORD_RE.test(c);      // pronoun / reference / continuation lead
+}
+
 // Gathers disambiguation context around a claim for the LLM prompt: the full
 // surrounding paragraph and the section-heading breadcrumb. The article title
 // is environment-specific (mw.config in the browser, URL in the CLI/benchmark)

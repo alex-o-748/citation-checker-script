@@ -632,18 +632,16 @@ test('runVerify: DOM traversal chain works against a realistic Wikipedia fixture
     {
       match: (url, opts) => String(url) === 'https://publicai-proxy.alaexis.workers.dev' && opts?.method === 'POST',
       respond: async (_url, opts) => {
-        // The verified Claim must still be scoped to citation [2], not [1].
-        // The surrounding paragraph (which includes the [1] sentence about
-        // "sea level") is now supplied separately as disambiguation context,
-        // so we assert on the `Claim:` line specifically rather than the whole
-        // message.
+        // The verified Claim is scoped to citation [2], not [1]. This claim
+        // ("Under higher pressure the boiling point rises.") is a standalone
+        // sentence with its own subject, so the disambiguation gate suppresses
+        // the context block entirely — the prompt must not carry the [1]
+        // sentence about "sea level" anywhere.
         const body = JSON.parse(opts.body);
         const userMessage = body.messages.find((m) => m.role === 'user')?.content ?? '';
         const claimLine = userMessage.match(/Claim: "([^"]*)"/)?.[1] ?? '';
         assert.match(claimLine, /higher pressure/i, 'Claim should be the [2] claim');
-        assert.doesNotMatch(claimLine, /sea level/i, 'Claim should NOT include the [1] claim');
-        // The disambiguation context does carry the full paragraph.
-        assert.match(userMessage, /sea level/i, 'context block should include the surrounding paragraph');
+        assert.doesNotMatch(userMessage, /sea level/i, 'standalone claim → no context block, no [1] text');
         return {
           ok: true, status: 200, json: async () => ({
             choices: [{ message: { content: '{"verdict": "SUPPORTED", "confidence": 88, "comments": "matches"}' } }],

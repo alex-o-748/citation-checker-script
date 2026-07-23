@@ -10,6 +10,7 @@
 // Pure prompt-generation logic. Imported by core/ consumers (CLI, benchmark).
 // Also injected byte-identically into main.js between <core-injected> markers.
 
+
 function generateSystemPrompt() {
     return `You are a fact-checking assistant for Wikipedia. Analyze whether claims are supported by the provided source text.
 
@@ -142,7 +143,10 @@ function formatContextBlock(context) {
  * @param {{articleTitle?: string, sectionTitle?: string, paragraph?: string}} [context]
  *   Optional surrounding context (article title, section heading, paragraph)
  *   used by the model to resolve pronouns and abbreviated references in the
- *   Claim. Omitting it reproduces the original prompt exactly.
+ *   Claim. It is attached ONLY when the claim reads as a dependent fragment
+ *   (see claimNeedsDisambiguation); for a standalone claim the context is
+ *   ignored and the prompt is byte-identical to omitting it entirely. Omitting
+ *   it also reproduces the original prompt exactly.
  * @returns {string} The user message content
  */
 function generateUserPrompt(claim, sourceInfo, context) {
@@ -159,7 +163,11 @@ function generateUserPrompt(claim, sourceInfo, context) {
 
     console.log('[Verifier] Source text (first 2000 chars):', sourceText.substring(0, 2000));
 
-    return `${formatContextBlock(context)}Claim: "${claim}"
+    // Gate: only dependent-fragment claims get context. Standalone claims keep
+    // the original prompt, so the feature stays at parity where it can't help.
+    const contextBlock = claimNeedsDisambiguation(claim) ? formatContextBlock(context) : '';
+
+    return `${contextBlock}Claim: "${claim}"
 
 Source text:
 ${sourceText}`;
@@ -671,6 +679,26 @@ function extractSectionTitle(refElement) {
         }
     }
     return crumbs.join(' › ');
+}
+
+// Pronoun/reference or continuation word at the head of a claim — the signal
+// that the claim cannot be interpreted on its own and benefits from surrounding
+// context. The lowercase-start check (a mid-sentence fragment like "and the
+// Premier League") is handled separately so it stays case-sensitive.
+const DEPENDENT_LEAD_WORD_RE = /^(he|she|it|they|him|her|hers|his|its|their|theirs|them|this|that|these|those|who|whom|which|and|but|or|nor|yet|so|having)\b/i;
+
+// Whether a claim reads as a dependent fragment that needs surrounding context
+// to be interpreted — it leads with a pronoun/reference whose antecedent is
+// elsewhere ("She received the Nobel Prize"), or is a mid-sentence continuation
+// ("and the Premier League"). Standalone claims with their own explicit subject
+// return false, so callers can skip attaching context and leave the prompt
+// byte-identical to the no-context path. This is what keeps the feature at
+// parity on the ~85% of claims that don't need disambiguation.
+function claimNeedsDisambiguation(claim) {
+    const c = (claim || '').trim();
+    if (!c) return false;
+    if (/^[a-z]/.test(c)) return true;          // lowercase start → mid-sentence fragment
+    return DEPENDENT_LEAD_WORD_RE.test(c);      // pronoun / reference / continuation lead
 }
 
 // Gathers disambiguation context around a claim for the LLM prompt: the full

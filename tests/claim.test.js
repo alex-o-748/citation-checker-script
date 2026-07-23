@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
-import { extractClaimText, getCitationGroup, extractSectionTitle, extractClaimContext, cleanProse, MAINTENANCE_MARKER_RE } from '../core/claim.js';
+import { extractClaimText, getCitationGroup, extractSectionTitle, extractClaimContext, claimNeedsDisambiguation, cleanProse, MAINTENANCE_MARKER_RE } from '../core/claim.js';
 
 function mkDoc(html) {
   return new JSDOM(`<!DOCTYPE html><body>${html}</body>`).window.document;
@@ -204,4 +204,22 @@ test('extractSectionTitle returns empty string above the first heading', () => {
     </div>
   `);
   assert.equal(extractSectionTitle(doc.getElementById('cite_ref-1')), '');
+});
+
+test('claimNeedsDisambiguation: true for pronoun-led and fragment claims', () => {
+  assert.equal(claimNeedsDisambiguation('She received the Nobel Prize in 2015.'), true);
+  assert.equal(claimNeedsDisambiguation('He was a member of the committee.'), true);
+  assert.equal(claimNeedsDisambiguation('They won the final.'), true);
+  assert.equal(claimNeedsDisambiguation('It was completed in 1998.'), true);
+  assert.equal(claimNeedsDisambiguation('and the Premier League'), true);   // mid-sentence fragment
+  assert.equal(claimNeedsDisambiguation('having previously played for PHC Zebras'), true);
+  assert.equal(claimNeedsDisambiguation('This treaty was signed in Paris.'), true);
+});
+
+test('claimNeedsDisambiguation: false for standalone claims with an explicit subject', () => {
+  assert.equal(claimNeedsDisambiguation('Al Jazeera launched on 1 November 1996.'), false);
+  assert.equal(claimNeedsDisambiguation('The company was founded in 1985 by John Smith.'), false);
+  assert.equal(claimNeedsDisambiguation('Jiménez won both Serie A and the Premier League.'), false);
+  assert.equal(claimNeedsDisambiguation(''), false);
+  assert.equal(claimNeedsDisambiguation(null), false);
 });
