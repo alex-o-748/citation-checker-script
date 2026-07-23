@@ -118,7 +118,7 @@ v_right = [(V_W, H), (V_W - wt, H), (V_W / 2, notch), (V_W / 2, 0.0)]
 # ---------------------------------------------------------------------------
 # Placement -- overlap S and V so they interleave.
 # ---------------------------------------------------------------------------
-V_OFF_X = 20.0        # V shifted right so its left leg crosses the S
+V_OFF_X = 13.0        # V slid into the S so its left leg shares more material
 
 # V first (lower/thinner), then S on top -> S proud of V at the interleave.
 add_prism([(x + V_OFF_X, y) for (x, y) in v_left], 0.0, V_THICK)
