@@ -194,11 +194,34 @@ test('isRetryableError: true for 429 / 5xx / network families', () => {
     assert.equal(isRetryableError(new Error('ECONNRESET')),                 true);
 });
 
+test('isRetryableError: true for the provider "request failed (NNN)" format', () => {
+    // core/providers.js throws `<label> API request failed (<status>): <msg>`,
+    // which does not start with "HTTP" — the matcher must still catch it, or
+    // withRetry treats a plain 429 as fatal (the HF keyless-proxy 429 storm).
+    assert.equal(isRetryableError(new Error('HuggingFace API request failed (429): Too many requests')), true);
+    assert.equal(isRetryableError(new Error('API request failed (500): internal')), true);
+    assert.equal(isRetryableError(new Error('API request failed (503): unavailable')), true);
+});
+
 test('isRetryableError: false for 4xx (except 429) and parse errors', () => {
     assert.equal(isRetryableError(new Error('HTTP 400: bad request')), false);
     assert.equal(isRetryableError(new Error('HTTP 401: unauthorized')), false);
     assert.equal(isRetryableError(new Error('HTTP 404: not found')),    false);
+    // Parenthesized non-retryable codes from the provider format stay non-retryable.
+    assert.equal(isRetryableError(new Error('API request failed (400): bad request')), false);
+    assert.equal(isRetryableError(new Error('API request failed (404): not found')),   false);
     assert.equal(isRetryableError(new Error('Invalid API response format')), false);
+});
+
+test('withRetry: retries the provider-format 429 and eventually succeeds', async () => {
+    let calls = 0;
+    const result = await withRetry(async () => {
+        calls++;
+        if (calls < 3) throw new Error('HuggingFace API request failed (429): Too many requests');
+        return 'ok';
+    }, { sleepFn: noSleep });
+    assert.equal(result, 'ok');
+    assert.equal(calls, 3);
 });
 
 test('isRetryableError: tolerates null/undefined errors', () => {

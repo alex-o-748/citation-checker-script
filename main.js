@@ -303,7 +303,12 @@ function parseVerificationResult(response) {
 // Defaults match the benchmark (1s base, exponential, ≤30s cap, 5
 // attempts) — callers tune via options.
 
-const RETRYABLE_STATUS = /^HTTP (429|500|502|503|504)\b/;
+// Matches a retryable status code in either shape it reaches us: the
+// fetch/worker layer's "HTTP 429 ..." and the provider layer's
+// "<label> API request failed (429): ..." (core/providers.js throws the
+// status in parentheses). Non-retryable 4xx like 400/401/404 stay unmatched
+// because only the listed codes are in the alternation.
+const RETRYABLE_STATUS = /(?:^HTTP |\()(429|500|502|503|504)\b/;
 const RETRYABLE_NETWORK = /timeout|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|socket hang up/i;
 
 function defaultSleep(ms) {
