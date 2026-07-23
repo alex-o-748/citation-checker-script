@@ -1050,6 +1050,9 @@ async function fetchSourceContent(url, pageNum, { workerBase = 'https://publicai
 }
 
 function logVerification(payload, { workerBase = 'https://publicai-proxy.alaexis.workers.dev' } = {}) {
+    // Caller supplies the payload object:
+    //   { article_url, article_title, citation_number, source_url, provider,
+    //     verdict, confidence, reason_type }.
     try {
         fetch(`${workerBase}/log`, {
             method: 'POST',
@@ -1194,6 +1197,7 @@ function buildDatasetSubmissionUrl(
 
             this.sourceTextInput = null;
             this.sourceInputForOverride = false;
+            this._pdfJsLoading = null;
 
             // Article report state
             this.reportMode = false;
@@ -1284,6 +1288,11 @@ function buildDatasetSubmissionUrl(
                         <div id="verifier-source-text">No source loaded yet.</div>
                         <div id="verifier-source-override-container" style="display: none; margin-top: 8px;"></div>
                         <div id="verifier-source-input-container" style="display: none; margin-top: 10px;">
+                            <div id="verifier-source-pdf-row">
+                                <label id="verifier-source-pdf-label" for="verifier-source-pdf-input" role="button" tabindex="0">📄 Upload PDF</label>
+                                <input type="file" id="verifier-source-pdf-input" accept=".pdf,application/pdf">
+                                <span id="verifier-source-pdf-hint">or paste the text below</span>
+                            </div>
                             <div id="verifier-source-textarea-container"></div>
                             <div id="verifier-source-buttons" style="margin-top: 8px; display: flex; gap: 8px;">
                                 <div id="verifier-load-text-btn-container" style="flex: 1;"></div>
@@ -1435,6 +1444,35 @@ function buildDatasetSubmissionUrl(
                 #verifier-source-override-container .verifier-override-link:hover .oo-ui-labelElement-label {
                     color: #202122;
                     text-decoration-color: #54595d;
+                }
+                #verifier-source-pdf-row {
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                    flex-wrap: wrap;
+                    margin-bottom: 8px;
+                }
+                #verifier-source-pdf-input {
+                    display: none;
+                }
+                #verifier-source-pdf-label {
+                    display: inline-block;
+                    padding: 4px 10px;
+                    font-size: 13px;
+                    color: #202122;
+                    background: #f8f9fa;
+                    border: 1px solid #a2a9b1;
+                    border-radius: 4px;
+                    cursor: pointer;
+                    user-select: none;
+                }
+                #verifier-source-pdf-label:hover {
+                    background: #ffffff;
+                    border-color: #72777d;
+                }
+                #verifier-source-pdf-hint {
+                    font-size: 12px;
+                    color: #72777d;
                 }
                 #verifier-source-textarea-container .oo-ui-inputWidget {
                     width: 100%;
@@ -2115,6 +2153,18 @@ function buildDatasetSubmissionUrl(
                     color: #e0e0e0 !important;
                     border-color: #3a3a4e !important;
                 }
+                html.skin-theme-clientpref-night #verifier-source-pdf-label {
+                    background: #2a2a3e !important;
+                    color: #e0e0e0 !important;
+                    border-color: #3a3a4e !important;
+                }
+                html.skin-theme-clientpref-night #verifier-source-pdf-label:hover {
+                    background: #3a3a4e !important;
+                    border-color: #54595d !important;
+                }
+                html.skin-theme-clientpref-night #verifier-source-pdf-hint {
+                    color: #a0a0a8 !important;
+                }
                 html.skin-theme-clientpref-night #source-verifier-sidebar .oo-ui-dropdownWidget {
                     background: #2a2a3e !important;
                     border-color: #3a3a4e !important;
@@ -2340,6 +2390,18 @@ function buildDatasetSubmissionUrl(
                         background: #2a2a3e !important;
                         color: #e0e0e0 !important;
                         border-color: #3a3a4e !important;
+                    }
+                    html.skin-theme-clientpref-os #verifier-source-pdf-label {
+                        background: #2a2a3e !important;
+                        color: #e0e0e0 !important;
+                        border-color: #3a3a4e !important;
+                    }
+                    html.skin-theme-clientpref-os #verifier-source-pdf-label:hover {
+                        background: #3a3a4e !important;
+                        border-color: #54595d !important;
+                    }
+                    html.skin-theme-clientpref-os #verifier-source-pdf-hint {
+                        color: #a0a0a8 !important;
                     }
                     html.skin-theme-clientpref-os #source-verifier-sidebar .oo-ui-dropdownWidget {
                         background: #2a2a3e !important;
@@ -2866,7 +2928,76 @@ function buildDatasetSubmissionUrl(
             this.updateButtonVisibility();
             this.updateStatus('Cancelled');
         }
-        
+
+        // Lazily load PDF.js the first time a user picks a PDF, and cache the
+        // in-flight promise so concurrent/repeat calls don't load it twice.
+        // Pinned to a specific UMD build (exposes window.pdfjsLib) so a future
+        // PDF.js release can't silently change extraction behavior. The CDN
+        // load was verified to pass Wikipedia's CSP (script-src allows cdnjs).
+        ensurePdfJs() {
+            if (window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+            if (!this._pdfJsLoading) {
+                const version = '3.11.174';
+                const base = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${version}`;
+                this._pdfJsLoading = mw.loader.getScript(`${base}/pdf.min.js`).then(() => {
+                    // Parse in a Web Worker when the browser permits a
+                    // cross-origin worker; if CSP blocks that, PDF.js falls back
+                    // to main-thread parsing, loading this same script via
+                    // script-src (the path we verified works). Either way,
+                    // extraction succeeds — we just don't need to host a worker.
+                    window.pdfjsLib.GlobalWorkerOptions.workerSrc = `${base}/pdf.worker.min.js`;
+                    return window.pdfjsLib;
+                }).catch((err) => {
+                    // Allow a later retry rather than caching the failure.
+                    this._pdfJsLoading = null;
+                    throw err;
+                });
+            }
+            return this._pdfJsLoading;
+        }
+
+        // Pull the text layer out of a PDF file. Returns '' for PDFs with no
+        // selectable text (e.g. scanned/image-only), which the caller surfaces
+        // as a "paste the passage instead" message rather than sending blanks.
+        async extractPdfText(file) {
+            const pdfjsLib = await this.ensurePdfJs();
+            const data = new Uint8Array(await file.arrayBuffer());
+            const pdf = await pdfjsLib.getDocument({ data }).promise;
+            const pages = [];
+            for (let i = 1; i <= pdf.numPages; i++) {
+                const page = await pdf.getPage(i);
+                const content = await page.getTextContent();
+                pages.push(content.items.map(item => item.str).join(' '));
+            }
+            return pages.join('\n\n').trim();
+        }
+
+        // Wire an uploaded PDF into the existing manual-source-text pipeline:
+        // extract → drop into the textarea → load it as the active source. From
+        // there it's indistinguishable from pasted text for verification.
+        async handlePdfFileSelected(file) {
+            if (!file) return;
+            const looksPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
+            if (!looksPdf) {
+                this.updateStatus('Please choose a PDF file.', true);
+                return;
+            }
+            this.updateStatus(`Reading ${file.name}…`);
+            try {
+                const text = await this.extractPdfText(file);
+                if (!text) {
+                    this.updateStatus('This PDF has no selectable text (it looks scanned). Please paste the relevant passage instead.', true);
+                    return;
+                }
+                this.sourceTextInput.setValue(text);
+                this.loadManualSourceText();
+                this.updateStatus(`Loaded text from ${file.name}. Ready to verify.`);
+            } catch (error) {
+                console.error('PDF extraction failed:', error);
+                this.updateStatus(`Could not read that PDF: ${error.message}. Try pasting the text instead.`, true);
+            }
+        }
+
         extractClaimText(refElement) {
             return extractClaimText(refElement);
         }
@@ -3017,6 +3148,26 @@ function buildDatasetSubmissionUrl(
             this.buttons.cancelText.on('click', () => {
                 this.cancelManualSourceText();
             });
+
+            const pdfInput = document.getElementById('verifier-source-pdf-input');
+            if (pdfInput) {
+                pdfInput.addEventListener('change', (event) => {
+                    const file = event.target.files && event.target.files[0];
+                    // Reset so picking the same file again still fires 'change'.
+                    event.target.value = '';
+                    this.handlePdfFileSelected(file);
+                });
+            }
+            const pdfLabel = document.getElementById('verifier-source-pdf-label');
+            if (pdfLabel && pdfInput) {
+                // Keyboard access: Enter/Space on the styled label opens the picker.
+                pdfLabel.addEventListener('keydown', (event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        pdfInput.click();
+                    }
+                });
+            }
 
             this.buttons.overrideText.on('click', () => {
                 this.showSourceTextInput(true);

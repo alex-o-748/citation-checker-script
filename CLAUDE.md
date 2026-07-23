@@ -70,6 +70,7 @@ docs/                            # Reference docs + design plans (see docs/READM
 | `attachReferenceClickHandlers()` | Handle citation [N] clicks |
 | `extractClaimText()` | Extract claim text between adjacent citations |
 | `fetchSourceContent()` | Fetch source via CORS proxy |
+| `ensurePdfJs()` / `extractPdfText()` / `handlePdfFileSelected()` | PDF upload for offline sources: lazily load PDF.js (pinned UMD build from cdnjs), pull the text layer, and feed it into the manual-source-text pipeline (empty text ⇒ "looks scanned, paste instead") |
 | `generateSystemPrompt()` / `generateUserPrompt()` | Build LLM prompts |
 | `verifyClaim()` | Single citation verification flow |
 | `callProviderAPI()` / `callProviderAPIGroup()` | Route to provider-specific API (single source / collective multi-source) |
