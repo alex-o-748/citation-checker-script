@@ -1,0 +1,40 @@
+name: Edit Log Sweep
+
+on:
+  schedule:
+    - cron: '0 2 * * *'  # every day at 2am UTC
+  workflow_dispatch:       # allow manual trigger
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write        # needed to commit data/edit-log.ndjson
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - run: pip install requests
+
+      - run: python scripts/sweep_edits.py
+        env:
+          SV_WIKIS: en.wikipedia.org
+          SV_MATCH: Source Verifier
+          SV_LOOKBACK_HOURS: '48'
+          SV_LOG_PATH: data/edit-log.ndjson
+
+      - name: Commit log
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/edit-log.ndjson
+          if git diff --cached --quiet; then
+            echo "No new edits to commit."
+          else
+            git commit -m "Update edit log sweep"
+            git push
+          fi
