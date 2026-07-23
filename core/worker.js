@@ -2,6 +2,31 @@
 
 import { isGoogleBooksUrl, parseArchiveOrgUrl } from './urls.js';
 
+// Chars that must precede the preamble before it is trusted as real page chrome.
+const WAYBACK_MIN_PREFIX = 200;
+// Chars of content that must follow for the recovered slice to be worth taking.
+const WAYBACK_MIN_REMAINDER = 500;
+const WAYBACK_PREAMBLE = /The Wayback Machine - https:\/\/web\.archive\.org\/\S+/;
+
+// Salvage the inner article when a Wayback banner survives into the extracted
+// text. The raw `id_` endpoint avoids the banner for snapshot URLs we can parse,
+// but it still reaches us from snapshots whose URL carries a different playback
+// flag, and from pages the proxy fetched before any archive handling applied.
+//
+// Conservative on both ends: the banner has to be far enough in to be page
+// chrome rather than the article's own words, and enough content has to follow
+// for the remainder to be worth preferring over the whole document. Anything
+// short of both thresholds returns the text untouched.
+export function recoverWaybackBody(text) {
+    const match = WAYBACK_PREAMBLE.exec(text);
+    if (!match) return text;
+    const cut = match.index + match[0].length;
+    if (cut < WAYBACK_MIN_PREFIX) return text;
+    const remainder = text.slice(cut).trim();
+    if (remainder.length < WAYBACK_MIN_REMAINDER) return text;
+    return remainder;
+}
+
 async function fetchViaProxy(fetchUrl, pageNum, workerBase, sourceUrl) {
     try {
         let proxyUrl = `${workerBase}/?fetch=${encodeURIComponent(fetchUrl)}`;
@@ -36,7 +61,8 @@ async function fetchViaProxy(fetchUrl, pageNum, workerBase, sourceUrl) {
             if (isTruncated) {
                 meta += `\nTruncated: true`;
             }
-            return { content: `${meta}\n\nSource Content:\n${data.content}`, error: null, status };
+            const body = recoverWaybackBody(data.content);
+            return { content: `${meta}\n\nSource Content:\n${body}`, error: null, status };
         }
 
         if (data.pdf && !pageNum && data.totalPages > 15) {
