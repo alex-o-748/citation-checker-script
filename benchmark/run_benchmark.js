@@ -150,17 +150,22 @@ const PROVIDERS = {
         keyEnv: 'OPENROUTER_API_KEY',
         type: 'openrouter'
     },
-    // Hugging Face Inference Providers — routed through router.huggingface.co.
-    // Same OpenAI-compatible request shape as OpenRouter; the per-provider
-    // backend (Groq, Together, Fireworks, PublicAI, etc.) is auto-selected
-    // by HF based on which providers the token has enabled. HF's response
-    // does not include a per-call cost field, so cost_usd is left null and
-    // token counts are captured for external rate-table computation.
+    // Hugging Face Inference Providers. Same OpenAI-compatible request shape as
+    // OpenRouter; the per-provider backend (Groq, Together, Fireworks, PublicAI,
+    // etc.) is auto-selected by HF based on which providers the token has
+    // enabled. HF's response does not include a per-call cost field, so cost_usd
+    // is left null and token counts are captured for external rate-table
+    // computation.
+    //
+    // requiresKey is false because these can run keyless: when HF_TOKEN is unset
+    // core.callHuggingFaceAPI routes to the worker proxy's /hf path, which
+    // injects an upstream key server-side (the browser userscript's path). Set
+    // HF_TOKEN locally to instead call router.huggingface.co directly.
     'hf-qwen3-32b': {
         name: 'Qwen3-32B (HF Inference)',
         model: 'Qwen/Qwen3-32B',
         endpoint: 'https://router.huggingface.co/v1/chat/completions',
-        requiresKey: true,
+        requiresKey: false,
         keyEnv: 'HF_TOKEN',
         type: 'huggingface'
     },
@@ -168,7 +173,7 @@ const PROVIDERS = {
         name: 'gpt-oss-20b (HF Inference)',
         model: 'openai/gpt-oss-20b',
         endpoint: 'https://router.huggingface.co/v1/chat/completions',
-        requiresKey: true,
+        requiresKey: false,
         keyEnv: 'HF_TOKEN',
         type: 'huggingface'
     },
@@ -176,7 +181,7 @@ const PROVIDERS = {
         name: 'DeepSeek-V3 (HF Inference)',
         model: 'deepseek-ai/DeepSeek-V3',
         endpoint: 'https://router.huggingface.co/v1/chat/completions',
-        requiresKey: true,
+        requiresKey: false,
         keyEnv: 'HF_TOKEN',
         type: 'huggingface'
     }
@@ -385,8 +390,11 @@ async function callOpenRouter(config, systemPrompt, userPrompt) {
 }
 
 async function callHuggingFace(config, systemPrompt, userPrompt) {
-    const apiKey = process.env[config.keyEnv];
-    if (!apiKey) throw new Error(`Missing ${config.keyEnv}`);
+    // Optional: with a token we call router.huggingface.co directly; without one
+    // core.callHuggingFaceAPI routes to the worker proxy's /hf path, which
+    // injects an upstream key server-side. Passing apiKey: undefined selects the
+    // proxy path, so no local key is required.
+    const apiKey = process.env[config.keyEnv] || undefined;
     return shapeResult(await callHuggingFaceAPI({
         apiKey,
         model: config.model,
