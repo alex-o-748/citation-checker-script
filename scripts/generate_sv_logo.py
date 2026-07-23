@@ -101,8 +101,10 @@ CY_BOT = 14.0                   # centre of the lower C  (16 mm apart -> small o
 # top C = "(" : bulges left (gap on the right)
 # bottom C = ")" : bulges right (gap on the left)
 # top-left bulge over bottom-right bulge = an S; they cross in the middle.
-s_top_C = dict(cx=S_CX, cy=CY_TOP, r_out=R_OUT, r_in=R_IN, a0=55,  a1=305)
-s_bot_C = dict(cx=S_CX, cy=CY_BOT, r_out=R_OUT, r_in=R_IN, a0=235, a1=485)
+# the lower C is shifted right so it reaches further into the V
+S_BOT_DX = 7.0
+s_top_C = dict(cx=S_CX,           cy=CY_TOP, r_out=R_OUT, r_in=R_IN, a0=55,  a1=305)
+s_bot_C = dict(cx=S_CX + S_BOT_DX, cy=CY_BOT, r_out=R_OUT, r_in=R_IN, a0=235, a1=485)
 
 # ---------------------------------------------------------------------------
 # Letter V -- two straight legs meeting at the bottom (two convex quads).
