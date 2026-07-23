@@ -67,6 +67,14 @@ test('generateUserPrompt ignores context for a standalone claim (parity gate)', 
   assert.ok(!generateUserPrompt(claim, source, full).includes('Article:'));
 });
 
+test('generateUserPrompt with gateContext:false attaches context to a standalone claim', () => {
+  // The always-on A/B arm bypasses the dependent-fragment gate.
+  const claim = 'Al Jazeera launched on 1 November 1996.';
+  const ctx = { articleTitle: 'Al Jazeera', paragraph: 'Al Jazeera launched on 1 November 1996 in Doha.' };
+  assert.ok(!generateUserPrompt(claim, 'SRC', ctx).includes('Article:'));                       // gated (default): dropped
+  assert.ok(generateUserPrompt(claim, 'SRC', ctx, { gateContext: false }).includes('Article: Al Jazeera')); // ungated: kept
+});
+
 test('generateUserPrompt attaches context for a dependent-fragment claim', () => {
   // Pronoun-led claim needs its antecedent → context is attached.
   const out = generateUserPrompt('She received the Nobel Prize in 2015.', 'SRC', {

@@ -6,9 +6,12 @@
  *
  * Usage: node run_benchmark.js [--providers claude,openai,gemini] [--limit N] [--resume] [--version v1|v2|v3|all] [--concurrency N] [--no-context]
  *
- *   --no-context  Suppress the article/section/paragraph disambiguation block
- *                 (control arm of the context A/B; prompt matches the pre-
- *                 context runner). Compare with a normal run via `ccs compare`.
+ *   --no-context         Suppress the article/section/paragraph disambiguation
+ *                        block (control arm; prompt matches the pre-context
+ *                        runner). Compare a run via `ccs compare`.
+ *   --context-gate off   Attach context to every claim, not just dependent
+ *                        fragments (always-on arm). Default 'on' gates context
+ *                        to pronoun/fragment claims.
  *
  * Environment variables for API keys:
  *   ANTHROPIC_API_KEY - Claude API key
@@ -201,6 +204,12 @@ const RESUME = args.includes('--resume');
 // identical to the pre-context runner. Run once with and once without against
 // the same dataset, then `ccs compare` the two results.json files.
 const NO_CONTEXT = args.includes('--no-context');
+// --context-gate off attaches context to every claim (bypassing the
+// dependent-fragment gate) — the "always-on" arm of the gate A/B. Default 'on'
+// keeps context only on dependent-fragment claims.
+const gateIdx = args.indexOf('--context-gate');
+const CONTEXT_GATE = gateIdx !== -1 ? args[gateIdx + 1] : 'on';
+const GATE_CONTEXT = CONTEXT_GATE !== 'off';
 const versionIndex = args.indexOf('--version');
 // VERSION_FILTER: 'all' | 'v1' | 'v2' | ... — restricts which dataset entries
 // to benchmark, so the original 76-row v1 analysis can be reproduced on demand.
@@ -559,7 +568,7 @@ async function main() {
         dataset_extracted_at: datasetMetadata.extracted_at || null,
         dataset_version_filter: VERSION_FILTER,
         // Which arm of the disambiguation-context A/B this run is.
-        context_mode: NO_CONTEXT ? 'none' : 'article+section+paragraph'
+        context_mode: NO_CONTEXT ? 'none' : (GATE_CONTEXT ? 'gated' : 'always-on')
     };
 
     // Build the task list, skipping anything already completed (resume).
@@ -615,7 +624,7 @@ async function main() {
                     sectionTitle: entry.section_title,
                     paragraph: entry.claim_container,
                 };
-                const userPrompt = generateUserPrompt(entry.claim_text, entry.source_text, context);
+                const userPrompt = generateUserPrompt(entry.claim_text, entry.source_text, context, { gateContext: GATE_CONTEXT });
 
                 const result = await callProvider(provider, systemPrompt, userPrompt);
 

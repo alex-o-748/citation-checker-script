@@ -135,13 +135,16 @@ function formatContextBlock(context) {
  * @param {{articleTitle?: string, sectionTitle?: string, paragraph?: string}} [context]
  *   Optional surrounding context (article title, section heading, paragraph)
  *   used by the model to resolve pronouns and abbreviated references in the
- *   Claim. It is attached ONLY when the claim reads as a dependent fragment
- *   (see claimNeedsDisambiguation); for a standalone claim the context is
- *   ignored and the prompt is byte-identical to omitting it entirely. Omitting
- *   it also reproduces the original prompt exactly.
+ *   Claim. By default it is attached ONLY when the claim reads as a dependent
+ *   fragment (see claimNeedsDisambiguation); for a standalone claim the context
+ *   is ignored and the prompt is byte-identical to omitting it. Omitting it
+ *   also reproduces the original prompt exactly.
+ * @param {{gateContext?: boolean}} [options] gateContext=false attaches context
+ *   to every claim (bypassing the dependent-fragment gate) — used to A/B the
+ *   always-on design against the gated one. Defaults to true.
  * @returns {string} The user message content
  */
-export function generateUserPrompt(claim, sourceInfo, context) {
+export function generateUserPrompt(claim, sourceInfo, context, { gateContext = true } = {}) {
     let sourceText;
 
     if (sourceInfo.startsWith('Manual source text:')) {
@@ -155,9 +158,11 @@ export function generateUserPrompt(claim, sourceInfo, context) {
 
     console.log('[Verifier] Source text (first 2000 chars):', sourceText.substring(0, 2000));
 
-    // Gate: only dependent-fragment claims get context. Standalone claims keep
-    // the original prompt, so the feature stays at parity where it can't help.
-    const contextBlock = claimNeedsDisambiguation(claim) ? formatContextBlock(context) : '';
+    // Gate (default): only dependent-fragment claims get context, so the feature
+    // stays at parity where it can't help. gateContext:false forces context on
+    // every claim for the always-on A/B arm.
+    const attachContext = gateContext ? claimNeedsDisambiguation(claim) : true;
+    const contextBlock = attachContext ? formatContextBlock(context) : '';
 
     return `${contextBlock}Claim: "${claim}"
 
