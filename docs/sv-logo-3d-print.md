@@ -1,7 +1,7 @@
 # Source Verifier — 3D-printable "SV" logo
 
-A print-ready logo with the letters **S** and **V** interleaved as a raised
-relief on a solid base plate.
+A print-ready logo with the letters **S** and **V** interleaved. The letters
+lie flat and are the object themselves — there is no separate base plate.
 
 ![top view](../sv_logo_top.png)
 ![iso view](../sv_logo_iso.png)
@@ -16,14 +16,16 @@ relief on a solid base plate.
 
 ## Print notes
 
-- **Everything sits on the base**, so the whole model touches the bed — good
-  adhesion, no floating parts.
-- The letters lie **flat in the plane of the base** and are extruded upward as
-  a relief, so it prints **lying down with no support material**.
-- **S is raised higher than V** (S tops out at 11 mm, V at 8 mm, on a 4 mm
-  base). Where the two glyphs interleave, the taller S reads as the top layer.
+- **No base plate.** The letters lie flat and are the object; every part sits
+  on the bed, so it prints **lying down with no support material**.
+- The **S is built from two overlapping C-curves** (a top "(" bulging left and
+  a bottom ")" bulging right) that cross in the middle.
+- **S is thicker than V** (S = 8 mm, V = 5 mm). Where the two glyphs interleave,
+  the thicker S reads as the top layer.
+- The two C's overlap each other and the S overlaps the V, so the whole mark
+  fuses into a single connected piece.
 
-Default dimensions: 120 × 70 mm footprint, 11 mm tall.
+Default dimensions: ~65 × 44 mm footprint, 8 mm tall.
 
 ## Regenerating / customizing
 
@@ -33,7 +35,11 @@ python3 scripts/generate_sv_logo.py   # -> sv_logo.stl
 python3 scripts/preview_sv_logo.py    # -> preview PNGs
 ```
 
-Tunable constants live at the top of `scripts/generate_sv_logo.py`
-(`BASE_W/D/H`, `LETTER_H`, `STROKE`, `S_RAISE`, `V_RAISE`, and the letter
-placement offsets). Increase `S_RAISE` / `V_RAISE` for a deeper relief, or
-change `V_OFF_X` to tighten/loosen how much the letters overlap.
+Tunable constants live at the top of `scripts/generate_sv_logo.py`:
+
+- `S_THICK` / `V_THICK` — letter thicknesses (keep S > V so it reads on top).
+- `LETTER_H` — overall glyph height.
+- The `s_top_C` / `s_bot_C` dicts — the two C-curves' centres, radii
+  (`r_out`/`r_in` set the stroke width) and start/end angles. Move `CY_TOP` /
+  `CY_BOT` closer together for more overlap between the two C's.
+- `V_OFF_X` — how far the V sits over the S (how much they interleave).
