@@ -6,6 +6,7 @@ import {
   extractReferenceUrl,
   isGoogleBooksUrl,
   isArchiveUrl,
+  isInternalWikiLink,
   parseArchiveOrgUrl,
 } from '../core/urls.js';
 
@@ -123,6 +124,54 @@ test('extractHttpUrl falls back to live URL when no archive.org link exists', ()
   </span></body>`);
   const element = jsdom.window.document.getElementById('container');
   assert.equal(extractHttpUrl(element), 'https://example.com/page');
+});
+
+test('isInternalWikiLink flags ISBN article and Special:BookSources wikilinks', () => {
+  assert.equal(isInternalWikiLink('https://en.wikipedia.org/wiki/ISBN_(identifier)'), true);
+  assert.equal(isInternalWikiLink('https://en.wikipedia.org/wiki/Special:BookSources/9788401230134'), true);
+  // Sister projects and localized hosts are internal too.
+  assert.equal(isInternalWikiLink('https://de.wikipedia.org/wiki/Spezial:ISBN-Suche/9788401230134'), true);
+  assert.equal(isInternalWikiLink('https://en.wiktionary.org/wiki/source'), true);
+  // Genuine external sources are not internal wikilinks.
+  assert.equal(isInternalWikiLink('https://example.com/page'), false);
+  assert.equal(isInternalWikiLink('https://books.google.com/books?id=abc'), false);
+  assert.equal(isInternalWikiLink(null), false);
+});
+
+test('extractHttpUrl skips ISBN article and Special:BookSources wikilinks', () => {
+  // A book-only citation: its only http links are the internal "ISBN" article
+  // and the Special:BookSources magic-link target. Neither is a real source.
+  const jsdom = new JSDOM(`<!DOCTYPE html><body><span id="container">
+    <a href="https://en.wikipedia.org/wiki/ISBN_(identifier)">ISBN</a>
+    <a href="https://en.wikipedia.org/wiki/Special:BookSources/9788401230134">9788401230134</a>
+  </span></body>`);
+  const element = jsdom.window.document.getElementById('container');
+  assert.equal(extractHttpUrl(element), null);
+});
+
+test('extractHttpUrl returns the real source alongside ISBN wikilinks', () => {
+  const jsdom = new JSDOM(`<!DOCTYPE html><body><span id="container">
+    <a class="external" href="https://example.com/book-review">review</a>
+    <a href="https://en.wikipedia.org/wiki/ISBN_(identifier)">ISBN</a>
+    <a href="https://en.wikipedia.org/wiki/Special:BookSources/9788401230134">9788401230134</a>
+  </span></body>`);
+  const element = jsdom.window.document.getElementById('container');
+  assert.equal(extractHttpUrl(element), 'https://example.com/book-review');
+});
+
+test('extractReferenceUrl returns null for an ISBN-only book citation', () => {
+  const jsdom = new JSDOM(`<!DOCTYPE html><body>
+    <a id="ref-1" href="#cite_note-1">1</a>
+    <span id="cite_note-1" class="reference">
+      <cite class="citation book">Walsh, Michael (1990). El mundo secreto del Opus Dei.
+        <a href="https://en.wikipedia.org/wiki/ISBN_(identifier)">ISBN</a>
+        <a href="https://en.wikipedia.org/wiki/Special:BookSources/9788401230134">9788401230134</a>
+      </cite>
+    </span>
+  </body>`);
+  const doc = jsdom.window.document;
+  const refElement = doc.getElementById('ref-1');
+  assert.equal(extractReferenceUrl(refElement, doc), null);
 });
 
 test('extractHttpUrl uses other archive services only as last resort', () => {
