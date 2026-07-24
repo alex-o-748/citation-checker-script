@@ -1,14 +1,35 @@
 #!/usr/bin/env python3
-"""Render a straight-on FRONT view of sv_logo.stl on a WHITE background.
+"""Render a straight-on FRONT view of sv_logo.stl (readable letter faces).
+
+Usage:
+    python3 scripts/render_front_white.py [--size N] [--transparent] [-o FILE]
+
+  --size N        target width of the artwork in px (default 900)
+  --transparent   transparent background (best for t-shirts) instead of white
+  -o FILE         output path (default sv_logo_front.png, or
+                  sv_logo_front_transparent.png when --transparent)
 
 The letters lie flat, so looking onto their faces gives the readable SV(2)
-mark. Rendered at 2x and downscaled for anti-aliased edges -> sv_logo_front.png
+mark. Rendered at 2x and downscaled for anti-aliased edges.
+
+For apparel at ~300 DPI: 900 px ~ 3 in, 3000 px ~ 10 in, 3600 px ~ 12 in.
 """
+import sys
 import numpy as np
 from stl import mesh
 from PIL import Image, ImageDraw
 
 SS = 2                                   # supersample factor for smooth edges
+
+# ---- args ----------------------------------------------------------------
+argv = sys.argv[1:]
+transparent = "--transparent" in argv
+target = 900
+if "--size" in argv:
+    target = int(argv[argv.index("--size") + 1])
+out = "sv_logo_front_transparent.png" if transparent else "sv_logo_front.png"
+if "-o" in argv:
+    out = argv[argv.index("-o") + 1]
 
 m = mesh.Mesh.from_file("sv_logo.stl")
 tris = m.vectors.astype(float)
@@ -46,18 +67,20 @@ rows.sort(key=lambda r: r[0])
 
 pts = np.vstack([r[1] for r in rows])
 mn, mx = pts.min(0), pts.max(0)
-target = 900
-scale = target / (mx - mn).max(); pad = 60
+scale = target / (mx - mn).max(); pad = int(0.07 * target)
 W = int((mx[0]-mn[0])*scale + 2*pad); H = int((mx[1]-mn[1])*scale + 2*pad)
 
-img = Image.new("RGB", (W*SS, H*SS), (255, 255, 255))
+bg = (255, 255, 255, 0) if transparent else (255, 255, 255, 255)
+img = Image.new("RGBA", (W*SS, H*SS), bg)
 dr = ImageDraw.Draw(img)
 def px(xy):
     return ((xy[0]-mn[0])*scale*SS + pad*SS, (H - ((xy[1]-mn[1])*scale + pad))*SS)
 for _, poly, shade, ztop in rows:
-    col = colour(ztop, shade)
+    col = colour(ztop, shade) + (255,)
     dr.polygon([px(v) for v in poly], fill=col, outline=col)
 
 img = img.resize((W, H), Image.LANCZOS)
-img.save("sv_logo_front.png")
-print(f"wrote sv_logo_front.png ({W}x{H})")
+if not transparent:
+    img = img.convert("RGB")
+img.save(out)
+print(f"wrote {out} ({W}x{H})")
