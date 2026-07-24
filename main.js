@@ -6,6 +6,415 @@
     'use strict';
 
 // <core-injected>
+// --- core/i18n.js ---
+// User-interface localization for the Wikipedia citation-verifier userscript.
+// The userscript detects the reader's MediaWiki interface language
+// (mw.config.get('wgUserLanguage')) and renders its sidebar, report view,
+// dialogs and exported reports in that language when a translation exists,
+// otherwise falling back to English.
+//
+// This module is pure (no DOM / no mw.* access) so it can be unit-tested and
+// is inlined into main.js by scripts/sync-main.js like the other core/ modules.
+//
+// Message values are either plain strings with {placeholder} tokens or
+// functions (params) => string. Functions carry the plural / composition
+// logic that differs between languages (English pluralizes with a trailing
+// "s"; Hebrew uses distinct singular/plural word forms).
+
+// BCP-47 / MediaWiki language codes that render right-to-left. Only the ones
+// this script is likely to encounter are listed; extend as translations are
+// added. isRtlLang() also treats regional variants ("he-x-...", "ar-eg") as
+// RTL by matching on the primary subtag.
+const RTL_LANGS = Object.freeze([
+    'he', 'ar', 'fa', 'ur', 'yi', 'arc', 'dv', 'ckb', 'ps', 'sd', 'ug', 'arz',
+]);
+
+function isRtlLang(lang) {
+    if (!lang) return false;
+    const primary = String(lang).toLowerCase().split('-')[0];
+    return RTL_LANGS.includes(primary);
+}
+
+// English is always the fallback; every other entry in MESSAGES is a
+// supported UI language. resolveUiLang maps an arbitrary MediaWiki language
+// code onto a supported catalog key (primary subtag, then 'en').
+function resolveUiLang(lang) {
+    if (!lang) return 'en';
+    const raw = String(lang).toLowerCase();
+    if (MESSAGES[raw]) return raw;
+    const primary = raw.split('-')[0];
+    if (MESSAGES[primary]) return primary;
+    return 'en';
+}
+
+const MESSAGES = {
+    en: {
+        // Header / chrome
+        appTitle: 'Source Verifier',
+        close: 'Close',
+
+        // Claim + source sections
+        selectedClaim: 'Selected Claim',
+        claimPlaceholder: 'Click on a reference number [1] next to a claim to verify it against its source.',
+        sourceContent: 'Source Content',
+        noSourceLoaded: 'No source loaded yet.',
+        verificationResult: 'Verification Result',
+
+        // Buttons
+        setApiKey: 'Set API Key',
+        verifyClaim: 'Verify Claim',
+        verifying: 'Verifying...',
+        changeKey: 'Change Key',
+        removeApiKey: 'Remove API Key',
+        loadText: 'Load Text',
+        cancel: 'Cancel',
+        save: 'Save',
+        pasteSourceManually: 'Paste source text manually',
+        pasteSourceManuallyTitle: 'Replace the fetched source content with text you paste in (e.g., the full article from The Wikipedia Library)',
+        verifyAll: 'Verify All Citations',
+        stop: 'Stop',
+        backToReport: 'Back to Report',
+        editSection: 'Edit Section',
+        giveFeedback: 'Give feedback',
+        sourcePlaceholder: 'Paste the source text here...',
+
+        // Provider info line
+        usingYourKey: '✓ Using your {provider} API key',
+        freeOptionalPrefix: '✓ Free to use. Optional: ',
+        addYourKey: 'add your {provider} API key',
+        freeToUse: '✓ Free to use',
+        keyConfigured: 'API key configured for {provider}',
+        keyRequired: 'API key required for {provider}',
+        privacyNote: 'Results are logged for research. Your username is not recorded.',
+
+        // Portlet tab + first-run notification
+        verifyTab: 'Verify',
+        verifyTabTooltip: 'Verify claims against sources',
+        firstRunTitle: 'Citation Verifier',
+        firstRunPre: 'Citation Verifier installed — click the ',
+        firstRunPost: ' tab to get started.',
+
+        // Source fetch status
+        sourceUrlLabel: 'Source URL:',
+        pdfExtractedWithPage: '✓ PDF content extracted (page {page} of {total})',
+        pdfExtractedPages: '✓ PDF content extracted ({total} pages)',
+        contentFetched: '✓ Content fetched successfully',
+        contentWillBeFetched: 'Content will be fetched by AI during verification.',
+        sourceTruncatedWarning: '⚠ The source is long and can only be checked partially.',
+        noUrlPasteBelow: 'No URL found. Please paste the source text below:',
+        manualSourceLabel: 'Manual Source Text:',
+
+        // Set / remove API key dialog
+        setKeyDialogTitle: 'Set {provider} API Key',
+        setKeyDialogMessage: 'Enter your {provider} API Key to enable source verification:',
+        setKeyPlaceholder: 'Enter your {provider} API Key...',
+        removeKeyConfirm: 'Are you sure you want to remove the stored API key?',
+
+        // Single-result view
+        clickVerifyToStart: 'Click "Verify Claim" to verify the selected claim against the source.',
+        errorLabel: 'ERROR',
+
+        // Verdict labels — full form shown in the single-result box
+        verdictFull_supported: 'SUPPORTED',
+        verdictFull_partial: 'PARTIALLY SUPPORTED',
+        verdictFull_notSupported: 'NOT SUPPORTED',
+        verdictFull_unavailable: 'SOURCE UNAVAILABLE',
+        // Verdict labels — short form shown in report cards / chips
+        verdictShort_supported: 'Supported',
+        verdictShort_partial: 'Partial',
+        verdictShort_notSupported: 'Not Supported',
+        verdictShort_unavailable: 'Unavailable',
+        // Reason-type tags
+        reasonContradiction: 'Contradiction',
+        reasonOmission: 'Omission',
+
+        // Report filters + summary
+        filterEmpty: 'All citations are hidden by the current filters. Click a filter chip above to show them.',
+        filterChipTitleShow: 'Show {label} citations',
+        filterChipTitleHide: 'Hide {label} citations',
+        chipLabel_supported: 'supported',
+        chipLabel_partial: 'partial',
+        chipLabel_notSupported: 'not supported',
+        chipLabel_unavailable: 'unavailable',
+        chipLabel_error: 'errors',
+        summaryCitationsChecked: (p) => `${p.count} citation${p.count === 1 ? '' : 's'} checked`,
+        summaryAcross: (p) => `${p.citations} citations across ${p.claims} claim${p.claims === 1 ? '' : 's'}`,
+        hiddenByFilter: '{n} hidden by filter',
+        tokensUsageMeta: '{input} input + {output} output tokens',
+        revisionLabel: 'Revision:',
+
+        // Report cards / groups
+        truncatedSolo: '⚠ Source is long, only partially checked.',
+        truncatedCombined: '⚠ Combined sources are long, only partially checked.',
+        groupBadge: 'Group of {size} · {numbers}',
+        checkingCombined: 'Checking combined sources…',
+        individualSources: 'Individual sources',
+        combinedVerdict: 'Combined verdict',
+        partOfGroup: 'Part of a group of {count} citations: {numbers}',
+
+        // Report actions + clipboard
+        copyWikitext: 'Copy Report (Wikitext)',
+        copyPlaintext: 'Copy Report (Plain Text)',
+        reportCopied: 'Report copied to clipboard!',
+
+        // Progress phases
+        phaseChecking: 'Checking citation [{n}]',
+        phaseFetching: 'Fetching source for [{n}]',
+        phaseVerifying: 'Verifying citation [{n}]',
+        phaseRateLimited: 'Rate limited, retrying in {s}s...',
+        phaseCheckingCombined: 'Checking combined sources {numbers}',
+        phaseCancelled: 'Cancelled after {done} of {total} citations',
+        phaseCompleted: 'Completed: {n} citations checked',
+        etaRemaining: '~{time} remaining',
+        durationSeconds: '{s}s',
+        durationMinutes: '{m}m {s}s',
+
+        // Verify-all confirmation
+        noCitationsFound: 'No citations found on this page.',
+        confirmVerifyAll: (p) => {
+            const groupNote = p.groups > 0
+                ? `\n\nThis includes ${p.groups} combined-source check${p.groups === 1 ? '' : 's'} for adjacent citation groups.`
+                : '';
+            return `This will verify ${p.count} citations from ${p.sources} unique sources.${groupNote}\n\nEstimated time: ~${p.minutes} minute${p.minutes > 1 ? 's' : ''}.\n\nContinue?`;
+        },
+
+        // Edit summary written to the wiki
+        editSummary: 'source does not support claim (checked with [[User:Alaexis/AI_Source_Verification|Source Verifier]])',
+
+        // Wikitext report
+        wt_reportHeading: 'Citation verification report',
+        wt_intro: 'This is an experimental check of the article sources by [[User:Alaexis/AI_Source_Verification|Citation Verifier]]. Treat it with caution, be aware of its [[User:Alaexis/AI_Source_Verification#Limitations|limitations]] and feel free to leave feedback at [[User_talk:Alaexis/AI_Source_Verification|the talk page]].',
+        wt_revisionChecked: 'Revision checked: [[Special:PermanentLink/{revId}|{revId}]]',
+        wt_colHeadersWithSubmit: '! # !! Verdict !! Source !! Comments !! class="unsortable" | Submit',
+        wt_colHeaders: '! # !! Verdict !! Source !! Comments',
+        wt_verdictSupported: '{{tick}} Supported',
+        wt_verdictPartial: '{{bang}} Partially supported',
+        wt_verdictNotSupported: '{{cross}} Not supported',
+        wt_verdictUnavailable: '{{hmmm}} Source unavailable',
+        wt_combined: '(combined)',
+        wt_sourceWord: 'source',
+        wt_submitWord: 'Submit',
+        wt_noteCombined: "''(Combined sources are long, only partially checked.)''",
+        wt_noteSolo: "''(Source is long, only partially checked.)''",
+        wt_summary: (p) => `'''Summary:''' ${p.supported} supported, ${p.partial} partially supported, ${p.notSupported} not supported, ${p.unavailable} source unavailable out of ${p.claimsPhrase}.`,
+        wt_claimsPhraseCitations: (p) => `${p.count} citation${p.count === 1 ? '' : 's'}`,
+        wt_claimsPhraseClaims: (p) => `${p.claims} claim${p.claims === 1 ? '' : 's'} (${p.citations} citations)`,
+        wt_generatedBy: 'Generated by [[User:Alaexis/AI_Source_Verification|Citation Verifier]] using {model} on ~~~~~.',
+        wt_tokensUsed: ' Tokens used: {input} input, {output} output.',
+        wt_modelPublicai: 'a PublicAI-hosted open-source LLM',
+        wt_modelHuggingface: 'a HuggingFace-hosted open-source LLM ({model})',
+
+        // Plain-text report
+        pt_title: 'Citation Verification Report: {title}',
+        pt_provider: 'Provider: {name}',
+        pt_revision: 'Revision: {rev}',
+        pt_combined: '(combined)',
+        pt_claim: 'Claim:',
+        pt_sources: 'Sources:',
+        pt_source: 'Source:',
+        pt_comments: 'Comments:',
+        pt_noteLabel: 'Note:',
+        pt_noteCombined: 'Combined sources are long, only partially checked.',
+        pt_noteSolo: 'Source is long, only partially checked.',
+        pt_tokensUsed: 'Tokens used: {input} input, {output} output',
+    },
+
+    he: {
+        // Header / chrome
+        appTitle: 'מאמת מקורות',
+        close: 'סגור',
+
+        // Claim + source sections
+        selectedClaim: 'טענה שנבחרה',
+        claimPlaceholder: 'לחצו על מספר הפניה [1] שליד טענה כדי לאמת אותה מול המקור שלה.',
+        sourceContent: 'תוכן המקור',
+        noSourceLoaded: 'לא נטען מקור עדיין.',
+        verificationResult: 'תוצאת האימות',
+
+        // Buttons
+        setApiKey: 'הגדרת מפתח API',
+        verifyClaim: 'אימות טענה',
+        verifying: 'מאמת...',
+        changeKey: 'שינוי מפתח',
+        removeApiKey: 'הסרת מפתח API',
+        loadText: 'טעינת טקסט',
+        cancel: 'ביטול',
+        save: 'שמירה',
+        pasteSourceManually: 'הדבקת טקסט המקור ידנית',
+        pasteSourceManuallyTitle: 'החלפת תוכן המקור שנטען בטקסט שתדביקו (למשל המאמר המלא מספריית ויקיפדיה)',
+        verifyAll: 'אימות כל הציטוטים',
+        stop: 'עצירה',
+        backToReport: 'חזרה לדוח',
+        editSection: 'עריכת מקטע',
+        giveFeedback: 'משוב',
+        sourcePlaceholder: 'הדביקו כאן את טקסט המקור...',
+
+        // Provider info line
+        usingYourKey: '✓ נעשה שימוש במפתח ה-API שלכם של {provider}',
+        freeOptionalPrefix: '✓ חינמי לשימוש. אופציונלי: ',
+        addYourKey: 'הוספת מפתח API של {provider}',
+        freeToUse: '✓ חינמי לשימוש',
+        keyConfigured: 'מפתח API הוגדר עבור {provider}',
+        keyRequired: 'נדרש מפתח API עבור {provider}',
+        privacyNote: 'התוצאות נרשמות לצורכי מחקר. שם המשתמש שלכם אינו נשמר.',
+
+        // Portlet tab + first-run notification
+        verifyTab: 'אימות',
+        verifyTabTooltip: 'אימות טענות מול מקורות',
+        firstRunTitle: 'מאמת הציטוטים',
+        firstRunPre: 'מאמת הציטוטים הותקן — לחצו על הכרטיסייה ',
+        firstRunPost: ' כדי להתחיל.',
+
+        // Source fetch status
+        sourceUrlLabel: 'כתובת המקור:',
+        pdfExtractedWithPage: '✓ תוכן ה-PDF חולץ (עמוד {page} מתוך {total})',
+        pdfExtractedPages: '✓ תוכן ה-PDF חולץ ({total} עמודים)',
+        contentFetched: '✓ התוכן נטען בהצלחה',
+        contentWillBeFetched: 'התוכן ייטען על ידי הבינה המלאכותית במהלך האימות.',
+        sourceTruncatedWarning: '⚠ המקור ארוך וניתן לבדוק אותו רק באופן חלקי.',
+        noUrlPasteBelow: 'לא נמצאה כתובת. הדביקו את טקסט המקור למטה:',
+        manualSourceLabel: 'טקסט מקור ידני:',
+
+        // Set / remove API key dialog
+        setKeyDialogTitle: 'הגדרת מפתח API של {provider}',
+        setKeyDialogMessage: 'הזינו את מפתח ה-API של {provider} כדי לאפשר אימות מקורות:',
+        setKeyPlaceholder: 'הזינו את מפתח ה-API של {provider}...',
+        removeKeyConfirm: 'האם אתם בטוחים שברצונכם להסיר את מפתח ה-API השמור?',
+
+        // Single-result view
+        clickVerifyToStart: 'לחצו על "אימות טענה" כדי לאמת את הטענה שנבחרה מול המקור.',
+        errorLabel: 'שגיאה',
+
+        // Verdict labels — full form
+        verdictFull_supported: 'נתמך',
+        verdictFull_partial: 'נתמך חלקית',
+        verdictFull_notSupported: 'לא נתמך',
+        verdictFull_unavailable: 'המקור אינו זמין',
+        // Verdict labels — short form
+        verdictShort_supported: 'נתמך',
+        verdictShort_partial: 'חלקי',
+        verdictShort_notSupported: 'לא נתמך',
+        verdictShort_unavailable: 'לא זמין',
+        // Reason-type tags
+        reasonContradiction: 'סתירה',
+        reasonOmission: 'השמטה',
+
+        // Report filters + summary
+        filterEmpty: 'כל הציטוטים מוסתרים על ידי המסננים הנוכחיים. לחצו על תווית סינון למעלה כדי להציגם.',
+        filterChipTitleShow: 'הצגת ציטוטים במצב {label}',
+        filterChipTitleHide: 'הסתרת ציטוטים במצב {label}',
+        chipLabel_supported: 'נתמך',
+        chipLabel_partial: 'חלקי',
+        chipLabel_notSupported: 'לא נתמך',
+        chipLabel_unavailable: 'לא זמין',
+        chipLabel_error: 'שגיאות',
+        summaryCitationsChecked: (p) => p.count === 1
+            ? 'ציטוט אחד נבדק'
+            : `${p.count} ציטוטים נבדקו`,
+        summaryAcross: (p) => `${p.citations} ציטוטים ב-${p.claims} ${p.claims === 1 ? 'טענה' : 'טענות'}`,
+        hiddenByFilter: '{n} מוסתרים על ידי מסנן',
+        tokensUsageMeta: '{input} קלט + {output} פלט אסימונים',
+        revisionLabel: 'גרסה:',
+
+        // Report cards / groups
+        truncatedSolo: '⚠ המקור ארוך, נבדק רק באופן חלקי.',
+        truncatedCombined: '⚠ המקורות המשולבים ארוכים, נבדקו רק באופן חלקי.',
+        groupBadge: 'קבוצה של {size} · {numbers}',
+        checkingCombined: 'בודק מקורות משולבים…',
+        individualSources: 'מקורות בודדים',
+        combinedVerdict: 'פסק משולב',
+        partOfGroup: 'חלק מקבוצה של {count} ציטוטים: {numbers}',
+
+        // Report actions + clipboard
+        copyWikitext: 'העתקת דוח (קוד ויקי)',
+        copyPlaintext: 'העתקת דוח (טקסט רגיל)',
+        reportCopied: 'הדוח הועתק ללוח!',
+
+        // Progress phases
+        phaseChecking: 'בודק ציטוט [{n}]',
+        phaseFetching: 'טוען מקור עבור [{n}]',
+        phaseVerifying: 'מאמת ציטוט [{n}]',
+        phaseRateLimited: 'הוגבל קצב, מנסה שוב בעוד {s} שניות...',
+        phaseCheckingCombined: 'בודק מקורות משולבים {numbers}',
+        phaseCancelled: 'בוטל לאחר {done} מתוך {total} ציטוטים',
+        phaseCompleted: 'הושלם: {n} ציטוטים נבדקו',
+        etaRemaining: 'נותרו כ-{time}',
+        durationSeconds: '{s} שנ׳',
+        durationMinutes: '{m} דק׳ {s} שנ׳',
+
+        // Verify-all confirmation
+        noCitationsFound: 'לא נמצאו ציטוטים בדף זה.',
+        confirmVerifyAll: (p) => {
+            const groupNote = p.groups > 0
+                ? `\n\nזה כולל ${p.groups} בדיקות של מקורות משולבים עבור קבוצות ציטוטים סמוכות.`
+                : '';
+            return `פעולה זו תאמת ${p.count} ציטוטים מ-${p.sources} מקורות ייחודיים.${groupNote}\n\nזמן משוער: כ-${p.minutes} דקות.\n\nלהמשיך?`;
+        },
+
+        // Edit summary written to the wiki
+        editSummary: 'המקור אינו תומך בטענה (נבדק באמצעות [[User:Alaexis/AI_Source_Verification|מאמת המקורות]])',
+
+        // Wikitext report
+        wt_reportHeading: 'דוח אימות ציטוטים',
+        wt_intro: 'זוהי בדיקה ניסיונית של מקורות הערך באמצעות [[User:Alaexis/AI_Source_Verification|מאמת הציטוטים]]. יש להתייחס אליה בזהירות, להכיר את [[User:Alaexis/AI_Source_Verification#Limitations|מגבלותיה]] ולהשאיר משוב ב[[User_talk:Alaexis/AI_Source_Verification|דף השיחה]].',
+        wt_revisionChecked: 'הגרסה שנבדקה: [[Special:PermanentLink/{revId}|{revId}]]',
+        wt_colHeadersWithSubmit: '! # !! פסק !! מקור !! הערות !! class="unsortable" | שליחה',
+        wt_colHeaders: '! # !! פסק !! מקור !! הערות',
+        wt_verdictSupported: '{{tick}} נתמך',
+        wt_verdictPartial: '{{bang}} נתמך חלקית',
+        wt_verdictNotSupported: '{{cross}} לא נתמך',
+        wt_verdictUnavailable: '{{hmmm}} המקור אינו זמין',
+        wt_combined: '(משולב)',
+        wt_sourceWord: 'מקור',
+        wt_submitWord: 'שליחה',
+        wt_noteCombined: "''(המקורות המשולבים ארוכים, נבדקו רק באופן חלקי.)''",
+        wt_noteSolo: "''(המקור ארוך, נבדק רק באופן חלקי.)''",
+        wt_summary: (p) => `'''סיכום:''' ${p.supported} נתמכו, ${p.partial} נתמכו חלקית, ${p.notSupported} לא נתמכו, ${p.unavailable} המקור אינו זמין מתוך ${p.claimsPhrase}.`,
+        wt_claimsPhraseCitations: (p) => `${p.count} ציטוטים`,
+        wt_claimsPhraseClaims: (p) => `${p.claims} ${p.claims === 1 ? 'טענה' : 'טענות'} (${p.citations} ציטוטים)`,
+        wt_generatedBy: 'נוצר באמצעות [[User:Alaexis/AI_Source_Verification|מאמת הציטוטים]] באמצעות {model} ב-~~~~~.',
+        wt_tokensUsed: ' אסימונים שנוצלו: {input} קלט, {output} פלט.',
+        wt_modelPublicai: 'מודל שפה בקוד פתוח המאוחסן ב-PublicAI',
+        wt_modelHuggingface: 'מודל שפה בקוד פתוח המאוחסן ב-HuggingFace ({model})',
+
+        // Plain-text report
+        pt_title: 'דוח אימות ציטוטים: {title}',
+        pt_provider: 'ספק: {name}',
+        pt_revision: 'גרסה: {rev}',
+        pt_combined: '(משולב)',
+        pt_claim: 'טענה:',
+        pt_sources: 'מקורות:',
+        pt_source: 'מקור:',
+        pt_comments: 'הערות:',
+        pt_noteLabel: 'הערה:',
+        pt_noteCombined: 'המקורות המשולבים ארוכים, נבדקו רק באופן חלקי.',
+        pt_noteSolo: 'המקור ארוך, נבדק רק באופן חלקי.',
+        pt_tokensUsed: 'אסימונים שנוצלו: {input} קלט, {output} פלט',
+    },
+};
+
+// Build a translator bound to a resolved UI language. The returned msg(key,
+// params) looks up the key in the target language, falls back to English,
+// then to the key itself. String values interpolate {name} tokens from
+// params; function values are called with params (used for plurals and
+// multi-part composition).
+function createTranslator(lang) {
+    const resolved = resolveUiLang(lang);
+    const table = MESSAGES[resolved];
+    const fallback = MESSAGES.en;
+
+    return function msg(key, params) {
+        let entry = table[key];
+        if (entry === undefined) entry = fallback[key];
+        if (entry === undefined) return key;
+        if (typeof entry === 'function') return entry(params || {});
+        if (!params) return entry;
+        return entry.replace(/\{(\w+)\}/g, (match, name) =>
+            Object.prototype.hasOwnProperty.call(params, name) ? String(params[name]) : match
+        );
+    };
+}
+
 // --- core/prompts.js ---
 // Pure prompt-generation logic. Imported by core/ consumers (CLI, benchmark).
 // Also injected byte-identically into main.js between <core-injected> markers.
@@ -1050,6 +1459,9 @@ async function fetchSourceContent(url, pageNum, { workerBase = 'https://publicai
 }
 
 function logVerification(payload, { workerBase = 'https://publicai-proxy.alaexis.workers.dev' } = {}) {
+    // Caller supplies the payload object:
+    //   { article_url, article_title, citation_number, source_url, provider,
+    //     verdict, confidence, reason_type }.
     try {
         fetch(`${workerBase}/log`, {
             method: 'POST',
@@ -1132,6 +1544,18 @@ function buildDatasetSubmissionUrl(
 
     class WikipediaSourceVerifier {
         constructor() {
+            // Localization: follow the reader's MediaWiki interface language
+            // (wgUserLanguage), falling back to English. isRTL drives the
+            // right-to-left layout overrides in createStyles() and the dir
+            // attribute on the sidebar.
+            this.uiLang = (typeof mw !== 'undefined' && mw.config.get('wgUserLanguage')) || 'en';
+            this.msg = createTranslator(this.uiLang);
+            this.isRTL = isRtlLang(this.uiLang);
+            // Physical side the sidebar docks to: end of the reading direction
+            // (right in LTR, left in RTL). Used for body margins so the article
+            // content is pushed away from the panel on the correct side.
+            this.marginSide = this.isRTL ? 'marginLeft' : 'marginRight';
+
             this.providers = {
                 publicai: {
                     name: 'PublicAI',
@@ -1258,12 +1682,14 @@ function buildDatasetSubmissionUrl(
         createUI() {
             const sidebar = document.createElement('div');
             sidebar.id = 'source-verifier-sidebar';
-            
+            sidebar.setAttribute('dir', this.isRTL ? 'rtl' : 'ltr');
+            sidebar.lang = this.uiLang;
+
             this.createOOUIButtons();
-            
+
             sidebar.innerHTML = `
                 <div id="verifier-sidebar-header">
-                    <h3><a href="https://en.wikipedia.org/wiki/User:Alaexis/AI_Source_Verification" target="_blank" id="verifier-title-link">Source Verifier</a></h3>
+                    <h3><a href="https://en.wikipedia.org/wiki/User:Alaexis/AI_Source_Verification" target="_blank" id="verifier-title-link">${this.escapeHtml(this.msg('appTitle'))}</a></h3>
                     <div id="verifier-sidebar-controls">
                         <div id="verifier-close-btn-container"></div>
                     </div>
@@ -1275,13 +1701,13 @@ function buildDatasetSubmissionUrl(
                         <div id="verifier-buttons-container"></div>
                     </div>
                     <div id="verifier-claim-section">
-                        <h4>Selected Claim</h4>
-                        <div id="verifier-claim-text">Click on a reference number [1] next to a claim to verify it against its source.</div>
+                        <h4>${this.escapeHtml(this.msg('selectedClaim'))}</h4>
+                        <div id="verifier-claim-text">${this.escapeHtml(this.msg('claimPlaceholder'))}</div>
                         <div id="verifier-claim-group-indicator" style="display: none;"></div>
                     </div>
                     <div id="verifier-source-section">
-                        <h4>Source Content</h4>
-                        <div id="verifier-source-text">No source loaded yet.</div>
+                        <h4>${this.escapeHtml(this.msg('sourceContent'))}</h4>
+                        <div id="verifier-source-text">${this.escapeHtml(this.msg('noSourceLoaded'))}</div>
                         <div id="verifier-source-override-container" style="display: none; margin-top: 8px;"></div>
                         <div id="verifier-source-input-container" style="display: none; margin-top: 10px;">
                             <div id="verifier-source-textarea-container"></div>
@@ -1292,7 +1718,7 @@ function buildDatasetSubmissionUrl(
                         </div>
                     </div>
                     <div id="verifier-results">
-                        <h4>Verification Result</h4>
+                        <h4>${this.escapeHtml(this.msg('verificationResult'))}</h4>
                         <div id="verifier-verdict"></div>
                         <div id="verifier-comments"></div>
                         <div id="verifier-action-container"></div>
@@ -1326,12 +1752,14 @@ function buildDatasetSubmissionUrl(
                 #source-verifier-sidebar {
                     position: fixed;
                     top: 0;
-                    right: 0;
+                    ${this.isRTL ? 'left: 0;' : 'right: 0;'}
                     width: ${this.sidebarWidth};
                     height: 100vh;
                     background: #fff;
-                    border-left: 2px solid ${this.getCurrentColor()};
-                    box-shadow: -2px 0 8px rgba(0,0,0,0.1);
+                    ${this.isRTL
+                        ? `border-right: 2px solid ${this.getCurrentColor()};`
+                        : `border-left: 2px solid ${this.getCurrentColor()};`}
+                    box-shadow: ${this.isRTL ? '2px' : '-2px'} 0 8px rgba(0,0,0,0.1);
                     z-index: 10000;
                     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
                     font-size: 14px;
@@ -1507,7 +1935,7 @@ function buildDatasetSubmissionUrl(
                 }
                 #verifier-resize-handle {
                     position: absolute;
-                    left: 0;
+                    ${this.isRTL ? 'right: 0;' : 'left: 0;'}
                     top: 0;
                     width: 4px;
                     height: 100%;
@@ -1530,8 +1958,8 @@ function buildDatasetSubmissionUrl(
                     text-decoration: underline !important;
                 }
                 body {
-                    margin-right: ${this.isVisible ? this.sidebarWidth : '0'};
-                    transition: margin-right 0.3s ease;
+                    ${this.isRTL ? 'margin-left' : 'margin-right'}: ${this.isVisible ? this.sidebarWidth : '0'};
+                    transition: ${this.isRTL ? 'margin-left' : 'margin-right'} 0.3s ease;
                 }
                 .verifier-error {
                     color: #d33;
@@ -1559,7 +1987,7 @@ function buildDatasetSubmissionUrl(
                     padding: 2px 6px;
                 }
                 body.verifier-sidebar-hidden {
-                    margin-right: 0 !important;
+                    ${this.isRTL ? 'margin-left' : 'margin-right'}: 0 !important;
                 }
                 body.verifier-sidebar-hidden #source-verifier-sidebar {
                     display: none;
@@ -1708,16 +2136,16 @@ function buildDatasetSubmissionUrl(
                     font-size: 12px;
                     cursor: pointer;
                     background: #fff;
-                    border-left: 3px solid #ccc;
+                    border-inline-start: 3px solid #ccc;
                 }
                 .verifier-report-card:hover {
                     background: #f0f4ff;
                 }
-                .verifier-report-card.verdict-supported { border-left-color: #28a745; }
-                .verifier-report-card.verdict-partial { border-left-color: #ffc107; }
-                .verifier-report-card.verdict-not-supported { border-left-color: #dc3545; }
-                .verifier-report-card.verdict-unavailable { border-left-color: #6c757d; }
-                .verifier-report-card.verdict-error { border-left-color: #adb5bd; }
+                .verifier-report-card.verdict-supported { border-inline-start-color: #28a745; }
+                .verifier-report-card.verdict-partial { border-inline-start-color: #ffc107; }
+                .verifier-report-card.verdict-not-supported { border-inline-start-color: #dc3545; }
+                .verifier-report-card.verdict-unavailable { border-inline-start-color: #6c757d; }
+                .verifier-report-card.verdict-error { border-inline-start-color: #adb5bd; }
                 .report-card-header {
                     display: flex;
                     justify-content: space-between;
@@ -1743,7 +2171,7 @@ function buildDatasetSubmissionUrl(
                     font-size: 11px;
                     padding: 1px 6px;
                     border-radius: 3px;
-                    margin-left: 6px;
+                    margin-inline-start: 6px;
                     font-weight: normal;
                     vertical-align: middle;
                 }
@@ -1792,7 +2220,7 @@ function buildDatasetSubmissionUrl(
                 }
                 .verifier-report-group {
                     border: 1px solid #cdd5e0;
-                    border-left: 3px solid ${this.getCurrentColor()};
+                    border-inline-start: 3px solid ${this.getCurrentColor()};
                     border-radius: 4px;
                     background: #f6f8fb;
                     padding: 6px 8px;
@@ -1863,7 +2291,7 @@ function buildDatasetSubmissionUrl(
                 .verifier-report-group-row {
                     background: #fff;
                     border: 1px solid #e0e4ea;
-                    border-left: 3px solid #ccc;
+                    border-inline-start: 3px solid #ccc;
                     border-radius: 3px;
                     padding: 5px 8px;
                     cursor: pointer;
@@ -1871,11 +2299,11 @@ function buildDatasetSubmissionUrl(
                 .verifier-report-group-row:hover {
                     background: #f0f4ff;
                 }
-                .verifier-report-group-row.verdict-supported { border-left-color: #28a745; }
-                .verifier-report-group-row.verdict-partial { border-left-color: #ffc107; }
-                .verifier-report-group-row.verdict-not-supported { border-left-color: #dc3545; }
-                .verifier-report-group-row.verdict-unavailable { border-left-color: #6c757d; }
-                .verifier-report-group-row.verdict-error { border-left-color: #adb5bd; }
+                .verifier-report-group-row.verdict-supported { border-inline-start-color: #28a745; }
+                .verifier-report-group-row.verdict-partial { border-inline-start-color: #ffc107; }
+                .verifier-report-group-row.verdict-not-supported { border-inline-start-color: #dc3545; }
+                .verifier-report-group-row.verdict-unavailable { border-inline-start-color: #6c757d; }
+                .verifier-report-group-row.verdict-error { border-inline-start-color: #adb5bd; }
                 .verifier-report-group-row-header {
                     display: flex;
                     justify-content: space-between;
@@ -1913,7 +2341,7 @@ function buildDatasetSubmissionUrl(
                     color: #b0b0c0 !important;
                 }
                 #source-verifier-sidebar .oo-ui-iconElement-icon + .oo-ui-labelElement-label {
-                    margin-left: 4px;
+                    margin-inline-start: 4px;
                 }
                 #verifier-report-actions {
                     display: flex;
@@ -1938,17 +2366,17 @@ function buildDatasetSubmissionUrl(
                 }
                 .claim-highlight {
                     background-color: #fff3cd;
-                    border-left: 3px solid ${this.getCurrentColor()};
-                    padding-left: 5px;
-                    margin-left: -8px;
+                    border-inline-start: 3px solid ${this.getCurrentColor()};
+                    padding-inline-start: 5px;
+                    margin-inline-start: -8px;
                 }
 
                 /* Dark theme overrides for Wikipedia night mode */
                 html.skin-theme-clientpref-night #source-verifier-sidebar {
                     background: #1a1a2e !important;
                     color: #e0e0e0 !important;
-                    border-left-color: ${this.getCurrentColor()} !important;
-                    box-shadow: -2px 0 8px rgba(0,0,0,0.4) !important;
+                    ${this.isRTL ? 'border-right-color' : 'border-left-color'}: ${this.getCurrentColor()} !important;
+                    box-shadow: ${this.isRTL ? '2px' : '-2px'} 0 8px rgba(0,0,0,0.4) !important;
                 }
                 html.skin-theme-clientpref-night #source-verifier-sidebar * {
                     color: inherit;
@@ -2173,8 +2601,8 @@ function buildDatasetSubmissionUrl(
                     html.skin-theme-clientpref-os #source-verifier-sidebar {
                         background: #1a1a2e !important;
                         color: #e0e0e0 !important;
-                        border-left-color: ${this.getCurrentColor()} !important;
-                        box-shadow: -2px 0 8px rgba(0,0,0,0.4) !important;
+                        ${this.isRTL ? 'border-right-color' : 'border-left-color'}: ${this.getCurrentColor()} !important;
+                        box-shadow: ${this.isRTL ? '2px' : '-2px'} 0 8px rgba(0,0,0,0.4) !important;
                     }
                     html.skin-theme-clientpref-os #source-verifier-sidebar * {
                         color: inherit;
@@ -2421,7 +2849,7 @@ function buildDatasetSubmissionUrl(
         createOOUIButtons() {
             this.buttons.close = new OO.ui.ButtonWidget({
                 icon: 'close',
-                title: 'Close',
+                title: this.msg('close'),
                 framed: false,
                 classes: ['verifier-close-button']
             });
@@ -2440,72 +2868,72 @@ function buildDatasetSubmissionUrl(
             this.buttons.providerSelect.getMenu().selectItemByData(this.currentProvider);
             
             this.buttons.setKey = new OO.ui.ButtonWidget({
-                label: 'Set API Key',
+                label: this.msg('setApiKey'),
                 flags: ['primary', 'progressive'],
                 disabled: false
             });
-            
+
             this.buttons.verify = new OO.ui.ButtonWidget({
-                label: 'Verify Claim',
+                label: this.msg('verifyClaim'),
                 flags: ['primary', 'progressive'],
                 icon: 'check',
                 disabled: true
             });
-            
+
             this.buttons.changeKey = new OO.ui.ButtonWidget({
-                label: 'Change Key',
+                label: this.msg('changeKey'),
                 flags: ['safe'],
                 icon: 'edit',
                 disabled: false
             });
-            
+
             this.buttons.removeKey = new OO.ui.ButtonWidget({
-                label: 'Remove API Key',
+                label: this.msg('removeApiKey'),
                 flags: ['destructive'],
                 icon: 'trash',
                 disabled: false
             });
-            
+
             // Source text input widgets
             this.sourceTextInput = new OO.ui.MultilineTextInputWidget({
-                placeholder: 'Paste the source text here...',
+                placeholder: this.msg('sourcePlaceholder'),
                 rows: 6,
                 autosize: true,
                 maxRows: 15
             });
-            
+
             this.buttons.loadText = new OO.ui.ButtonWidget({
-                label: 'Load Text',
+                label: this.msg('loadText'),
                 flags: ['primary', 'progressive']
             });
-            
+
             this.buttons.cancelText = new OO.ui.ButtonWidget({
-                label: 'Cancel',
+                label: this.msg('cancel'),
                 flags: ['safe']
             });
 
             this.buttons.overrideText = new OO.ui.ButtonWidget({
-                label: 'Paste source text manually',
+                label: this.msg('pasteSourceManually'),
                 framed: false,
-                title: 'Replace the fetched source content with text you paste in (e.g., the full article from The Wikipedia Library)'
+                title: this.msg('pasteSourceManuallyTitle')
             });
             this.buttons.overrideText.$element.addClass('verifier-override-link');
 
             // Article report buttons
             this.buttons.verifyAll = new OO.ui.ButtonWidget({
-                label: 'Verify All Citations',
+                label: this.msg('verifyAll'),
                 flags: ['primary', 'progressive'],
                 icon: 'articles'
             });
 
             this.buttons.stopAll = new OO.ui.ButtonWidget({
-                label: 'Stop',
+                label: this.msg('stop'),
                 flags: ['destructive'],
                 icon: 'cancel'
             });
 
             this.buttons.backToReport = new OO.ui.ButtonWidget({
-                label: 'Back to Report',
+                label: this.msg('backToReport'),
                 flags: ['safe'],
                 icon: 'arrowPrevious'
             });
@@ -2535,26 +2963,26 @@ function buildDatasetSubmissionUrl(
             infoEl.textContent = '';
             if (!provider.requiresKey) {
                 if (provider.optionalKey && this.getCurrentApiKey()) {
-                    infoEl.textContent = `✓ Using your ${provider.name} API key`;
+                    infoEl.textContent = this.msg('usingYourKey', { provider: provider.name });
                 } else if (provider.optionalKey) {
-                    infoEl.appendChild(document.createTextNode('✓ Free to use. Optional: '));
+                    infoEl.appendChild(document.createTextNode(this.msg('freeOptionalPrefix')));
                     const link = document.createElement('a');
                     link.href = '#';
-                    link.textContent = `add your ${provider.name} API key`;
+                    link.textContent = this.msg('addYourKey', { provider: provider.name });
                     link.addEventListener('click', (e) => {
                         e.preventDefault();
                         this.setApiKey();
                     });
                     infoEl.appendChild(link);
                 } else {
-                    infoEl.textContent = '✓ Free to use';
+                    infoEl.textContent = this.msg('freeToUse');
                 }
                 infoEl.className = 'free-provider';
             } else if (this.getCurrentApiKey()) {
-                infoEl.textContent = `API key configured for ${provider.name}`;
+                infoEl.textContent = this.msg('keyConfigured', { provider: provider.name });
                 infoEl.className = '';
             } else {
-                infoEl.textContent = `API key required for ${provider.name}`;
+                infoEl.textContent = this.msg('keyRequired', { provider: provider.name });
                 infoEl.className = '';
             }
         }
@@ -2586,7 +3014,7 @@ function buildDatasetSubmissionUrl(
 
                 const privacyNote = document.createElement('div');
                 privacyNote.style.cssText = 'font-size: 11px; color: #72777d; margin-top: 4px;';
-                privacyNote.textContent = 'Results are logged for research. Your username is not recorded.';
+                privacyNote.textContent = this.msg('privacyNote');
                 container.appendChild(privacyNote);
 
                 // Key-management buttons: required-key providers always show
@@ -2638,9 +3066,9 @@ function buildDatasetSubmissionUrl(
                     const verifierLink = mw.util.addPortletLink(
                         portletId,
                         '#',
-                        'Verify',
+                        this.msg('verifyTab'),
                         't-verifier',
-                        'Verify claims against sources',
+                        this.msg('verifyTabTooltip'),
                         'v',
                     );
                     
@@ -2662,11 +3090,11 @@ function buildDatasetSubmissionUrl(
             localStorage.setItem('verifier_first_run_done', 'true');
             mw.notify(
                 $('<span>').append(
-                    'Citation Verifier installed — click the ',
-                    $('<strong>').text('Verify'),
-                    ' tab to get started.'
+                    this.msg('firstRunPre'),
+                    $('<strong>').text(this.msg('verifyTab')),
+                    this.msg('firstRunPost')
                 ),
-                { title: 'Citation Verifier', type: 'info', autoHide: true, autoHideSeconds: 8 }
+                { title: this.msg('firstRunTitle'), type: 'info', autoHide: true, autoHideSeconds: 8 }
             );
         }
 
@@ -2771,20 +3199,20 @@ function buildDatasetSubmissionUrl(
                 if (urlMatch) {
                     let statusHtml;
                     if (contentFetched && pdfMatch) {
-                        const pageInfo = pageMatch
-                            ? ` (page ${pageMatch[1]} of ${pdfMatch[1]})`
-                            : ` (${pdfMatch[1]} pages)`;
-                        statusHtml = `<span style="color: #2e7d32;">✓ PDF content extracted${pageInfo}</span>`;
+                        const pdfMsg = pageMatch
+                            ? this.msg('pdfExtractedWithPage', { page: pageMatch[1], total: pdfMatch[1] })
+                            : this.msg('pdfExtractedPages', { total: pdfMatch[1] });
+                        statusHtml = `<span style="color: #2e7d32;">${this.escapeHtml(pdfMsg)}</span>`;
                     } else if (contentFetched) {
-                        statusHtml = '<span style="color: #2e7d32;">✓ Content fetched successfully</span>';
+                        statusHtml = `<span style="color: #2e7d32;">${this.escapeHtml(this.msg('contentFetched'))}</span>`;
                     } else {
-                        statusHtml = '<em>Content will be fetched by AI during verification.</em>';
+                        statusHtml = `<em>${this.escapeHtml(this.msg('contentWillBeFetched'))}</em>`;
                     }
                     const truncationHtml = isTruncated
-                        ? '<div class="verifier-truncation-warning">⚠ The source is long and can only be checked partially.</div>'
+                        ? `<div class="verifier-truncation-warning">${this.escapeHtml(this.msg('sourceTruncatedWarning'))}</div>`
                         : '';
                     sourceElement.innerHTML = `
-                        <strong>Source URL:</strong><br>
+                        <strong>${this.escapeHtml(this.msg('sourceUrlLabel'))}</strong><br>
                         <a href="${urlMatch[1]}" target="_blank" style="word-break: break-all;">${urlMatch[1]}</a><br><br>
                         ${statusHtml}
                         ${truncationHtml}
@@ -2807,7 +3235,7 @@ function buildDatasetSubmissionUrl(
             this.sourceInputForOverride = forOverride;
             document.getElementById('verifier-source-input-container').style.display = 'block';
             if (!forOverride) {
-                document.getElementById('verifier-source-text').textContent = 'No URL found. Please paste the source text below:';
+                document.getElementById('verifier-source-text').textContent = this.msg('noUrlPasteBelow');
             }
             this.sourceTextInput.setValue('');
             this.hideOverrideButton();
@@ -2847,7 +3275,7 @@ function buildDatasetSubmissionUrl(
             }
 
             this.activeSource = `Manual source text:\n\n${text}`;
-            document.getElementById('verifier-source-text').innerHTML = `<strong>Manual Source Text:</strong><br><em>${text.substring(0, 200)}${text.length > 200 ? '...' : ''}</em>`;
+            document.getElementById('verifier-source-text').innerHTML = `<strong>${this.escapeHtml(this.msg('manualSourceLabel'))}</strong><br><em>${this.escapeHtml(text.substring(0, 200))}${text.length > 200 ? '...' : ''}</em>`;
             this.sourceInputForOverride = false;
             this.hideSourceTextInput();
             this.updateButtonVisibility();
@@ -2929,14 +3357,17 @@ function buildDatasetSubmissionUrl(
             const handleMouseMove = (e) => {
                 if (!isResizing) return;
                 
-                const newWidth = window.innerWidth - e.clientX;
+                // The resize handle sits on the sidebar's inner edge: the left
+                // edge when docked right (LTR), the right edge when docked left
+                // (RTL). Derive the new width from the correct viewport edge.
+                const newWidth = this.isRTL ? e.clientX : (window.innerWidth - e.clientX);
                 const minWidth = 300;
                 const maxWidth = window.innerWidth * 0.8;
                 
                 if (newWidth >= minWidth && newWidth <= maxWidth) {
                     const widthPx = newWidth + 'px';
                     sidebar.style.width = widthPx;
-                    document.body.style.marginRight = widthPx;
+                    this.setBodyMargin(widthPx);
                     this.sidebarWidth = widthPx;
                     localStorage.setItem('verifier_sidebar_width', widthPx);
                 }
@@ -2954,8 +3385,8 @@ function buildDatasetSubmissionUrl(
             
             document.body.classList.remove('verifier-sidebar-hidden');
             if (verifierTab) verifierTab.style.display = 'none';
-            document.body.style.marginRight = this.sidebarWidth;
-            
+            this.setBodyMargin(this.sidebarWidth);
+
             this.isVisible = true;
             localStorage.setItem('verifier_sidebar_visible', 'true');
         }
@@ -2965,20 +3396,26 @@ function buildDatasetSubmissionUrl(
             
             document.body.classList.add('verifier-sidebar-hidden');
             if (verifierTab) verifierTab.style.display = 'list-item';
-            document.body.style.marginRight = '0';
-            
+            this.setBodyMargin('0');
+
             this.clearHighlights();
             
             this.isVisible = false;
             localStorage.setItem('verifier_sidebar_visible', 'false');
         }
         
+        // Push the article content away from the docked sidebar on the side
+        // that matches the reading direction (right for LTR, left for RTL),
+        // clearing the opposite side so a language switch can't leave a stale
+        // margin behind.
+        setBodyMargin(value) {
+            document.body.style.marginRight = '';
+            document.body.style.marginLeft = '';
+            document.body.style[this.marginSide] = value;
+        }
+
         adjustMainContent() {
-            if (this.isVisible) {
-                document.body.style.marginRight = this.sidebarWidth;
-            } else {
-                document.body.style.marginRight = '0';
-            }
+            this.setBodyMargin(this.isVisible ? this.sidebarWidth : '0');
         }
         
         attachEventListeners() {
@@ -3060,7 +3497,7 @@ function buildDatasetSubmissionUrl(
             const dialog = new OO.ui.MessageDialog();
             
             const textInput = new OO.ui.TextInputWidget({
-                placeholder: `Enter your ${provider.name} API Key...`,
+                placeholder: this.msg('setKeyPlaceholder', { provider: provider.name }),
                 type: 'password',
                 value: (provider.storageKey ? localStorage.getItem(provider.storageKey) : '') || ''
             });
@@ -3074,20 +3511,20 @@ function buildDatasetSubmissionUrl(
             windowManager.addWindows([dialog]);
             
             windowManager.openWindow(dialog, {
-                title: `Set ${provider.name} API Key`,
+                title: this.msg('setKeyDialogTitle', { provider: provider.name }),
                 message: $('<div>').append(
-                    $('<p>').text(`Enter your ${provider.name} API Key to enable source verification:`),
+                    $('<p>').text(this.msg('setKeyDialogMessage', { provider: provider.name })),
                     textInput.$element
                 ),
                 actions: [
                     {
                         action: 'save',
-                        label: 'Save',
+                        label: this.msg('save'),
                         flags: ['primary', 'progressive']
                     },
                     {
                         action: 'cancel',
-                        label: 'Cancel',
+                        label: this.msg('cancel'),
                         flags: ['safe']
                     }
                 ]
@@ -3115,7 +3552,7 @@ function buildDatasetSubmissionUrl(
                 return;
             }
             
-            OO.ui.confirm('Are you sure you want to remove the stored API key?').done((confirmed) => {
+            OO.ui.confirm(this.msg('removeKeyConfirm')).done((confirmed) => {
                 if (confirmed) {
                     this.removeCurrentApiKey();
                     this.updateButtonVisibility();
@@ -3174,7 +3611,7 @@ function buildDatasetSubmissionUrl(
             const verifyId = ++this.currentVerifyId;
             try {
                 this.buttons.verify.setDisabled(true);
-                this.buttons.verify.setLabel('Verifying...');
+                this.buttons.verify.setLabel(this.msg('verifying'));
                 this.buttons.verify.setIcon('clock');
                 this.updateStatus('Verifying claim against source...');
 
@@ -3202,12 +3639,12 @@ function buildDatasetSubmissionUrl(
                 }
                 console.error('Verification error:', error);
                 this.updateStatus(`Error: ${error.message}`, true);
-                document.getElementById('verifier-verdict').textContent = 'ERROR';
+                document.getElementById('verifier-verdict').textContent = this.msg('errorLabel');
                 document.getElementById('verifier-verdict').className = 'source-unavailable';
                 document.getElementById('verifier-comments').textContent = error.message;
             } finally {
                 if (verifyId === this.currentVerifyId) {
-                    this.buttons.verify.setLabel('Verify Claim');
+                    this.buttons.verify.setLabel(this.msg('verifyClaim'));
                     this.buttons.verify.setIcon('check');
                     this.updateButtonVisibility();
                 }
@@ -3240,7 +3677,7 @@ function buildDatasetSubmissionUrl(
 
 	    const result = this.parseVerificationResult(response);
 
-	    verdictEl.textContent = result.verdict;
+	    verdictEl.textContent = this.verdictFullLabel(result.verdict);
 	    verdictEl.className = '';
 
 	    if (result.verdict === 'SUPPORTED') {
@@ -3259,7 +3696,7 @@ function buildDatasetSubmissionUrl(
 	        const tag = document.createElement('span');
 	        tag.id = 'verifier-reason-type';
 	        tag.className = `reason-type-tag reason-type-${result.reason_type}`;
-	        tag.textContent = result.reason_type === 'contradiction' ? 'Contradiction' : 'Omission';
+	        tag.textContent = this.reasonTypeLabel(result.reason_type);
 	        verdictEl.after(tag);
 	    }
 
@@ -3374,7 +3811,7 @@ function buildDatasetSubmissionUrl(
             let etaStr = '';
             if (current > 0) {
                 const remaining = ((elapsed / current) * (total - current));
-                etaStr = ` · ~${this.formatDuration(remaining)} remaining`;
+                etaStr = ` · ${this.msg('etaRemaining', { time: this.formatDuration(remaining) })}`;
             }
 
             progressEl.innerHTML = `
@@ -3389,9 +3826,9 @@ function buildDatasetSubmissionUrl(
 
         formatDuration(ms) {
             const s = Math.round(ms / 1000);
-            if (s < 60) return `${s}s`;
+            if (s < 60) return this.msg('durationSeconds', { s });
             const m = Math.floor(s / 60);
-            return `${m}m ${s % 60}s`;
+            return this.msg('durationMinutes', { m, s: s % 60 });
         }
 
         loadReportFilters() {
@@ -3459,7 +3896,7 @@ function buildDatasetSubmissionUrl(
                 if (!emptyEl) {
                     emptyEl = document.createElement('div');
                     emptyEl.className = 'verifier-filter-empty';
-                    emptyEl.textContent = 'All citations are hidden by the current filters. Click a filter chip above to show them.';
+                    emptyEl.textContent = this.msg('filterEmpty');
                     resultsEl.appendChild(emptyEl);
                 }
             } else if (emptyEl) {
@@ -3490,10 +3927,11 @@ function buildDatasetSubmissionUrl(
 
             const chip = (key, count, label, color) => {
                 const hidden = !!this.reportFilters[key];
+                const title = this.msg(hidden ? 'filterChipTitleShow' : 'filterChipTitleHide', { label });
                 return `<button type="button"
                     class="verifier-filter-chip${hidden ? ' verifier-chip-off' : ''}"
                     data-filter="${key}"
-                    title="${hidden ? 'Show' : 'Hide'} ${this.escapeHtml(label)} citations"
+                    title="${this.escapeHtml(title)}"
                     aria-pressed="${hidden ? 'false' : 'true'}">
                     <span class="dot" style="background:${color}"></span>${count} ${this.escapeHtml(label)}
                 </button>`;
@@ -3509,8 +3947,8 @@ function buildDatasetSubmissionUrl(
             // Each unit is one claim; a group unit covers groupSize citations.
             const citationCount = units.reduce((n, u) => n + (u.groupSize || 1), 0);
             const claimsLabel = citationCount === total
-                ? `${total} citation${total === 1 ? '' : 's'} checked`
-                : `${citationCount} citations across ${total} claim${total === 1 ? '' : 's'}`;
+                ? this.msg('summaryCitationsChecked', { count: total })
+                : this.msg('summaryAcross', { citations: citationCount, claims: total });
 
             summaryEl.innerHTML = `
                 <div class="verifier-summary-bar">
@@ -3521,16 +3959,16 @@ function buildDatasetSubmissionUrl(
                     ${segHtml(counts.error, 'seg-error')}
                 </div>
                 <div class="verifier-summary-counts">
-                    ${chip('supported', counts.supported, 'supported', '#28a745')}
-                    ${chip('partial', counts.partial, 'partial', '#ffc107')}
-                    ${chip('not-supported', counts['not-supported'], 'not supported', '#dc3545')}
-                    ${chip('unavailable', counts.unavailable, 'unavailable', '#6c757d')}
-                    ${counts.error > 0 ? chip('error', counts.error, 'errors', '#adb5bd') : ''}
+                    ${chip('supported', counts.supported, this.msg('chipLabel_supported'), '#28a745')}
+                    ${chip('partial', counts.partial, this.msg('chipLabel_partial'), '#ffc107')}
+                    ${chip('not-supported', counts['not-supported'], this.msg('chipLabel_notSupported'), '#dc3545')}
+                    ${chip('unavailable', counts.unavailable, this.msg('chipLabel_unavailable'), '#6c757d')}
+                    ${counts.error > 0 ? chip('error', counts.error, this.msg('chipLabel_error'), '#adb5bd') : ''}
                 </div>
                 <div class="verifier-summary-meta">
-                    ${claimsLabel}${hiddenCount > 0 ? ` · ${hiddenCount} hidden by filter` : ''}${this.reportTokenUsage.input + this.reportTokenUsage.output > 0 ? ` · ${this.reportTokenUsage.input.toLocaleString()} input + ${this.reportTokenUsage.output.toLocaleString()} output tokens` : ''}
+                    ${claimsLabel}${hiddenCount > 0 ? ` · ${this.msg('hiddenByFilter', { n: hiddenCount })}` : ''}${this.reportTokenUsage.input + this.reportTokenUsage.output > 0 ? ` · ${this.msg('tokensUsageMeta', { input: this.reportTokenUsage.input.toLocaleString(), output: this.reportTokenUsage.output.toLocaleString() })}` : ''}
                 </div>
-                ${this.reportRevisionId ? `<div class="verifier-summary-meta">Revision: <a href="${this.escapeHtml(this.getRevisionPermalinkUrl(this.reportRevisionId) || '#')}" target="_blank" rel="noopener">${this.reportRevisionId}</a></div>` : ''}
+                ${this.reportRevisionId ? `<div class="verifier-summary-meta">${this.escapeHtml(this.msg('revisionLabel'))} <a href="${this.escapeHtml(this.getRevisionPermalinkUrl(this.reportRevisionId) || '#')}" target="_blank" rel="noopener">${this.reportRevisionId}</a></div>` : ''}
             `;
 
             summaryEl.querySelectorAll('.verifier-filter-chip').forEach(btn => {
@@ -3543,12 +3981,28 @@ function buildDatasetSubmissionUrl(
 
         verdictClassFor(verdict) {
             switch (verdict) {
-                case 'SUPPORTED': return { cls: 'supported', label: 'Supported' };
-                case 'PARTIALLY SUPPORTED': return { cls: 'partial', label: 'Partial' };
-                case 'NOT SUPPORTED': return { cls: 'not-supported', label: 'Not Supported' };
-                case 'SOURCE UNAVAILABLE': return { cls: 'unavailable', label: 'Unavailable' };
+                case 'SUPPORTED': return { cls: 'supported', label: this.msg('verdictShort_supported') };
+                case 'PARTIALLY SUPPORTED': return { cls: 'partial', label: this.msg('verdictShort_partial') };
+                case 'NOT SUPPORTED': return { cls: 'not-supported', label: this.msg('verdictShort_notSupported') };
+                case 'SOURCE UNAVAILABLE': return { cls: 'unavailable', label: this.msg('verdictShort_unavailable') };
                 default: return { cls: 'error', label: verdict };
             }
+        }
+
+        // Full verdict label for the single-result box. Unrecognized verdicts
+        // (e.g. 'PARSE_ERROR') pass through as-is so nothing is silently lost.
+        verdictFullLabel(verdict) {
+            switch (verdict) {
+                case 'SUPPORTED': return this.msg('verdictFull_supported');
+                case 'PARTIALLY SUPPORTED': return this.msg('verdictFull_partial');
+                case 'NOT SUPPORTED': return this.msg('verdictFull_notSupported');
+                case 'SOURCE UNAVAILABLE': return this.msg('verdictFull_unavailable');
+                default: return verdict;
+            }
+        }
+
+        reasonTypeLabel(reasonType) {
+            return this.msg(reasonType === 'contradiction' ? 'reasonContradiction' : 'reasonOmission');
         }
 
         attachRefScrollHandler(el, refElement) {
@@ -3590,10 +4044,10 @@ function buildDatasetSubmissionUrl(
             card.className = `verifier-report-card verdict-${verdictClass}`;
             const claimExcerpt = result.claimText.length > 80 ? result.claimText.substring(0, 80) + '…' : result.claimText;
             const truncationHtml = (result.truncated && result.verdict !== 'SUPPORTED')
-                ? '<div class="report-card-truncated">⚠ Source is long, only partially checked.</div>'
+                ? `<div class="report-card-truncated">${this.escapeHtml(this.msg('truncatedSolo'))}</div>`
                 : '';
             const reasonTypeHtml = (result.verdict === 'NOT SUPPORTED' && result.reason_type)
-                ? `<span class="reason-type-tag reason-type-${result.reason_type}">${result.reason_type === 'contradiction' ? 'Contradiction' : 'Omission'}</span>`
+                ? `<span class="reason-type-tag reason-type-${result.reason_type}">${this.reasonTypeLabel(result.reason_type)}</span>`
                 : '';
             card.innerHTML = `
                 <div class="report-card-header">
@@ -3614,7 +4068,7 @@ function buildDatasetSubmissionUrl(
 
             if (result.refElement && (result.verdict === 'NOT SUPPORTED' || result.verdict === 'PARTIALLY SUPPORTED' || result.verdict === 'SOURCE UNAVAILABLE')) {
                 const editBtn = new OO.ui.ButtonWidget({
-                    label: 'Edit Section',
+                    label: this.msg('editSection'),
                     flags: ['progressive'],
                     icon: 'edit',
                     href: this.buildEditUrl(result.refElement),
@@ -3645,15 +4099,15 @@ function buildDatasetSubmissionUrl(
             groupEl.innerHTML = `
                 <div class="verifier-report-group-header">
                     <div class="verifier-report-group-title">
-                        <span class="verifier-report-group-badge">Group of ${firstResult.groupSize} · ${numbers}</span>
+                        <span class="verifier-report-group-badge">${this.escapeHtml(this.msg('groupBadge', { size: firstResult.groupSize, numbers }))}</span>
                     </div>
                     <div class="verifier-report-group-claim">${this.escapeHtml(claimExcerpt)}</div>
                     <div class="verifier-report-group-collective">
-                        <div class="verifier-report-group-collective-pending">Checking combined sources…</div>
+                        <div class="verifier-report-group-collective-pending">${this.escapeHtml(this.msg('checkingCombined'))}</div>
                     </div>
                     <div class="verifier-report-group-edit"></div>
                 </div>
-                <div class="verifier-report-group-rows-label">Individual sources</div>
+                <div class="verifier-report-group-rows-label">${this.escapeHtml(this.msg('individualSources'))}</div>
                 <div class="verifier-report-group-rows"></div>
             `;
             // One shared "Edit Section" button per group: every member is in
@@ -3661,7 +4115,7 @@ function buildDatasetSubmissionUrl(
             // would just be repetition. Wire it to the first member's ref.
             if (firstResult.refElement) {
                 const editBtn = new OO.ui.ButtonWidget({
-                    label: 'Edit Section',
+                    label: this.msg('editSection'),
                     flags: ['progressive'],
                     icon: 'edit',
                     href: this.buildEditUrl(firstResult.refElement),
@@ -3689,14 +4143,14 @@ function buildDatasetSubmissionUrl(
             if (!slot) return;
 
             const reasonTypeHtml = (result.verdict === 'NOT SUPPORTED' && result.reason_type)
-                ? `<span class="reason-type-tag reason-type-${result.reason_type}">${result.reason_type === 'contradiction' ? 'Contradiction' : 'Omission'}</span>`
+                ? `<span class="reason-type-tag reason-type-${result.reason_type}">${this.reasonTypeLabel(result.reason_type)}</span>`
                 : '';
             const truncationHtml = (result.truncated && result.verdict !== 'SUPPORTED')
-                ? '<div class="report-card-truncated">⚠ Combined sources are long, only partially checked.</div>'
+                ? `<div class="report-card-truncated">${this.escapeHtml(this.msg('truncatedCombined'))}</div>`
                 : '';
             slot.innerHTML = `
                 <div class="verifier-report-group-collective-header">
-                    <span class="verifier-report-group-collective-label">Combined verdict</span>
+                    <span class="verifier-report-group-collective-label">${this.escapeHtml(this.msg('combinedVerdict'))}</span>
                     <span class="report-card-verdict ${verdictClass}">${verdictLabel}</span>${reasonTypeHtml}
                 </div>
                 ${result.comments ? `<div class="report-card-comment">${this.escapeHtml(result.comments)}</div>` : ''}
@@ -3727,10 +4181,10 @@ function buildDatasetSubmissionUrl(
             const row = document.createElement('div');
             row.className = `verifier-report-group-row verdict-${verdictClass}`;
             const truncationHtml = (result.truncated && result.verdict !== 'SUPPORTED')
-                ? '<div class="report-card-truncated">⚠ Source is long, only partially checked.</div>'
+                ? `<div class="report-card-truncated">${this.escapeHtml(this.msg('truncatedSolo'))}</div>`
                 : '';
             const reasonTypeHtml = (result.verdict === 'NOT SUPPORTED' && result.reason_type)
-                ? `<span class="reason-type-tag reason-type-${result.reason_type}">${result.reason_type === 'contradiction' ? 'Contradiction' : 'Omission'}</span>`
+                ? `<span class="reason-type-tag reason-type-${result.reason_type}">${this.reasonTypeLabel(result.reason_type)}</span>`
                 : '';
             row.innerHTML = `
                 <div class="verifier-report-group-row-header">
@@ -3768,7 +4222,7 @@ function buildDatasetSubmissionUrl(
             actionsEl.innerHTML = '';
 
             const copyWikiBtn = new OO.ui.ButtonWidget({
-                label: 'Copy Report (Wikitext)',
+                label: this.msg('copyWikitext'),
                 flags: ['progressive'],
                 icon: 'copy'
             });
@@ -3776,7 +4230,7 @@ function buildDatasetSubmissionUrl(
             actionsEl.appendChild(copyWikiBtn.$element[0]);
 
             const copyTextBtn = new OO.ui.ButtonWidget({
-                label: 'Copy Report (Plain Text)',
+                label: this.msg('copyPlaintext'),
                 flags: ['safe'],
                 icon: 'copy'
             });
@@ -3800,16 +4254,16 @@ function buildDatasetSubmissionUrl(
         generateWikitextReport() {
             const articleTitle = typeof mw !== 'undefined' ? mw.config.get('wgTitle') : document.title;
             const revId = this.reportRevisionId;
-            let wikitext = `== Citation verification report ==\n`;
-            wikitext += `This is an experimental check of the article sources by [[User:Alaexis/AI_Source_Verification|Citation Verifier]]. Treat it with caution, be aware of its [[User:Alaexis/AI_Source_Verification#Limitations|limitations]] and feel free to leave feedback at [[User_talk:Alaexis/AI_Source_Verification|the talk page]].\n\n`;
+            let wikitext = `== ${this.msg('wt_reportHeading')} ==\n`;
+            wikitext += `${this.msg('wt_intro')}\n\n`;
             if (revId) {
-                wikitext += `Revision checked: [[Special:PermanentLink/${revId}|${revId}]]\n\n`;
+                wikitext += `${this.msg('wt_revisionChecked', { revId })}\n\n`;
             }
             const submissionConfigured = this.isDatasetSubmissionConfigured();
             wikitext += `{| class="wikitable sortable"\n`;
             wikitext += submissionConfigured
-                ? `|-\n! # !! Verdict !! Source !! Comments !! class="unsortable" | Submit\n`
-                : `|-\n! # !! Verdict !! Source !! Comments\n`;
+                ? `|-\n${this.msg('wt_colHeadersWithSubmit')}\n`
+                : `|-\n${this.msg('wt_colHeaders')}\n`;
 
             // Link a citation number to its footnote anchor on the analyzed
             // revision, so clicks from the report jump to the original citation
@@ -3830,33 +4284,33 @@ function buildDatasetSubmissionUrl(
             for (const r of reportUnits) {
                 let verdictWiki;
                 switch (r.verdict) {
-                    case 'SUPPORTED': verdictWiki = '{{tick}} Supported'; break;
-                    case 'PARTIALLY SUPPORTED': verdictWiki = '{{bang}} Partially supported'; break;
-                    case 'NOT SUPPORTED': verdictWiki = '{{cross}} Not supported'; break;
-                    case 'SOURCE UNAVAILABLE': verdictWiki = '{{hmmm}} Source unavailable'; break;
+                    case 'SUPPORTED': verdictWiki = this.msg('wt_verdictSupported'); break;
+                    case 'PARTIALLY SUPPORTED': verdictWiki = this.msg('wt_verdictPartial'); break;
+                    case 'NOT SUPPORTED': verdictWiki = this.msg('wt_verdictNotSupported'); break;
+                    case 'SOURCE UNAVAILABLE': verdictWiki = this.msg('wt_verdictUnavailable'); break;
                     default: verdictWiki = r.verdict; break;
                 }
                 let commentsClean = (r.comments || '').replace(/\n/g, ' ');
                 if (r.truncated && r.verdict !== 'SUPPORTED') {
                     const note = r.isGroup
-                        ? "''(Combined sources are long, only partially checked.)''"
-                        : "''(Source is long, only partially checked.)''";
+                        ? this.msg('wt_noteCombined')
+                        : this.msg('wt_noteSolo');
                     commentsClean += (commentsClean ? ' ' : '') + note;
                 }
                 let citationCell;
                 let sourceStr;
                 if (r.isGroup) {
                     citationCell = (r.members || []).map(m => linkNum(m.citationNumber, m.refElement)).join('')
-                        + ' <small>(combined)</small>';
+                        + ` <small>${this.msg('wt_combined')}</small>`;
                     const links = (r.members || []).filter(m => m.url).map(m => `[${m.url} ${m.citationNumber}]`);
                     sourceStr = links.length ? links.join(' ') : '—';
                 } else {
                     citationCell = linkNum(r.citationNumber, r.refElement);
-                    sourceStr = r.url ? `[${r.url} source]` : '—';
+                    sourceStr = r.url ? `[${r.url} ${this.msg('wt_sourceWord')}]` : '—';
                 }
                 if (submissionConfigured) {
                     const submitCell = (r.verdict && r.verdict !== 'ERROR')
-                        ? `[${this.buildDatasetSubmissionUrl(r)} Submit]`
+                        ? `[${this.buildDatasetSubmissionUrl(r)} ${this.msg('wt_submitWord')}]`
                         : '—';
                     wikitext += `|-\n| ${citationCell} || ${verdictWiki} || ${sourceStr} || ${commentsClean} || ${submitCell}\n`;
                 } else {
@@ -3875,22 +4329,31 @@ function buildDatasetSubmissionUrl(
             }
             const citationCount = reportUnits.reduce((n, u) => n + (u.groupSize || 1), 0);
             const claimsPhrase = citationCount === reportUnits.length
-                ? `${reportUnits.length} citation${reportUnits.length === 1 ? '' : 's'}`
-                : `${reportUnits.length} claim${reportUnits.length === 1 ? '' : 's'} (${citationCount} citations)`;
-            wikitext += `'''Summary:''' ${counts.supported} supported, ${counts.partial} partially supported, ${counts.notSupported} not supported, ${counts.unavailable} source unavailable out of ${claimsPhrase}.\n`;
+                ? this.msg('wt_claimsPhraseCitations', { count: reportUnits.length })
+                : this.msg('wt_claimsPhraseClaims', { claims: reportUnits.length, citations: citationCount });
+            wikitext += `${this.msg('wt_summary', {
+                supported: counts.supported,
+                partial: counts.partial,
+                notSupported: counts.notSupported,
+                unavailable: counts.unavailable,
+                claimsPhrase,
+            })}\n`;
 
             const provider = this.providers[this.currentProvider];
             let modelDesc;
             if (this.currentProvider === 'publicai') {
-                modelDesc = 'a PublicAI-hosted open-source LLM';
+                modelDesc = this.msg('wt_modelPublicai');
             } else if (this.currentProvider === 'huggingface') {
-                modelDesc = `a HuggingFace-hosted open-source LLM (${provider.model})`;
+                modelDesc = this.msg('wt_modelHuggingface', { model: provider.model });
             } else {
                 modelDesc = provider.model;
             }
-            wikitext += `Generated by [[User:Alaexis/AI_Source_Verification|Citation Verifier]] using ${modelDesc} on ~~~~~.`;
+            wikitext += this.msg('wt_generatedBy', { model: modelDesc });
             if (this.reportTokenUsage.input + this.reportTokenUsage.output > 0) {
-                wikitext += ` Tokens used: ${this.reportTokenUsage.input.toLocaleString()} input, ${this.reportTokenUsage.output.toLocaleString()} output.`;
+                wikitext += this.msg('wt_tokensUsed', {
+                    input: this.reportTokenUsage.input.toLocaleString(),
+                    output: this.reportTokenUsage.output.toLocaleString(),
+                });
             }
             wikitext += `\n`;
 
@@ -3900,35 +4363,36 @@ function buildDatasetSubmissionUrl(
         generatePlainTextReport() {
             const articleTitle = typeof mw !== 'undefined' ? mw.config.get('wgTitle') : document.title;
             const revId = this.reportRevisionId;
-            let text = `Citation Verification Report: ${articleTitle}\n`;
-            text += `Provider: ${this.providers[this.currentProvider].name}\n`;
+            let text = `${this.msg('pt_title', { title: articleTitle })}\n`;
+            text += `${this.msg('pt_provider', { name: this.providers[this.currentProvider].name })}\n`;
             if (revId) {
                 const permalink = this.getRevisionPermalinkUrl(revId);
-                text += `Revision: ${revId}${permalink ? ` (${permalink})` : ''}\n`;
+                text += `${this.msg('pt_revision', { rev: `${revId}${permalink ? ` (${permalink})` : ''}` })}\n`;
             }
             text += `${'='.repeat(60)}\n\n`;
 
             for (const r of this.getReportUnits()) {
+                const verdictLabel = this.verdictFullLabel(r.verdict);
                 if (r.isGroup) {
                     const token = (r.groupCitationNumbers || []).map(n => `[${n}]`).join('');
-                    text += `${token} (combined) ${r.verdict}\n`;
-                    text += `  Claim: ${r.claimText.substring(0, 100)}${r.claimText.length > 100 ? '...' : ''}\n`;
+                    text += `${token} ${this.msg('pt_combined')} ${verdictLabel}\n`;
+                    text += `  ${this.msg('pt_claim')} ${r.claimText.substring(0, 100)}${r.claimText.length > 100 ? '...' : ''}\n`;
                     const urls = (r.members || []).filter(m => m.url).map(m => `[${m.citationNumber}] ${m.url}`);
-                    if (urls.length) text += `  Sources: ${urls.join(' | ')}\n`;
-                    if (r.comments) text += `  Comments: ${r.comments}\n`;
-                    if (r.truncated && r.verdict !== 'SUPPORTED') text += `  Note: Combined sources are long, only partially checked.\n`;
+                    if (urls.length) text += `  ${this.msg('pt_sources')} ${urls.join(' | ')}\n`;
+                    if (r.comments) text += `  ${this.msg('pt_comments')} ${r.comments}\n`;
+                    if (r.truncated && r.verdict !== 'SUPPORTED') text += `  ${this.msg('pt_noteLabel')} ${this.msg('pt_noteCombined')}\n`;
                 } else {
-                    text += `[${r.citationNumber}] ${r.verdict}\n`;
-                    text += `  Claim: ${r.claimText.substring(0, 100)}${r.claimText.length > 100 ? '...' : ''}\n`;
-                    if (r.url) text += `  Source: ${r.url}\n`;
-                    if (r.comments) text += `  Comments: ${r.comments}\n`;
-                    if (r.truncated && r.verdict !== 'SUPPORTED') text += `  Note: Source is long, only partially checked.\n`;
+                    text += `[${r.citationNumber}] ${verdictLabel}\n`;
+                    text += `  ${this.msg('pt_claim')} ${r.claimText.substring(0, 100)}${r.claimText.length > 100 ? '...' : ''}\n`;
+                    if (r.url) text += `  ${this.msg('pt_source')} ${r.url}\n`;
+                    if (r.comments) text += `  ${this.msg('pt_comments')} ${r.comments}\n`;
+                    if (r.truncated && r.verdict !== 'SUPPORTED') text += `  ${this.msg('pt_noteLabel')} ${this.msg('pt_noteSolo')}\n`;
                 }
                 text += `\n`;
             }
 
             if (this.reportTokenUsage.input + this.reportTokenUsage.output > 0) {
-                text += `Tokens used: ${this.reportTokenUsage.input.toLocaleString()} input, ${this.reportTokenUsage.output.toLocaleString()} output\n`;
+                text += `${this.msg('pt_tokensUsed', { input: this.reportTokenUsage.input.toLocaleString(), output: this.reportTokenUsage.output.toLocaleString() })}\n`;
             }
 
             return text;
@@ -3938,7 +4402,7 @@ function buildDatasetSubmissionUrl(
             const text = format === 'wikitext' ? this.generateWikitextReport() : this.generatePlainTextReport();
             try {
                 await navigator.clipboard.writeText(text);
-                mw.notify('Report copied to clipboard!', { type: 'info', autoHide: true, autoHideSeconds: 3 });
+                mw.notify(this.msg('reportCopied'), { type: 'info', autoHide: true, autoHideSeconds: 3 });
             } catch (e) {
                 // Fallback
                 const textarea = document.createElement('textarea');
@@ -3947,7 +4411,7 @@ function buildDatasetSubmissionUrl(
                 textarea.select();
                 document.execCommand('copy');
                 document.body.removeChild(textarea);
-                mw.notify('Report copied to clipboard!', { type: 'info', autoHide: true, autoHideSeconds: 3 });
+                mw.notify(this.msg('reportCopied'), { type: 'info', autoHide: true, autoHideSeconds: 3 });
             }
         }
 
@@ -4047,7 +4511,7 @@ function buildDatasetSubmissionUrl(
                                 if (willRetry) {
                                     this.updateReportProgress(
                                         progressCurrent, progressTotal,
-                                        `Rate limited, retrying in ${Math.round(backoff / 1000)}s...`,
+                                        this.msg('phaseRateLimited', { s: Math.round(backoff / 1000) }),
                                         startTime
                                     );
                                 }
@@ -4104,7 +4568,7 @@ function buildDatasetSubmissionUrl(
         async verifyAllCitations() {
             const citations = this.collectAllCitations();
             if (citations.length === 0) {
-                mw.notify('No citations found on this page.', { type: 'warn', autoHide: true });
+                mw.notify(this.msg('noCitationsFound'), { type: 'warn', autoHide: true });
                 return;
             }
 
@@ -4116,13 +4580,15 @@ function buildDatasetSubmissionUrl(
             const multiGroupCount = multiGroupIds.size;
             const estimatedSeconds = citations.length * 7 + multiGroupCount * 8;
             const estimatedMinutes = Math.ceil(estimatedSeconds / 60);
-            const groupNote = multiGroupCount > 0
-                ? `\n\nThis includes ${multiGroupCount} combined-source check${multiGroupCount === 1 ? '' : 's'} for adjacent citation groups.`
-                : '';
 
             const confirmed = await new Promise(resolve => {
                 OO.ui.confirm(
-                    `This will verify ${citations.length} citations from ${uniqueUrls.size} unique sources.${groupNote}\n\nEstimated time: ~${estimatedMinutes} minute${estimatedMinutes > 1 ? 's' : ''}.\n\nContinue?`
+                    this.msg('confirmVerifyAll', {
+                        count: citations.length,
+                        sources: uniqueUrls.size,
+                        groups: multiGroupCount,
+                        minutes: estimatedMinutes,
+                    })
                 ).done(result => resolve(result));
             });
             if (!confirmed) return;
@@ -4162,7 +4628,7 @@ function buildDatasetSubmissionUrl(
                 if (this.reportCancelled) break;
 
                 const citation = citations[i];
-                this.updateReportProgress(completed, progressTotal, `Checking citation [${citation.citationNumber}]`, startTime);
+                this.updateReportProgress(completed, progressTotal, this.msg('phaseChecking', { n: citation.citationNumber }), startTime);
 
                 let result;
 
@@ -4185,7 +4651,7 @@ function buildDatasetSubmissionUrl(
                     const cacheKey = citation.pageNum ? `${citation.url}|page=${citation.pageNum}` : citation.url;
 
                     if (!this.sourceCache.has(cacheKey)) {
-                        this.updateReportProgress(completed, progressTotal, `Fetching source for [${citation.citationNumber}]`, startTime);
+                        this.updateReportProgress(completed, progressTotal, this.msg('phaseFetching', { n: citation.citationNumber }), startTime);
                         try {
                             const fetchResult = await this.fetchSourceContent(citation.url, citation.pageNum);
                             this.sourceCache.set(cacheKey, fetchResult);
@@ -4228,7 +4694,7 @@ function buildDatasetSubmissionUrl(
                         // would have recovered. The [5s, 10s, 20s] backoff curve
                         // is preserved via minBackoffMs/jitterMs, and Cancel
                         // still short-circuits via shouldAbort.
-                        this.updateReportProgress(completed, progressTotal, `Verifying citation [${citation.citationNumber}]`, startTime);
+                        this.updateReportProgress(completed, progressTotal, this.msg('phaseVerifying', { n: citation.citationNumber }), startTime);
                         try {
                             const apiResult = await withRetry(
                                 () => this.callProviderAPI(citation.claimText, sourceContent),
@@ -4242,7 +4708,7 @@ function buildDatasetSubmissionUrl(
                                         if (willRetry) {
                                             this.updateReportProgress(
                                                 completed, progressTotal,
-                                                `Rate limited, retrying in ${Math.round(backoff / 1000)}s...`,
+                                                this.msg('phaseRateLimited', { s: Math.round(backoff / 1000) }),
                                                 startTime
                                             );
                                         }
@@ -4322,7 +4788,7 @@ function buildDatasetSubmissionUrl(
                 // assemble them and ask for a single verdict over the combination.
                 if (citation.groupSize > 1 && citation.groupIndex === citation.groupSize - 1 && !this.reportCancelled) {
                     const groupToken = (citation.groupCitationNumbers || []).map(n => `[${n}]`).join('');
-                    this.updateReportProgress(completed, progressTotal, `Checking combined sources ${groupToken}`, startTime);
+                    this.updateReportProgress(completed, progressTotal, this.msg('phaseCheckingCombined', { numbers: groupToken }), startTime);
                     await this.verifyGroupCollective(citation, citations, startTime, delayBetweenCalls, completed, progressTotal);
                     completed++;
                 }
@@ -4331,8 +4797,8 @@ function buildDatasetSubmissionUrl(
             // Finalize
             this.reportRunning = false;
             const finalPhase = this.reportCancelled
-                ? `Cancelled after ${this.reportResults.length} of ${citations.length} citations`
-                : `Completed: ${this.reportResults.length} citations checked`;
+                ? this.msg('phaseCancelled', { done: this.reportResults.length, total: citations.length })
+                : this.msg('phaseCompleted', { n: this.reportResults.length });
             this.updateReportProgress(completed, progressTotal, finalPhase, startTime);
             this.renderReportSummary();
             this.renderReportActions();
@@ -4364,7 +4830,7 @@ function buildDatasetSubmissionUrl(
         buildEditUrl(refElement) {
             const title = mw.config.get('wgPageName');
             const section = this.findSectionNumber(refElement);
-            const summary = 'source does not support claim (checked with [[User:Alaexis/AI_Source_Verification|Source Verifier]])';
+            const summary = this.msg('editSummary');
 
             const params = { action: 'edit', summary: summary };
             if (section > 0) {
@@ -4383,7 +4849,7 @@ function buildDatasetSubmissionUrl(
 
             if (verdict === 'NOT SUPPORTED' || verdict === 'PARTIALLY SUPPORTED' || verdict === 'SOURCE UNAVAILABLE') {
                 const btn = new OO.ui.ButtonWidget({
-                    label: 'Edit Section',
+                    label: this.msg('editSection'),
                     flags: ['progressive'],
                     icon: 'edit',
                     href: this.buildEditUrl(),
@@ -4426,7 +4892,7 @@ function buildDatasetSubmissionUrl(
             });
         }
 
-        buildSubmitToDatasetButton(result, { label = 'Give feedback' } = {}) {
+        buildSubmitToDatasetButton(result, { label = this.msg('giveFeedback') } = {}) {
             return new OO.ui.ButtonWidget({
                 label,
                 icon: 'feedback',
@@ -4445,7 +4911,7 @@ function buildDatasetSubmissionUrl(
                 verdictEl.className = '';
             }
             if (commentsEl) {
-                commentsEl.textContent = 'Click "Verify Claim" to verify the selected claim against the source.';
+                commentsEl.textContent = this.msg('clickVerifyToStart');
             }
             const actionContainer = document.getElementById('verifier-action-container');
             if (actionContainer) {
@@ -4475,7 +4941,7 @@ function buildDatasetSubmissionUrl(
                 const span = `<span class="${isActive ? 'group-active' : ''}">[${this.escapeHtml(text)}]</span>`;
                 return span;
             }).join(' ');
-            indicatorEl.innerHTML = `Part of a group of ${group.length} citations: ${numbers}`;
+            indicatorEl.innerHTML = this.escapeHtml(this.msg('partOfGroup', { count: group.length })).replace('{numbers}', numbers);
             indicatorEl.style.display = '';
         }
     }
