@@ -159,6 +159,41 @@ test('extractHttpUrl returns the real source alongside ISBN wikilinks', () => {
   assert.equal(extractHttpUrl(element), 'https://example.com/book-review');
 });
 
+test('extractReferenceUrl skips the Doi (identifier) wikilink and returns the real doi.org source (Harvard/sfn)', () => {
+  // Mirrors a {{sfn}} footnote resolving via #CITEREF to a full citation whose
+  // markup carries both the "doi" identifier-article wikilink and the actual
+  // doi.org external link. The wikilink must not be treated as the source.
+  const jsdom = new JSDOM(`<!DOCTYPE html><body>
+    <a id="ref-1" href="#cite_note-1">1</a>
+    <span id="cite_note-1" class="reference">
+      <a href="#CITEREFPucci_Ben_Zeev2006">Pucci Ben Zeev 2006</a>, pp. 94–95.
+    </span>
+    <cite id="CITEREFPucci_Ben_Zeev2006" class="citation">
+      Pucci Ben Zeev (2006). ...
+      <a href="https://en.wikipedia.org/wiki/Doi_(identifier)">doi</a>:<a class="external" href="https://doi.org/10.1017/S0075435800000010">10.1017/S0075435800000010</a>
+    </cite>
+  </body>`);
+  const doc = jsdom.window.document;
+  const refElement = doc.getElementById('ref-1');
+  assert.equal(extractReferenceUrl(refElement, doc), 'https://doi.org/10.1017/S0075435800000010');
+});
+
+test('extractReferenceUrl returns null when a Harvard/sfn citation has only identifier wikilinks', () => {
+  const jsdom = new JSDOM(`<!DOCTYPE html><body>
+    <a id="ref-1" href="#cite_note-1">1</a>
+    <span id="cite_note-1" class="reference">
+      <a href="#CITEREFPucci_Ben_Zeev2006">Pucci Ben Zeev 2006</a>, pp. 94–95.
+    </span>
+    <cite id="CITEREFPucci_Ben_Zeev2006" class="citation">
+      Pucci Ben Zeev (2006). ...
+      <a href="https://en.wikipedia.org/wiki/Doi_(identifier)">doi</a>
+    </cite>
+  </body>`);
+  const doc = jsdom.window.document;
+  const refElement = doc.getElementById('ref-1');
+  assert.equal(extractReferenceUrl(refElement, doc), null);
+});
+
 test('extractReferenceUrl returns null for an ISBN-only book citation', () => {
   const jsdom = new JSDOM(`<!DOCTYPE html><body>
     <a id="ref-1" href="#cite_note-1">1</a>
