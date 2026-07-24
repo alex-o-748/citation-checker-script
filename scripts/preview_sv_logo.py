@@ -15,9 +15,11 @@ def face_colour(ztop, shade):
     if ztop <= 0.5:
         rgb = np.array([40, 48, 66])                # a bottom face
     elif ztop <= 5.5:
-        rgb = np.array([64, 128, 226])              # V (thinner letter)
+        rgb = np.array([64, 128, 226])              # V (thinnest letter)
+    elif ztop <= 7.0:
+        rgb = np.array([233, 170, 74])              # superscript "2" (mid)
     else:
-        rgb = np.array([38, 200, 170])              # S (thicker letter)
+        rgb = np.array([38, 200, 170])              # S (thickest letter)
     return tuple(np.clip(rgb * shade, 0, 255).astype(int))
 
 

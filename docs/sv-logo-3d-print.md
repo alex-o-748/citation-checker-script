@@ -20,12 +20,15 @@ lie flat and are the object themselves — there is no separate base plate.
   on the bed, so it prints **lying down with no support material**.
 - The **S is built from two overlapping C-curves** (a top "(" bulging left and
   a bottom ")" bulging right) that cross in the middle.
-- **S is thicker than V** (S = 8 mm, V = 5 mm). Where the two glyphs interleave,
-  the thicker S reads as the top layer.
-- The two C's overlap each other and the S overlaps the V, so the whole mark
-  fuses into a single connected piece.
+- A small **superscript "2"** sits at the top right, like a citation reference
+  ("SV²"). It overlaps the V's top corner so it stays connected.
+- **Stepped thicknesses:** S = 8 mm, the "2" = 6.5 mm, V = 5 mm. Thicker
+  elements read as the top layer where things overlap, so the "2" sits in the
+  foreground over the V's leg.
+- The two C's overlap each other, the S overlaps the V, and the "2" overlaps
+  the V, so the whole mark fuses into a single connected piece.
 
-Default dimensions: ~65 × 44 mm footprint, 8 mm tall.
+Default dimensions: ~60 × 47 mm footprint, 8 mm tall.
 
 ## Regenerating / customizing
 
@@ -37,7 +40,11 @@ python3 scripts/preview_sv_logo.py    # -> preview PNGs
 
 Tunable constants live at the top of `scripts/generate_sv_logo.py`:
 
-- `S_THICK` / `V_THICK` — letter thicknesses (keep S > V so it reads on top).
+- `S_THICK` / `V_THICK` / `REF_THICK` — thicknesses of the S, V and the "2".
+  Order sets the layering where things overlap; currently S (8) > REF (6.5) >
+  V (5), so the "2" sits in front of the V.
+- `TWO_X` / `TWO_Y` — where the superscript "2" sits (raise `TWO_Y` for a
+  higher superscript; nudge `TWO_X` to keep it overlapping the V).
 - `LETTER_H` — overall glyph height.
 - The `s_top_C` / `s_bot_C` dicts — the two C-curves' centres, radii
   (`r_out`/`r_in` set the stroke width) and start/end angles. Move `CY_TOP` /

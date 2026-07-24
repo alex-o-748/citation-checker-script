@@ -26,6 +26,7 @@ from stl import mesh
 # ---------------------------------------------------------------------------
 S_THICK = 8.0         # S thickness (its "height" lying flat) -- the taller one
 V_THICK = 5.0         # V thickness -- a bit lower than the S
+REF_THICK = 6.5       # superscript "2" -- thicker than V so it sits in front
 
 LETTER_H = 44.0       # glyph height in the plane (Y span)
 ARC_STEPS = 64        # smoothness of the C curves
@@ -129,6 +130,32 @@ add_prism([(x + V_OFF_X, y) for (x, y) in v_right], 0.0, V_THICK)
 for c in (s_top_C, s_bot_C):
     add_ring(c["cx"], c["cy"], c["r_out"], c["r_in"], c["a0"], c["a1"],
              0.0, S_THICK)
+
+# ---------------------------------------------------------------------------
+# Superscript "2" -- a small citation-style reference mark at the top right.
+# Built from a top hook (arc) + a diagonal stroke + a base bar, defined in a
+# local box (0..W2, 0..H2) then translated up/right so it sits above and after
+# the V and overlaps the V's top corner (staying one connected piece).
+# ---------------------------------------------------------------------------
+TWO_X = 52.0          # where the "2" sits (left edge of its box)
+TWO_Y = 27.0          # baseline height -> raised, so it reads as a superscript
+W2, H2, s2 = 13.0, 20.0, 4.5
+
+
+def tf(x, y):
+    return (x + TWO_X, y + TWO_Y)
+
+
+# top hook: an arc open at the bottom (gap where the diagonal drops away)
+two_cx, two_cy = W2 / 2, H2 - W2 / 2
+add_ring(two_cx + TWO_X, two_cy + TWO_Y, W2 / 2, W2 / 2 - s2, -40, 215,
+         0.0, REF_THICK)
+# diagonal stroke from the hook's lower-right down to the base
+add_prism([tf(1.5, 3.0), tf(6.0, 3.0), tf(11.5, 10.5), tf(7.0, 10.5)],
+          0.0, REF_THICK)
+# base bar
+add_prism([tf(0.0, 0.0), tf(W2, 0.0), tf(W2, s2), tf(0.0, s2)],
+          0.0, REF_THICK)
 
 # ---------------------------------------------------------------------------
 # Emit STL
