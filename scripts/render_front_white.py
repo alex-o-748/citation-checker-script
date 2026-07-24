@@ -17,7 +17,7 @@ For apparel at ~300 DPI: 900 px ~ 3 in, 3000 px ~ 10 in, 3600 px ~ 12 in.
 import sys
 import numpy as np
 from stl import mesh
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFont
 
 SS = 2                                   # supersample factor for smooth edges
 
@@ -27,9 +27,26 @@ transparent = "--transparent" in argv
 target = 900
 if "--size" in argv:
     target = int(argv[argv.index("--size") + 1])
+label = "Source Verifier"                # wordmark under the logo ("" to omit)
+if "--label" in argv:
+    label = argv[argv.index("--label") + 1]
+text_hex = "22303f"                       # default label colour (dark slate)
+if "--textcolor" in argv:
+    text_hex = argv[argv.index("--textcolor") + 1].lstrip("#")
+text_rgb = tuple(int(text_hex[i:i + 2], 16) for i in (0, 2, 4))
 out = "sv_logo_front_transparent.png" if transparent else "sv_logo_front.png"
 if "-o" in argv:
     out = argv[argv.index("-o") + 1]
+
+
+def load_font(size):
+    for p in ("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+              "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"):
+        try:
+            return ImageFont.truetype(p, size)
+        except OSError:
+            continue
+    return ImageFont.load_default()
 
 m = mesh.Mesh.from_file("sv_logo.stl")
 tris = m.vectors.astype(float)
@@ -70,8 +87,27 @@ mn, mx = pts.min(0), pts.max(0)
 scale = target / (mx - mn).max(); pad = int(0.07 * target)
 W = int((mx[0]-mn[0])*scale + 2*pad); H = int((mx[1]-mn[1])*scale + 2*pad)
 
+# --- lay out the label band under the logo --------------------------------
+label_band = 0
+font = tw = th = bx0 = by0 = None
+if label:
+    measure = ImageDraw.Draw(Image.new("RGBA", (4, 4)))
+    fs = int(0.16 * target) * SS                 # start size (supersampled)
+    font = load_font(fs)
+    bbox = measure.textbbox((0, 0), label, font=font)
+    tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+    max_w = (W - 2 * pad) * SS                    # fit within the artwork width
+    if tw > max_w:
+        fs = max(1, int(fs * max_w / tw))
+        font = load_font(fs)
+        bbox = measure.textbbox((0, 0), label, font=font)
+        tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+    bx0, by0 = bbox[0], bbox[1]
+    label_band = int(th / SS + 0.11 * target)     # text height + breathing room
+
+Ht = H + label_band
 bg = (255, 255, 255, 0) if transparent else (255, 255, 255, 255)
-img = Image.new("RGBA", (W*SS, H*SS), bg)
+img = Image.new("RGBA", (W*SS, Ht*SS), bg)
 dr = ImageDraw.Draw(img)
 def px(xy):
     return ((xy[0]-mn[0])*scale*SS + pad*SS, (H - ((xy[1]-mn[1])*scale + pad))*SS)
@@ -79,8 +115,13 @@ for _, poly, shade, ztop in rows:
     col = colour(ztop, shade) + (255,)
     dr.polygon([px(v) for v in poly], fill=col, outline=col)
 
-img = img.resize((W, H), Image.LANCZOS)
+if label:
+    tx = (W * SS - tw) / 2 - bx0
+    ty = (H - pad) * SS + (label_band * SS - th) / 2 - by0
+    dr.text((tx, ty), label, font=font, fill=text_rgb + (255,))
+
+img = img.resize((W, Ht), Image.LANCZOS)
 if not transparent:
     img = img.convert("RGB")
 img.save(out)
-print(f"wrote {out} ({W}x{H})")
+print(f"wrote {out} ({W}x{Ht}), label={label!r}")
