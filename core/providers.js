@@ -46,6 +46,13 @@ export async function callOpenAICompatibleChat({ url, apiKey, model, systemPromp
         } catch {
             errorMessage = errorText;
         }
+        // 413 is a byte cap on the request body (the CORS proxy rejects the
+        // request before the model sees it), not a model context limit — so the
+        // fix is a shorter source or a provider that calls its API directly
+        // rather than through the size-limited proxy.
+        if (response.status === 413) {
+            throw new Error(`${label}: the source is too large to send. Trim the source text, or switch to a provider that calls its API directly (Claude, Gemini, or OpenAI).`);
+        }
         throw new Error(`${label} API request failed (${response.status}): ${errorMessage}`);
     }
 

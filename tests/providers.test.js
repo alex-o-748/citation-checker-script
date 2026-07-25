@@ -172,6 +172,30 @@ test('callHuggingFaceAPI surfaces upstream error messages', async () => {
   }
 });
 
+test('callOpenAICompatibleChat maps 413 to a legible, actionable message', async () => {
+  // The CORS proxy caps request-body size; an oversized source comes back as
+  // HTTP 413. Surface a message that tells the user how to recover rather than
+  // the raw "Request body too large".
+  const mock = withMockFetch(async () => ({
+    ok: false,
+    status: 413,
+    text: async () => JSON.stringify({ error: { message: 'Request body too large' } }),
+  }));
+  try {
+    await assert.rejects(
+      () => callHuggingFaceAPI({ model: 'm', systemPrompt: 's', userContent: 'u' }),
+      (err) => {
+        assert.match(err.message, /too large to send/);
+        assert.match(err.message, /Trim the source text/);
+        assert.doesNotMatch(err.message, /request failed \(413\)/);
+        return true;
+      }
+    );
+  } finally {
+    mock.restore();
+  }
+});
+
 test('callProviderAPI dispatches huggingface to /hf', async () => {
   const mock = withMockFetch(async () => ({
     ok: true,
