@@ -240,7 +240,7 @@ test('callOpenAICompatibleChat still reports invalid format for empty content wi
   }
 });
 
-test('callOpenAICompatibleChat defaults max_tokens to 8192 (headroom for reasoning models)', async () => {
+test('callOpenAICompatibleChat defaults max_tokens to 16384 (headroom for reasoning models)', async () => {
   const mock = withMockFetch(async () => ({
     ok: true,
     status: 200,
@@ -249,7 +249,7 @@ test('callOpenAICompatibleChat defaults max_tokens to 8192 (headroom for reasoni
   try {
     await callHuggingFaceAPI({ model: 'm', systemPrompt: 's', userContent: 'u' });
     const sent = JSON.parse(mock.calls[0].opts.body);
-    assert.equal(sent.max_tokens, 8192);
+    assert.equal(sent.max_tokens, 16384);
   } finally {
     mock.restore();
   }

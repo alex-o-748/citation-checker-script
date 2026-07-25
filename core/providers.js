@@ -14,15 +14,19 @@
 // models benefit most — Granite 4.1 8B in particular regressed from
 // ~0.5% to 13% JSON-parse failures under terser prompts until this
 // hint was supplied, after which parse failures returned to 0.
-// maxTokens default is deliberately generous (8192): reasoning models such as
+// maxTokens default is deliberately generous (16384): reasoning models such as
 // gpt-oss spend output tokens on hidden reasoning *before* writing the answer,
 // and a hard claim over a long source can burn several thousand tokens
 // reasoning. At the old 2048 default the budget ran out mid-reasoning, so the
 // model returned finish_reason "length" with empty content (surfacing as the
-// opaque "Invalid API response format"). 8192 lets the answer land. Only tokens
-// actually generated are billed, and non-reasoning models stop well before the
-// ceiling, so the larger default is safe for every provider that shares it.
-export async function callOpenAICompatibleChat({ url, apiKey, model, systemPrompt, userContent, label, extraHeaders, extraBody, maxTokens = 8192, temperature = 0.1, responseFormat }) {
+// opaque "Invalid API response format"). Reasoning length is also stochastic —
+// the same request measured anywhere from ~1.5k to ~4k reasoning tokens — so
+// the ceiling needs comfortable headroom, not just enough for the average case.
+// 16384 is ~4x the observed worst case. Only tokens actually generated are
+// billed, non-reasoning models stop well before the ceiling, and OpenAI-
+// compatible endpoints clamp an over-large max_tokens to the model's own limit
+// rather than erroring — so this larger default is safe for every shared caller.
+export async function callOpenAICompatibleChat({ url, apiKey, model, systemPrompt, userContent, label, extraHeaders, extraBody, maxTokens = 16384, temperature = 0.1, responseFormat }) {
     const requestBody = {
         model: model,
         messages: [
