@@ -139,7 +139,7 @@ export function findReferenceByCitationNumber(document, citationNumber) {
 // in sync.
 export function classifyProviderError(err) {
     const message = err?.message || '';
-    if (/Invalid API response format/i.test(message)) return 11;
+    if (/Invalid API response format|ran out of output budget/i.test(message)) return 11;
     const statusMatch = message.match(/\((\d{3})\)/);
     if (statusMatch) {
         const status = Number(statusMatch[1]);

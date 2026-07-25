@@ -196,6 +196,65 @@ test('callOpenAICompatibleChat maps 413 to a legible, actionable message', async
   }
 });
 
+test('callOpenAICompatibleChat maps empty content + finish_reason "length" to a budget message', async () => {
+  // Reasoning models (gpt-oss) can spend the whole output budget reasoning and
+  // return empty content with finish_reason "length". Name that specifically.
+  const mock = withMockFetch(async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      choices: [{ message: { content: '', reasoning_content: 'thinking...' }, finish_reason: 'length' }],
+      usage: { prompt_tokens: 26000, completion_tokens: 8192 },
+    }),
+  }));
+  try {
+    await assert.rejects(
+      () => callHuggingFaceAPI({ model: 'openai/gpt-oss-20b', systemPrompt: 's', userContent: 'u' }),
+      (err) => {
+        assert.match(err.message, /ran out of output budget/);
+        assert.doesNotMatch(err.message, /Invalid API response format/);
+        return true;
+      }
+    );
+  } finally {
+    mock.restore();
+  }
+});
+
+test('callOpenAICompatibleChat still reports invalid format for empty content without length', async () => {
+  const mock = withMockFetch(async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      choices: [{ message: { content: '' }, finish_reason: 'stop' }],
+      usage: {},
+    }),
+  }));
+  try {
+    await assert.rejects(
+      () => callHuggingFaceAPI({ model: 'm', systemPrompt: 's', userContent: 'u' }),
+      /Invalid API response format/
+    );
+  } finally {
+    mock.restore();
+  }
+});
+
+test('callOpenAICompatibleChat defaults max_tokens to 16384 (headroom for reasoning models)', async () => {
+  const mock = withMockFetch(async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ choices: [{ message: { content: 'ok' } }], usage: {} }),
+  }));
+  try {
+    await callHuggingFaceAPI({ model: 'm', systemPrompt: 's', userContent: 'u' });
+    const sent = JSON.parse(mock.calls[0].opts.body);
+    assert.equal(sent.max_tokens, 16384);
+  } finally {
+    mock.restore();
+  }
+});
+
 test('callProviderAPI dispatches huggingface to /hf', async () => {
   const mock = withMockFetch(async () => ({
     ok: true,
