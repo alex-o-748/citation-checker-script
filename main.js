@@ -761,6 +761,13 @@ async function callOpenAICompatibleChat({ url, apiKey, model, systemPrompt, user
         } catch {
             errorMessage = errorText;
         }
+        // 413 is a byte cap on the request body (the CORS proxy rejects the
+        // request before the model sees it), not a model context limit — so the
+        // fix is a shorter source or a provider that calls its API directly
+        // rather than through the size-limited proxy.
+        if (response.status === 413) {
+            throw new Error(`${label}: the source is too large to send. Trim the source text, or switch to a provider that calls its API directly (Claude, Gemini, or OpenAI).`);
+        }
         throw new Error(`${label} API request failed (${response.status}): ${errorMessage}`);
     }
 
@@ -2862,18 +2869,31 @@ function buildDatasetSubmissionUrl(
         }
 
         loadManualSourceText() {
-            const text = this.sourceTextInput.getValue().trim();
+            let text = this.sourceTextInput.getValue().trim();
             if (!text) {
                 this.updateStatus('Please enter some source text', true);
                 return;
             }
 
+            // Trim overlong pastes so the request body stays under the proxy's
+            // size limit; anything past the cap can only be checked partially.
+            const wasTrimmed = text.length > MAX_MANUAL_SOURCE_CHARS;
+            if (wasTrimmed) {
+                text = text.slice(0, MAX_MANUAL_SOURCE_CHARS);
+            }
+
             this.activeSource = `Manual source text:\n\n${text}`;
-            document.getElementById('verifier-source-text').innerHTML = `<strong>Manual Source Text:</strong><br><em>${text.substring(0, 200)}${text.length > 200 ? '...' : ''}</em>`;
+            const preview = `${text.substring(0, 200)}${text.length > 200 ? '...' : ''}`;
+            const truncationHtml = wasTrimmed
+                ? '<div class="verifier-truncation-warning">⚠ The source is long and can only be checked partially.</div>'
+                : '';
+            document.getElementById('verifier-source-text').innerHTML = `<strong>Manual Source Text:</strong><br><em>${preview}</em>${truncationHtml}`;
             this.sourceInputForOverride = false;
             this.hideSourceTextInput();
             this.updateButtonVisibility();
-            this.updateStatus('Source text loaded. Ready to verify.');
+            this.updateStatus(wasTrimmed
+                ? `Source text loaded (trimmed to ${MAX_MANUAL_SOURCE_CHARS.toLocaleString()} characters). Ready to verify.`
+                : 'Source text loaded. Ready to verify.');
         }
 
         cancelManualSourceText() {
