@@ -1101,6 +1101,15 @@ function logVerification(payload, { workerBase = 'https://publicai-proxy.alaexis
 //      `entry.<numeric-id>` from the pre-filled link.
 //   4. Run `npm run build` so the constants are re-inlined into main.js.
 
+// Cap for manually-pasted source text. Unlike fetched sources — which the
+// Cloudflare Worker proxy truncates server-side before they reach us — a manual
+// paste goes straight into the request body, so an oversized paste hits the
+// proxy's request-body limit (HTTP 413 "Request body too large"). We trim here
+// to stay comfortably under that limit (currently ~100 KB): budget = 100 KB
+// minus the ~6.5 KB system prompt, the claim/user-prompt boilerplate, and
+// JSON-escaping + UTF-8 overhead on the source itself. 80 000 chars leaves room.
+const MAX_MANUAL_SOURCE_CHARS = 80000;
+
 // Sentinel substring that marks scaffolded values as not-yet-configured.
 // isDatasetSubmissionConfigured() looks for this exact token; don't reuse it
 // anywhere else in this file.
@@ -2862,18 +2871,31 @@ function buildDatasetSubmissionUrl(
         }
 
         loadManualSourceText() {
-            const text = this.sourceTextInput.getValue().trim();
+            let text = this.sourceTextInput.getValue().trim();
             if (!text) {
                 this.updateStatus('Please enter some source text', true);
                 return;
             }
 
+            // Trim overlong pastes so the request body stays under the proxy's
+            // size limit; anything past the cap can only be checked partially.
+            const wasTrimmed = text.length > MAX_MANUAL_SOURCE_CHARS;
+            if (wasTrimmed) {
+                text = text.slice(0, MAX_MANUAL_SOURCE_CHARS);
+            }
+
             this.activeSource = `Manual source text:\n\n${text}`;
-            document.getElementById('verifier-source-text').innerHTML = `<strong>Manual Source Text:</strong><br><em>${text.substring(0, 200)}${text.length > 200 ? '...' : ''}</em>`;
+            const preview = `${text.substring(0, 200)}${text.length > 200 ? '...' : ''}`;
+            const truncationHtml = wasTrimmed
+                ? '<div class="verifier-truncation-warning">⚠ The source is long and can only be checked partially.</div>'
+                : '';
+            document.getElementById('verifier-source-text').innerHTML = `<strong>Manual Source Text:</strong><br><em>${preview}</em>${truncationHtml}`;
             this.sourceInputForOverride = false;
             this.hideSourceTextInput();
             this.updateButtonVisibility();
-            this.updateStatus('Source text loaded. Ready to verify.');
+            this.updateStatus(wasTrimmed
+                ? `Source text loaded (trimmed to ${MAX_MANUAL_SOURCE_CHARS.toLocaleString()} characters). Ready to verify.`
+                : 'Source text loaded. Ready to verify.');
         }
 
         cancelManualSourceText() {
