@@ -729,7 +729,15 @@ function extractClaimText(refElement) {
 // models benefit most — Granite 4.1 8B in particular regressed from
 // ~0.5% to 13% JSON-parse failures under terser prompts until this
 // hint was supplied, after which parse failures returned to 0.
-async function callOpenAICompatibleChat({ url, apiKey, model, systemPrompt, userContent, label, extraHeaders, extraBody, maxTokens = 2048, temperature = 0.1, responseFormat }) {
+// maxTokens default is deliberately generous (8192): reasoning models such as
+// gpt-oss spend output tokens on hidden reasoning *before* writing the answer,
+// and a hard claim over a long source can burn several thousand tokens
+// reasoning. At the old 2048 default the budget ran out mid-reasoning, so the
+// model returned finish_reason "length" with empty content (surfacing as the
+// opaque "Invalid API response format"). 8192 lets the answer land. Only tokens
+// actually generated are billed, and non-reasoning models stop well before the
+// ceiling, so the larger default is safe for every provider that shares it.
+async function callOpenAICompatibleChat({ url, apiKey, model, systemPrompt, userContent, label, extraHeaders, extraBody, maxTokens = 8192, temperature = 0.1, responseFormat }) {
     const requestBody = {
         model: model,
         messages: [
@@ -773,8 +781,17 @@ async function callOpenAICompatibleChat({ url, apiKey, model, systemPrompt, user
 
     const data = await response.json();
 
-    if (!data.choices?.[0]?.message?.content) {
-        throw new Error('Invalid API response format');
+    const choice = data.choices?.[0];
+    if (!choice?.message?.content) {
+        // Reasoning models (e.g. gpt-oss) emit hidden reasoning before the
+        // answer; if the output budget runs out mid-reasoning the response
+        // comes back with finish_reason "length" and empty content. Name that
+        // failure specifically so the user knows to raise the budget / simplify
+        // the claim rather than assume the source or provider is broken.
+        if (choice?.finish_reason === 'length') {
+            throw new Error(`${label}: the model ran out of output budget (${maxTokens} tokens) before answering — it spent the whole budget reasoning. Try a shorter source, a simpler claim, or a non-reasoning provider.`);
+        }
+        throw new Error(`Invalid API response format (${label}: no content${choice?.finish_reason ? `, finish_reason "${choice.finish_reason}"` : ''})`);
     }
 
     return {
