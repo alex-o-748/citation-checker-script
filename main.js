@@ -832,6 +832,22 @@ async function callHuggingFaceAPI({ apiKey, model, systemPrompt, userContent, wo
     });
 }
 
+// Wikimedia Lift Wing hosts open-weight models (Qwen3) on WMF infrastructure.
+// Routed through the same CORS worker as PublicAI/HF, on the `/liftwing` path:
+// the worker builds the upstream URL from the model id, works anonymously by
+// default (an approved-bot JWT on the worker lifts the rate limit), and strips
+// the reasoning models' <think>…</think> blocks from non-streaming responses so
+// the verdict parser sees clean JSON. The worker clamps max_tokens to its own
+// 4096 ceiling, so we pass that as the default rather than the shared 16384.
+// No apiKey — the worker holds any credential.
+async function callLiftwingAPI({ model, systemPrompt, userContent, workerBase = 'https://publicai-proxy.alaexis.workers.dev', maxTokens = 4096, temperature }) {
+    return callOpenAICompatibleChat({
+        url: `${workerBase}/liftwing`,
+        model, systemPrompt, userContent, maxTokens, temperature,
+        label: 'Lift Wing',
+    });
+}
+
 // OpenRouter routes OpenAI-compatible requests across many open-weight backends.
 // Per-call USD cost is surfaced on response.usage.cost (no opt-in flag required
 // as of 2026; the older `usage: { include: true }` parameter is deprecated).
@@ -991,6 +1007,7 @@ async function callProviderAPI(name, config) {
     switch (name) {
         case 'publicai':    return await callPublicAIAPI(config);
         case 'huggingface': return await callHuggingFaceAPI(config);
+        case 'liftwing':    return await callLiftwingAPI(config);
         case 'openrouter':  return await callOpenRouterAPI(config);
         case 'claude':      return await callClaudeAPI(config);
         case 'gemini':      return await callGeminiAPI(config);
@@ -1199,6 +1216,16 @@ function buildDatasetSubmissionUrl(
                     model: 'openai/gpt-oss-20b',
                     requiresKey: false,
                     optionalKey: true
+                },
+                liftwing: {
+                    name: 'Lift Wing',
+                    // No key needed - proxied through the CORS worker's /liftwing
+                    // path, which talks to Wikimedia Lift Wing anonymously (an
+                    // approved-bot JWT on the worker lifts the rate limit).
+                    storageKey: null,
+                    color: '#6B21A8',
+                    model: 'llm-qwen3-14b',
+                    requiresKey: false
                 },
                 claude: {
                     name: 'Claude',
@@ -4096,6 +4123,8 @@ function buildDatasetSubmissionUrl(
                 modelDesc = 'a PublicAI-hosted open-source LLM';
             } else if (this.currentProvider === 'huggingface') {
                 modelDesc = `a HuggingFace-hosted open-source LLM (${provider.model})`;
+            } else if (this.currentProvider === 'liftwing') {
+                modelDesc = `a Wikimedia Lift Wing-hosted open-source LLM (${provider.model})`;
             } else {
                 modelDesc = provider.model;
             }
@@ -4360,7 +4389,7 @@ function buildDatasetSubmissionUrl(
             this.updateButtonVisibility();
 
             const startTime = Date.now();
-            const useProxy = this.currentProvider === 'publicai';
+            const useProxy = this.currentProvider === 'publicai' || this.currentProvider === 'liftwing';
             const delayBetweenCalls = useProxy ? 3000 : 1000;
 
             // Progress counts every LLM step: one per citation, plus one

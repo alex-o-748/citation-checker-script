@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   callPublicAIAPI,
   callHuggingFaceAPI,
+  callLiftwingAPI,
   callClaudeAPI,
   callGeminiAPI,
   callOpenRouterAPI,
@@ -250,6 +251,57 @@ test('callOpenAICompatibleChat defaults max_tokens to 16384 (headroom for reason
     await callHuggingFaceAPI({ model: 'm', systemPrompt: 's', userContent: 'u' });
     const sent = JSON.parse(mock.calls[0].opts.body);
     assert.equal(sent.max_tokens, 16384);
+  } finally {
+    mock.restore();
+  }
+});
+
+test('callLiftwingAPI posts to workerBase /liftwing with no auth and caps max_tokens at 4096', async () => {
+  const mock = withMockFetch(async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      choices: [{ message: { content: 'lw-verdict' } }],
+      usage: { prompt_tokens: 60, completion_tokens: 12 },
+    }),
+  }));
+  try {
+    const result = await callLiftwingAPI({
+      model: 'llm-qwen3-14b',
+      systemPrompt: 's',
+      userContent: 'u',
+    });
+    assert.equal(result.text, 'lw-verdict');
+    assert.equal(result.usage.input, 60);
+    assert.equal(result.usage.output, 12);
+    assert.equal(mock.calls[0].url, 'https://publicai-proxy.alaexis.workers.dev/liftwing');
+    // Anonymous by default — the worker holds any credential, so no Bearer here.
+    assert.equal(mock.calls[0].opts.headers['Authorization'], undefined);
+    const sent = JSON.parse(mock.calls[0].opts.body);
+    assert.equal(sent.model, 'llm-qwen3-14b');
+    // The worker clamps max_tokens to 4096; default to that rather than 16384.
+    assert.equal(sent.max_tokens, 4096);
+  } finally {
+    mock.restore();
+  }
+});
+
+test('callProviderAPI dispatches liftwing to /liftwing', async () => {
+  const mock = withMockFetch(async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      choices: [{ message: { content: 'ok' } }],
+      usage: {},
+    }),
+  }));
+  try {
+    await callProviderAPI('liftwing', {
+      model: 'llm-qwen3-14b',
+      systemPrompt: 's',
+      userContent: 'u',
+    });
+    assert.ok(mock.calls[0].url.endsWith('/liftwing'));
   } finally {
     mock.restore();
   }
