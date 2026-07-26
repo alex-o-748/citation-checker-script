@@ -1657,7 +1657,12 @@ function buildDatasetSubmissionUrl(
         styleTokens(accent) {
             return {
                 light: `
+                    /* Solid brand purple. Always a background under white text,
+                       so it must NOT lighten in dark mode. */
                     --sv-accent: ${accent};
+                    /* The same purple used as a mark on the panel: headings,
+                       stripes, progress fill. This one lightens in dark mode. */
+                    --sv-accent-fg: ${accent};
 
                     /* Neutral ramp, darkest to faintest */
                     --sv-ink: #202122;
@@ -1740,10 +1745,12 @@ function buildDatasetSubmissionUrl(
                 `,
                 dark: `
                     /* A lighter tint of the accent purple: the light-mode value is
-                       too dark to read against the night background, and every
-                       provider currently shares one accent so this can be a
-                       constant. Give this a per-provider value if they diverge. */
-                    --sv-accent: #B48EDE;
+                       too dark to read against the night background. Only the
+                       foreground variant changes -- --sv-accent stays the solid
+                       purple because white text sits on it. Every provider shares
+                       one accent, so this can be a constant; give it a per-provider
+                       value if they diverge. */
+                    --sv-accent-fg: #B48EDE;
                     --sv-ink: #e0e0e0;
                     --sv-ink-2: #d0d0d8;
                     --sv-ink-3: #b0b0c0;
@@ -1910,7 +1917,7 @@ function buildDatasetSubmissionUrl(
                     height: 100vh;
                     background: var(--sv-bg);
                     color: var(--sv-ink);
-                    border-left: 2px solid var(--sv-accent);
+                    border-left: 2px solid var(--sv-accent-fg);
                     box-shadow: -2px 0 8px var(--sv-shadow);
                     z-index: 10000;
                     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
@@ -1985,7 +1992,7 @@ function buildDatasetSubmissionUrl(
                 }
                 #verifier-claim-section h4, #verifier-source-section h4, #verifier-results h4 {
                     margin: 0 0 8px 0;
-                    color: var(--sv-accent);
+                    color: var(--sv-accent-fg);
                     font-size: 14px;
                     font-weight: bold;
                 }
@@ -2130,14 +2137,14 @@ function buildDatasetSubmissionUrl(
                     z-index: 10001;
                 }
                 #verifier-resize-handle:hover {
-                    background: var(--sv-accent);
+                    background: var(--sv-accent-fg);
                     opacity: 0.5;
                 }
                 #ca-verifier, #t-verifier {
                     display: none;
                 }
                 #ca-verifier a, #t-verifier a {
-                    color: var(--sv-accent) !important;
+                    color: var(--sv-accent-fg) !important;
                     text-decoration: none !important;
                 }
                 #ca-verifier a:hover, #t-verifier a:hover {
@@ -2193,7 +2200,7 @@ function buildDatasetSubmissionUrl(
                 /* Report view styles */
                 #verifier-report-view h4 {
                     margin: 0 0 8px 0;
-                    color: var(--sv-accent);
+                    color: var(--sv-accent-fg);
                     font-size: 14px;
                     font-weight: bold;
                 }
@@ -2210,7 +2217,7 @@ function buildDatasetSubmissionUrl(
                 }
                 .verifier-progress-fill {
                     height: 100%;
-                    background: var(--sv-accent);
+                    background: var(--sv-accent-fg);
                     transition: width 0.3s ease;
                     border-radius: 4px;
                 }
@@ -2397,7 +2404,7 @@ function buildDatasetSubmissionUrl(
                 }
                 .verifier-report-group {
                     border: 1px solid var(--sv-border-3);
-                    border-left: 3px solid var(--sv-accent);
+                    border-left: 3px solid var(--sv-accent-fg);
                     border-radius: 4px;
                     background: var(--sv-bg-inset);
                     padding: 6px 8px;
@@ -2415,7 +2422,7 @@ function buildDatasetSubmissionUrl(
                 .verifier-report-group-badge {
                     font-weight: bold;
                     font-size: 11px;
-                    color: var(--sv-accent);
+                    color: var(--sv-accent-fg);
                 }
                 .verifier-report-group-claim {
                     color: var(--sv-ink-2);
@@ -2497,7 +2504,7 @@ function buildDatasetSubmissionUrl(
                 }
                 #verifier-claim-group-indicator .group-active {
                     font-weight: bold;
-                    color: var(--sv-accent);
+                    color: var(--sv-accent-fg);
                 }
                 #source-verifier-sidebar .oo-ui-iconElement-icon + .oo-ui-labelElement-label {
                     margin-left: 4px;
@@ -2525,7 +2532,7 @@ function buildDatasetSubmissionUrl(
                 }
                 .claim-highlight {
                     background-color: var(--sv-warn-bg);
-                    border-left: 3px solid var(--sv-accent);
+                    border-left: 3px solid var(--sv-accent-fg);
                     padding-left: 5px;
                     margin-left: -8px;
                 }

@@ -40,6 +40,14 @@ ${methods}
   return captured;
 }
 
+function tokenValues(css, blockRe) {
+  const match = css.match(blockRe);
+  assert.ok(match, `token block not found for ${blockRe}`);
+  const values = {};
+  for (const m of match[1].matchAll(/(--sv-[a-z0-9-]+)\s*:\s*([^;]+);/g)) values[m[1]] = m[2].trim();
+  return values;
+}
+
 function tokensIn(css, blockRe) {
   const match = css.match(blockRe);
   assert.ok(match, `token block not found for ${blockRe}`);
@@ -121,6 +129,58 @@ test('no component rule hardcodes a color outside the token blocks', () => {
   assert.deepEqual(
     offenders, [],
     `createStyles() should reference tokens, not literal colors:\n${offenders.join('\n')}`
+  );
+});
+
+// Relative luminance and contrast ratio per WCAG 2.x.
+function contrast(hexA, hexB) {
+  const lum = (hex) => {
+    const n = hex.replace('#', '');
+    const channels = [0, 2, 4]
+      .map((i) => parseInt(n.slice(i, i + 2), 16) / 255)
+      .map((v) => (v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4)));
+    return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
+  };
+  const [hi, lo] = [lum(hexA), lum(hexB)].sort((a, b) => b - a);
+  return (hi + 0.05) / (lo + 0.05);
+}
+
+// --sv-accent is a background that always sits under white text (the sidebar
+// header, the active reference marker). --sv-accent-fg is the same hue used as a
+// mark ON the panel, so it lightens in dark mode. Swapping the two makes the
+// header pale lavender with unreadable white text, which is exactly what
+// happened when a single token tried to serve both roles.
+test('the accent stays legible under white text in both themes', () => {
+  const css = generateCss();
+  const light = tokensIn(css, LIGHT_BLOCK);
+  const dark = tokensIn(css, NIGHT_BLOCK);
+
+  assert.ok(light.has('--sv-accent'), '--sv-accent must have a base value');
+  assert.ok(
+    !dark.has('--sv-accent'),
+    '--sv-accent carries white text, so dark mode must not redefine it — lighten --sv-accent-fg instead'
+  );
+
+  const value = css.match(/--sv-accent:\s*(#[0-9a-fA-F]{6})/);
+  assert.ok(value, '--sv-accent should resolve to a hex color');
+  const ratio = contrast(value[1], '#ffffff');
+  assert.ok(
+    ratio >= 4.5,
+    `white text on --sv-accent (${value[1]}) is ${ratio.toFixed(2)}:1, below the 4.5:1 WCAG AA floor`
+  );
+});
+
+test('the accent mark is legible against the dark panel background', () => {
+  const css = generateCss();
+  const dark = tokenValues(css, NIGHT_BLOCK);
+  const fg = dark['--sv-accent-fg'];
+  const bg = dark['--sv-bg'];
+  assert.ok(fg && bg, 'the dark block should define both --sv-accent-fg and --sv-bg');
+
+  const ratio = contrast(fg, bg);
+  assert.ok(
+    ratio >= 4.5,
+    `the dark accent mark (${fg}) is ${ratio.toFixed(2)}:1 against the panel (${bg}), below 4.5:1`
   );
 });
 
