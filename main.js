@@ -1426,7 +1426,7 @@ function buildDatasetSubmissionUrl(
                 publicai: {
                     name: 'PublicAI',
                     storageKey: null, // No key needed - uses built-in key
-                    color: '#6B21A8',
+                    color: '#2557AC',
                     model: 'aisingapore/Qwen-SEA-LION-v4-32B-IT',
                     requiresKey: false
                 },
@@ -1435,7 +1435,7 @@ function buildDatasetSubmissionUrl(
                     // Optional key: free via the proxy without one; direct call
                     // to HF (any model) when stored.
                     storageKey: 'hf_api_key',
-                    color: '#6B21A8', // HF yellow-orange
+                    color: '#2557AC',
                     model: 'openai/gpt-oss-20b',
                     requiresKey: false,
                     optionalKey: true
@@ -1446,28 +1446,28 @@ function buildDatasetSubmissionUrl(
                     // path, which talks to Wikimedia Lift Wing anonymously (an
                     // approved-bot JWT on the worker lifts the rate limit).
                     storageKey: null,
-                    color: '#6B21A8',
+                    color: '#2557AC',
                     model: 'llm-qwen36-27b',
                     requiresKey: false
                 },
                 claude: {
                     name: 'Claude',
                     storageKey: 'claude_api_key',
-                    color: '#6B21A8',
+                    color: '#2557AC',
                     model: 'claude-sonnet-4-6',
                     requiresKey: true
                 },
                 gemini: {
                     name: 'Gemini',
                     storageKey: 'gemini_api_key',
-                    color: '#6B21A8',
+                    color: '#2557AC',
                     model: 'gemini-flash-latest',
                     requiresKey: true
                 },
                 openai: {
                     name: 'ChatGPT',
                     storageKey: 'openai_api_key',
-                    color: '#6B21A8',
+                    color: '#2557AC',
                     model: 'gpt-4o',
                     requiresKey: true
                 }
@@ -1739,6 +1739,11 @@ function buildDatasetSubmissionUrl(
                     --sv-shadow: rgba(0,0,0,0.1);
                 `,
                 dark: `
+                    /* A lighter tint of the logo blue: the light-mode accent is
+                       too dark to read against the night background, and every
+                       provider currently shares one accent so this can be a
+                       constant. Give this a per-provider value if they diverge. */
+                    --sv-accent: #6D9EEB;
                     --sv-ink: #e0e0e0;
                     --sv-ink-2: #d0d0d8;
                     --sv-ink-3: #b0b0c0;
@@ -1818,12 +1823,6 @@ function buildDatasetSubmissionUrl(
                    ink — including OOUI labels, which carry their own color. */
                 ${root} #verifier-sidebar-header * {
                     color: white !important;
-                }
-                ${root} #verifier-claim-section h4,
-                ${root} #verifier-source-section h4,
-                ${root} #verifier-results h4,
-                ${root} #verifier-report-view h4 {
-                    filter: brightness(1.3);
                 }
                 ${root} #source-verifier-sidebar .oo-ui-dropdownWidget {
                     background: var(--sv-bg-2) !important;
