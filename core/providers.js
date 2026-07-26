@@ -1,5 +1,15 @@
 // LLM provider dispatch. Pure HTTP routing — callers build the prompt.
 
+// Attach the HTTP status to a thrown error so retry logic can classify it
+// structurally instead of pattern-matching prose. isRetryableError() reads
+// `.status` first; matching on message text alone is what let a formatting
+// difference silently disable 429 retries for every provider here.
+function httpError(message, status) {
+    const error = new Error(message);
+    error.status = status;
+    return error;
+}
+
 // Shared call shape for OpenAI-compatible chat-completion upstreams.
 // Used by PublicAI/HF (proxy-routed; key injected upstream), HF when the
 // caller supplies their own bearer token (direct call to the HF router),
@@ -65,7 +75,7 @@ export async function callOpenAICompatibleChat({ url, apiKey, model, systemPromp
         if (response.status === 413) {
             throw new Error(`${label}: the source is too large to send. Trim the source text, or switch to a provider that calls its API directly (Claude, Gemini, or OpenAI).`);
         }
-        throw new Error(`${label} API request failed (${response.status}): ${errorMessage}`);
+        throw httpError(`${label} API request failed (${response.status}): ${errorMessage}`, response.status);
     }
 
     const data = await response.json();
@@ -178,7 +188,7 @@ export async function callClaudeAPI({ apiKey, model, systemPrompt, userContent, 
 
     if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(`API request failed (${response.status}): ${errorText}`);
+        throw httpError(`API request failed (${response.status}): ${errorText}`, response.status);
     }
 
     const data = await response.json();
@@ -229,7 +239,7 @@ export async function callGeminiAPI({ apiKey, model, systemPrompt, userContent, 
 
     if (!response.ok) {
         const errorDetail = responseData.error?.message || response.statusText;
-        throw new Error(`API request failed (${response.status}): ${errorDetail}`);
+        throw httpError(`API request failed (${response.status}): ${errorDetail}`, response.status);
     }
 
     if (!responseData.candidates?.[0]?.content?.parts?.[0]?.text) {
@@ -275,7 +285,7 @@ export async function callOpenAIAPI({ apiKey, model, systemPrompt, userContent, 
         } catch {
             errorMessage = errorText;
         }
-        throw new Error(`API request failed (${response.status}): ${errorMessage}`);
+        throw httpError(`API request failed (${response.status}): ${errorMessage}`, response.status);
     }
 
     const data = await response.json();

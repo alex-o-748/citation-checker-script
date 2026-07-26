@@ -11,7 +11,15 @@
 // Defaults match the benchmark (1s base, exponential, ≤30s cap, 5
 // attempts) — callers tune via options.
 
-const RETRYABLE_STATUS = /^HTTP (429|500|502|503|504)\b/;
+const RETRYABLE_CODES = new Set([429, 500, 502, 503, 504]);
+
+// Text fallback for errors that carry no `.status`. The anchored `^HTTP <code>`
+// form this used to require matched none of the messages core/providers.js
+// actually throws — those read "<Label> API request failed (429): ...", so
+// every 429 and 5xx was classified as permanent and withRetry gave up after a
+// single attempt. Providers now attach `.status` (see httpError there); this
+// pattern covers both shapes for any caller that doesn't.
+const RETRYABLE_STATUS = /(?:\bHTTP\s+|request failed\s*\()(429|500|502|503|504)\b/;
 const RETRYABLE_NETWORK = /timeout|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|socket hang up/i;
 
 function defaultSleep(ms) {
@@ -19,6 +27,9 @@ function defaultSleep(ms) {
 }
 
 export function isRetryableError(error) {
+    // Structural check first — a status code can't drift the way prose can.
+    if (RETRYABLE_CODES.has(error?.status)) return true;
+    if (typeof error?.status === 'number') return false;
     const msg = error?.message ?? '';
     return RETRYABLE_STATUS.test(msg) || RETRYABLE_NETWORK.test(msg);
 }

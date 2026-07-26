@@ -201,6 +201,32 @@ test('isRetryableError: false for 4xx (except 429) and parse errors', () => {
     assert.equal(isRetryableError(new Error('Invalid API response format')), false);
 });
 
+// Regression: the predicate used to require an anchored "^HTTP <code>", which
+// matched none of the messages core/providers.js throws. Every 429 from the
+// CORS worker was treated as permanent, so a benchmark run under concurrency
+// lost ~70% of its rows to rate limiting that retry was supposed to absorb.
+// These are the literal strings the providers emit.
+test('isRetryableError: true for the message shapes providers actually throw', () => {
+    assert.equal(isRetryableError(new Error('HuggingFace API request failed (429): Too many requests')), true);
+    assert.equal(isRetryableError(new Error('Lift Wing API request failed (429): Too many requests')),   true);
+    assert.equal(isRetryableError(new Error('PublicAI API request failed (503): unavailable')),          true);
+    assert.equal(isRetryableError(new Error('API request failed (500): internal')),                      true);
+});
+
+test('isRetryableError: prefers a structural .status over message text', () => {
+    // Providers attach .status; it must win, including when the prose would
+    // otherwise look permanent or say nothing about a code at all.
+    assert.equal(isRetryableError(Object.assign(new Error('rate limited'), { status: 429 })), true);
+    assert.equal(isRetryableError(Object.assign(new Error('nope'), { status: 400 })),         false);
+    assert.equal(isRetryableError(Object.assign(new Error('nope'), { status: 413 })),         false);
+});
+
+test('isRetryableError: still false for non-retryable provider messages', () => {
+    assert.equal(isRetryableError(new Error('HuggingFace API request failed (401): unauthorized')), false);
+    assert.equal(isRetryableError(new Error('HuggingFace API request failed (404): no such model')), false);
+    assert.equal(isRetryableError(new Error('Lift Wing: the source is too large to send.')),         false);
+});
+
 test('isRetryableError: tolerates null/undefined errors', () => {
     assert.equal(isRetryableError(null), false);
     assert.equal(isRetryableError(undefined), false);
