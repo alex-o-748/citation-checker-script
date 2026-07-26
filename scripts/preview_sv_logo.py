@@ -2,23 +2,30 @@
 """Render preview images of sv_logo.stl: a top-down map (to read the glyphs)
 and an isometric view (to show the relief). Colours faces by height so the
 raised S, the lower V, and the base are easy to tell apart."""
+import os
 import numpy as np
 from stl import mesh
 from PIL import Image, ImageDraw
 
-m = mesh.Mesh.from_file("sv_logo.stl")
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+LOGO_DIR = os.path.join(ROOT, "assets", "logo")
+RENDER_DIR = os.path.join(LOGO_DIR, "renders")
+os.makedirs(RENDER_DIR, exist_ok=True)
+
+m = mesh.Mesh.from_file(os.path.join(LOGO_DIR, "sv_logo.stl"))
 tris = m.vectors.astype(float)                      # (N,3,3)
 zmin, zmax = tris[:, :, 2].min(), tris[:, :, 2].max()
 
-# Height-based colour ramp: base (dark slate) -> V (blue) -> S (teal).
-BASE_TOP = 4.0
-def face_colour(zc, shade):
-    if zc <= BASE_TOP + 0.5:
-        rgb = np.array([64, 82, 120])               # base
-    elif zc <= 8.5:
-        rgb = np.array([64, 128, 226])              # V (lower letter)
+# Colour by each face's top height so the thicker S and thinner V are distinct.
+def face_colour(ztop, shade):
+    if ztop <= 0.5:
+        rgb = np.array([40, 48, 66])                # a bottom face
+    elif ztop <= 5.5:
+        rgb = np.array([64, 128, 226])              # V (thinnest letter)
+    elif ztop <= 7.0:
+        rgb = np.array([233, 170, 74])              # superscript "2" (mid)
     else:
-        rgb = np.array([38, 200, 170])              # S (raised letter)
+        rgb = np.array([38, 200, 170])              # S (thickest letter)
     return tuple(np.clip(rgb * shade, 0, 255).astype(int))
 
 
@@ -34,8 +41,8 @@ def render(R, view_dir, fname, size=560):
         if n @ view_dir <= 0:                       # back-face cull, keep true normal
             continue
         shade = 0.4 + 0.6 * max(0.0, float(n @ light))
-        zc = t[:, 2].mean()                         # true model height
-        rows.append((p[:, 2].mean(), p[:, :2], shade, zc))
+        ztop = t[:, 2].max()                         # solid's top height for this face
+        rows.append((p[:, 2].mean(), p[:, :2], shade, ztop))
     rows.sort(key=lambda r: r[0])                   # painter's: far first
 
     pts = np.vstack([r[1] for r in rows])
@@ -53,7 +60,7 @@ def render(R, view_dir, fname, size=560):
 
 
 # Top-down (look straight down -Z): identity rotation, view dir +Z.
-render(np.eye(3), np.array([0, 0, 1.0]), "sv_logo_top.png")
+render(np.eye(3), np.array([0, 0, 1.0]), os.path.join(RENDER_DIR, "sv_logo_top.png"))
 
 # Isometric: rotate about Z then tilt.
 az, el = np.radians(-32), np.radians(38)            # el from horizontal-ish
@@ -64,5 +71,5 @@ Rx = np.array([[1, 0, 0],
                [0, np.sin(el),  np.cos(el)]])
 R = Rx @ Rz
 view = R @ np.array([0, 0, 1.0])                    # camera axis in world space
-render(R, view, "sv_logo_iso.png")
-print("wrote sv_logo_top.png and sv_logo_iso.png")
+render(R, view, os.path.join(RENDER_DIR, "sv_logo_iso.png"))
+print(f"wrote sv_logo_top.png and sv_logo_iso.png in {RENDER_DIR}")
