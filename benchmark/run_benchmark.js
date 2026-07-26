@@ -668,6 +668,14 @@ async function main() {
                     confidence: result.confidence,
                     comments: result.comments,
                     latency_ms: result.latency,
+                    // Token counts from the upstream response. Worth persisting
+                    // because they are the only client-visible evidence of what
+                    // a proxy did to the request: if the CORS worker clamps
+                    // max_tokens below what we send, completion tokens pile up
+                    // against the worker's ceiling rather than ours, and the
+                    // "ran out of output budget" error still quotes *our*
+                    // number. Absent on the error path, hence the null.
+                    usage: result.usage ?? null,
                     error: result.error,
                     correct: compareVerdicts(result.verdict, entry.ground_truth),
                     timestamp: new Date().toISOString()
