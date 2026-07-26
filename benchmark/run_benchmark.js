@@ -4,7 +4,7 @@
  *
  * Runs the enriched dataset through multiple LLM providers and records results.
  *
- * Usage: node run_benchmark.js [--providers claude,openai,gemini] [--limit N] [--resume] [--version v1|v2|v3|all] [--concurrency N] [--max-tokens N]
+ * Usage: node run_benchmark.js [--providers claude,openai,gemini] [--limit N] [--resume] [--version v1|v2|v3|all] [--concurrency N] [--max-tokens N] [--delay MS]
  *
  * Environment variables for API keys:
  *   ANTHROPIC_API_KEY - Claude API key
@@ -212,7 +212,14 @@ export const PROVIDERS = {
         endpoint: 'https://publicai-proxy.alaexis.workers.dev/liftwing',
         requiresKey: false,
         type: 'liftwing',
-        maxTokens: REASONING_MAX_TOKENS
+        maxTokens: REASONING_MAX_TOKENS,
+        // Lift Wing's upstream limiter is far tighter than HF's on the same
+        // worker: an unpaced run at concurrency 2 lost 156/182 rows to 429s
+        // (HF lost 6), most of them carrying Wikimedia's anonymous-client
+        // wording. 3000ms matches the userscript's proxied-provider cadence,
+        // so a benchmark run paces like a real verify-all-citations session.
+        // If the worker's approved-bot JWT is fixed, this can come back down.
+        minIntervalMs: 3000
     }
 };
 
@@ -229,6 +236,18 @@ const versionIndex = args.indexOf('--version');
 // VERSION_FILTER: 'all' | 'v1' | 'v2' | ... — restricts which dataset entries
 // to benchmark, so the original 76-row v1 analysis can be reproduced on demand.
 const VERSION_FILTER = versionIndex !== -1 ? args[versionIndex + 1] : 'all';
+// --delay N overrides every provider's minimum call spacing, in ms.
+const delayArg = args.find(a => a.startsWith('--delay='));
+const delayIndex = args.indexOf('--delay');
+const DELAY_OVERRIDE = (() => {
+    const raw = delayArg
+        ? delayArg.split('=')[1]
+        : (delayIndex !== -1 ? args[delayIndex + 1] : null);
+    if (raw == null) return null;
+    const n = parseInt(raw, 10);
+    return Number.isFinite(n) && n >= 0 ? n : null;
+})();
+
 // --max-tokens N overrides every provider's output budget for one run.
 const maxTokensArg = args.find(a => a.startsWith('--max-tokens='));
 const maxTokensIndex = args.indexOf('--max-tokens');
@@ -492,6 +511,34 @@ export function hostForProvider(provider, providers = PROVIDERS) {
     return new URL(providers[provider].endpoint).hostname;
 }
 
+// Per-provider minimum spacing between call *starts*, for upstreams whose rate
+// limit is tighter than the pool's concurrency. Host-level grouping is not
+// enough: Lift Wing and HF share the CORS worker host but sit behind different
+// upstream limiters, so one can need pacing while the other runs clean.
+//
+// reserve() is atomic without locking because it does its read-modify-write
+// synchronously — JS yields only at an await, and there is none here. Each
+// caller claims the next slot and is told how long to wait for it, so N
+// concurrent tasks queue in order instead of all reading the same timestamp.
+const nextSlotAt = new Map();
+
+export function reserveSlot(provider, intervalMs, now = Date.now()) {
+    if (!intervalMs) return 0;
+    const start = Math.max(now, nextSlotAt.get(provider) ?? 0);
+    nextSlotAt.set(provider, start + intervalMs);
+    return start - now;
+}
+
+export function resetSlots() {
+    nextSlotAt.clear();
+}
+
+function intervalFor(provider) {
+    return DELAY_OVERRIDE ?? PROVIDERS[provider].minIntervalMs ?? 0;
+}
+
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+
 /**
  * Run `worker` over `items` with at most `concurrency` in flight at once.
  */
@@ -672,6 +719,9 @@ async function main() {
         [...tasksByHost.entries()].map(([host, hostTasks]) =>
             runPool(hostTasks, CONCURRENCY, async ({ entry, provider }) => {
                 const userPrompt = generateUserPrompt(entry.claim_text, entry.source_text);
+
+                const wait = reserveSlot(provider, intervalFor(provider));
+                if (wait > 0) await sleep(wait);
 
                 const result = await callProvider(provider, systemPrompt, userPrompt);
 

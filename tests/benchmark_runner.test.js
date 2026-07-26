@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { runPool, makeSaver, hostForProvider, shapeResult, PROVIDERS } from '../benchmark/run_benchmark.js';
+import { runPool, makeSaver, hostForProvider, shapeResult, PROVIDERS, reserveSlot, resetSlots } from '../benchmark/run_benchmark.js';
 
 // ---- runPool ----------------------------------------------------------------
 
@@ -211,6 +211,42 @@ test('all reasoning providers share one budget, matching core/providers.js', () 
     const budgets = ['liftwing-qwen3-14b', 'hf-gpt-oss-20b', 'hf-gpt-oss-20b-proxy']
         .map(k => PROVIDERS[k].maxTokens);
     assert.deepEqual(budgets, [16384, 16384, 16384]);
+});
+
+// ---- per-provider pacing ----------------------------------------------------
+
+test('reserveSlot: concurrent callers queue instead of sharing a timestamp', () => {
+    // The bug this guards: N pool slots all read "now", all see no wait, and
+    // fire simultaneously — which is exactly what tripped Lift Wing's limiter.
+    resetSlots();
+    const waits = [0, 0, 0, 0].map(() => reserveSlot('p', 1000, 5000));
+    assert.deepEqual(waits, [0, 1000, 2000, 3000]);
+});
+
+test('reserveSlot: no pacing configured means no wait', () => {
+    resetSlots();
+    assert.equal(reserveSlot('p', 0, 5000), 0);
+    assert.equal(reserveSlot('p', 0, 5000), 0);
+});
+
+test('reserveSlot: a caller arriving after the gap waits nothing', () => {
+    resetSlots();
+    assert.equal(reserveSlot('p', 1000, 5000), 0);
+    assert.equal(reserveSlot('p', 1000, 9000), 0);
+});
+
+test('reserveSlot: providers are paced independently', () => {
+    // Lift Wing needs spacing; gpt-oss on the same host does not. One must not
+    // inherit the other's queue.
+    resetSlots();
+    assert.equal(reserveSlot('slow', 3000, 0), 0);
+    assert.equal(reserveSlot('fast', 3000, 0), 0);
+    assert.equal(reserveSlot('slow', 3000, 0), 3000);
+});
+
+test('Lift Wing declares pacing, the gpt-oss proxy entry does not', () => {
+    assert.equal(PROVIDERS['liftwing-qwen3-14b'].minIntervalMs, 3000);
+    assert.equal(PROVIDERS['hf-gpt-oss-20b-proxy'].minIntervalMs, undefined);
 });
 
 // ---- keyless worker routing -------------------------------------------------
