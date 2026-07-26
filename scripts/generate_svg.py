@@ -14,6 +14,7 @@ Usage:
 Output: sv_logo.svg
 """
 import math
+import os
 import sys
 
 # ---- palette (matches the PNG renders) -----------------------------------
@@ -29,7 +30,7 @@ if "--no-label" in argv:
     label = ""
 if "--label" in argv:
     label = argv[argv.index("--label") + 1]
-out = "sv_logo.svg"
+out = "assets/sv_logo.svg"           # dedicated assets folder, not the repo root
 if "-o" in argv:
     out = argv[argv.index("-o") + 1]
 
@@ -152,6 +153,8 @@ svg = [
     label_block,
     "</svg>",
 ]
+if os.path.dirname(out):
+    os.makedirs(os.path.dirname(out), exist_ok=True)
 with open(out, "w") as f:
     f.write("\n".join(p for p in svg if p))
 print(f"wrote {out}  (viewBox {vb_w:.1f} x {vb_h:.1f})")

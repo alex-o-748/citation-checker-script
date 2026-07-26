@@ -11,8 +11,11 @@ lie flat and are the object themselves — there is no separate base plate.
 | File | Purpose |
 |------|---------|
 | `sv_logo.stl` | The mesh to slice/print (millimetres). |
+| `assets/sv_logo.svg` | Vector logo lockup (SV² + wordmark) for print/web. |
 | `scripts/generate_sv_logo.py` | Regenerates the STL from parameters. |
 | `scripts/preview_sv_logo.py` | Renders `sv_logo_top.png` / `sv_logo_iso.png`. |
+| `scripts/render_front_white.py` | Renders the flat front-view PNGs (front/transparent/hi-res). |
+| `scripts/generate_svg.py` | Regenerates `assets/sv_logo.svg`. |
 
 ## Print notes
 
