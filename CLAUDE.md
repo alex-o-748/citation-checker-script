@@ -143,16 +143,25 @@ When you regenerate `dataset.json` after a CSV reorder, you must also walk `resu
 
 A stable-id refactor (content hash, or a CSV-supplied id column independent of line number) would eliminate the class of bug entirely.
 
-### Dark mode has TWO independent paths — style every new UI element in both (read before touching CSS)
+### Styling is token-driven — never write a theme-specific rule (read before touching CSS)
 
-`createStyles()` in `main.js` supports dark mode through **two separate selector prefixes**, and a new element only looks right in dark mode if it gets overrides under *both*:
+Styles live in three methods in `main.js`:
 
-1. **`html.skin-theme-clientpref-night`** — the user explicitly picked Wikipedia's night theme. These rules live inline (search `skin-theme-clientpref-night`).
-2. **`@media (prefers-color-scheme: dark) { html.skin-theme-clientpref-os ... }`** — the user picked "follow OS" and the OS is dark. These rules live inside the `@media` block near the end of `createStyles()`.
+| Method | Holds |
+|--------|-------|
+| `styleTokens(accent)` | Every literal color, as `--sv-*` custom properties, in a `light` and a `dark` block |
+| `darkOnlyStyles(root, accent)` | The few rules a token swap can't express — OOUI widget overrides and icon `filter: invert()` — emitted once per dark signal |
+| `createStyles()` | All component rules, referencing colors **only** via `var(--sv-*)` |
 
-The two blocks are hand-mirrored — there is no shared variable, so an override added to one is **not** inherited by the other. The recurring bug (e.g. grouped-citation blocks looking wrong in dark mode) is a new component that got light-mode CSS plus `-night` overrides but was never added to the `-os` `@media` block, so it stays light-on-light for every "follow OS" reader.
+Wikipedia exposes two independent dark signals: `html.skin-theme-clientpref-night` (explicit night theme) and `@media (prefers-color-scheme: dark) { html.skin-theme-clientpref-os }` ("follow OS" plus a dark OS). Both are fed from the *same* `tokens.dark` string, so they cannot drift apart.
 
-**Whenever you add or restyle a component with a non-transparent `background`, `border-color`, `color`, or `:hover` background, add matching overrides in BOTH dark blocks.** Don't forget `:hover` backgrounds — a light hover color (e.g. `#f0f4ff`) flashes jarringly over a dark card. Provider-tinted values should use `${this.getCurrentColor()}` rather than a hardcoded hex so they track the selected provider color (see the re-create-on-provider-change note near the bottom of `createStyles()`).
+**To add or restyle a component:** write one rule in `createStyles()` using `var(--sv-*)`. If you need a color that doesn't exist yet, add it to *both* the `light` and `dark` blocks of `styleTokens()`. That is the whole procedure — dark mode follows automatically, including `:hover` backgrounds, which previously had to be mirrored by hand.
+
+Do **not** add `html.skin-theme-clientpref-*` selectors to `createStyles()`. If a rule seems to need one, it almost certainly needs a new token instead; `darkOnlyStyles()` is reserved for properties that aren't colors we control.
+
+Provider-tinted values use the `--sv-accent` token, which tracks `getCurrentColor()`. `createStyles()` re-runs on provider change and replaces its own `<style id="source-verifier-styles">` rather than stacking a new one.
+
+`tests/styles.test.js` enforces this: it generates the stylesheet and fails if a `var(--sv-*)` has no definition, if the two dark blocks diverge, or if `createStyles()` hardcodes a hex color. That test is the guard against the dark-mode drift this section used to describe as a recurring bug.
 
 ## Common Tasks
 
