@@ -40,6 +40,14 @@ const __dirname = dirname(__filename);
 const DATASET_PATH = path.join(__dirname, 'dataset.json');
 const RESULTS_PATH = path.join(__dirname, 'results.json');
 
+// Output budget for reasoning models (gpt-oss, Qwen3), which spend tokens on
+// hidden reasoning before answering. Matches the shared default in
+// core/providers.js so the userscript, the CLI and the benchmark all send these
+// providers the same ceiling — a benchmark that measured a different budget
+// than production would not describe what editors get. Declared above PROVIDERS
+// because entries reference it and `const` is not hoisted.
+const REASONING_MAX_TOKENS = 16384;
+
 // Provider configurations
 export const PROVIDERS = {
     // Open-source models via PublicAI (direct API)
@@ -172,20 +180,18 @@ export const PROVIDERS = {
         requiresKey: true,
         keyEnv: 'HF_TOKEN',
         type: 'huggingface',
-        maxTokens: 16384
+        maxTokens: REASONING_MAX_TOKENS
     },
     // Same model, routed through the CORS worker's /hf path instead of calling
     // HF directly — the worker injects the HF key it already holds, so this
-    // entry needs no local token. Budget-matched to liftwing-qwen3-14b (4096)
-    // so a Lift Wing head-to-head compares models rather than output budgets;
-    // the direct entry above is the one to use for gpt-oss's own ceiling.
+    // entry needs no local token.
     'hf-gpt-oss-20b-proxy': {
         name: 'gpt-oss-20b (via CORS worker)',
         model: 'openai/gpt-oss-20b',
         endpoint: 'https://publicai-proxy.alaexis.workers.dev/hf',
         requiresKey: false,
         type: 'huggingface',
-        maxTokens: 4096
+        maxTokens: REASONING_MAX_TOKENS
     },
     'hf-deepseek-v3': {
         name: 'DeepSeek-V3 (HF Inference)',
@@ -206,10 +212,7 @@ export const PROVIDERS = {
         endpoint: 'https://publicai-proxy.alaexis.workers.dev/liftwing',
         requiresKey: false,
         type: 'liftwing',
-        // Qwen3 is a reasoning model; 4096 is the worker's own ceiling on this
-        // path, so it is both the most headroom available and what the
-        // userscript sends.
-        maxTokens: 4096
+        maxTokens: REASONING_MAX_TOKENS
     }
 };
 

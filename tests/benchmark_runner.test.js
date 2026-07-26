@@ -203,14 +203,14 @@ test('every reasoning provider overrides the 1000-token default', () => {
     }
 });
 
-test('the Lift Wing head-to-head pair is budget-matched', () => {
-    // Comparing 4096 against 16384 would measure output budget as much as
-    // model quality, so the worker-routed gpt-oss entry tracks Lift Wing's
-    // ceiling. If one moves, the other must move with it.
-    assert.equal(
-        PROVIDERS['hf-gpt-oss-20b-proxy'].maxTokens,
-        PROVIDERS['liftwing-qwen3-14b'].maxTokens
-    );
+test('all reasoning providers share one budget, matching core/providers.js', () => {
+    // Comparing 4096 against 16384 would measure output budget as much as model
+    // quality. These must also match the 16384 default that callOpenAICompatibleChat
+    // applies in the userscript and CLI — a benchmark running a different budget
+    // than production does not describe what editors actually get.
+    const budgets = ['liftwing-qwen3-14b', 'hf-gpt-oss-20b', 'hf-gpt-oss-20b-proxy']
+        .map(k => PROVIDERS[k].maxTokens);
+    assert.deepEqual(budgets, [16384, 16384, 16384]);
 });
 
 // ---- keyless worker routing -------------------------------------------------

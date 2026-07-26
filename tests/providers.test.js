@@ -256,7 +256,7 @@ test('callOpenAICompatibleChat defaults max_tokens to 16384 (headroom for reason
   }
 });
 
-test('callLiftwingAPI posts to workerBase /liftwing with no auth and caps max_tokens at 4096', async () => {
+test('callLiftwingAPI posts to workerBase /liftwing with no auth and the shared max_tokens', async () => {
   const mock = withMockFetch(async () => ({
     ok: true,
     status: 200,
@@ -279,11 +279,37 @@ test('callLiftwingAPI posts to workerBase /liftwing with no auth and caps max_to
     assert.equal(mock.calls[0].opts.headers['Authorization'], undefined);
     const sent = JSON.parse(mock.calls[0].opts.body);
     assert.equal(sent.model, 'llm-qwen3-14b');
-    // The worker clamps max_tokens to 4096; default to that rather than 16384.
-    assert.equal(sent.max_tokens, 4096);
+    // Lift Wing inherits the shared 16384 ceiling rather than carrying a lower
+    // client-side default — see the Lift Wing / HF parity test below.
+    assert.equal(sent.max_tokens, 16384);
   } finally {
     mock.restore();
   }
+});
+
+test('Lift Wing and HF send identical request parameters for the same call', async () => {
+  // Both host the same class of reasoning model behind the same worker, so any
+  // parameter divergence (output budget, temperature, structured-output hints)
+  // shows up as a quality difference that looks like a model difference —
+  // exactly the confound that made Lift Wing look worse than gpt-oss.
+  const bodies = {};
+  for (const [label, call] of [['lw', callLiftwingAPI], ['hf', callHuggingFaceAPI]]) {
+    const mock = withMockFetch(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ choices: [{ message: { content: 'ok' } }], usage: {} }),
+    }));
+    try {
+      await call({ model: 'm', systemPrompt: 's', userContent: 'u' });
+      bodies[label] = JSON.parse(mock.calls[0].opts.body);
+    } finally {
+      mock.restore();
+    }
+  }
+  assert.equal(bodies.lw.max_tokens, bodies.hf.max_tokens);
+  assert.equal(bodies.lw.temperature, bodies.hf.temperature);
+  assert.equal(bodies.lw.response_format, bodies.hf.response_format);
+  assert.deepEqual(Object.keys(bodies.lw).sort(), Object.keys(bodies.hf).sort());
 });
 
 test('callProviderAPI dispatches liftwing to /liftwing', async () => {

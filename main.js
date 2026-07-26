@@ -837,10 +837,16 @@ async function callHuggingFaceAPI({ apiKey, model, systemPrompt, userContent, wo
 // the worker builds the upstream URL from the model id, works anonymously by
 // default (an approved-bot JWT on the worker lifts the rate limit), and strips
 // the reasoning models' <think>…</think> blocks from non-streaming responses so
-// the verdict parser sees clean JSON. The worker clamps max_tokens to its own
-// 4096 ceiling, so we pass that as the default rather than the shared 16384.
-// No apiKey — the worker holds any credential.
-async function callLiftwingAPI({ model, systemPrompt, userContent, workerBase = 'https://publicai-proxy.alaexis.workers.dev', maxTokens = 4096, temperature }) {
+// the verdict parser sees clean JSON. No apiKey — the worker holds any credential.
+//
+// maxTokens intentionally has no local default: Lift Wing and HF host the same
+// class of reasoning model, so they inherit the same shared 16384 ceiling and
+// every caller (userscript, CLI, benchmark) sends the two providers identical
+// parameters. This previously defaulted to 4096 to match a worker-side clamp;
+// if the worker still clamps below 16384 it will keep doing so regardless of
+// what we send here, so the clamp belongs in the worker rather than as a
+// client-side asymmetry that silently handicaps one provider.
+async function callLiftwingAPI({ model, systemPrompt, userContent, workerBase = 'https://publicai-proxy.alaexis.workers.dev', maxTokens, temperature }) {
     return callOpenAICompatibleChat({
         url: `${workerBase}/liftwing`,
         model, systemPrompt, userContent, maxTokens, temperature,
@@ -4655,7 +4661,14 @@ function buildDatasetSubmissionUrl(
             this.updateButtonVisibility();
 
             const startTime = Date.now();
-            const useProxy = this.currentProvider === 'publicai' || this.currentProvider === 'liftwing';
+            // Batch pacing is a property of the *route*, not the provider:
+            // anything going through the CORS worker shares one upstream budget
+            // and needs the slower cadence. HuggingFace is proxied only when the
+            // user has no key stored — with one it calls HF directly and can use
+            // the fast cadence, same as Claude/Gemini/OpenAI.
+            const useProxy = this.currentProvider === 'publicai'
+                || this.currentProvider === 'liftwing'
+                || (this.currentProvider === 'huggingface' && !this.getCurrentApiKey());
             const delayBetweenCalls = useProxy ? 3000 : 1000;
 
             // Progress counts every LLM step: one per citation, plus one
