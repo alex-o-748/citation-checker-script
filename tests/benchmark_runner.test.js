@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { runPool, makeSaver, hostForProvider, shapeResult } from '../benchmark/run_benchmark.js';
+import { runPool, makeSaver, hostForProvider, shapeResult, PROVIDERS } from '../benchmark/run_benchmark.js';
 
 // ---- runPool ----------------------------------------------------------------
 
@@ -168,6 +168,26 @@ test('hostForProvider: real PROVIDERS — PublicAI models share one host', () =>
 test('hostForProvider: Anthropic and Gemini are independent hosts', () => {
     assert.equal(hostForProvider('claude-sonnet-4-5'), 'api.anthropic.com');
     assert.equal(hostForProvider('gemini-2.5-flash'), 'generativelanguage.googleapis.com');
+});
+
+// ---- Lift Wing provider config ---------------------------------------------
+
+test('Lift Wing is keyless so the runner never skips it for a missing env var', () => {
+    // main() drops any provider with `requiresKey && !process.env[keyEnv]`.
+    // The worker holds the credential, so there is no env var to set — flipping
+    // requiresKey to true here would silently exclude Lift Wing from every run.
+    const config = PROVIDERS['liftwing-qwen3-14b'];
+    assert.ok(config, 'liftwing-qwen3-14b must be a registered provider');
+    assert.equal(config.requiresKey, false);
+    assert.equal(config.keyEnv, undefined);
+    assert.equal(config.type, 'liftwing');
+});
+
+test('Lift Wing routes through the CORS worker, not a direct Lift Wing host', () => {
+    // Benchmark numbers should describe the path the userscript actually uses;
+    // a direct upstream endpoint would measure a route no editor takes.
+    assert.equal(hostForProvider('liftwing-qwen3-14b'), 'publicai-proxy.alaexis.workers.dev');
+    assert.match(PROVIDERS['liftwing-qwen3-14b'].endpoint, /\/liftwing$/);
 });
 
 // ---- shapeResult (parse delegation to core/parsing.js) ----------------------

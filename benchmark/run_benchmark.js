@@ -26,6 +26,7 @@ import {
     callGeminiAPI,
     callOpenRouterAPI,
     callHuggingFaceAPI,
+    callLiftwingAPI,
 } from '../core/providers.js';
 import { parseVerificationResult } from '../core/parsing.js';
 import { canonicalizeVerdict, toTitleCase } from '../core/verdicts.js';
@@ -40,7 +41,7 @@ const DATASET_PATH = path.join(__dirname, 'dataset.json');
 const RESULTS_PATH = path.join(__dirname, 'results.json');
 
 // Provider configurations
-const PROVIDERS = {
+export const PROVIDERS = {
     // Open-source models via PublicAI (direct API)
     'apertus-70b': {
         name: 'Apertus 70B',
@@ -175,6 +176,18 @@ const PROVIDERS = {
         requiresKey: true,
         keyEnv: 'HF_TOKEN',
         type: 'huggingface'
+    },
+    // Wikimedia Lift Wing, routed through the CORS worker's /liftwing path —
+    // the same path the userscript uses, so benchmark numbers describe what
+    // editors actually get. No key: the worker talks to Lift Wing anonymously
+    // and holds any credential itself, so requiresKey is false and there is no
+    // keyEnv to skip on.
+    'liftwing-qwen3-14b': {
+        name: 'Qwen3-14B (Lift Wing)',
+        model: 'llm-qwen3-14b',
+        endpoint: 'https://publicai-proxy.alaexis.workers.dev/liftwing',
+        requiresKey: false,
+        type: 'liftwing'
     }
 };
 
@@ -254,6 +267,7 @@ export async function callProvider(provider, systemPrompt, userPrompt) {
                 case 'gemini':      return callGemini(config, systemPrompt, userPrompt);
                 case 'openrouter':  return callOpenRouter(config, systemPrompt, userPrompt);
                 case 'huggingface': return callHuggingFace(config, systemPrompt, userPrompt);
+                case 'liftwing':    return callLiftwing(config, systemPrompt, userPrompt);
                 default: throw new Error(`Unknown provider type: ${config.type}`);
             }
         });
@@ -295,6 +309,9 @@ export function shapeResult({ text, usage }) {
 // runner overrides them here so that benchmark numbers stay comparable to
 // past runs until a deliberate re-baselining experiment changes them.
 const BENCHMARK_MAX_TOKENS = 1000;
+// Lift Wing's models are reasoning models behind a worker that clamps
+// max_tokens to 4096; see callLiftwing() for why they can't share the 1000.
+const LIFTWING_MAX_TOKENS = 4096;
 const BENCHMARK_TEMPERATURE = 0.1;
 // The pre-consolidation runner concatenated `${systemPrompt}\n\n${userPrompt}`
 // into a single Gemini user turn rather than using the proper systemInstruction
@@ -384,6 +401,25 @@ async function callHuggingFace(config, systemPrompt, userPrompt) {
         systemPrompt,
         userContent: userPrompt,
         maxTokens: BENCHMARK_MAX_TOKENS,
+        temperature: BENCHMARK_TEMPERATURE,
+    }));
+}
+
+// Lift Wing needs no key (the worker holds any credential) and, unlike every
+// other provider here, does NOT run at BENCHMARK_MAX_TOKENS. Its models are
+// reasoning models: they emit <think> before the answer, and at a 1000-token
+// budget the reasoning alone exhausts it, so the call comes back with
+// finish_reason "length" and empty content — an ERROR row rather than a
+// verdict. 4096 is the worker's own ceiling, so it is both the most headroom
+// available on this path and what the userscript sends. Numbers for this
+// provider are therefore budget-limited relative to a direct-API reasoning
+// model (HF gpt-oss-20b defaults to 16384); see the note in core/providers.js.
+async function callLiftwing(config, systemPrompt, userPrompt) {
+    return shapeResult(await callLiftwingAPI({
+        model: config.model,
+        systemPrompt,
+        userContent: userPrompt,
+        maxTokens: LIFTWING_MAX_TOKENS,
         temperature: BENCHMARK_TEMPERATURE,
     }));
 }
