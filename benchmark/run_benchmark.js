@@ -4,7 +4,7 @@
  *
  * Runs the enriched dataset through multiple LLM providers and records results.
  *
- * Usage: node run_benchmark.js [--providers claude,openai,gemini] [--limit N] [--resume] [--version v1|v2|v3|all] [--concurrency N]
+ * Usage: node run_benchmark.js [--providers claude,openai,gemini] [--limit N] [--resume] [--version v1|v2|v3|all] [--concurrency N] [--max-tokens N]
  *
  * Environment variables for API keys:
  *   ANTHROPIC_API_KEY - Claude API key
@@ -229,6 +229,18 @@ const versionIndex = args.indexOf('--version');
 // VERSION_FILTER: 'all' | 'v1' | 'v2' | ... — restricts which dataset entries
 // to benchmark, so the original 76-row v1 analysis can be reproduced on demand.
 const VERSION_FILTER = versionIndex !== -1 ? args[versionIndex + 1] : 'all';
+// --max-tokens N overrides every provider's output budget for one run.
+const maxTokensArg = args.find(a => a.startsWith('--max-tokens='));
+const maxTokensIndex = args.indexOf('--max-tokens');
+const MAX_TOKENS_OVERRIDE = (() => {
+    const raw = maxTokensArg
+        ? maxTokensArg.split('=')[1]
+        : (maxTokensIndex !== -1 ? args[maxTokensIndex + 1] : null);
+    if (!raw) return null;
+    const n = parseInt(raw, 10);
+    return Number.isFinite(n) && n > 0 ? n : null;
+})();
+
 const concurrencyArg = args.find(a => a.startsWith('--concurrency='));
 const concurrencyIndex = args.indexOf('--concurrency');
 const CONCURRENCY = (() => {
@@ -343,9 +355,13 @@ export function shapeResult({ text, usage }) {
 const BENCHMARK_MAX_TOKENS = 1000;
 const BENCHMARK_TEMPERATURE = 0.1;
 
-// Per-provider output budget, falling back to the shared default.
+// Per-provider output budget: --max-tokens wins, then the provider's own
+// setting, then the shared default. The override exists to A/B a budget
+// against an upstream that rejects rather than clamps an over-large
+// max_tokens — a failure that surfaces as fast request errors, not as slow
+// generations, and which no response field reports directly.
 function maxTokensFor(config) {
-    return config.maxTokens ?? BENCHMARK_MAX_TOKENS;
+    return MAX_TOKENS_OVERRIDE ?? config.maxTokens ?? BENCHMARK_MAX_TOKENS;
 }
 // The pre-consolidation runner concatenated `${systemPrompt}\n\n${userPrompt}`
 // into a single Gemini user turn rather than using the proper systemInstruction
