@@ -1447,7 +1447,7 @@ function buildDatasetSubmissionUrl(
                     // approved-bot JWT on the worker lifts the rate limit).
                     storageKey: null,
                     color: '#6B21A8',
-                    model: 'llm-qwen3-14b',
+                    model: 'llm-qwen36-27b',
                     requiresKey: false
                 },
                 claude: {
