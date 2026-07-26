@@ -161,13 +161,31 @@ export const PROVIDERS = {
         keyEnv: 'HF_TOKEN',
         type: 'huggingface'
     },
+    // gpt-oss is a reasoning model, so it needs a budget well above the shared
+    // 1000 — at that ceiling it burns the whole allowance reasoning and returns
+    // empty content. 16384 matches the core/providers.js default (~4x the
+    // observed worst-case reasoning length on this task).
     'hf-gpt-oss-20b': {
         name: 'gpt-oss-20b (HF Inference)',
         model: 'openai/gpt-oss-20b',
         endpoint: 'https://router.huggingface.co/v1/chat/completions',
         requiresKey: true,
         keyEnv: 'HF_TOKEN',
-        type: 'huggingface'
+        type: 'huggingface',
+        maxTokens: 16384
+    },
+    // Same model, routed through the CORS worker's /hf path instead of calling
+    // HF directly — the worker injects the HF key it already holds, so this
+    // entry needs no local token. Budget-matched to liftwing-qwen3-14b (4096)
+    // so a Lift Wing head-to-head compares models rather than output budgets;
+    // the direct entry above is the one to use for gpt-oss's own ceiling.
+    'hf-gpt-oss-20b-proxy': {
+        name: 'gpt-oss-20b (via CORS worker)',
+        model: 'openai/gpt-oss-20b',
+        endpoint: 'https://publicai-proxy.alaexis.workers.dev/hf',
+        requiresKey: false,
+        type: 'huggingface',
+        maxTokens: 4096
     },
     'hf-deepseek-v3': {
         name: 'DeepSeek-V3 (HF Inference)',
@@ -187,7 +205,11 @@ export const PROVIDERS = {
         model: 'llm-qwen3-14b',
         endpoint: 'https://publicai-proxy.alaexis.workers.dev/liftwing',
         requiresKey: false,
-        type: 'liftwing'
+        type: 'liftwing',
+        // Qwen3 is a reasoning model; 4096 is the worker's own ceiling on this
+        // path, so it is both the most headroom available and what the
+        // userscript sends.
+        maxTokens: 4096
     }
 };
 
@@ -308,11 +330,20 @@ export function shapeResult({ text, usage }) {
 // core/providers.js has its own defaults tuned for userscript/CLI use; the
 // runner overrides them here so that benchmark numbers stay comparable to
 // past runs until a deliberate re-baselining experiment changes them.
+// Default output budget. Ample for a non-reasoning model emitting a short
+// verdict JSON, but far too small for a reasoning model, which spends output
+// tokens on hidden reasoning *before* answering — at 1000 the reasoning alone
+// exhausts the budget and the response comes back with finish_reason "length"
+// and empty content, scoring as ERROR rather than as a verdict. Reasoning
+// providers therefore set their own `maxTokens` in PROVIDERS; see
+// maxTokensFor() and the note in core/providers.js.
 const BENCHMARK_MAX_TOKENS = 1000;
-// Lift Wing's models are reasoning models behind a worker that clamps
-// max_tokens to 4096; see callLiftwing() for why they can't share the 1000.
-const LIFTWING_MAX_TOKENS = 4096;
 const BENCHMARK_TEMPERATURE = 0.1;
+
+// Per-provider output budget, falling back to the shared default.
+function maxTokensFor(config) {
+    return config.maxTokens ?? BENCHMARK_MAX_TOKENS;
+}
 // The pre-consolidation runner concatenated `${systemPrompt}\n\n${userPrompt}`
 // into a single Gemini user turn rather than using the proper systemInstruction
 // + contents shape. callGeminiAPI now defaults to the structured shape; the
@@ -392,34 +423,32 @@ async function callOpenRouter(config, systemPrompt, userPrompt) {
     }));
 }
 
+// Two routes, chosen by whether the provider config names a key env var.
+// With a token we call router.huggingface.co directly; without one,
+// callHuggingFaceAPI falls back to the CORS worker's /hf path, which injects
+// the upstream key the worker already holds — so a keyless HF provider entry
+// is a valid configuration, not a misconfigured one.
 async function callHuggingFace(config, systemPrompt, userPrompt) {
-    const apiKey = process.env[config.keyEnv];
-    if (!apiKey) throw new Error(`Missing ${config.keyEnv}`);
+    const apiKey = config.keyEnv ? process.env[config.keyEnv] : undefined;
+    if (config.requiresKey && !apiKey) throw new Error(`Missing ${config.keyEnv}`);
     return shapeResult(await callHuggingFaceAPI({
         apiKey,
         model: config.model,
         systemPrompt,
         userContent: userPrompt,
-        maxTokens: BENCHMARK_MAX_TOKENS,
+        maxTokens: maxTokensFor(config),
         temperature: BENCHMARK_TEMPERATURE,
     }));
 }
 
-// Lift Wing needs no key (the worker holds any credential) and, unlike every
-// other provider here, does NOT run at BENCHMARK_MAX_TOKENS. Its models are
-// reasoning models: they emit <think> before the answer, and at a 1000-token
-// budget the reasoning alone exhausts it, so the call comes back with
-// finish_reason "length" and empty content — an ERROR row rather than a
-// verdict. 4096 is the worker's own ceiling, so it is both the most headroom
-// available on this path and what the userscript sends. Numbers for this
-// provider are therefore budget-limited relative to a direct-API reasoning
-// model (HF gpt-oss-20b defaults to 16384); see the note in core/providers.js.
+// Lift Wing needs no key — the worker holds any credential — so there is no
+// env var to read here.
 async function callLiftwing(config, systemPrompt, userPrompt) {
     return shapeResult(await callLiftwingAPI({
         model: config.model,
         systemPrompt,
         userContent: userPrompt,
-        maxTokens: LIFTWING_MAX_TOKENS,
+        maxTokens: maxTokensFor(config),
         temperature: BENCHMARK_TEMPERATURE,
     }));
 }

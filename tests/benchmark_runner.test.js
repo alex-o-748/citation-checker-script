@@ -190,6 +190,51 @@ test('Lift Wing routes through the CORS worker, not a direct Lift Wing host', ()
     assert.match(PROVIDERS['liftwing-qwen3-14b'].endpoint, /\/liftwing$/);
 });
 
+// ---- reasoning-model output budgets ----------------------------------------
+
+test('every reasoning provider overrides the 1000-token default', () => {
+    // A reasoning model at BENCHMARK_MAX_TOKENS spends the whole budget on
+    // hidden reasoning and returns finish_reason "length" with empty content,
+    // which scores as ERROR on every row — a silently worthless run rather
+    // than a loud failure. Guard the budget explicitly.
+    for (const key of ['liftwing-qwen3-14b', 'hf-gpt-oss-20b', 'hf-gpt-oss-20b-proxy']) {
+        const { maxTokens } = PROVIDERS[key];
+        assert.ok(maxTokens > 1000, `${key} must raise maxTokens above the shared default`);
+    }
+});
+
+test('the Lift Wing head-to-head pair is budget-matched', () => {
+    // Comparing 4096 against 16384 would measure output budget as much as
+    // model quality, so the worker-routed gpt-oss entry tracks Lift Wing's
+    // ceiling. If one moves, the other must move with it.
+    assert.equal(
+        PROVIDERS['hf-gpt-oss-20b-proxy'].maxTokens,
+        PROVIDERS['liftwing-qwen3-14b'].maxTokens
+    );
+});
+
+// ---- keyless worker routing -------------------------------------------------
+
+test('worker-routed HF provider needs no local token', () => {
+    // callHuggingFaceAPI picks the worker's /hf path when no apiKey is passed,
+    // and the worker injects the key it already holds. main() must not skip
+    // this provider for a missing env var.
+    const config = PROVIDERS['hf-gpt-oss-20b-proxy'];
+    assert.equal(config.requiresKey, false);
+    assert.equal(config.keyEnv, undefined);
+    assert.equal(hostForProvider('hf-gpt-oss-20b-proxy'), 'publicai-proxy.alaexis.workers.dev');
+    assert.match(config.endpoint, /\/hf$/);
+});
+
+test('direct HF providers still declare their token', () => {
+    // The direct route has no worker to inject a credential, so dropping
+    // keyEnv there would produce unauthenticated calls rather than a clean skip.
+    const config = PROVIDERS['hf-gpt-oss-20b'];
+    assert.equal(config.requiresKey, true);
+    assert.equal(config.keyEnv, 'HF_TOKEN');
+    assert.equal(hostForProvider('hf-gpt-oss-20b'), 'router.huggingface.co');
+});
+
 // ---- shapeResult (parse delegation to core/parsing.js) ----------------------
 // Behavioral wiring tests — full parser coverage lives in tests/parsing.test.js.
 
