@@ -6,8 +6,8 @@ Usage:
 
   --size N        target width of the artwork in px (default 900)
   --transparent   transparent background (best for t-shirts) instead of white
-  -o FILE         output path (default sv_logo_front.png, or
-                  sv_logo_front_transparent.png when --transparent)
+  -o FILE         output path (default assets/logo/renders/sv_logo_front.png,
+                  or ..._transparent.png when --transparent)
 
 The letters lie flat, so looking onto their faces gives the readable SV(2)
 mark. Rendered at 2x and downscaled for anti-aliased edges.
@@ -15,11 +15,16 @@ mark. Rendered at 2x and downscaled for anti-aliased edges.
 For apparel at ~300 DPI: 900 px ~ 3 in, 3000 px ~ 10 in, 3600 px ~ 12 in.
 """
 import sys
+import os
 import numpy as np
 from stl import mesh
 from PIL import Image, ImageDraw, ImageFont
 
 SS = 2                                   # supersample factor for smooth edges
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+LOGO_DIR = os.path.join(ROOT, "assets", "logo")
+RENDER_DIR = os.path.join(LOGO_DIR, "renders")
 
 # ---- args ----------------------------------------------------------------
 argv = sys.argv[1:]
@@ -34,7 +39,8 @@ text_hex = "22303f"                       # default label colour (dark slate)
 if "--textcolor" in argv:
     text_hex = argv[argv.index("--textcolor") + 1].lstrip("#")
 text_rgb = tuple(int(text_hex[i:i + 2], 16) for i in (0, 2, 4))
-out = "sv_logo_front_transparent.png" if transparent else "sv_logo_front.png"
+default_name = "sv_logo_front_transparent.png" if transparent else "sv_logo_front.png"
+out = os.path.join(RENDER_DIR, default_name)
 if "-o" in argv:
     out = argv[argv.index("-o") + 1]
 
@@ -48,7 +54,7 @@ def load_font(size):
             continue
     return ImageFont.load_default()
 
-m = mesh.Mesh.from_file("sv_logo.stl")
+m = mesh.Mesh.from_file(os.path.join(LOGO_DIR, "sv_logo.stl"))
 tris = m.vectors.astype(float)
 c = tris.reshape(-1, 3).mean(axis=0)
 c[2] = 0.0                               # keep true Z so height-based colours work
@@ -123,5 +129,7 @@ if label:
 img = img.resize((W, Ht), Image.LANCZOS)
 if not transparent:
     img = img.convert("RGB")
+if os.path.dirname(out):
+    os.makedirs(os.path.dirname(out), exist_ok=True)
 img.save(out)
 print(f"wrote {out} ({W}x{Ht}), label={label!r}")

@@ -2,11 +2,17 @@
 """Render preview images of sv_logo.stl: a top-down map (to read the glyphs)
 and an isometric view (to show the relief). Colours faces by height so the
 raised S, the lower V, and the base are easy to tell apart."""
+import os
 import numpy as np
 from stl import mesh
 from PIL import Image, ImageDraw
 
-m = mesh.Mesh.from_file("sv_logo.stl")
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+LOGO_DIR = os.path.join(ROOT, "assets", "logo")
+RENDER_DIR = os.path.join(LOGO_DIR, "renders")
+os.makedirs(RENDER_DIR, exist_ok=True)
+
+m = mesh.Mesh.from_file(os.path.join(LOGO_DIR, "sv_logo.stl"))
 tris = m.vectors.astype(float)                      # (N,3,3)
 zmin, zmax = tris[:, :, 2].min(), tris[:, :, 2].max()
 
@@ -54,7 +60,7 @@ def render(R, view_dir, fname, size=560):
 
 
 # Top-down (look straight down -Z): identity rotation, view dir +Z.
-render(np.eye(3), np.array([0, 0, 1.0]), "sv_logo_top.png")
+render(np.eye(3), np.array([0, 0, 1.0]), os.path.join(RENDER_DIR, "sv_logo_top.png"))
 
 # Isometric: rotate about Z then tilt.
 az, el = np.radians(-32), np.radians(38)            # el from horizontal-ish
@@ -65,5 +71,5 @@ Rx = np.array([[1, 0, 0],
                [0, np.sin(el),  np.cos(el)]])
 R = Rx @ Rz
 view = R @ np.array([0, 0, 1.0])                    # camera axis in world space
-render(R, view, "sv_logo_iso.png")
-print("wrote sv_logo_top.png and sv_logo_iso.png")
+render(R, view, os.path.join(RENDER_DIR, "sv_logo_iso.png"))
+print(f"wrote sv_logo_top.png and sv_logo_iso.png in {RENDER_DIR}")

@@ -14,12 +14,18 @@ Design (from the request):
 Because the letters overlap each other (the two C's overlap, and the S overlaps
 the V) the model fuses into a single connected piece.
 
-Output: sv_logo.stl  (millimetre units, ready to slice)
+Output: assets/logo/sv_logo.stl  (millimetre units, ready to slice)
 """
 
 import math
+import os
 import numpy as np
 from stl import mesh
+
+# Repo-root-relative asset paths, so the script works from any directory.
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+LOGO_DIR = os.path.join(ROOT, "assets", "logo")
+STL_PATH = os.path.join(LOGO_DIR, "sv_logo.stl")
 
 # ---------------------------------------------------------------------------
 # Tunable parameters (millimetres)
@@ -167,10 +173,11 @@ for i, tri in enumerate(triangles):
 
 m = mesh.Mesh(data)
 m.update_normals()
-m.save("sv_logo.stl")
+os.makedirs(LOGO_DIR, exist_ok=True)
+m.save(STL_PATH)
 
 allv = m.vectors.reshape(-1, 3)
 mn, mx = allv.min(axis=0), allv.max(axis=0)
-print(f"Wrote sv_logo.stl: {len(triangles)} triangles")
+print(f"Wrote {STL_PATH}: {len(triangles)} triangles")
 print(f"Bounding box (mm): X {mx[0]-mn[0]:.1f}  Y {mx[1]-mn[1]:.1f}  Z {mx[2]-mn[2]:.1f}")
 print(f"S thickness: {S_THICK:.1f} mm   V thickness: {V_THICK:.1f} mm   (no base)")

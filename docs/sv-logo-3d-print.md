@@ -3,19 +3,36 @@
 A print-ready logo with the letters **S** and **V** interleaved. The letters
 lie flat and are the object themselves — there is no separate base plate.
 
-![top view](../sv_logo_top.png)
-![iso view](../sv_logo_iso.png)
+![top view](../assets/logo/renders/sv_logo_top.png)
+![iso view](../assets/logo/renders/sv_logo_iso.png)
 
-## Files
+## Assets
 
-| File | Purpose |
+All generated logo artifacts live under `assets/logo/`:
+
+```
+assets/logo/
+  sv_logo.stl                          # printable 3D mesh (mm)
+  sv_logo.svg                          # vector lockup (SV² + wordmark)
+  renders/
+    sv_logo_top.png                    # top-down preview
+    sv_logo_iso.png                    # isometric preview
+    sv_logo_front.png                  # flat front view (white bg)
+    sv_logo_front_transparent.png      # hi-res, transparent (for apparel)
+    sv_logo_front_white_hires.png      # hi-res, white background
+```
+
+## Scripts
+
+| Script | Purpose |
 |------|---------|
-| `sv_logo.stl` | The mesh to slice/print (millimetres). |
-| `assets/sv_logo.svg` | Vector logo lockup (SV² + wordmark) for print/web. |
-| `scripts/generate_sv_logo.py` | Regenerates the STL from parameters. |
-| `scripts/preview_sv_logo.py` | Renders `sv_logo_top.png` / `sv_logo_iso.png`. |
-| `scripts/render_front_white.py` | Renders the flat front-view PNGs (front/transparent/hi-res). |
-| `scripts/generate_svg.py` | Regenerates `assets/sv_logo.svg`. |
+| `scripts/generate_sv_logo.py` | Builds `assets/logo/sv_logo.stl` from parameters. |
+| `scripts/preview_sv_logo.py` | Renders the top / iso previews. |
+| `scripts/render_front_white.py` | Renders the flat front-view PNGs (front / transparent / hi-res). |
+| `scripts/generate_svg.py` | Builds `assets/logo/sv_logo.svg`. |
+
+All scripts resolve paths relative to the repo root, so they can be run from
+any working directory.
 
 ## Print notes
 
@@ -36,9 +53,11 @@ Default dimensions: ~60 × 47 mm footprint, 8 mm tall.
 ## Regenerating / customizing
 
 ```bash
-pip install numpy-stl pillow      # one-time
-python3 scripts/generate_sv_logo.py   # -> sv_logo.stl
-python3 scripts/preview_sv_logo.py    # -> preview PNGs
+pip install numpy-stl pillow fonttools cairosvg   # one-time
+python3 scripts/generate_sv_logo.py    # -> assets/logo/sv_logo.stl
+python3 scripts/preview_sv_logo.py     # -> assets/logo/renders/*.png
+python3 scripts/render_front_white.py --size 3600 --transparent  # apparel PNG
+python3 scripts/generate_svg.py        # -> assets/logo/sv_logo.svg
 ```
 
 Tunable constants live at the top of `scripts/generate_sv_logo.py`:

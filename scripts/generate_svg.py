@@ -11,7 +11,7 @@ Geometry mirrors scripts/generate_sv_logo.py (same constants) but drawn in 2D.
 
 Usage:
     python3 scripts/generate_svg.py [--label TEXT] [--no-label] [-o FILE]
-Output: sv_logo.svg
+Output: assets/logo/sv_logo.svg
 """
 import math
 import os
@@ -30,7 +30,8 @@ if "--no-label" in argv:
     label = ""
 if "--label" in argv:
     label = argv[argv.index("--label") + 1]
-out = "assets/sv_logo.svg"           # dedicated assets folder, not the repo root
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+out = os.path.join(ROOT, "assets", "logo", "sv_logo.svg")   # dedicated assets folder
 if "-o" in argv:
     out = argv[argv.index("-o") + 1]
 
