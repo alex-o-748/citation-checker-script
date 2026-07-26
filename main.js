@@ -1415,6 +1415,32 @@ function buildDatasetSubmissionUrl(
             'Note : Source longue, vérifiée partiellement seulement.',
         'Tokens used: {input} input, {output} output':
             'Jetons utilisés : {input} en entrée, {output} en sortie',
+        // Sidebar chrome and the state-driven panel
+        'Settings': 'Paramètres',
+        'Done': 'Terminé',
+        'Open settings': 'Ouvrir les paramètres',
+        'Upload PDF': 'Téléverser un PDF',
+        'or paste the text below': 'ou collez le texte ci-dessous',
+        'Click any citation number in the article to check whether its source actually supports the claim.':
+            'Cliquez sur un numéro de référence dans l’article pour vérifier si sa source appuie réellement l’affirmation.',
+        'Ready · free, no setup needed': 'Prêt · gratuit, aucune configuration',
+        'Ready · using your API key': 'Prêt · avec votre clé API',
+        'Add an API key in settings to start':
+            'Ajoutez une clé API dans les paramètres pour commencer',
+        'Checking citations…': 'Vérification des citations…',
+        'Model: {model}': 'Modèle : {model}',
+        // Verdict framing: the assessment is attributed, and each verdict says
+        // what the editor should do next.
+        'AI assessment': 'Évaluation par IA',
+        'Read the source before changing the article — this is a machine reading, not a fact.':
+            'Lisez la source avant de modifier l’article — il s’agit d’une lecture automatique, pas d’un fait.',
+        'Spot-check the source yourself — this is a machine reading, not a fact.':
+            'Vérifiez la source par vous-même — il s’agit d’une lecture automatique, pas d’un fait.',
+        'The tool could not read this source. Try pasting the text or uploading a PDF.':
+            'L’outil n’a pas pu lire cette source. Essayez de coller le texte ou de téléverser un PDF.',
+        'How accurate is this?': 'Quelle est la fiabilité de cet outil ?',
+        'Measured against 186 human-labelled citations, a "not supported" flag was confirmed by a reviewer roughly two thirds of the time. Treat every verdict as a reason to read the source, not as a conclusion.':
+            'Sur 186 citations annotées par des humains, un signalement « non confirmée » a été validé par un relecteur dans environ deux tiers des cas. Considérez chaque verdict comme une raison de lire la source, et non comme une conclusion.',
     };
 
     class WikipediaSourceVerifier {
@@ -1496,6 +1522,11 @@ function buildDatasetSubmissionUrl(
             this.sourceInputForOverride = false;
             this._pdfJsLoading = null;
 
+            // View state. settingsOpen and reportMode are mutually exclusive
+            // views; hasResult tracks whether there is a verdict worth showing.
+            this.settingsOpen = false;
+            this.hasResult = false;
+
             // Article report state
             this.reportMode = false;
             this.reportCancelled = false;
@@ -1575,52 +1606,78 @@ function buildDatasetSubmissionUrl(
             
             this.createOOUIButtons();
             
+            // Section order is the reading order of a finished check: the verdict
+            // and its explanation first, then the claim and source that produced
+            // it, then the controls. renderUiState() decides which of these are
+            // on screen; nothing here is unconditionally visible except the
+            // header and status strip.
             sidebar.innerHTML = `
                 <div id="verifier-sidebar-header">
+                    ${this.logoMarkSvg()}
                     <h3><a href="https://en.wikipedia.org/wiki/User:Alaexis/AI_Source_Verification" target="_blank" id="verifier-title-link">${this.t('Source Verifier')}</a></h3>
                     <div id="verifier-sidebar-controls">
+                        <div id="verifier-settings-btn-container"></div>
                         <div id="verifier-close-btn-container"></div>
                     </div>
                 </div>
+                <div id="verifier-status-strip">
+                    <span id="verifier-status-dot"></span>
+                    <span id="verifier-status-text"></span>
+                    <a href="#" id="verifier-status-settings">${this.t('Settings')}</a>
+                </div>
                 <div id="verifier-sidebar-content">
-                    <div id="verifier-controls">
+                    <div id="verifier-settings-view" style="display:none;">
+                        <h4>${this.t('Settings')}</h4>
                         <div id="verifier-provider-container"></div>
                         <div id="verifier-provider-info"></div>
-                        <div id="verifier-buttons-container"></div>
+                        <div id="verifier-key-buttons"></div>
+                        <div id="verifier-accuracy-note"></div>
+                        <div id="verifier-privacy-note">${this.t('Results are logged for research. Your username is not recorded.')}</div>
+                        <div id="verifier-settings-done-container"></div>
                     </div>
-                    <div id="verifier-claim-section">
-                        <h4>${this.t('Selected Claim')}</h4>
-                        <div id="verifier-claim-text">${this.t('Click on a reference number [1] next to a claim to verify it against its source.')}</div>
-                        <div id="verifier-claim-group-indicator" style="display: none;"></div>
-                    </div>
-                    <div id="verifier-source-section">
-                        <h4>${this.t('Source Content')}</h4>
-                        <div id="verifier-source-text">${this.t('No source loaded yet.')}</div>
-                        <div id="verifier-source-override-container" style="display: none; margin-top: 8px;"></div>
-                        <div id="verifier-source-input-container" style="display: none; margin-top: 10px;">
-                            <div id="verifier-source-pdf-row">
-                                <label id="verifier-source-pdf-label" for="verifier-source-pdf-input" role="button" tabindex="0">📄 Upload PDF</label>
-                                <input type="file" id="verifier-source-pdf-input" accept=".pdf,application/pdf">
-                                <span id="verifier-source-pdf-hint">or paste the text below</span>
-                            </div>
-                            <div id="verifier-source-textarea-container"></div>
-                            <div id="verifier-source-buttons" style="margin-top: 8px; display: flex; gap: 8px;">
-                                <div id="verifier-load-text-btn-container" style="flex: 1;"></div>
-                                <div id="verifier-cancel-text-btn-container" style="flex: 1;"></div>
+                    <div id="verifier-main-view">
+                        <div id="verifier-idle-view">
+                            <div id="verifier-idle-glyph">[1]</div>
+                            <p id="verifier-idle-text">${this.t('Click any citation number in the article to check whether its source actually supports the claim.')}</p>
+                        </div>
+                        <div id="verifier-results">
+                            <div id="verifier-verdict-attrib">${this.t('AI assessment')}</div>
+                            <div id="verifier-verdict"></div>
+                            <div id="verifier-comments"></div>
+                            <div id="verifier-verdict-next"></div>
+                            <div id="verifier-action-container"></div>
+                        </div>
+                        <div id="verifier-claim-section">
+                            <h4>${this.t('Selected Claim')}</h4>
+                            <div id="verifier-claim-text">${this.t('Click on a reference number [1] next to a claim to verify it against its source.')}</div>
+                            <div id="verifier-claim-group-indicator" style="display: none;"></div>
+                        </div>
+                        <div id="verifier-source-section">
+                            <h4>${this.t('Source Content')}</h4>
+                            <div id="verifier-source-text">${this.t('No source loaded yet.')}</div>
+                            <div id="verifier-source-override-container" style="display: none; margin-top: 8px;"></div>
+                            <div id="verifier-source-input-container" style="display: none; margin-top: 10px;">
+                                <div id="verifier-source-pdf-row">
+                                    <label id="verifier-source-pdf-label" for="verifier-source-pdf-input" role="button" tabindex="0">📄 ${this.t('Upload PDF')}</label>
+                                    <input type="file" id="verifier-source-pdf-input" accept=".pdf,application/pdf">
+                                    <span id="verifier-source-pdf-hint">${this.t('or paste the text below')}</span>
+                                </div>
+                                <div id="verifier-source-textarea-container"></div>
+                                <div id="verifier-source-buttons" style="margin-top: 8px; display: flex; gap: 8px;">
+                                    <div id="verifier-load-text-btn-container" style="flex: 1;"></div>
+                                    <div id="verifier-cancel-text-btn-container" style="flex: 1;"></div>
+                                </div>
                             </div>
                         </div>
-                    </div>
-                    <div id="verifier-results">
-                        <h4>${this.t('Verification Result')}</h4>
-                        <div id="verifier-verdict"></div>
-                        <div id="verifier-comments"></div>
-                        <div id="verifier-action-container"></div>
-                    </div>
-                    <div id="verifier-report-view" style="display:none;">
-                        <div id="verifier-report-progress"></div>
-                        <div id="verifier-report-summary"></div>
-                        <div id="verifier-report-results"></div>
-                        <div id="verifier-report-actions"></div>
+                        <div id="verifier-controls">
+                            <div id="verifier-buttons-container"></div>
+                        </div>
+                        <div id="verifier-report-view" style="display:none;">
+                            <div id="verifier-report-progress"></div>
+                            <div id="verifier-report-summary"></div>
+                            <div id="verifier-report-results"></div>
+                            <div id="verifier-report-actions"></div>
+                        </div>
                     </div>
                 </div>
                 <div id="verifier-resize-handle"></div>
@@ -1637,8 +1694,110 @@ function buildDatasetSubmissionUrl(
             }
             
             this.makeResizable();
+            this.renderUiState();
         }
-        
+
+        // The logo mark from assets/logo/sv_logo.svg, wordmark omitted (the
+        // header already says "Source Verifier"). Inlined because a userscript
+        // can't reference a repository file, and currentColor is deliberately
+        // not used — these are fixed brand colors on the accent header.
+        logoMarkSvg() {
+            return `<svg id="verifier-logo" viewBox="2 0 65 50" aria-hidden="true" focusable="false">
+                <path d="M 38,47 L 38,32 L 24,3 L 13,3 Z" fill="#6B21A8"/>
+                <path d="M 63,3 L 52,3 L 38,32 L 38,47 Z" fill="#6B21A8"/>
+                <path d="M 25.456,6.351 A 13,13 0 1 0 25.456,27.649 L 21.728,22.324 A 6.5,6.5 0 1 1 21.728,11.676 Z" fill="#1abea0"/>
+                <path d="M 17.544,43.649 A 13,13 0 1 0 17.544,22.351 L 21.272,27.676 A 6.5,6.5 0 1 1 21.272,38.324 Z" fill="#1abea0"/>
+                <path d="M 63.479,10.678 A 6.5,6.5 0 1 0 53.176,10.228 L 56.862,7.647 A 2,2 0 1 1 60.032,7.786 Z" fill="#e6a23c"/>
+                <path d="M 53.5,17 L 58,17 L 63.5,9.5 L 59,9.5 Z" fill="#e6a23c"/>
+                <path d="M 52,20 L 65,20 L 65,15.5 L 52,15.5 Z" fill="#e6a23c"/>
+            </svg>`;
+        }
+
+        // Single source of truth for what is on screen. Four mutually exclusive
+        // views — settings, report, a finished check, and everything else —
+        // rather than the previous approach of every section being present at
+        // all times with placeholder text standing in for absent content.
+        renderUiState() {
+            const show = (id, visible, display = '') => {
+                const el = document.getElementById(id);
+                if (el) el.style.display = visible ? display : 'none';
+            };
+
+            const settings = this.settingsOpen;
+            const report = !settings && this.reportMode;
+            const main = !settings && !report;
+            const hasClaim = !!this.activeClaim;
+
+            show('verifier-settings-view', settings);
+            show('verifier-main-view', !settings);
+            show('verifier-report-view', report, 'block');
+
+            // Idle is the only state with no claim to talk about, so the claim
+            // and source sections stay out of the way entirely.
+            show('verifier-idle-view', main && !hasClaim);
+            show('verifier-claim-section', main && hasClaim);
+            show('verifier-source-section', main && hasClaim);
+            show('verifier-results', main && this.hasResult);
+            show('verifier-controls', main || report);
+
+            this.updateStatusStrip();
+        }
+
+        openSettings() {
+            this.settingsOpen = true;
+            this.renderUiState();
+        }
+
+        closeSettings() {
+            this.settingsOpen = false;
+            this.renderUiState();
+        }
+
+        // The status strip answers "can I use this right now?" without naming a
+        // model. The model identity lives in settings and in the generated
+        // wikitext, where it is an attribution requirement.
+        updateStatusStrip() {
+            const dot = document.getElementById('verifier-status-dot');
+            const text = document.getElementById('verifier-status-text');
+            if (!dot || !text) return;
+
+            const provider = this.providers[this.currentProvider];
+            const hasKey = this.getCurrentApiKey();
+            let ready = true;
+            let message;
+
+            if (provider.requiresKey && !hasKey) {
+                ready = false;
+                message = this.t('Add an API key in settings to start');
+            } else if (this.reportRunning) {
+                message = this.t('Checking citations…');
+            } else if (hasKey && (provider.requiresKey || provider.optionalKey)) {
+                message = this.t('Ready · using your API key');
+            } else {
+                message = this.t('Ready · free, no setup needed');
+            }
+
+            dot.className = ready ? 'ready' : 'blocked';
+            text.textContent = message;
+        }
+
+        // One line telling the editor what to actually do about the verdict.
+        // Deliberately phrased as a next step rather than a disclaimer, and
+        // shown in place rather than buried in documentation nobody opens.
+        nextStepFor(verdict) {
+            switch (verdict) {
+                case 'SUPPORTED':
+                    return this.t('Spot-check the source yourself — this is a machine reading, not a fact.');
+                case 'SOURCE UNAVAILABLE':
+                    return this.t('The tool could not read this source. Try pasting the text or uploading a PDF.');
+                case 'PARTIALLY SUPPORTED':
+                case 'NOT SUPPORTED':
+                    return this.t('Read the source before changing the article — this is a machine reading, not a fact.');
+                default:
+                    return '';
+            }
+        }
+
         // Design tokens.
         //
         // Every component rule in this file takes its colors from these custom
@@ -1679,6 +1838,9 @@ function buildDatasetSubmissionUrl(
                     /* Surfaces */
                     --sv-bg: #fff;
                     --sv-bg-card: #fff;
+                    /* The logo keeps fixed brand colors, so it needs a light
+                       plate to sit on over the accent header — in both themes. */
+                    --sv-logo-plate: #fff;
                     --sv-bg-2: #f8f9fa;
                     --sv-bg-3: #fafafa;
                     --sv-bg-inset: #f6f8fb;
@@ -1764,6 +1926,7 @@ function buildDatasetSubmissionUrl(
 
                     --sv-bg: #1a1a2e;
                     --sv-bg-card: #2a2a3e;
+                    --sv-logo-plate: #fff;
                     --sv-bg-2: #2a2a3e;
                     --sv-bg-3: #2a2a3e;
                     --sv-bg-inset: #232336;
@@ -1938,6 +2101,131 @@ function buildDatasetSubmissionUrl(
                 #verifier-sidebar-header h3 {
                     margin: 0;
                     font-size: 16px;
+                    flex: 1;
+                }
+                #verifier-logo {
+                    width: 24px;
+                    height: 19px;
+                    flex-shrink: 0;
+                    display: block;
+                    background: var(--sv-logo-plate);
+                    border-radius: 3px;
+                    padding: 2px 3px;
+                    box-sizing: content-box;
+                }
+                #verifier-status-strip {
+                    display: flex;
+                    align-items: center;
+                    gap: 7px;
+                    padding: 6px 15px;
+                    background: var(--sv-bg-2);
+                    border-bottom: 1px solid var(--sv-border);
+                    font-size: 12px;
+                    color: var(--sv-ink-4);
+                    flex-shrink: 0;
+                }
+                #verifier-status-dot {
+                    width: 7px;
+                    height: 7px;
+                    border-radius: 50%;
+                    flex-shrink: 0;
+                    background: var(--sv-seg-supported);
+                }
+                #verifier-status-dot.blocked {
+                    background: var(--sv-seg-partial);
+                }
+                #verifier-status-text {
+                    flex: 1;
+                    min-width: 0;
+                }
+                #verifier-status-settings {
+                    flex-shrink: 0;
+                    color: var(--sv-accent-fg);
+                }
+                #verifier-main-view, #verifier-settings-view {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 15px;
+                }
+                #verifier-settings-view h4 {
+                    margin: 0;
+                    color: var(--sv-accent-fg);
+                    font-size: 14px;
+                    font-weight: bold;
+                }
+                #verifier-key-buttons {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 8px;
+                }
+                #verifier-key-buttons .oo-ui-buttonElement,
+                #verifier-key-buttons .oo-ui-buttonElement-button {
+                    width: 100%;
+                    justify-content: center;
+                }
+                #verifier-provider-model {
+                    margin-top: 4px;
+                    font-size: 11px;
+                    color: var(--sv-ink-5);
+                    word-break: break-all;
+                }
+                #verifier-accuracy-note {
+                    padding: 10px;
+                    background: var(--sv-bg-2);
+                    border: 1px solid var(--sv-border);
+                    border-radius: 4px;
+                    font-size: 12px;
+                    line-height: 1.5;
+                    color: var(--sv-ink-4);
+                }
+                #verifier-accuracy-note strong {
+                    display: block;
+                    margin-bottom: 3px;
+                    color: var(--sv-ink);
+                }
+                #verifier-privacy-note {
+                    font-size: 11px;
+                    color: var(--sv-ink-5);
+                }
+                #verifier-settings-done-container .oo-ui-buttonElement,
+                #verifier-settings-done-container .oo-ui-buttonElement-button {
+                    width: 100%;
+                    justify-content: center;
+                }
+                #verifier-idle-view {
+                    text-align: center;
+                    padding: 22px 12px 8px;
+                }
+                #verifier-idle-glyph {
+                    display: inline-block;
+                    font-size: 15px;
+                    font-weight: bold;
+                    color: var(--sv-accent-fg);
+                    background: var(--sv-bg-2);
+                    border: 1px solid var(--sv-border);
+                    border-radius: 6px;
+                    padding: 5px 10px;
+                    margin-bottom: 12px;
+                }
+                #verifier-idle-text {
+                    margin: 0 auto;
+                    max-width: 30em;
+                    font-size: 13px;
+                    line-height: 1.5;
+                    color: var(--sv-ink-4);
+                }
+                #verifier-verdict-attrib {
+                    font-size: 10px;
+                    letter-spacing: 0.09em;
+                    text-transform: uppercase;
+                    color: var(--sv-ink-5);
+                    margin-bottom: 4px;
+                }
+                #verifier-verdict-next {
+                    margin-top: 8px;
+                    font-size: 12px;
+                    line-height: 1.45;
+                    color: var(--sv-ink-4);
                 }
                 #verifier-sidebar-controls {
                     display: flex;
@@ -2552,6 +2840,26 @@ function buildDatasetSubmissionUrl(
                 framed: false,
                 classes: ['verifier-close-button']
             });
+
+            this.buttons.settings = new OO.ui.ButtonWidget({
+                icon: 'settings',
+                title: this.t('Settings'),
+                framed: false,
+                classes: ['verifier-settings-button']
+            });
+
+            this.buttons.settingsDone = new OO.ui.ButtonWidget({
+                label: this.t('Done'),
+                flags: ['primary', 'progressive']
+            });
+
+            // Shown in the main view when the chosen provider has no key, so the
+            // blocked state offers the way out rather than just naming the problem.
+            this.buttons.openSettings = new OO.ui.ButtonWidget({
+                label: this.t('Open settings'),
+                flags: ['primary', 'progressive'],
+                icon: 'settings'
+            });
             
             // Provider selector
             this.buttons.providerSelect = new OO.ui.DropdownWidget({
@@ -2642,8 +2950,10 @@ function buildDatasetSubmissionUrl(
         
         appendOOUIButtons() {
             document.getElementById('verifier-close-btn-container').appendChild(this.buttons.close.$element[0]);
+            document.getElementById('verifier-settings-btn-container').appendChild(this.buttons.settings.$element[0]);
             document.getElementById('verifier-provider-container').appendChild(this.buttons.providerSelect.$element[0]);
-            
+            document.getElementById('verifier-settings-done-container').appendChild(this.buttons.settingsDone.$element[0]);
+
             this.updateProviderInfo();
             this.updateButtonVisibility();
             
@@ -2684,6 +2994,30 @@ function buildDatasetSubmissionUrl(
                 infoEl.textContent = this.t('API key required for {name}', { name: provider.name });
                 infoEl.className = '';
             }
+
+            // The model identity lives here rather than in the sidebar chrome:
+            // nobody picks between model names day to day, but it has to stay
+            // discoverable because the generated wikitext cites it.
+            const model = document.createElement('div');
+            model.id = 'verifier-provider-model';
+            model.textContent = this.t('Model: {model}', { model: provider.model });
+            infoEl.appendChild(model);
+        }
+
+        // Published accuracy, in the panel rather than in documentation, so the
+        // expectation is set before the first false positive instead of after.
+        // Figures come from benchmark/analysis.json (186 human-labelled rows).
+        updateAccuracyNote() {
+            const el = document.getElementById('verifier-accuracy-note');
+            if (!el) return;
+            el.textContent = '';
+
+            const heading = document.createElement('strong');
+            heading.textContent = this.t('How accurate is this?');
+            const body = document.createElement('div');
+            body.textContent = this.t('Measured against 186 human-labelled citations, a "not supported" flag was confirmed by a reviewer roughly two thirds of the time. Treat every verdict as a reason to read the source, not as a conclusion.');
+            el.appendChild(heading);
+            el.appendChild(body);
         }
         
         updateButtonVisibility() {
@@ -2696,6 +3030,12 @@ function buildDatasetSubmissionUrl(
             const requiresKey = this.providerRequiresKey();
             const optionalKey = this.providers[this.currentProvider].optionalKey;
 
+            // The main container holds only the actions a reader takes on the
+            // article. Key management moved into the settings panel, where it is
+            // needed once rather than on every check.
+            const keyContainer = document.getElementById('verifier-key-buttons');
+            if (keyContainer) keyContainer.innerHTML = '';
+
             if (!requiresKey || hasKey) {
                 // Provider is ready to use
                 if (this.reportRunning) {
@@ -2703,7 +3043,12 @@ function buildDatasetSubmissionUrl(
                 } else {
                     const hasClaimAndSource = this.activeClaim && this.activeSource;
                     this.buttons.verify.setDisabled(!hasClaimAndSource);
-                    container.appendChild(this.buttons.verify.$element[0]);
+                    // With no claim selected there is nothing to verify, so the
+                    // whole-article action stands alone rather than sitting
+                    // beneath a permanently disabled button.
+                    if (this.activeClaim) {
+                        container.appendChild(this.buttons.verify.$element[0]);
+                    }
                     container.appendChild(this.buttons.verifyAll.$element[0]);
 
                     if (this.hasReport && !this.reportMode) {
@@ -2711,29 +3056,26 @@ function buildDatasetSubmissionUrl(
                     }
                 }
 
-                const privacyNote = document.createElement('div');
-                privacyNote.style.cssText = 'font-size: 11px; color: #72777d; margin-top: 4px;';
-                privacyNote.textContent = this.t('Results are logged for research. Your username is not recorded.');
-                container.appendChild(privacyNote);
-
                 // Key-management buttons: required-key providers always show
                 // change/remove; optional-key providers show change/remove
                 // when a key is stored. The "set key" affordance for the
                 // optional-no-key case lives as an inline link inside
                 // updateProviderInfo() so it doesn't compete with Verify.
-                if (!this.reportRunning) {
-                    if (requiresKey || (optionalKey && hasKey)) {
-                        container.appendChild(this.buttons.changeKey.$element[0]);
-                        container.appendChild(this.buttons.removeKey.$element[0]);
-                    }
+                if (keyContainer && (requiresKey || (optionalKey && hasKey))) {
+                    keyContainer.appendChild(this.buttons.changeKey.$element[0]);
+                    keyContainer.appendChild(this.buttons.removeKey.$element[0]);
                 }
             } else {
-                // Provider needs a key
+                // Provider needs a key. Point at settings from the main view
+                // instead of putting the key form in the reader's way.
                 this.buttons.verify.setDisabled(true);
-                container.appendChild(this.buttons.setKey.$element[0]);
+                if (keyContainer) keyContainer.appendChild(this.buttons.setKey.$element[0]);
+                container.appendChild(this.buttons.openSettings.$element[0]);
             }
-            
+
             this.updateProviderInfo();
+            this.updateAccuracyNote();
+            this.updateStatusStrip();
         }
         
         createVerifierTab() {
@@ -2849,6 +3191,9 @@ function buildDatasetSubmissionUrl(
 
                 document.getElementById('verifier-claim-text').textContent = claim;
                 this.renderClaimGroupIndicator(refElement);
+                // Selecting a claim leaves the idle state; the claim and source
+                // sections only exist on screen from here on.
+                this.renderUiState();
 
                 const refUrl = this.extractReferenceUrl(refElement);
                 this.activeSourceUrl = refUrl;
@@ -3194,6 +3539,28 @@ function buildDatasetSubmissionUrl(
             this.buttons.close.on('click', () => {
                 this.hideSidebar();
             });
+
+            // The gear toggles, so a second click backs out the way a user expects.
+            this.buttons.settings.on('click', () => {
+                if (this.settingsOpen) this.closeSettings();
+                else this.openSettings();
+            });
+
+            this.buttons.settingsDone.on('click', () => {
+                this.closeSettings();
+            });
+
+            this.buttons.openSettings.on('click', () => {
+                this.openSettings();
+            });
+
+            const statusSettingsLink = document.getElementById('verifier-status-settings');
+            if (statusSettingsLink) {
+                statusSettingsLink.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    this.openSettings();
+                });
+            }
             
             this.buttons.providerSelect.getMenu().on('select', (item) => {
                 this.currentProvider = item.getData();
@@ -3449,6 +3816,11 @@ function buildDatasetSubmissionUrl(
                 document.getElementById('verifier-verdict').textContent = this.t('ERROR');
                 document.getElementById('verifier-verdict').className = 'source-unavailable';
                 document.getElementById('verifier-comments').textContent = error.message;
+                // The results section is only on screen when there is something
+                // to show, and a failure counts — without this the error would
+                // be written into a hidden element.
+                this.hasResult = true;
+                this.renderUiState();
             } finally {
                 if (verifyId === this.currentVerifyId) {
                     this.buttons.verify.setLabel(this.t('Verify Claim'));
@@ -3508,6 +3880,17 @@ function buildDatasetSubmissionUrl(
 	    }
 
 	    commentsEl.textContent = result.comments;
+
+	    const nextEl = document.getElementById('verifier-verdict-next');
+	    if (nextEl) {
+	        const next = this.nextStepFor(result.verdict);
+	        nextEl.textContent = next;
+	        nextEl.style.display = next ? '' : 'none';
+	    }
+
+	    this.hasResult = true;
+	    this.renderUiState();
+
 	    console.log('[Verifier] Verdict for action button:', JSON.stringify(result.verdict));
 	    this.showActionButton(result.verdict, result.comments);
 	}
@@ -3587,23 +3970,15 @@ function buildDatasetSubmissionUrl(
 
         showReportView() {
             this.reportMode = true;
-            // Hide single-citation sections
-            document.getElementById('verifier-claim-section').style.display = 'none';
-            document.getElementById('verifier-source-section').style.display = 'none';
-            document.getElementById('verifier-results').style.display = 'none';
-            // Show report view
-            document.getElementById('verifier-report-view').style.display = 'block';
+            this.settingsOpen = false;
+            this.renderUiState();
             this.updateButtonVisibility();
         }
 
         showSingleCitationView() {
             this.reportMode = false;
-            // Show single-citation sections
-            document.getElementById('verifier-claim-section').style.display = '';
-            document.getElementById('verifier-source-section').style.display = '';
-            document.getElementById('verifier-results').style.display = '';
-            // Hide report view
-            document.getElementById('verifier-report-view').style.display = 'none';
+            this.settingsOpen = false;
+            this.renderUiState();
             this.refreshOverrideButton();
             this.updateButtonVisibility();
         }
@@ -4706,8 +5081,12 @@ function buildDatasetSubmissionUrl(
                 verdictEl.className = '';
             }
             if (commentsEl) {
-                commentsEl.textContent = this.t('Click "Verify Claim" to verify the selected claim against the source.');
+                commentsEl.textContent = '';
             }
+            const nextEl = document.getElementById('verifier-verdict-next');
+            if (nextEl) nextEl.textContent = '';
+            this.hasResult = false;
+            this.renderUiState();
             const actionContainer = document.getElementById('verifier-action-container');
             if (actionContainer) {
                 actionContainer.innerHTML = '';
