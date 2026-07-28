@@ -1841,6 +1841,9 @@ function buildDatasetSubmissionUrl(
                     /* The logo keeps fixed brand colors, so it needs a light
                        plate to sit on over the accent header — in both themes. */
                     --sv-logo-plate: #fff;
+                    /* Hover wash for the header controls: a white veil over the
+                       accent, so it is the same in both themes. */
+                    --sv-header-hover: rgba(255,255,255,0.18);
                     --sv-bg-2: #f8f9fa;
                     --sv-bg-3: #fafafa;
                     --sv-bg-inset: #f6f8fb;
@@ -1927,6 +1930,7 @@ function buildDatasetSubmissionUrl(
                     --sv-bg: #1a1a2e;
                     --sv-bg-card: #2a2a3e;
                     --sv-logo-plate: #fff;
+                    --sv-header-hover: rgba(255,255,255,0.18);
                     --sv-bg-2: #2a2a3e;
                     --sv-bg-3: #2a2a3e;
                     --sv-bg-inset: #232336;
@@ -2001,7 +2005,11 @@ function buildDatasetSubmissionUrl(
                 ${root} #source-verifier-sidebar .oo-ui-dropdownWidget .oo-ui-labelElement-label {
                     color: var(--sv-ink) !important;
                 }
-                ${root} #source-verifier-sidebar .oo-ui-buttonElement-button {
+                /* Framed buttons only. A frameless button is deliberately
+                   chrome-less — the header controls, the "paste source text"
+                   link — so giving it a filled background turns it into a box
+                   that wasn't asked for. */
+                ${root} #source-verifier-sidebar .oo-ui-buttonElement-framed > .oo-ui-buttonElement-button {
                     background: var(--sv-bg-2) !important;
                     color: var(--sv-ink) !important;
                     border-color: var(--sv-border) !important;
@@ -2229,7 +2237,29 @@ function buildDatasetSubmissionUrl(
                 }
                 #verifier-sidebar-controls {
                     display: flex;
-                    gap: 8px;
+                    gap: 4px;
+                }
+                /* The header sits on the accent colour in both themes, so its
+                   controls are always white-on-purple rather than following the
+                   panel's ink. The double-id specificity is what lets these beat
+                   the theme-wide OOUI overrides in darkOnlyStyles(). */
+                #source-verifier-sidebar #verifier-sidebar-header .oo-ui-buttonElement-button {
+                    background: transparent !important;
+                    border-color: transparent !important;
+                    box-shadow: none !important;
+                }
+                #source-verifier-sidebar #verifier-sidebar-header .oo-ui-buttonElement-button:hover {
+                    background: var(--sv-header-hover) !important;
+                }
+                /* brightness(0) flattens the icon to black whatever it started
+                   as, then invert(1) makes it white — reliable for OOUI's
+                   bitmap-ish icons in either theme. */
+                #source-verifier-sidebar #verifier-sidebar-header .oo-ui-iconElement-icon {
+                    filter: brightness(0) invert(1) !important;
+                    opacity: 0.9;
+                }
+                #source-verifier-sidebar #verifier-sidebar-header .oo-ui-buttonElement-button:hover .oo-ui-iconElement-icon {
+                    opacity: 1;
                 }
                 #verifier-sidebar-content {
                     background: var(--sv-bg);

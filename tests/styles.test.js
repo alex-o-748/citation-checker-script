@@ -184,6 +184,26 @@ test('the accent mark is legible against the dark panel background', () => {
   );
 });
 
+// A frameless OOUI button is chrome-less on purpose — the header gear and
+// close, the "paste source text manually" link. An unscoped dark-mode
+// background override turns each of them into a filled box.
+test('the dark-mode button background only targets framed buttons', () => {
+  const css = generateCss();
+  const rules = css.match(/[^{}]*\.oo-ui-buttonElement-button \{[^}]*background:[^}]*\}/g) || [];
+  const unscoped = rules.filter((rule) => {
+    const selector = rule.slice(0, rule.indexOf('{'));
+    if (!selector.includes('skin-theme-clientpref')) return false;
+    // Flagged (primary/destructive) rules and the header's own overrides are
+    // intentionally specific; the broad catch-all is the one that must be framed.
+    if (selector.includes('oo-ui-flaggedElement') || selector.includes('verifier-sidebar-header')) return false;
+    return !selector.includes('oo-ui-buttonElement-framed');
+  });
+  assert.deepEqual(
+    unscoped, [],
+    `these rules paint a background on every button, frameless ones included:\n${unscoped.join('\n')}`
+  );
+});
+
 test('token values stay in sync with the selected provider accent', () => {
   const css = generateCss('#123456');
   assert.ok(css.includes('--sv-accent: #123456;'), 'accent token does not track getCurrentColor()');
