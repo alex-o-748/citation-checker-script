@@ -88,6 +88,17 @@ test('every --sv-* token used is defined in the base :root block', () => {
   );
 });
 
+// Keeps the token set honest: a token left behind after the component that
+// used it was removed is dead weight that later readers have to reason about.
+test('no token is defined but never used', () => {
+  const css = generateCss();
+  const defined = tokensIn(css, LIGHT_BLOCK);
+  const used = new Set([...css.matchAll(/var\((--sv-[a-z0-9-]+)\)/g)].map((m) => m[1]));
+
+  const unused = [...defined].filter((t) => !used.has(t));
+  assert.deepEqual(unused, [], `these tokens are defined but referenced nowhere: ${unused.join(', ')}`);
+});
+
 test('dark tokens all have a light-mode counterpart', () => {
   const css = generateCss();
   const light = tokensIn(css, LIGHT_BLOCK);

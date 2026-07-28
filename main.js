@@ -1699,12 +1699,18 @@ function buildDatasetSubmissionUrl(
 
         // The logo mark from assets/logo/sv_logo.svg, wordmark omitted (the
         // header already says "Source Verifier"). Inlined because a userscript
-        // can't reference a repository file, and currentColor is deliberately
-        // not used — these are fixed brand colors on the accent header.
+        // can't reference a repository file.
+        //
+        // This is the reversed variant: the header is always the accent purple,
+        // and the V is that same purple, so it is knocked out to white and the
+        // bar shows through it. The teal S and amber glass sit on the purple
+        // unaided at 3.7:1 and 4.0:1, clear of the 3:1 floor for non-text marks.
+        // Without the knockout the V is invisible, which is what the white
+        // backing plate used to paper over.
         logoMarkSvg() {
             return `<svg id="verifier-logo" viewBox="2 0 65 50" aria-hidden="true" focusable="false">
-                <path d="M 38,47 L 38,32 L 24,3 L 13,3 Z" fill="#6B21A8"/>
-                <path d="M 63,3 L 52,3 L 38,32 L 38,47 Z" fill="#6B21A8"/>
+                <path d="M 38,47 L 38,32 L 24,3 L 13,3 Z" fill="#ffffff"/>
+                <path d="M 63,3 L 52,3 L 38,32 L 38,47 Z" fill="#ffffff"/>
                 <path d="M 25.456,6.351 A 13,13 0 1 0 25.456,27.649 L 21.728,22.324 A 6.5,6.5 0 1 1 21.728,11.676 Z" fill="#1abea0"/>
                 <path d="M 17.544,43.649 A 13,13 0 1 0 17.544,22.351 L 21.272,27.676 A 6.5,6.5 0 1 1 21.272,38.324 Z" fill="#1abea0"/>
                 <path d="M 63.479,10.678 A 6.5,6.5 0 1 0 53.176,10.228 L 56.862,7.647 A 2,2 0 1 1 60.032,7.786 Z" fill="#e6a23c"/>
@@ -1838,9 +1844,6 @@ function buildDatasetSubmissionUrl(
                     /* Surfaces */
                     --sv-bg: #fff;
                     --sv-bg-card: #fff;
-                    /* The logo keeps fixed brand colors, so it needs a light
-                       plate to sit on over the accent header — in both themes. */
-                    --sv-logo-plate: #fff;
                     /* Hover wash for the header controls: a white veil over the
                        accent, so it is the same in both themes. */
                     --sv-header-hover: rgba(255,255,255,0.18);
@@ -1929,7 +1932,6 @@ function buildDatasetSubmissionUrl(
 
                     --sv-bg: #1a1a2e;
                     --sv-bg-card: #2a2a3e;
-                    --sv-logo-plate: #fff;
                     --sv-header-hover: rgba(255,255,255,0.18);
                     --sv-bg-2: #2a2a3e;
                     --sv-bg-3: #2a2a3e;
@@ -2112,14 +2114,10 @@ function buildDatasetSubmissionUrl(
                     flex: 1;
                 }
                 #verifier-logo {
-                    width: 24px;
-                    height: 19px;
+                    width: 26px;
+                    height: 20px;
                     flex-shrink: 0;
                     display: block;
-                    background: var(--sv-logo-plate);
-                    border-radius: 3px;
-                    padding: 2px 3px;
-                    box-sizing: content-box;
                 }
                 #verifier-status-strip {
                     display: flex;
