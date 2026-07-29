@@ -77,6 +77,7 @@ docs/                            # Reference docs + design plans (see docs/READM
 | `verifyAllCitations()` | Batch verify all article citations |
 | `verifyGroupCollective()` | Collective verdict for an adjacent-citation group (combines the group's sources into one LLM call; see `docs/design-plans/2026-06-23-collective-group-verification.md`) |
 | `getReportUnits()` | Merge per-source results + collective group verdicts into one entry per claim (drives summary pills + exports) |
+| `createEditSectionButton()` / `openEditSection()` | "Edit Section" link. `?action=edit&section=N` is an ordinal into the *current* wikitext, so a number derived from the rendered page expires the moment anyone inserts a section above it. The href carries the rendered revision's number (for middle-click), and the click handler re-resolves the section by its anchor against `action=parse&prop=sections` before navigating. See `core/sections.js` |
 | `generateWikitextReport()` | Generate wiki markup for failed citations |
 
 ## Benchmark Suite

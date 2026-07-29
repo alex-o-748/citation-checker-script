@@ -1,7 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
-import { findSectionNumber, sectionIndexOfHeading, auditSectionNumbering } from '../core/sections.js';
+import {
+    findSectionNumber,
+    sectionIndexOfHeading,
+    sectionTargetFor,
+    resolveSectionIndex,
+    auditSectionNumbering,
+} from '../core/sections.js';
 
 // MW 1.43+ heading output: the <hN> and its [edit] link share a .mw-heading
 // wrapper. `section` is the index MediaWiki assigned; pass null for a heading
@@ -95,4 +101,86 @@ test('auditSectionNumbering flags where the count and MediaWiki disagree', () =>
     const rows = auditSectionNumbering(doc);
     assert.deepEqual(rows.map(r => r.matches), [true, false]);
     assert.deepEqual(rows.map(r => [r.counted, r.actual]), [[1, 1], [2, 5]]);
+});
+
+// --- surviving edits made after the page was rendered -----------------------
+
+// action=parse&prop=sections shape, trimmed to the fields we use.
+function apiSections(...entries) {
+    return entries.map(([index, line, anchor]) => ({ index: String(index), line, anchor, level: '2' }));
+}
+
+test('sectionTargetFor captures the anchor alongside the rendered index', () => {
+    const doc = build(`${heading(2, 'Reception', 4)}<p>Claim ${ref('r')}</p>`);
+    assert.deepEqual(sectionTargetFor(doc.getElementById('r')), {
+        index: 4,
+        anchor: 'Reception',
+        line: 'Reception',
+    });
+});
+
+test('sectionTargetFor reads the anchor off pre-1.43 .mw-headline markup', () => {
+    const doc = build(`
+        <h2><span class="mw-headline" id="Legacy_anchor">Legacy</span><span class="mw-editsection"><a href="/w/index.php?title=T&amp;action=edit&amp;section=2">edit</a></span></h2>
+        <p>Claim ${ref('r')}</p>
+    `);
+    assert.deepEqual(sectionTargetFor(doc.getElementById('r')), {
+        index: 2,
+        anchor: 'Legacy_anchor',
+        line: 'Legacy',
+    });
+});
+
+test('sectionTargetFor reports the lead as section 0 with no anchor', () => {
+    const doc = build(`<p>Lead ${ref('r')}</p>${heading(2, 'History', 1)}`);
+    assert.deepEqual(sectionTargetFor(doc.getElementById('r')), { index: 0, anchor: null, line: null });
+});
+
+test('resolveSectionIndex follows a section that shifted down after new sections were added', () => {
+    // The regression this whole path exists for: the button was built when
+    // "Reception" was section 4, then four sections were inserted above it.
+    const target = { index: 4, anchor: 'Reception', line: 'Reception' };
+    const live = apiSections(
+        [1, 'Background', 'Background'], [2, 'Origins', 'Origins'], [3, 'Design', 'Design'],
+        [4, 'Development', 'Development'], [5, 'Release', 'Release'],
+        [8, 'Reception', 'Reception'],
+    );
+    assert.equal(resolveSectionIndex(live, target), 8);
+});
+
+test('resolveSectionIndex matches on heading text when the anchor changed', () => {
+    const target = { index: 2, anchor: 'Reception', line: 'Reception' };
+    const live = apiSections([1, 'Background', 'Background'], [4, 'Reception', 'Reception_2']);
+    assert.equal(resolveSectionIndex(live, target), 4);
+});
+
+test('resolveSectionIndex picks the nearest match when heading text repeats', () => {
+    const target = { index: 7, anchor: null, line: 'Notes' };
+    const live = apiSections([2, 'Notes', 'Notes'], [8, 'Notes', 'Notes_2'], [14, 'Notes', 'Notes_3']);
+    assert.equal(resolveSectionIndex(live, target), 8);
+});
+
+test('resolveSectionIndex strips markup from the API line before comparing', () => {
+    const target = { index: 3, anchor: 'Nope', line: 'The Times review' };
+    const live = apiSections([5, 'The <i>Times</i> review', 'The_Times_review_2']);
+    assert.equal(resolveSectionIndex(live, target), 5);
+});
+
+test('resolveSectionIndex returns null when the section is gone', () => {
+    const target = { index: 4, anchor: 'Reception', line: 'Reception' };
+    const live = apiSections([1, 'Background', 'Background'], [2, 'Legacy', 'Legacy']);
+    assert.equal(resolveSectionIndex(live, target), null);
+});
+
+test('resolveSectionIndex keeps the lead at 0 and ignores transcluded entries', () => {
+    assert.equal(resolveSectionIndex(apiSections([1, 'A', 'A']), { index: 0, anchor: null, line: null }), 0);
+    const live = [{ index: 'T-1', line: 'Template heading', anchor: 'Template_heading' }, ...apiSections([1, 'Real', 'Real'])];
+    assert.equal(resolveSectionIndex(live, { index: 1, anchor: 'Template_heading', line: 'Template heading' }), null);
+});
+
+test('resolveSectionIndex tolerates a missing or malformed section list', () => {
+    const target = { index: 4, anchor: 'Reception', line: 'Reception' };
+    assert.equal(resolveSectionIndex(null, target), null);
+    assert.equal(resolveSectionIndex(undefined, target), null);
+    assert.equal(resolveSectionIndex(apiSections([1, 'A', 'A']), null), null);
 });

@@ -806,6 +806,90 @@ function findSectionNumber(refElement, doc = refElement && refElement.ownerDocum
     return sawEditLink ? 0 : before.filter(h => h.tagName !== 'H1').length;
 }
 
+// The anchor MediaWiki gave a heading (`#History`), which is what identifies a
+// section independently of its position. MW 1.43+ puts the id on the <hN>
+// itself; older output puts it on an inner <span class="mw-headline">.
+function anchorOfHeading(heading) {
+    if (heading.id) return heading.id;
+    const headline = heading.querySelector('.mw-headline[id]');
+    return headline ? headline.id : null;
+}
+
+function headingText(heading) {
+    const clone = heading.cloneNode(true);
+    for (const el of clone.querySelectorAll('.mw-editsection')) el.remove();
+    return (clone.textContent || '').replace(/\s+/g, ' ').trim();
+}
+
+// Everything we know about the section a citation sits in: the index as of the
+// revision the browser rendered, plus the anchor and heading text that identify
+// it no matter how the article is edited afterwards.
+//
+// The index alone is a position, and positions expire. A section inserted above
+// this one after the page was rendered shifts every index below it, and
+// `?action=edit&section=N` is resolved against the *current* wikitext — so a
+// link built from a stale render silently opens a different section. The anchor
+// survives that; re-resolve it against the live section list before navigating
+// (see resolveSectionIndex).
+function sectionTargetFor(refElement, doc = refElement && refElement.ownerDocument) {
+    if (!refElement || !doc) return null;
+    const root = contentRoot(doc);
+    if (!root) return null;
+
+    const before = headingsBefore(refElement, root);
+    for (let i = before.length - 1; i >= 0; i--) {
+        const index = sectionIndexOfHeading(before[i]);
+        if (index === null) continue;
+        return { index, anchor: anchorOfHeading(before[i]), line: headingText(before[i]) };
+    }
+    // The lead has no heading, and no edit link to read an index from, but it is
+    // always section 0 — that never shifts.
+    return { index: findSectionNumber(refElement, doc), anchor: null, line: null };
+}
+
+// Given the live section list from action=parse&prop=sections, returns the
+// index that currently addresses `target`'s section, or null when it can no
+// longer be found (heading renamed or removed — the caller should fall back to
+// editing the whole page rather than guessing a neighbour).
+//
+// Anchors are unique per page (MediaWiki disambiguates repeats with _2, _3), so
+// they are matched first. Heading text is the fallback for the case where an
+// anchor changed but the wording did not.
+function resolveSectionIndex(sections, target) {
+    if (!target) return null;
+    if (target.index === 0) return 0;
+    if (!Array.isArray(sections)) return null;
+
+    const numbered = sections
+        .map(section => ({
+            index: Number.parseInt(String(section.index), 10),
+            anchor: section.anchor,
+            line: typeof section.line === 'string' ? section.line.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim() : '',
+        }))
+        // `T-n` entries belong to a transcluded template, not to this page's
+        // wikitext, and parseInt would read "T-1" as NaN anyway.
+        .filter(section => Number.isInteger(section.index) && section.index > 0);
+
+    if (target.anchor) {
+        const hit = numbered.find(section => section.anchor === target.anchor);
+        if (hit) return hit.index;
+    }
+
+    if (target.line) {
+        const byText = numbered.filter(section => section.line === target.line);
+        if (byText.length === 1) return byText[0].index;
+        if (byText.length > 1) {
+            // Duplicate heading text: take whichever sits closest to where the
+            // section was when the page rendered.
+            return byText.reduce((best, section) =>
+                Math.abs(section.index - target.index) < Math.abs(best.index - target.index) ? section : best
+            ).index;
+        }
+    }
+
+    return null;
+}
+
 // Debug aid: pairs every heading in the article body with the index a naive
 // ordinal count would give it and the index MediaWiki actually assigned, so a
 // divergence can be located on a specific page.
@@ -1635,6 +1719,8 @@ function buildDatasetSubmissionUrl(
             this.sourceTextInput = null;
             this.sourceInputForOverride = false;
             this._pdfJsLoading = null;
+            this.liveSectionsPromise = null;
+            this.liveSectionsFetchedAt = 0;
 
             // View state. settingsOpen and reportMode are mutually exclusive
             // views; hasResult tracks whether there is a verdict worth showing.
@@ -4378,14 +4464,7 @@ function buildDatasetSubmissionUrl(
             actionDiv.className = 'report-card-action';
 
             if (result.refElement && (result.verdict === 'NOT SUPPORTED' || result.verdict === 'PARTIALLY SUPPORTED' || result.verdict === 'SOURCE UNAVAILABLE')) {
-                const editBtn = new OO.ui.ButtonWidget({
-                    label: this.t('Edit Section'),
-                    flags: ['progressive'],
-                    icon: 'edit',
-                    href: this.buildEditUrl(result.refElement),
-                    target: '_blank',
-                    framed: false
-                });
+                const editBtn = this.createEditSectionButton(result.refElement, { framed: false });
                 actionDiv.appendChild(editBtn.$element[0]);
             }
 
@@ -4425,14 +4504,7 @@ function buildDatasetSubmissionUrl(
             // the same article section by definition, so a per-row button
             // would just be repetition. Wire it to the first member's ref.
             if (firstResult.refElement) {
-                const editBtn = new OO.ui.ButtonWidget({
-                    label: this.t('Edit Section'),
-                    flags: ['progressive'],
-                    icon: 'edit',
-                    href: this.buildEditUrl(firstResult.refElement),
-                    target: '_blank',
-                    framed: false
-                });
+                const editBtn = this.createEditSectionButton(firstResult.refElement, { framed: false });
                 groupEl.querySelector('.verifier-report-group-edit').appendChild(editBtn.$element[0]);
             }
             return groupEl;
@@ -5123,9 +5195,9 @@ function buildDatasetSubmissionUrl(
             return findSectionNumber(el, document);
         }
 
-        buildEditUrl(refElement) {
+        buildEditUrl(refElement, sectionIndex) {
             const title = mw.config.get('wgPageName');
-            const section = this.findSectionNumber(refElement);
+            const section = sectionIndex === undefined ? this.findSectionNumber(refElement) : sectionIndex;
             const summary = 'source does not support claim (checked with [[User:Alaexis/AI_Source_Verification|Source Verifier]])';
 
             const params = { action: 'edit', summary: summary };
@@ -5136,6 +5208,88 @@ function buildDatasetSubmissionUrl(
             return mw.util.getUrl(title, params);
         }
 
+        // The live section list for this page, as MediaWiki numbers it *now*.
+        // Cached briefly so a burst of clicks in a report doesn't re-request it,
+        // but never for long: the whole point is to notice edits made since the
+        // page was rendered.
+        fetchLiveSections() {
+            const now = Date.now();
+            if (this.liveSectionsPromise && now - this.liveSectionsFetchedAt < 15000) {
+                return this.liveSectionsPromise;
+            }
+            this.liveSectionsFetchedAt = now;
+            this.liveSectionsPromise = new mw.Api().get({
+                action: 'parse',
+                page: mw.config.get('wgPageName'),
+                prop: 'sections',
+                redirects: 1,
+                formatversion: 2,
+            }).then(data => (data && data.parse && data.parse.sections) || null);
+            return this.liveSectionsPromise;
+        }
+
+        // Section numbers are ordinals into the current wikitext, so the number
+        // that was right when the citation was checked addresses a different
+        // section as soon as anyone inserts one above it — on a busy article,
+        // that can happen while the sidebar is still open. Re-resolve the
+        // section by its anchor at click time and navigate to wherever it lives
+        // now; fall back to editing the whole page rather than a wrong section.
+        async openEditSection(refElement, fallbackUrl) {
+            // Opened synchronously so the popup blocker still sees the click;
+            // the destination is filled in once the section list comes back.
+            const tab = window.open('', '_blank');
+            let url = fallbackUrl;
+
+            try {
+                const target = sectionTargetFor(refElement, document);
+                const sections = await this.fetchLiveSections();
+                if (sections) {
+                    const index = resolveSectionIndex(sections, target);
+                    if (index === null) {
+                        // Heading renamed or the section removed outright.
+                        console.warn('[Verifier] Section "%s" is gone from the current revision; opening the full page.', target && target.line);
+                        url = this.buildEditUrl(refElement, 0);
+                    } else {
+                        if (target && index !== target.index) {
+                            console.log('[Verifier] Article edited since it was rendered: section %d is now %d.', target.index, index);
+                        }
+                        url = this.buildEditUrl(refElement, index);
+                    }
+                }
+            } catch (error) {
+                console.warn('[Verifier] Could not re-resolve the section, using the rendered one:', error);
+            }
+
+            if (tab) tab.location = url;
+            else window.open(url, '_blank');
+        }
+
+        createEditSectionButton(refElement, { framed = true } = {}) {
+            const el = refElement || this.activeRefElement;
+            const btn = new OO.ui.ButtonWidget({
+                label: this.t('Edit Section'),
+                flags: ['progressive'],
+                icon: 'edit',
+                // Still a real href, so middle-click, "open in new tab" and
+                // copy-link keep working. It carries the rendered revision's
+                // number; the click handler upgrades it to the live one.
+                href: this.buildEditUrl(el),
+                target: '_blank',
+                framed,
+            });
+
+            const link = btn.$element[0].matches('a') ? btn.$element[0] : btn.$element[0].querySelector('a');
+            if (link && el) {
+                link.addEventListener('click', event => {
+                    // Leave modified clicks to the browser — they use the href.
+                    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+                    event.preventDefault();
+                    this.openEditSection(el, link.href);
+                });
+            }
+            return btn;
+        }
+
 
         showActionButton(verdict, comments = '') {
             const container = document.getElementById('verifier-action-container');
@@ -5144,14 +5298,7 @@ function buildDatasetSubmissionUrl(
             container.innerHTML = '';
 
             if (verdict === 'NOT SUPPORTED' || verdict === 'PARTIALLY SUPPORTED' || verdict === 'SOURCE UNAVAILABLE') {
-                const btn = new OO.ui.ButtonWidget({
-                    label: this.t('Edit Section'),
-                    flags: ['progressive'],
-                    icon: 'edit',
-                    href: this.buildEditUrl(),
-                    target: '_blank'
-                });
-                container.appendChild(btn.$element[0]);
+                container.appendChild(this.createEditSectionButton(this.activeRefElement).$element[0]);
             }
 
             if (verdict && verdict !== 'ERROR' && this.isDatasetSubmissionConfigured()) {

@@ -91,6 +91,90 @@ export function findSectionNumber(refElement, doc = refElement && refElement.own
     return sawEditLink ? 0 : before.filter(h => h.tagName !== 'H1').length;
 }
 
+// The anchor MediaWiki gave a heading (`#History`), which is what identifies a
+// section independently of its position. MW 1.43+ puts the id on the <hN>
+// itself; older output puts it on an inner <span class="mw-headline">.
+function anchorOfHeading(heading) {
+    if (heading.id) return heading.id;
+    const headline = heading.querySelector('.mw-headline[id]');
+    return headline ? headline.id : null;
+}
+
+function headingText(heading) {
+    const clone = heading.cloneNode(true);
+    for (const el of clone.querySelectorAll('.mw-editsection')) el.remove();
+    return (clone.textContent || '').replace(/\s+/g, ' ').trim();
+}
+
+// Everything we know about the section a citation sits in: the index as of the
+// revision the browser rendered, plus the anchor and heading text that identify
+// it no matter how the article is edited afterwards.
+//
+// The index alone is a position, and positions expire. A section inserted above
+// this one after the page was rendered shifts every index below it, and
+// `?action=edit&section=N` is resolved against the *current* wikitext — so a
+// link built from a stale render silently opens a different section. The anchor
+// survives that; re-resolve it against the live section list before navigating
+// (see resolveSectionIndex).
+export function sectionTargetFor(refElement, doc = refElement && refElement.ownerDocument) {
+    if (!refElement || !doc) return null;
+    const root = contentRoot(doc);
+    if (!root) return null;
+
+    const before = headingsBefore(refElement, root);
+    for (let i = before.length - 1; i >= 0; i--) {
+        const index = sectionIndexOfHeading(before[i]);
+        if (index === null) continue;
+        return { index, anchor: anchorOfHeading(before[i]), line: headingText(before[i]) };
+    }
+    // The lead has no heading, and no edit link to read an index from, but it is
+    // always section 0 — that never shifts.
+    return { index: findSectionNumber(refElement, doc), anchor: null, line: null };
+}
+
+// Given the live section list from action=parse&prop=sections, returns the
+// index that currently addresses `target`'s section, or null when it can no
+// longer be found (heading renamed or removed — the caller should fall back to
+// editing the whole page rather than guessing a neighbour).
+//
+// Anchors are unique per page (MediaWiki disambiguates repeats with _2, _3), so
+// they are matched first. Heading text is the fallback for the case where an
+// anchor changed but the wording did not.
+export function resolveSectionIndex(sections, target) {
+    if (!target) return null;
+    if (target.index === 0) return 0;
+    if (!Array.isArray(sections)) return null;
+
+    const numbered = sections
+        .map(section => ({
+            index: Number.parseInt(String(section.index), 10),
+            anchor: section.anchor,
+            line: typeof section.line === 'string' ? section.line.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim() : '',
+        }))
+        // `T-n` entries belong to a transcluded template, not to this page's
+        // wikitext, and parseInt would read "T-1" as NaN anyway.
+        .filter(section => Number.isInteger(section.index) && section.index > 0);
+
+    if (target.anchor) {
+        const hit = numbered.find(section => section.anchor === target.anchor);
+        if (hit) return hit.index;
+    }
+
+    if (target.line) {
+        const byText = numbered.filter(section => section.line === target.line);
+        if (byText.length === 1) return byText[0].index;
+        if (byText.length > 1) {
+            // Duplicate heading text: take whichever sits closest to where the
+            // section was when the page rendered.
+            return byText.reduce((best, section) =>
+                Math.abs(section.index - target.index) < Math.abs(best.index - target.index) ? section : best
+            ).index;
+        }
+    }
+
+    return null;
+}
+
 // Debug aid: pairs every heading in the article body with the index a naive
 // ordinal count would give it and the index MediaWiki actually assigned, so a
 // divergence can be located on a specific page.
