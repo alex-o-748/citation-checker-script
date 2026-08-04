@@ -14,6 +14,18 @@
 // Inlined into main.js between <core-injected> markers, and importable from
 // tests.
 
+// Where comments go. Deliberately the script's main talk page rather than a
+// dedicated feedback subpage: volume is low, it is the address already
+// advertised in the report footer, and concentrating discussion is worth more
+// than tidiness. If it ever gets noisy, archiving is a bot config change
+// rather than a redesign.
+export const FEEDBACK_TALK_PAGE = 'User talk:Alaexis/AI_Source_Verification';
+
+// Absolute, because the script also runs on other-language wikis where a
+// same-wiki link would resolve to a page that doesn't exist.
+export const FEEDBACK_TALK_PAGE_URL =
+    'https://en.wikipedia.org/wiki/User_talk:Alaexis/AI_Source_Verification';
+
 // Claim text and LLM rationale are unbounded in principle — a pathological
 // source or a runaway model response shouldn't push a multi-megabyte row into
 // the log table. Both are stored for interpretation, not verbatim archival.
@@ -66,4 +78,90 @@ export function buildLogPayload(fields = {}) {
         claim_text:      truncateForLog(fields.claimText),
         llm_comments:    truncateForLog(fields.comments),
     };
+}
+
+// Shapes the POST /feedback body. A row may carry a rating, a corrected
+// verdict, a pointer to a talk-page section, or any combination — the comment
+// flow sends a wiki_section with no rating, the thumbs send a rating with no
+// section, and a thumbs-down that then gets commented on sends both.
+//
+// No username: the sidebar promises that results are logged without recording
+// who ran them, and a rating is part of that promise. A talk-page comment is
+// signed, but that signature lives on the wiki, not in this table.
+export function buildFeedbackPayload(fields = {}) {
+    return {
+        check_id:          fields.checkId ?? null,
+        rating:            fields.rating ?? null,
+        corrected_verdict: fields.correctedVerdict ?? null,
+        wiki_section:      fields.wikiSection ?? null,
+        // Random per-browser token from localStorage. Dedupes repeat clicks
+        // and gives a rough distinct-user count; it is not derived from
+        // anything about the user.
+        client_id:         fields.clientId ?? null,
+    };
+}
+
+// Wraps machine-inserted text so it can't be read as wikitext. Whitespace is
+// collapsed because these land inline in a bullet list.
+export function nowikiWrap(text) {
+    const s = String(text ?? '')
+        .replace(/<\s*\/?\s*nowiki\s*\/?\s*>/gi, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+    return s ? `<nowiki>${s}</nowiki>` : '';
+}
+
+// MediaWiki titles cannot contain = < > [ ] { } | # _, so an article title is
+// already safe to drop into a heading; collapsing whitespace is enough. The
+// citation number comes from DOM text, so it gets filtered.
+export function buildTalkSectionTitle({ articleTitle, citationNumber, checkId } = {}) {
+    const title = String(articleTitle ?? '').replace(/\s+/g, ' ').trim() || 'Unknown article';
+    const num = String(citationNumber ?? '').replace(/[^\w.,\s-]/g, '').replace(/\s+/g, ' ').trim();
+    return `Feedback: ${title}${num ? ` [${num}]` : ''} (check ${checkId ?? 'unknown'})`;
+}
+
+// The check id appears twice on purpose: in the heading, where a human reading
+// the talk page can see which check is under discussion, and in a trailing
+// HTML comment, which is what the talk-page scraper can match on without
+// having to parse headings.
+export function buildTalkSectionBody(fields = {}) {
+    const {
+        articleUrl, articleTitle, citationNumber, claimText, sourceUrl,
+        verdict, comments, providerName, model, correctedVerdict, checkId, note,
+    } = fields;
+
+    const clean = v => String(v ?? '').replace(/\s+/g, ' ').trim();
+    const label = clean(articleTitle) || clean(articleUrl);
+    const lines = [];
+
+    if (articleUrl && label) {
+        const cite = clean(citationNumber);
+        lines.push(`* '''Article:''' [${encodeURI(String(articleUrl))} ${label}]${cite ? `, citation [${cite}]` : ''}`);
+    }
+    if (sourceUrl) {
+        // encodeURI neutralises {{ }} (the one wikitext construct a citation
+        // URL could plausibly smuggle in) while leaving the link clickable.
+        lines.push(`* '''Source:''' ${encodeURI(String(sourceUrl))}`);
+    }
+    if (verdict) {
+        const by = [clean(providerName), clean(model)].filter(Boolean).join(', ');
+        lines.push(`* '''Tool's verdict:''' ${clean(verdict)}${by ? ` (${by})` : ''}`);
+    }
+    if (correctedVerdict) {
+        lines.push(`* '''Editor says it should be:''' ${clean(correctedVerdict)}`);
+    }
+    const claim = nowikiWrap(claimText);
+    if (claim) lines.push(`* '''Claim checked:''' ${claim}`);
+    const reasoning = nowikiWrap(comments);
+    if (reasoning) lines.push(`* '''Tool's reasoning:''' ${reasoning}`);
+
+    const body = [lines.join('\n')];
+    const typed = String(note ?? '').trim();
+    // The note is the editor's own prose in their own signed edit, so it is
+    // left as wikitext rather than escaped.
+    if (typed) body.push(typed);
+    body.push('~~~~');
+    body.push(`<!-- source-verifier check: ${checkId ?? 'unknown'} -->`);
+
+    return body.filter(Boolean).join('\n\n');
 }

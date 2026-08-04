@@ -1127,6 +1127,20 @@ function logVerification(payload, { workerBase = 'https://publicai-proxy.alaexis
     }
 }
 
+// Ratings and talk-page pointers. Unlike logVerification this resolves, so the
+// UI can tell the user whether their rating actually landed — a silent no-op
+// on a button the user deliberately pressed would be worse than an error.
+function postFeedback(payload, { workerBase = 'https://publicai-proxy.alaexis.workers.dev' } = {}) {
+    return fetch(`${workerBase}/feedback`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+    }).then(res => {
+        if (!res.ok) throw new Error(`Feedback failed: HTTP ${res.status}`);
+        return true;
+    });
+}
+
 // --- core/feedback.js ---
 // Feedback helpers: the check identifier and the verification-log payload.
 //
@@ -1143,6 +1157,18 @@ function logVerification(payload, { workerBase = 'https://publicai-proxy.alaexis
 //
 // Inlined into main.js between <core-injected> markers, and importable from
 // tests.
+
+// Where comments go. Deliberately the script's main talk page rather than a
+// dedicated feedback subpage: volume is low, it is the address already
+// advertised in the report footer, and concentrating discussion is worth more
+// than tidiness. If it ever gets noisy, archiving is a bot config change
+// rather than a redesign.
+const FEEDBACK_TALK_PAGE = 'User talk:Alaexis/AI_Source_Verification';
+
+// Absolute, because the script also runs on other-language wikis where a
+// same-wiki link would resolve to a page that doesn't exist.
+const FEEDBACK_TALK_PAGE_URL =
+    'https://en.wikipedia.org/wiki/User_talk:Alaexis/AI_Source_Verification';
 
 // Claim text and LLM rationale are unbounded in principle — a pathological
 // source or a runaway model response shouldn't push a multi-megabyte row into
@@ -1196,6 +1222,92 @@ function buildLogPayload(fields = {}) {
         claim_text:      truncateForLog(fields.claimText),
         llm_comments:    truncateForLog(fields.comments),
     };
+}
+
+// Shapes the POST /feedback body. A row may carry a rating, a corrected
+// verdict, a pointer to a talk-page section, or any combination — the comment
+// flow sends a wiki_section with no rating, the thumbs send a rating with no
+// section, and a thumbs-down that then gets commented on sends both.
+//
+// No username: the sidebar promises that results are logged without recording
+// who ran them, and a rating is part of that promise. A talk-page comment is
+// signed, but that signature lives on the wiki, not in this table.
+function buildFeedbackPayload(fields = {}) {
+    return {
+        check_id:          fields.checkId ?? null,
+        rating:            fields.rating ?? null,
+        corrected_verdict: fields.correctedVerdict ?? null,
+        wiki_section:      fields.wikiSection ?? null,
+        // Random per-browser token from localStorage. Dedupes repeat clicks
+        // and gives a rough distinct-user count; it is not derived from
+        // anything about the user.
+        client_id:         fields.clientId ?? null,
+    };
+}
+
+// Wraps machine-inserted text so it can't be read as wikitext. Whitespace is
+// collapsed because these land inline in a bullet list.
+function nowikiWrap(text) {
+    const s = String(text ?? '')
+        .replace(/<\s*\/?\s*nowiki\s*\/?\s*>/gi, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+    return s ? `<nowiki>${s}</nowiki>` : '';
+}
+
+// MediaWiki titles cannot contain = < > [ ] { } | # _, so an article title is
+// already safe to drop into a heading; collapsing whitespace is enough. The
+// citation number comes from DOM text, so it gets filtered.
+function buildTalkSectionTitle({ articleTitle, citationNumber, checkId } = {}) {
+    const title = String(articleTitle ?? '').replace(/\s+/g, ' ').trim() || 'Unknown article';
+    const num = String(citationNumber ?? '').replace(/[^\w.,\s-]/g, '').replace(/\s+/g, ' ').trim();
+    return `Feedback: ${title}${num ? ` [${num}]` : ''} (check ${checkId ?? 'unknown'})`;
+}
+
+// The check id appears twice on purpose: in the heading, where a human reading
+// the talk page can see which check is under discussion, and in a trailing
+// HTML comment, which is what the talk-page scraper can match on without
+// having to parse headings.
+function buildTalkSectionBody(fields = {}) {
+    const {
+        articleUrl, articleTitle, citationNumber, claimText, sourceUrl,
+        verdict, comments, providerName, model, correctedVerdict, checkId, note,
+    } = fields;
+
+    const clean = v => String(v ?? '').replace(/\s+/g, ' ').trim();
+    const label = clean(articleTitle) || clean(articleUrl);
+    const lines = [];
+
+    if (articleUrl && label) {
+        const cite = clean(citationNumber);
+        lines.push(`* '''Article:''' [${encodeURI(String(articleUrl))} ${label}]${cite ? `, citation [${cite}]` : ''}`);
+    }
+    if (sourceUrl) {
+        // encodeURI neutralises {{ }} (the one wikitext construct a citation
+        // URL could plausibly smuggle in) while leaving the link clickable.
+        lines.push(`* '''Source:''' ${encodeURI(String(sourceUrl))}`);
+    }
+    if (verdict) {
+        const by = [clean(providerName), clean(model)].filter(Boolean).join(', ');
+        lines.push(`* '''Tool's verdict:''' ${clean(verdict)}${by ? ` (${by})` : ''}`);
+    }
+    if (correctedVerdict) {
+        lines.push(`* '''Editor says it should be:''' ${clean(correctedVerdict)}`);
+    }
+    const claim = nowikiWrap(claimText);
+    if (claim) lines.push(`* '''Claim checked:''' ${claim}`);
+    const reasoning = nowikiWrap(comments);
+    if (reasoning) lines.push(`* '''Tool's reasoning:''' ${reasoning}`);
+
+    const body = [lines.join('\n')];
+    const typed = String(note ?? '').trim();
+    // The note is the editor's own prose in their own signed edit, so it is
+    // left as wikitext rather than escaped.
+    if (typed) body.push(typed);
+    body.push('~~~~');
+    body.push(`<!-- source-verifier check: ${checkId ?? 'unknown'} -->`);
+
+    return body.filter(Boolean).join('\n\n');
 }
 
 // --- core/submission.js ---
@@ -1319,6 +1431,27 @@ function buildDatasetSubmissionUrl(
         'Back to Report': 'Retour au rapport',
         'Save': 'Enregistrer',
         'Give feedback': 'Donner un avis',
+
+        // Feedback controls
+        'Was this right?': 'Est-ce correct ?',
+        'This verdict looks right': 'Ce verdict semble correct',
+        'This verdict looks wrong': 'Ce verdict semble erroné',
+        'What should it have been?': 'Quel aurait dû être le verdict ?',
+        'Thanks — recorded.': 'Merci — c’est enregistré.',
+        'Could not record that, sorry.': 'Impossible d’enregistrer, désolé.',
+        'Comment': 'Commenter',
+        'Comment on talk page': 'Commenter sur la page de discussion',
+        'What did it get wrong, or what would you like to ask?':
+            'Qu’est-ce qui est erroné, ou que souhaitez-vous demander ?',
+        'Posted publicly to the script\'s talk page as {user}, along with the claim, the source and the verdict.':
+            'Publié publiquement sur la page de discussion du script en tant que {user}, avec l’affirmation, la source et le verdict.',
+        'Show exactly what will be posted': 'Voir exactement ce qui sera publié',
+        'Post to talk page': 'Publier sur la page de discussion',
+        'Write something first.': 'Écrivez d’abord quelque chose.',
+        'Posting…': 'Publication…',
+        'Posted to the talk page — thanks.': 'Publié sur la page de discussion — merci.',
+        'Could not post. You can still comment on the talk page directly.':
+            'Échec de la publication. Vous pouvez commenter directement sur la page de discussion.',
         'Edit Section': 'Modifier la section',
         'Copy Report (Wikitext)': 'Copier le rapport (wikicode)',
         'Copy Report (Plain Text)': 'Copier le rapport (texte brut)',
@@ -2770,12 +2903,88 @@ function buildDatasetSubmissionUrl(
                     font-size: 11px;
                     padding: 2px 4px;
                 }
-                .report-card-action .report-card-feedback-action .oo-ui-buttonElement-button .oo-ui-labelElement-label {
-                    color: var(--sv-quiet-fg);
-                    font-weight: normal;
+                .verifier-feedback {
+                    margin-top: 6px;
+                    padding-top: 6px;
+                    border-top: 1px solid var(--sv-border-2);
                 }
-                .report-card-action .report-card-feedback-action .oo-ui-iconElement-icon {
-                    opacity: 0.4 !important;
+                .verifier-feedback-row,
+                .verifier-feedback-correction {
+                    display: flex;
+                    align-items: center;
+                    flex-wrap: wrap;
+                    gap: 4px;
+                }
+                .verifier-feedback-correction {
+                    margin-top: 4px;
+                }
+                .verifier-feedback-prompt {
+                    color: var(--sv-ink-subtle);
+                    font-size: 11px;
+                }
+                .verifier-feedback .oo-ui-buttonElement {
+                    margin: 0;
+                }
+                .verifier-feedback .oo-ui-buttonElement-button {
+                    font-size: 11px;
+                    padding: 2px 6px;
+                }
+                .verifier-feedback .is-chosen .oo-ui-buttonElement-button {
+                    background: var(--sv-bg-chip-hover);
+                    border-radius: 2px;
+                }
+                .verifier-feedback-chip .oo-ui-buttonElement-button {
+                    border: 1px solid var(--sv-border-chip);
+                    border-radius: 10px;
+                    background: var(--sv-bg-chip-off);
+                    color: var(--sv-ink-chip-off);
+                }
+                .verifier-feedback-chip .oo-ui-buttonElement-button:hover {
+                    border-color: var(--sv-border-chip-hover);
+                    background: var(--sv-bg-chip-hover);
+                }
+                .verifier-feedback-comment {
+                    margin-top: 6px;
+                }
+                .verifier-feedback-comment-actions {
+                    display: flex;
+                    gap: 4px;
+                    margin-top: 4px;
+                }
+                .verifier-feedback-notice {
+                    color: var(--sv-ink-hint);
+                    font-size: 11px;
+                    margin-top: 4px;
+                }
+                .verifier-feedback-preview {
+                    font-size: 11px;
+                    margin-top: 4px;
+                }
+                .verifier-feedback-preview summary {
+                    color: var(--sv-ink-subtle);
+                    cursor: pointer;
+                }
+                .verifier-feedback-preview pre {
+                    background: var(--sv-bg-inset);
+                    border: 1px solid var(--sv-border-2);
+                    color: var(--sv-ink-3);
+                    padding: 6px;
+                    margin: 4px 0 0;
+                    max-height: 180px;
+                    overflow: auto;
+                    white-space: pre-wrap;
+                    word-break: break-word;
+                }
+                .verifier-feedback-status {
+                    color: var(--sv-ink-subtle);
+                    font-size: 11px;
+                    margin-top: 4px;
+                }
+                .verifier-feedback-status:empty {
+                    display: none;
+                }
+                .verifier-feedback-status.is-error {
+                    color: var(--sv-error-fg);
                 }
                 .report-card-header-actions {
                     display: flex;
@@ -4373,15 +4582,12 @@ function buildDatasetSubmissionUrl(
                 actionDiv.appendChild(editBtn.$element[0]);
             }
 
-            if (result.verdict && result.verdict !== 'ERROR' && this.isDatasetSubmissionConfigured()) {
-                const submitBtn = this.buildSubmitToDatasetButton(result);
-                submitBtn.$element.addClass('report-card-feedback-action');
-                actionDiv.appendChild(submitBtn.$element[0]);
-            }
-
             if (actionDiv.children.length) {
                 card.appendChild(actionDiv);
             }
+
+            const feedback = this.buildFeedbackControls(result);
+            if (feedback) card.appendChild(feedback);
             return card;
         }
 
@@ -4452,14 +4658,8 @@ function buildDatasetSubmissionUrl(
                 ${truncationHtml}
             `;
 
-            if (result.verdict && result.verdict !== 'ERROR' && this.isDatasetSubmissionConfigured()) {
-                const actionDiv = document.createElement('div');
-                actionDiv.className = 'report-card-action';
-                const submitBtn = this.buildSubmitToDatasetButton(result);
-                submitBtn.$element.addClass('report-card-feedback-action');
-                actionDiv.appendChild(submitBtn.$element[0]);
-                slot.appendChild(actionDiv);
-            }
+            const feedback = this.buildFeedbackControls(result);
+            if (feedback) slot.appendChild(feedback);
         }
 
         hideGroupCollectiveSlot(groupId) {
@@ -4493,14 +4693,8 @@ function buildDatasetSubmissionUrl(
             `;
             this.attachRefScrollHandler(row, result.refElement);
 
-            if (result.verdict && result.verdict !== 'ERROR' && this.isDatasetSubmissionConfigured()) {
-                const actionDiv = document.createElement('div');
-                actionDiv.className = 'report-card-action';
-                const submitBtn = this.buildSubmitToDatasetButton(result);
-                submitBtn.$element.addClass('report-card-feedback-action');
-                actionDiv.appendChild(submitBtn.$element[0]);
-                row.appendChild(actionDiv);
-            }
+            const feedback = this.buildFeedbackControls(result);
+            if (feedback) row.appendChild(feedback);
 
             return row;
         }
@@ -5177,16 +5371,15 @@ function buildDatasetSubmissionUrl(
                 container.appendChild(btn.$element[0]);
             }
 
-            if (verdict && verdict !== 'ERROR' && this.isDatasetSubmissionConfigured()) {
-                const submitBtn = this.buildSubmitToDatasetButton({
-                    citationNumber: this.activeCitationNumber,
-                    claimText: this.activeClaim,
-                    url: this.activeSourceUrl,
-                    verdict,
-                    comments,
-                });
-                container.appendChild(submitBtn.$element[0]);
-            }
+            const feedback = this.buildFeedbackControls({
+                checkId: this.activeCheckId,
+                citationNumber: this.activeCitationNumber,
+                claimText: this.activeClaim,
+                url: this.activeSourceUrl,
+                verdict,
+                comments,
+            });
+            if (feedback) container.appendChild(feedback);
         }
 
         isDatasetSubmissionConfigured() {
@@ -5211,14 +5404,268 @@ function buildDatasetSubmissionUrl(
             });
         }
 
-        buildSubmitToDatasetButton(result, { label = 'Give feedback' } = {}) {
-            return new OO.ui.ButtonWidget({
-                label: this.t(label),
-                icon: 'feedback',
-                framed: false,
-                href: this.buildDatasetSubmissionUrl(result),
-                target: '_blank',
+        // ========================================
+        // FEEDBACK
+        // ========================================
+        //
+        // Two destinations, split by what the feedback actually is. A rating
+        // is a datapoint: high volume, only useful aggregated, so it goes
+        // straight to the worker keyed on the check id. A comment is a
+        // conversation: it needs to be public, and it needs to support
+        // follow-up questions, so it goes on-wiki as a talk-page section. The
+        // check id appears on both sides, which is what lets them be joined.
+
+        // Random per-browser token, minted once. Lets repeat clicks from one
+        // browser be collapsed without recording anything about the user.
+        getFeedbackClientId() {
+            try {
+                let id = localStorage.getItem('verifier_feedback_client_id');
+                if (!id) {
+                    id = newCheckId() + newCheckId();
+                    localStorage.setItem('verifier_feedback_client_id', id);
+                }
+                return id;
+            } catch (e) {
+                return null;  // private mode, or storage disabled
+            }
+        }
+
+        sendFeedback(fields) {
+            return postFeedback(buildFeedbackPayload({
+                ...fields,
+                clientId: this.getFeedbackClientId(),
+            }));
+        }
+
+        // Comments always land on the en.wikipedia talk page, even when the
+        // script is running on another wiki — so a plain mw.Api (which posts
+        // to the current wiki) is only correct on en.
+        async getTalkPageApi() {
+            if (typeof mw !== 'undefined' && mw.config.get('wgServerName') === 'en.wikipedia.org') {
+                return new mw.Api();
+            }
+            await mw.loader.using('mediawiki.ForeignApi');
+            return new mw.ForeignApi('https://en.wikipedia.org/w/api.php');
+        }
+
+        // Everything the feedback controls need about one displayed verdict,
+        // from either a report result object or the sidebar's active state.
+        feedbackContextFor(result) {
+            const provider = this.providers[this.currentProvider] || {};
+            return {
+                checkId: result?.checkId ?? null,
+                articleUrl: (typeof window !== 'undefined' && window.location)
+                    ? `${window.location.origin}${window.location.pathname}`
+                    : '',
+                articleTitle: typeof mw !== 'undefined' ? mw.config.get('wgTitle') : document.title,
+                citationNumber: result?.citationNumber ?? '',
+                claimText: result?.claimText ?? '',
+                sourceUrl: result?.url ?? '',
+                verdict: result?.verdict ?? '',
+                comments: result?.comments ?? '',
+                providerName: result?.providerName || provider.name || '',
+                model: result?.model || provider.model || '',
+            };
+        }
+
+        // The 👍 / 👎 / comment row. Returns null when the check has no id —
+        // an unparseable or errored verdict has nothing to attach feedback to,
+        // and offering controls that silently go nowhere would be worse than
+        // offering none.
+        buildFeedbackControls(result) {
+            const context = this.feedbackContextFor(result);
+            if (!context.checkId) return null;
+
+            const wrap = document.createElement('div');
+            wrap.className = 'verifier-feedback';
+
+            const status = document.createElement('div');
+            status.className = 'verifier-feedback-status';
+            status.setAttribute('role', 'status');
+            const setStatus = (msg, isError = false) => {
+                status.textContent = msg;
+                status.classList.toggle('is-error', isError);
+            };
+
+            const row = document.createElement('div');
+            row.className = 'verifier-feedback-row';
+            const prompt = document.createElement('span');
+            prompt.className = 'verifier-feedback-prompt';
+            prompt.textContent = this.t('Was this right?');
+            row.appendChild(prompt);
+
+            const correction = document.createElement('div');
+            correction.className = 'verifier-feedback-correction';
+            correction.hidden = true;
+            let correctedVerdict = null;
+
+            const up = new OO.ui.ButtonWidget({ label: '👍', title: this.t('This verdict looks right'), framed: false });
+            const down = new OO.ui.ButtonWidget({ label: '👎', title: this.t('This verdict looks wrong'), framed: false });
+            const rate = (rating, button) => {
+                up.setDisabled(true);
+                down.setDisabled(true);
+                button.$element.addClass('is-chosen');
+                setStatus(this.t('Thanks — recorded.'));
+                this.sendFeedback({ checkId: context.checkId, rating })
+                    .catch(() => setStatus(this.t('Could not record that, sorry.'), true));
+                if (rating < 0) correction.hidden = false;
+            };
+            up.on('click', () => rate(1, up));
+            down.on('click', () => rate(-1, down));
+            row.appendChild(up.$element[0]);
+            row.appendChild(down.$element[0]);
+
+            // A thumbs-down plus one more click yields a labelled example —
+            // the same thing the Google Form existed to collect, at a fraction
+            // of the friction.
+            const correctionLabel = document.createElement('span');
+            correctionLabel.className = 'verifier-feedback-prompt';
+            correctionLabel.textContent = this.t('What should it have been?');
+            correction.appendChild(correctionLabel);
+            const chips = VERDICT_LIST.map(verdict => {
+                const chip = new OO.ui.ButtonWidget({ label: this.t(verdict), framed: false });
+                chip.$element.addClass('verifier-feedback-chip');
+                chip.on('click', () => {
+                    correctedVerdict = verdict;
+                    chips.forEach(c => c.setDisabled(true));
+                    chip.$element.addClass('is-chosen');
+                    setStatus(this.t('Thanks — recorded.'));
+                    // rating is omitted here: the thumbs-down already counted,
+                    // and a second row carrying it would double-count.
+                    this.sendFeedback({ checkId: context.checkId, correctedVerdict: verdict })
+                        .catch(() => setStatus(this.t('Could not record that, sorry.'), true));
+                });
+                correction.appendChild(chip.$element[0]);
+                return chip;
             });
+
+            const commentPanel = this.buildFeedbackCommentPanel(context, {
+                setStatus,
+                getCorrectedVerdict: () => correctedVerdict,
+            });
+            row.appendChild(commentPanel.button.$element[0]);
+
+            wrap.appendChild(row);
+            wrap.appendChild(correction);
+            if (commentPanel.panel) wrap.appendChild(commentPanel.panel);
+            wrap.appendChild(status);
+            return wrap;
+        }
+
+        // The comment half. Logged-out users get a plain link to the talk page
+        // instead of an in-place composer: posting needs an account, and a
+        // form that fails on submit is a worse experience than a link.
+        buildFeedbackCommentPanel(context, { setStatus, getCorrectedVerdict }) {
+            const userName = typeof mw !== 'undefined' ? mw.config.get('wgUserName') : null;
+            if (!userName) {
+                return {
+                    button: new OO.ui.ButtonWidget({
+                        label: this.t('Comment on talk page'),
+                        icon: 'feedback',
+                        framed: false,
+                        href: FEEDBACK_TALK_PAGE_URL,
+                        target: '_blank',
+                    }),
+                    panel: null,
+                };
+            }
+
+            const panel = document.createElement('div');
+            panel.className = 'verifier-feedback-comment';
+            panel.hidden = true;
+
+            const input = new OO.ui.MultilineTextInputWidget({
+                rows: 3,
+                autosize: true,
+                placeholder: this.t('What did it get wrong, or what would you like to ask?'),
+            });
+            panel.appendChild(input.$element[0]);
+
+            const notice = document.createElement('div');
+            notice.className = 'verifier-feedback-notice';
+            notice.textContent = this.t('Posted publicly to the script\'s talk page as {user}, along with the claim, the source and the verdict.', { user: userName });
+            panel.appendChild(notice);
+
+            // Nothing gets posted under someone's name without showing them
+            // the exact wikitext first.
+            const preview = document.createElement('details');
+            preview.className = 'verifier-feedback-preview';
+            const previewSummary = document.createElement('summary');
+            previewSummary.textContent = this.t('Show exactly what will be posted');
+            const previewBody = document.createElement('pre');
+            preview.appendChild(previewSummary);
+            preview.appendChild(previewBody);
+            const refreshPreview = () => {
+                previewBody.textContent =
+                    '== ' + buildTalkSectionTitle(context) + ' ==\n\n' +
+                    buildTalkSectionBody({
+                        ...context,
+                        note: input.getValue(),
+                        correctedVerdict: getCorrectedVerdict(),
+                    });
+            };
+            input.on('change', refreshPreview);
+            refreshPreview();
+            panel.appendChild(preview);
+
+            const postBtn = new OO.ui.ButtonWidget({ label: this.t('Post to talk page'), flags: ['progressive'] });
+            const cancelBtn = new OO.ui.ButtonWidget({ label: this.t('Cancel'), framed: false });
+            const actions = document.createElement('div');
+            actions.className = 'verifier-feedback-comment-actions';
+            actions.appendChild(postBtn.$element[0]);
+            actions.appendChild(cancelBtn.$element[0]);
+            panel.appendChild(actions);
+
+            const button = new OO.ui.ButtonWidget({ label: this.t('Comment'), icon: 'feedback', framed: false });
+            button.on('click', () => {
+                panel.hidden = !panel.hidden;
+                if (!panel.hidden) {
+                    refreshPreview();
+                    input.focus();
+                }
+            });
+            cancelBtn.on('click', () => { panel.hidden = true; });
+
+            postBtn.on('click', async () => {
+                const note = input.getValue().trim();
+                if (!note) {
+                    setStatus(this.t('Write something first.'), true);
+                    return;
+                }
+                postBtn.setDisabled(true);
+                cancelBtn.setDisabled(true);
+                setStatus(this.t('Posting…'));
+                const sectionTitle = buildTalkSectionTitle(context);
+                try {
+                    const api = await this.getTalkPageApi();
+                    await api.postWithEditToken({
+                        action: 'edit',
+                        title: FEEDBACK_TALK_PAGE,
+                        section: 'new',
+                        sectiontitle: sectionTitle,
+                        text: buildTalkSectionBody({
+                            ...context,
+                            note,
+                            correctedVerdict: getCorrectedVerdict(),
+                        }),
+                        summary: 'Feedback via [[User:Alaexis/AI_Source_Verification|Source Verifier]]',
+                        formatversion: 2,
+                    });
+                    panel.hidden = true;
+                    button.setDisabled(true);
+                    setStatus(this.t('Posted to the talk page — thanks.'));
+                    // Recorded so the check row points at the discussion
+                    // immediately, rather than waiting on the talk-page scrape.
+                    this.sendFeedback({ checkId: context.checkId, wikiSection: sectionTitle }).catch(() => {});
+                } catch (e) {
+                    postBtn.setDisabled(false);
+                    cancelBtn.setDisabled(false);
+                    console.error('[CitationVerifier] Talk page post failed:', e);
+                    setStatus(this.t('Could not post. You can still comment on the talk page directly.'), true);
+                }
+            });
+
+            return { button, panel };
         }
 
         clearResult() {

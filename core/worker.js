@@ -108,3 +108,17 @@ export function logVerification(payload, { workerBase = 'https://publicai-proxy.
         // logging should never break the main flow
     }
 }
+
+// Ratings and talk-page pointers. Unlike logVerification this resolves, so the
+// UI can tell the user whether their rating actually landed — a silent no-op
+// on a button the user deliberately pressed would be worse than an error.
+export function postFeedback(payload, { workerBase = 'https://publicai-proxy.alaexis.workers.dev' } = {}) {
+    return fetch(`${workerBase}/feedback`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+    }).then(res => {
+        if (!res.ok) throw new Error(`Feedback failed: HTTP ${res.status}`);
+        return true;
+    });
+}

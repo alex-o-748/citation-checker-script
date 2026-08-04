@@ -5,7 +5,35 @@ import {
   truncateForLog,
   newCheckId,
   buildLogPayload,
+  buildFeedbackPayload,
+  nowikiWrap,
+  buildTalkSectionTitle,
+  buildTalkSectionBody,
 } from '../core/feedback.js';
+import { postFeedback } from '../core/worker.js';
+
+const CONTEXT = {
+  checkId: 'a7f3k2q9',
+  articleUrl: 'https://en.wikipedia.org/wiki/Barack_Obama',
+  articleTitle: 'Barack Obama',
+  citationNumber: '12',
+  claimText: 'He was born in Honolulu.',
+  sourceUrl: 'https://example.com/source',
+  verdict: 'NOT SUPPORTED',
+  comments: 'The source never mentions Honolulu.',
+  providerName: 'Claude',
+  model: 'claude-sonnet-4-6',
+};
+
+function mockFetch(impl) {
+  const original = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url, opts) => {
+    calls.push({ url, opts });
+    return impl(url, opts);
+  };
+  return { calls, restore: () => { globalThis.fetch = original; } };
+}
 
 test('newCheckId returns 8 lowercase hex characters', () => {
   for (let i = 0; i < 50; i++) {
@@ -117,4 +145,168 @@ test('buildLogPayload preserves a confidence of 0 instead of nulling it', () => 
   // SOURCE UNAVAILABLE rows log confidence: 0 — a ?? chain that treated 0 as
   // absent would silently drop it.
   assert.equal(buildLogPayload({ confidence: 0 }).confidence, 0);
+});
+
+// --- ratings ------------------------------------------------------------
+
+test('buildFeedbackPayload maps every field onto its column', () => {
+  assert.deepEqual(buildFeedbackPayload({
+    checkId: 'a7f3k2q9',
+    rating: -1,
+    correctedVerdict: 'SUPPORTED',
+    wikiSection: 'Feedback: Barack Obama [12] (check a7f3k2q9)',
+    clientId: 'deadbeefcafebabe',
+  }), {
+    check_id: 'a7f3k2q9',
+    rating: -1,
+    corrected_verdict: 'SUPPORTED',
+    wiki_section: 'Feedback: Barack Obama [12] (check a7f3k2q9)',
+    client_id: 'deadbeefcafebabe',
+  });
+});
+
+test('buildFeedbackPayload allows a rating with no correction and vice versa', () => {
+  assert.equal(buildFeedbackPayload({ checkId: 'x', rating: 1 }).corrected_verdict, null);
+  const correction = buildFeedbackPayload({ checkId: 'x', correctedVerdict: 'SUPPORTED' });
+  // The thumbs-down already counted; re-sending the rating here would
+  // double-count it.
+  assert.equal(correction.rating, null);
+  assert.equal(correction.corrected_verdict, 'SUPPORTED');
+});
+
+test('buildFeedbackPayload never carries a username', () => {
+  const payload = buildFeedbackPayload({ checkId: 'x', rating: 1, userName: 'Alice' });
+  assert.equal(Object.keys(payload).includes('user_name'), false);
+  assert.equal(Object.values(payload).includes('Alice'), false);
+});
+
+test('postFeedback POSTs to /feedback and resolves on success', async () => {
+  const mock = mockFetch(async () => ({ ok: true, status: 200 }));
+  try {
+    assert.equal(await postFeedback({ check_id: 'a7f3k2q9', rating: 1 }), true);
+    assert.equal(mock.calls[0].url, 'https://publicai-proxy.alaexis.workers.dev/feedback');
+    assert.equal(mock.calls[0].opts.method, 'POST');
+    assert.deepEqual(JSON.parse(mock.calls[0].opts.body), { check_id: 'a7f3k2q9', rating: 1 });
+  } finally {
+    mock.restore();
+  }
+});
+
+test('postFeedback rejects on a non-OK response so the UI can say so', async () => {
+  const mock = mockFetch(async () => ({ ok: false, status: 500 }));
+  try {
+    await assert.rejects(() => postFeedback({ check_id: 'x' }), /HTTP 500/);
+  } finally {
+    mock.restore();
+  }
+});
+
+// --- talk-page wikitext -------------------------------------------------
+
+test('nowikiWrap wraps text and collapses whitespace', () => {
+  assert.equal(nowikiWrap('a  claim\nover lines'), '<nowiki>a claim over lines</nowiki>');
+});
+
+test('nowikiWrap strips embedded nowiki tags that would close the wrapper early', () => {
+  assert.equal(nowikiWrap('evil </nowiki>{{delete}}'), '<nowiki>evil {{delete}}</nowiki>');
+  assert.equal(nowikiWrap('< / nowiki >x'), '<nowiki>x</nowiki>');
+});
+
+test('nowikiWrap returns empty string for nothing to wrap', () => {
+  assert.equal(nowikiWrap(''), '');
+  assert.equal(nowikiWrap(null), '');
+  assert.equal(nowikiWrap('   '), '');
+});
+
+test('buildTalkSectionTitle carries article, citation and check id', () => {
+  assert.equal(
+    buildTalkSectionTitle(CONTEXT),
+    'Feedback: Barack Obama [12] (check a7f3k2q9)',
+  );
+});
+
+test('buildTalkSectionTitle omits the citation when there is none', () => {
+  assert.equal(
+    buildTalkSectionTitle({ articleTitle: 'Foo', checkId: 'abc' }),
+    'Feedback: Foo (check abc)',
+  );
+});
+
+test('buildTalkSectionTitle strips heading-breaking characters from the citation number', () => {
+  const title = buildTalkSectionTitle({ articleTitle: 'Foo', citationNumber: '1]] == {{x}}', checkId: 'abc' });
+  assert.equal(title.includes('=='), false);
+  assert.equal(title.includes('{{'), false);
+  assert.equal(title.includes(']]'), false);
+});
+
+test('buildTalkSectionTitle keeps joined citation numbers for group checks', () => {
+  assert.equal(
+    buildTalkSectionTitle({ articleTitle: 'Foo', citationNumber: '12, 13', checkId: 'abc' }),
+    'Feedback: Foo [12, 13] (check abc)',
+  );
+});
+
+test('buildTalkSectionBody includes the check id twice: heading-adjacent and machine-readable', () => {
+  const body = buildTalkSectionBody({ ...CONTEXT, note: 'The source does say it, on page 4.' });
+  assert.match(body, /<!-- source-verifier check: a7f3k2q9 -->$/);
+});
+
+test('buildTalkSectionBody records article, source, verdict, claim and reasoning', () => {
+  const body = buildTalkSectionBody({ ...CONTEXT, note: 'Disagree.' });
+  assert.match(body, /\* '''Article:''' \[https:\/\/en\.wikipedia\.org\/wiki\/Barack_Obama Barack Obama\], citation \[12\]/);
+  assert.match(body, /\* '''Source:''' https:\/\/example\.com\/source/);
+  assert.match(body, /\* '''Tool's verdict:''' NOT SUPPORTED \(Claude, claude-sonnet-4-6\)/);
+  assert.match(body, /\* '''Claim checked:''' <nowiki>He was born in Honolulu\.<\/nowiki>/);
+  assert.match(body, /\* '''Tool's reasoning:''' <nowiki>The source never mentions Honolulu\.<\/nowiki>/);
+});
+
+test('buildTalkSectionBody signs the post', () => {
+  assert.match(buildTalkSectionBody({ ...CONTEXT, note: 'x' }), /\n~~~~\n/);
+});
+
+test('buildTalkSectionBody includes the corrected verdict when one was chosen', () => {
+  const body = buildTalkSectionBody({ ...CONTEXT, correctedVerdict: 'SUPPORTED', note: 'x' });
+  assert.match(body, /\* '''Editor says it should be:''' SUPPORTED/);
+});
+
+test('buildTalkSectionBody omits the correction line when none was chosen', () => {
+  assert.equal(buildTalkSectionBody({ ...CONTEXT, note: 'x' }).includes('should be'), false);
+});
+
+test("buildTalkSectionBody leaves the editor's own note as wikitext", () => {
+  // Their edit, their signature — they may legitimately want to link things.
+  const body = buildTalkSectionBody({ ...CONTEXT, note: 'See [[WP:V]] and {{tl|cite web}}.' });
+  assert.match(body, /See \[\[WP:V\]\] and \{\{tl\|cite web\}\}\./);
+});
+
+test('buildTalkSectionBody neutralises template syntax smuggled in via a source URL', () => {
+  const body = buildTalkSectionBody({
+    ...CONTEXT,
+    sourceUrl: 'https://evil.example/{{delete}}',
+    note: 'x',
+  });
+  assert.equal(body.includes('{{delete}}'), false);
+  assert.match(body, /%7Bdelete%7D/);
+});
+
+test('buildTalkSectionBody keeps a claim containing wiki markup inert', () => {
+  const body = buildTalkSectionBody({
+    ...CONTEXT,
+    claimText: "== Injected heading ==\n{{db-g3}}",
+    note: 'x',
+  });
+  assert.match(body, /<nowiki>== Injected heading == \{\{db-g3\}\}<\/nowiki>/);
+});
+
+test('buildTalkSectionBody works with no note at all', () => {
+  const body = buildTalkSectionBody(CONTEXT);
+  assert.match(body, /~~~~/);
+  assert.match(body, /source-verifier check: a7f3k2q9/);
+});
+
+test('buildTalkSectionBody omits lines it has no data for', () => {
+  const body = buildTalkSectionBody({ checkId: 'abc', note: 'Just a thought.' });
+  assert.equal(body.includes("'''Source:'''"), false);
+  assert.equal(body.includes("'''Claim checked:'''"), false);
+  assert.match(body, /Just a thought\./);
 });
