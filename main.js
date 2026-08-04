@@ -1146,15 +1146,6 @@ function logVerification(payload, { workerBase = 'https://publicai-proxy.alaexis
 //      `entry.<numeric-id>` from the pre-filled link.
 //   4. Run `npm run build` so the constants are re-inlined into main.js.
 
-// Cap for manually-pasted source text. Unlike fetched sources — which the
-// Cloudflare Worker proxy truncates server-side before they reach us — a manual
-// paste goes straight into the request body, so an oversized paste hits the
-// proxy's request-body limit (HTTP 413 "Request body too large"). We trim here
-// to stay comfortably under that limit (currently ~100 KB): budget = 100 KB
-// minus the ~6.5 KB system prompt, the claim/user-prompt boilerplate, and
-// JSON-escaping + UTF-8 overhead on the source itself. 80 000 chars leaves room.
-const MAX_MANUAL_SOURCE_CHARS = 80000;
-
 // Sentinel substring that marks scaffolded values as not-yet-configured.
 // isDatasetSubmissionConfigured() looks for this exact token; don't reuse it
 // anywhere else in this file.
@@ -1205,6 +1196,18 @@ function buildDatasetSubmissionUrl(
     return `${formUrl}?${params.toString()}`;
 }
 // </core-injected>
+
+// Cap for manually-pasted source text. Unlike fetched sources — which the
+// Cloudflare Worker proxy truncates server-side before they reach us — a manual
+// paste goes straight into the request body, so an oversized paste hits the
+// proxy's request-body limit (HTTP 413 "Request body too large"). We trim here
+// to stay comfortably under that limit (currently ~100 KB): budget = 100 KB
+// minus the ~6.5 KB system prompt, the claim/user-prompt boilerplate, and
+// JSON-escaping + UTF-8 overhead on the source itself. 80 000 chars leaves room.
+// Browser-only (used by loadManualSourceText()); not shared with core/, so it
+// lives here rather than inside the <core-injected> block, which npm run build
+// regenerates wholesale from core/ and would otherwise silently drop this.
+const MAX_MANUAL_SOURCE_CHARS = 80000;
 
     // ========================================
     // UI LOCALIZATION (i18n)
