@@ -8,9 +8,10 @@ import { JSDOM } from 'jsdom';
 import { extractClaimText } from '../core/claim.js';
 import { extractReferenceUrl, extractPageNumber } from '../core/urls.js';
 import { fetchSourceContent, logVerification } from '../core/worker.js';
-import { generateSystemPrompt, generateUserPrompt } from '../core/prompts.js';
+import { generateSystemPrompt, generateUserPrompt, extractSourceText } from '../core/prompts.js';
 import { callProviderAPI } from '../core/providers.js';
 import { parseVerificationResult } from '../core/parsing.js';
+import { verifyQuote } from '../core/quote.js';
 import { parseCompareArgs, COMPARE_HELP_TEXT, runCompare } from './compare.js';
 
 const KNOWN_PROVIDERS = ['publicai', 'huggingface', 'claude', 'gemini', 'openai'];
@@ -368,11 +369,19 @@ export async function runVerify(opts, { stdout = process.stdout, stderr = proces
         });
     }
 
-    // 12. Print the result.
+    // 12. Print the result. The quote is printed only once it has been found
+    //     in the fetched source (core/quote.js) — an unlocated quote is
+    //     reported as such rather than shown.
+    const quoteCheck = verifyQuote(extractSourceText(fetchResult.content), verdict.source_quote);
     stdout.write(`Verdict:    ${verdict.verdict}\n`);
     stdout.write(`Confidence: ${verdict.confidence ?? 'n/a'}\n`);
     stdout.write(`Claim:      ${claim}\n`);
     stdout.write(`Source:     ${sourceUrl}\n`);
+    if (verdict.source_quote) {
+        stdout.write(quoteCheck.verified
+            ? `Quote:      "${verdict.source_quote}"\n`
+            : `Quote:      (not found in source: ${quoteCheck.status})\n`);
+    }
     stdout.write(`\n${verdict.comments}\n`);
     return 0;
 }

@@ -45,10 +45,19 @@ Respond in JSON format:
   "confidence": <number 0-100>,
   "verdict": "<verdict>",
   "reason_type": "<only for NOT SUPPORTED: 'contradiction' or 'omission'>",
-  "comments": "<relevant quote and brief explanation>"
+  "source_quote": "<the passage from the source text, copied word for word>",
+  "comments": "<brief explanation, without repeating the quote>"
 }
 
 For NOT SUPPORTED verdicts, include a "reason_type" field: use "contradiction" when the source explicitly states something incompatible with the claim, or "omission" when the source simply does not mention or address the claim. If both apply (source contradicts one part and omits another), use "contradiction". Do not include reason_type for other verdicts.
+
+The "source_quote" field:
+- Copy the passage EXACTLY as it appears in the source text, character for character. Do not paraphrase, summarize, correct spelling or punctuation, translate, or fill in ellipses. It is checked automatically against the source, and a quote that does not appear there verbatim is discarded.
+- Quote the passage that decides the verdict: the one that supports the claim (SUPPORTED, PARTIALLY SUPPORTED) or the one that conflicts with it (NOT SUPPORTED with reason_type "contradiction").
+- Keep it short — normally one sentence, at most two, and never more than about 50 words. Do not quote the whole paragraph.
+- To join two non-adjacent passages, separate them with " ... ". Each part must still be copied verbatim, in the order they appear in the source.
+- Use "" (empty string) when there is nothing to quote: SOURCE UNAVAILABLE, and NOT SUPPORTED with reason_type "omission" (the source says nothing about the claim, so no passage can be quoted).
+- Never quote from the claim, and never write a passage the source does not contain. If you cannot find a passage worth quoting, use "".
 
 Confidence guide:
 - 80-100: SUPPORTED
@@ -60,56 +69,56 @@ Confidence guide:
 Claim: "The committee published its findings in 1932."
 Source text: "History of Modern Economics - Economic Research Council - Google Books Sign in Hidden fields Books Try the new Google Books Check out the new look and enjoy easier access to your favorite features Try it now No thanks My library Help Advanced Book Search Download EPUB Download PDF Plain text Read eBook Get this book in print AbeBooks On Demand Books Amazon Find in a library All sellers About this book Terms of Service Plain text PDF EPUB"
 
-{"source_quote": "", "confidence": 0, "verdict": "SOURCE UNAVAILABLE", "comments": "Google Books interface with no actual book content, only navigation and metadata."}
+{"confidence": 0, "verdict": "SOURCE UNAVAILABLE", "source_quote": "", "comments": "Google Books interface with no actual book content, only navigation and metadata."}
 </example>
 
 <example>
 Claim: "The bridge was completed in 1998."
 Source text: "Skip to main content Web Archive toolbar... Capture date: 2015-03-12 ... City Tribune - Local News ... The Morrison Bridge project broke ground in 1994 after years of planning. Construction faced multiple delays due to funding shortages. The bridge was finally opened to traffic in August 2002, four years behind schedule. Mayor Davis called it 'a triumph of persistence.'"
 
-{"confidence": 15, "verdict": "NOT SUPPORTED", "reason_type": "contradiction", "comments": "\"finally opened to traffic in August 2002, four years behind schedule\" - Source says the bridge opened in 2002, not 1998. The article is accessible despite being an Internet Archive capture."}
+{"confidence": 15, "verdict": "NOT SUPPORTED", "reason_type": "contradiction", "source_quote": "The bridge was finally opened to traffic in August 2002, four years behind schedule.", "comments": "Source says the bridge opened in 2002, not 1998. The article is accessible despite being an Internet Archive capture."}
 </example>
 
 <example>
 Claim: "The company was founded in 1985 by John Smith."
 Source text: "Acme Corp was established in 1985. Its founder, John Smith, served as CEO until 2001."
 
-{"confidence": 95, "verdict": "SUPPORTED", "comments": "\"Acme Corp was established in 1985. Its founder, John Smith\" - Definitive match with paraphrasing."}
+{"confidence": 95, "verdict": "SUPPORTED", "source_quote": "Acme Corp was established in 1985. Its founder, John Smith, served as CEO until 2001.", "comments": "Definitive match with paraphrasing."}
 </example>
 
 <example>
 Claim: "The treaty was signed by 45 countries."
 Source text: "The treaty, finalized in March, was signed by over 30 nations, though the exact number remains disputed."
 
-{"confidence": 20, "verdict": "NOT SUPPORTED", "reason_type": "contradiction", "comments": "\"signed by over 30 nations\" - Source says \"over 30,\" not 45."}
+{"confidence": 20, "verdict": "NOT SUPPORTED", "reason_type": "contradiction", "source_quote": "The treaty, finalized in March, was signed by over 30 nations, though the exact number remains disputed.", "comments": "Source says \\"over 30,\\" not 45."}
 </example>
 
 <example>
 Claim: "The treaty was signed in Paris."
 Source text: "It is believed the treaty was signed in Paris, though some historians dispute this."
 
-{"confidence": 60, "verdict": "PARTIALLY SUPPORTED", "comments": "\"It is believed... though some historians dispute this\" - Source hedges this as uncertain; Wikipedia states it as fact."}
+{"confidence": 60, "verdict": "PARTIALLY SUPPORTED", "source_quote": "It is believed the treaty was signed in Paris, though some historians dispute this.", "comments": "Source hedges this as uncertain; Wikipedia states it as fact."}
 </example>
 
 <example>
 Claim: "The population increased by 12% between 2010 and 2020."
 Source text: "Census data shows significant population growth in the region during the 2010s."
 
-{"confidence": 55, "verdict": "PARTIALLY SUPPORTED", "comments": "\"significant population growth\" - Source confirms growth but doesn't specify 12%."}
+{"confidence": 55, "verdict": "PARTIALLY SUPPORTED", "source_quote": "Census data shows significant population growth in the region during the 2010s.", "comments": "Source confirms growth but doesn't specify 12%."}
 </example>
 
 <example>
 Claim: "The president resigned on March 3."
 Source text: "The president remained in office throughout March."
 
-{"confidence": 5, "verdict": "NOT SUPPORTED", "reason_type": "contradiction", "comments": "\"remained in office throughout March\" - Source directly contradicts the claim."}
+{"confidence": 5, "verdict": "NOT SUPPORTED", "reason_type": "contradiction", "source_quote": "The president remained in office throughout March.", "comments": "Source directly contradicts the claim."}
 </example>
 
 <example>
 Claim: "She received the Nobel Prize in Chemistry in 2015."
 Source text: "Professor Martin completed her PhD at Oxford in 1998 and joined the faculty at Cambridge in 2003. Her research focuses on organic synthesis and catalysis. She has published over 200 papers and received several university teaching awards."
 
-{"confidence": 10, "verdict": "NOT SUPPORTED", "reason_type": "omission", "comments": "The source discusses her academic career and publications but makes no mention of a Nobel Prize."}
+{"confidence": 10, "verdict": "NOT SUPPORTED", "reason_type": "omission", "source_quote": "", "comments": "The source discusses her academic career and publications but makes no mention of a Nobel Prize."}
 </example>`;
 }
 
@@ -173,10 +182,19 @@ Respond in JSON format:
   "confidence": <number 0-100>,
   "verdict": "<verdict>",
   "reason_type": "<only for NOT SUPPORTED: 'contradiction' or 'omission'>",
+  "source_quote": "<the passage from one of the sources, copied word for word>",
   "comments": "<note which source(s) support or contradict which part of the claim>"
 }
 
 For NOT SUPPORTED verdicts, include a "reason_type" field: use "contradiction" when a source explicitly states something incompatible with the claim, or "omission" when the sources simply do not mention or address the claim. If both apply, use "contradiction". Do not include reason_type for other verdicts.
+
+The "source_quote" field:
+- Copy the passage EXACTLY as it appears in the source text, character for character. Do not paraphrase, summarize, correct spelling or punctuation, translate, or fill in ellipses. It is checked automatically against the sources, and a quote that does not appear in them verbatim is discarded.
+- Quote the single most decisive passage across all the sources: the one that best supports the claim (SUPPORTED, PARTIALLY SUPPORTED) or the one that conflicts with it (NOT SUPPORTED with reason_type "contradiction"). Name the source it came from in "comments", not inside the quote itself — do not prefix the quote with "[2]" or a URL.
+- Keep it short — normally one sentence, at most two, and never more than about 50 words.
+- To join two non-adjacent passages, separate them with " ... ". Each part must still be copied verbatim.
+- Use "" (empty string) when there is nothing to quote: SOURCE UNAVAILABLE, and NOT SUPPORTED with reason_type "omission".
+- Never quote from the claim, and never write a passage the sources do not contain. If you cannot find a passage worth quoting, use "".
 
 Confidence guide:
 - 80-100: SUPPORTED
@@ -189,7 +207,7 @@ Claim: "The company was founded in 1985 by John Smith, who led it until 2001."
 Source [1] (https://example.com/a): "Acme Corp was established in 1985 in Ohio."
 Source [2] (https://example.com/b): "John Smith founded Acme Corp and served as its chief executive until 2001."
 
-{"confidence": 92, "verdict": "SUPPORTED", "comments": "Source [1] gives the 1985 founding year; source [2] confirms John Smith as founder and his tenure until 2001. Together they support the whole claim."}
+{"confidence": 92, "verdict": "SUPPORTED", "source_quote": "John Smith founded Acme Corp and served as its chief executive until 2001.", "comments": "Source [1] gives the 1985 founding year; source [2] confirms John Smith as founder and his tenure until 2001. Together they support the whole claim."}
 </example>
 
 <example>
@@ -197,7 +215,7 @@ Claim: "The treaty was signed in Paris in 1990."
 Source [1] (https://example.com/a): [This source could not be retrieved: HTTP 403]
 Source [2] (https://example.com/b): "The accord was signed in the French capital in the spring of 1990."
 
-{"confidence": 88, "verdict": "SUPPORTED", "comments": "Source [1] was unavailable, but source [2] states the accord was signed in the French capital (Paris) in 1990, which supports the claim."}
+{"confidence": 88, "verdict": "SUPPORTED", "source_quote": "The accord was signed in the French capital in the spring of 1990.", "comments": "Source [1] was unavailable, but source [2] states the accord was signed in the French capital (Paris) in 1990, which supports the claim."}
 </example>
 
 <example>
@@ -205,7 +223,7 @@ Claim: "The bridge, built in 1998, cost $200 million."
 Source [1] (https://example.com/a): "The bridge opened to traffic in 1998 after four years of construction."
 Source [2] (https://example.com/b): "Funding for the project came from a mix of state and federal grants."
 
-{"confidence": 55, "verdict": "PARTIALLY SUPPORTED", "comments": "Source [1] supports the 1998 date. Neither source states the $200 million cost, so that part is unverified."}
+{"confidence": 55, "verdict": "PARTIALLY SUPPORTED", "source_quote": "The bridge opened to traffic in 1998 after four years of construction.", "comments": "Source [1] supports the 1998 date. Neither source states the $200 million cost, so that part is unverified."}
 </example>`;
 }
 
@@ -353,7 +371,15 @@ function parseVerificationResult(response) {
             verdict: result.verdict || 'UNKNOWN',
             confidence: result.confidence ?? null,
             comments: result.comments || '',
-            reason_type: result.reason_type || null
+            reason_type: result.reason_type || null,
+            // Field-name aliases: models occasionally camelCase the key or
+            // shorten it to "quote". Always a string — an absent quote is ''
+            // (expected for omission/unavailable), never null, so callers can
+            // treat it uniformly. Whether the quote is real is decided by
+            // core/quote.js, not here.
+            source_quote: typeof (result.source_quote ?? result.sourceQuote ?? result.quote) === 'string'
+                ? (result.source_quote ?? result.sourceQuote ?? result.quote).trim()
+                : ''
         };
     } catch (e) {
         // fall through to the markdown-emphasis recovery
@@ -366,15 +392,181 @@ function parseVerificationResult(response) {
     if (match) {
         const verdict = canonicalizeVerdict(match[1]);
         if (verdict) {
-            return { verdict, confidence: null, comments: '<extracted from non-JSON response>' };
+            return { verdict, confidence: null, comments: '<extracted from non-JSON response>', source_quote: '' };
         }
     }
 
     return {
         verdict: 'PARSE_ERROR',
         confidence: null,
-        comments: `Failed to parse AI response: ${response.substring(0, 200)}`
+        comments: `Failed to parse AI response: ${response.substring(0, 200)}`,
+        source_quote: ''
     };
+}
+
+// --- core/quote.js ---
+// Verifies that a model-supplied `source_quote` actually occurs in the source
+// text, so the UI can present it as evidence rather than as more model prose.
+//
+// The LLM is asked to copy a passage verbatim, but models paraphrase, "fix"
+// punctuation, or occasionally invent a plausible-sounding sentence. Rather
+// than trusting the field, we look it up. A quote we cannot locate is never
+// shown as a confirmed quote — the design is deliberately conservative: it is
+// better to fall back to the plain rationale than to display a passage the
+// source may not contain.
+//
+// Matching is normalized (case, curly quotes, dashes, whitespace, ligature-ish
+// unicode) because near-universal reformatting would otherwise sink almost
+// every real quote. It is NOT fuzzy: no edit distance, no token overlap. A
+// passage either occurs in the source under normalization or it doesn't.
+//
+// Non-contiguous quotes joined by an ellipsis ("A ... B") are supported: each
+// segment must occur, in order.
+
+// A quote shorter than this (after normalization) is not evidence — "1985" or
+// "the bridge" would match almost any source by accident.
+const MIN_QUOTE_CHARS = 12;
+
+// Ellipsis forms models use to join non-contiguous fragments.
+const ELLIPSIS_SPLIT = /\s*(?:\[\s*(?:\.\.\.|…)\s*\]|\.\.\.\.?|…)\s*/g;
+
+const CHAR_FOLD = [
+    // All quotation marks fold to one character: models routinely swap ' for "
+    // when copying, and the distinction carries no evidentiary weight here.
+    [/[‘’‚‛′´`'“”„‟″«»"]/g, '"'],
+    [/[‐-―−]/g, '-'],                      // hyphens, dashes, minus
+    [/­/g, ''],                                      // soft hyphen
+    [/[  -   　]/g, ' '],    // exotic spaces
+    [/[​-‍﻿]/g, ''],                       // zero-width junk
+];
+
+/**
+ * Canonical form used for substring comparison. Lossy by design — it throws
+ * away exactly the differences (case, quote style, dash style, whitespace
+ * runs, line breaks) that a model routinely introduces when copying.
+ * @param {string} text
+ * @returns {string}
+ */
+function normalizeForMatch(text) {
+    if (text == null) return '';
+    let out = String(text);
+    try {
+        out = out.normalize('NFKC');
+    } catch (e) {
+        // Environments without full Unicode data: normalization is an
+        // optimization here, not a requirement.
+    }
+    for (const [pattern, replacement] of CHAR_FOLD) {
+        out = out.replace(pattern, replacement);
+    }
+    return out.replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+// Models often wrap the quote in quotation marks even when told not to, and
+// sometimes trail a citation marker or a stray period. Strip the wrapper only
+// when it is balanced, so a quote that legitimately opens with a quoted phrase
+// survives intact.
+function unwrap(quote) {
+    let q = String(quote).trim();
+    const pairs = [['"', '"'], ["'", "'"], ['“', '”'], ['‘', '’'], ['«', '»']];
+    let changed = true;
+    while (changed) {
+        changed = false;
+        for (const [open, close] of pairs) {
+            if (q.length > 2 && q.startsWith(open) && q.endsWith(close)) {
+                q = q.slice(open.length, q.length - close.length).trim();
+                changed = true;
+            }
+        }
+    }
+    return q;
+}
+
+/**
+ * Checks whether `quote` occurs in `sourceText`.
+ *
+ * @param {string} sourceText - The source body the model was shown (already
+ *   unwrapped from its "Source Content:" framing by extractSourceText).
+ * @param {string} quote - The model's `source_quote` field.
+ * @returns {{verified: boolean, status: string, segments: Array<{text: string, found: boolean}>}}
+ *   status is one of:
+ *     'empty'      - no quote was offered (expected for omission / unavailable)
+ *     'no-source'  - we have no source text to check against (e.g. cached
+ *                    result restored without its source); quote is unproven
+ *     'too-short'  - quote too short to be meaningful evidence
+ *     'exact'      - occurs verbatim, byte for byte
+ *     'normalized' - occurs after whitespace/punctuation/case normalization
+ *     'partial'    - some ellipsis-joined segments found, others not
+ *     'not-found'  - does not occur in the source
+ *   `verified` is true only for 'exact' and 'normalized'.
+ */
+function verifyQuote(sourceText, quote) {
+    const raw = quote == null ? '' : String(quote).trim();
+    if (!raw) return { verified: false, status: 'empty', segments: [] };
+
+    const cleaned = unwrap(raw);
+    const source = sourceText == null ? '' : String(sourceText);
+    if (!source.trim()) return { verified: false, status: 'no-source', segments: [] };
+
+    if (normalizeForMatch(cleaned).length < MIN_QUOTE_CHARS) {
+        return { verified: false, status: 'too-short', segments: [] };
+    }
+
+    if (source.includes(cleaned)) {
+        return { verified: true, status: 'exact', segments: [{ text: cleaned, found: true }] };
+    }
+
+    const haystack = normalizeForMatch(source);
+    // String.split with a /g regex is safe (split resets lastIndex), but the
+    // regex is recreated per call anyway to avoid any shared-state surprise.
+    const rawSegments = cleaned.split(new RegExp(ELLIPSIS_SPLIT.source, 'g'))
+        .map(s => s.trim())
+        .filter(Boolean);
+
+    let cursor = 0;
+    const segments = [];
+    for (const segment of rawSegments) {
+        const needle = normalizeForMatch(segment);
+        // Ignore fragments too short to carry meaning (a dangling "in 1985"
+        // after an ellipsis); they neither confirm nor refute the match.
+        if (needle.length < MIN_QUOTE_CHARS && rawSegments.length > 1) {
+            segments.push({ text: segment, found: true });
+            continue;
+        }
+        const at = needle ? haystack.indexOf(needle, cursor) : -1;
+        if (at === -1) {
+            segments.push({ text: segment, found: false });
+        } else {
+            segments.push({ text: segment, found: true });
+            cursor = at + needle.length;
+        }
+    }
+
+    const foundCount = segments.filter(s => s.found).length;
+    if (foundCount === segments.length && segments.length > 0) {
+        return { verified: true, status: 'normalized', segments };
+    }
+    if (foundCount > 0) {
+        return { verified: false, status: 'partial', segments };
+    }
+    return { verified: false, status: 'not-found', segments };
+}
+
+// Verdicts for which a supporting/contradicting passage should exist in the
+// source. Omission and unavailable verdicts have nothing to quote by
+// definition, so a missing quote there is correct, not a failure.
+const QUOTE_EXPECTED = new Set(['SUPPORTED', 'PARTIALLY SUPPORTED']);
+
+/**
+ * Whether a quote is expected for this verdict — used to decide if a missing
+ * quote is worth surfacing to the user or is simply not applicable.
+ * @param {string} verdict - Canonical UPPERCASE verdict.
+ * @param {string|null} reasonType - 'contradiction' | 'omission' | null.
+ * @returns {boolean}
+ */
+function quoteExpectedFor(verdict, reasonType) {
+    if (QUOTE_EXPECTED.has(verdict)) return true;
+    return verdict === 'NOT SUPPORTED' && reasonType === 'contradiction';
 }
 
 // --- core/retry.js ---
@@ -1169,15 +1361,31 @@ const DATASET_SUBMISSION_ENTRY_IDS = {
     fetchStatus:    'entry.375255643',
     editorHandle:   'entry.362287943',
     notes:          'entry.133790832',
+    // The verbatim passage the model quoted from the source, and whether it
+    // was found in that source (see core/quote.js). Optional — see
+    // DATASET_SUBMISSION_OPTIONAL_KEYS: until a matching Form question exists
+    // these stay on PLACEHOLDER and are simply left out of the prefilled URL,
+    // rather than disabling the whole submission button.
+    llmQuote:         'entry.PLACEHOLDER_QUOTE',
+    llmQuoteVerified: 'entry.PLACEHOLDER_QUOTE_VERIFIED',
 };
+
+// Keys that isDatasetSubmissionConfigured() does not require. Add a Form
+// question for these, paste in the real entry ids, and they start flowing;
+// leave them and everything else keeps working.
+const DATASET_SUBMISSION_OPTIONAL_KEYS = Object.freeze([
+    'llmQuote',
+    'llmQuoteVerified',
+]);
 
 function isDatasetSubmissionConfigured(
     formUrl = DATASET_SUBMISSION_FORM_URL,
     entryIds = DATASET_SUBMISSION_ENTRY_IDS,
 ) {
     if (!formUrl || formUrl.includes(DATASET_SUBMISSION_PLACEHOLDER)) return false;
-    return Object.values(entryIds).every(
-        id => typeof id === 'string' && id && !id.includes(DATASET_SUBMISSION_PLACEHOLDER)
+    return Object.entries(entryIds).every(
+        ([key, id]) => DATASET_SUBMISSION_OPTIONAL_KEYS.includes(key)
+            || (typeof id === 'string' && id && !id.includes(DATASET_SUBMISSION_PLACEHOLDER))
     );
 }
 
@@ -1189,9 +1397,13 @@ function buildDatasetSubmissionUrl(
     const params = new URLSearchParams();
     params.set('usp', 'pp_url');
     for (const key of Object.keys(entryIds)) {
+        const entryId = entryIds[key];
+        // Skip fields whose Form question hasn't been created yet; sending
+        // 'entry.PLACEHOLDER_*' would just add a junk query parameter.
+        if (typeof entryId !== 'string' || !entryId || entryId.includes(DATASET_SUBMISSION_PLACEHOLDER)) continue;
         const value = fields == null ? undefined : fields[key];
         if (value === undefined || value === null || value === '') continue;
-        params.set(entryIds[key], String(value));
+        params.set(entryId, String(value));
     }
     return `${formUrl}?${params.toString()}`;
 }
@@ -1655,6 +1867,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                         <div id="verifier-results">
                             <div id="verifier-verdict-attrib">${this.t('AI assessment')}</div>
                             <div id="verifier-verdict"></div>
+                            <div id="verifier-quote"></div>
                             <div id="verifier-comments"></div>
                             <div id="verifier-verdict-next"></div>
                             <div id="verifier-action-container"></div>
@@ -2430,6 +2643,49 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                     line-height: 1.5;
                     max-height: 300px;
                     overflow-y: auto;
+                }
+
+                /* Evidence block: the passage the model quoted from the source,
+                   shown only once it has been located in that source (see
+                   core/quote.js). Same markup in the sidebar and in report
+                   cards, so one rule set covers both. */
+                .sv-quote {
+                    margin-bottom: 8px;
+                    padding: 8px 10px;
+                    background: var(--sv-bg-inset);
+                    border-left: 3px solid var(--sv-accent);
+                    border-radius: 0 3px 3px 0;
+                }
+                .sv-quote-label {
+                    display: block;
+                    margin-bottom: 3px;
+                    font-size: 10px;
+                    font-weight: 600;
+                    letter-spacing: 0.04em;
+                    text-transform: uppercase;
+                    color: var(--sv-ink-subtle);
+                }
+                .sv-quote-text {
+                    font-size: 13px;
+                    line-height: 1.5;
+                    font-style: italic;
+                    color: var(--sv-ink-2);
+                    max-height: 200px;
+                    overflow-y: auto;
+                }
+                /* Shown instead of the quote when the model returned a passage
+                   we could not find in the source — a caution about the
+                   rationale, not a quote to read. */
+                .sv-quote-missing {
+                    margin-bottom: 8px;
+                    font-size: 12px;
+                    line-height: 1.4;
+                    color: var(--sv-warn-fg);
+                }
+                .verifier-report-card .sv-quote,
+                .verifier-report-group-row .sv-quote,
+                .verifier-report-group-collective .sv-quote {
+                    margin-top: 6px;
                 }
                 #verifier-action-container {
                     margin-top: 10px;
@@ -3810,6 +4066,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
         localizeSystemPrompt(prompt) {
             if (this.lang !== 'fr') return prompt;
             return prompt + '\n\nLANGUAGE: Write the "comments" field in French (français). '
+                + 'The "source_quote" field is an exception: it must stay in the source\'s own language, copied verbatim. Never translate it. '
                 + 'You may quote the source verbatim in its original language, but write your own explanation in French. '
                 + 'Keep the "verdict" and "reason_type" values exactly as specified above, in English '
                 + '(SUPPORTED, PARTIALLY SUPPORTED, NOT SUPPORTED, SOURCE UNAVAILABLE, contradiction, omission).';
@@ -3906,11 +4163,73 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
 	    return parseVerificationResult(response);
 	}
 
+        // ========================================
+        // SOURCE QUOTE (evidence) METHODS
+        // ========================================
+
+        // Checks the model's source_quote against the source text it was
+        // actually shown. Returns the shape the renderers and the dataset
+        // submission both read: { quote, verified, status }.
+        //
+        // sourceInfo is the raw "Source URL: ...\n\nSource Content:\n..."
+        // blob (or the assembled multi-source text for a group); it is
+        // unwrapped here so the comparison sees exactly the body the model saw.
+        buildQuoteView(parsed, sourceInfo) {
+            const quote = (parsed && parsed.source_quote) || '';
+            const sourceText = sourceInfo ? extractSourceText(sourceInfo) : '';
+            const check = verifyQuote(sourceText, quote);
+            return {
+                quote,
+                verified: check.verified,
+                status: check.status,
+                // Whether this verdict is one a quote should exist for. Drives
+                // whether an unverifiable quote is worth warning about: on an
+                // omission or an unavailable source there is nothing to quote,
+                // so a stray quote is just noise, not a red flag.
+                expected: quoteExpectedFor(parsed && parsed.verdict, parsed && parsed.reason_type),
+            };
+        }
+
+        // Report results carry the already-computed verification, so the
+        // renderers don't re-check (and don't need the source text again).
+        quoteViewOf(result) {
+            if (!result || !result.sourceQuote) return null;
+            return {
+                quote: result.sourceQuote,
+                verified: !!result.quoteVerified,
+                status: result.quoteStatus,
+                expected: !!result.quoteExpected,
+            };
+        }
+
+        // Renders the evidence block. A quote is displayed only when it was
+        // located in the source: an unlocated quote is replaced by a caution
+        // line rather than shown, because a passage the source may not contain
+        // is worse than no quote at all. Returns '' when there is nothing to
+        // say (no quote offered, which is expected for omission and
+        // source-unavailable verdicts).
+        quoteHtml(view) {
+            if (!view || !view.quote) return '';
+            // An unverifiable quote is only worth flagging where a quote was
+            // supposed to exist; elsewhere, stay quiet.
+            if (!view.verified && !view.expected) return '';
+            if (view.verified) {
+                return `<div class="sv-quote">`
+                    + `<span class="sv-quote-label">${this.escapeHtml(this.t('From the source'))}</span>`
+                    + `<div class="sv-quote-text">“${this.escapeHtml(view.quote)}”</div>`
+                    + `</div>`;
+            }
+            return `<div class="sv-quote-missing">${this.escapeHtml(this.t('⚠ The quote the AI gave was not found in the source text — judge the explanation below with that in mind.'))}</div>`;
+        }
+
 	displayResult(response) {
 	    const verdictEl = document.getElementById('verifier-verdict');
 	    const commentsEl = document.getElementById('verifier-comments');
+	    const quoteEl = document.getElementById('verifier-quote');
 
 	    const result = this.parseVerificationResult(response);
+	    const quoteView = this.buildQuoteView(result, this.activeSource);
+	    this.lastQuoteView = quoteView;
 
 	    verdictEl.textContent = this.t(result.verdict);
 	    verdictEl.className = '';
@@ -3933,6 +4252,10 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
 	        tag.className = `reason-type-tag reason-type-${result.reason_type}`;
 	        tag.textContent = result.reason_type === 'contradiction' ? 'Contradiction' : 'Omission';
 	        verdictEl.after(tag);
+	    }
+
+	    if (quoteEl) {
+	        quoteEl.innerHTML = this.quoteHtml(quoteView);
 	    }
 
 	    commentsEl.textContent = result.comments;
@@ -4282,6 +4605,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                     </span>
                 </div>
                 <div class="report-card-claim">${this.escapeHtml(claimExcerpt)}</div>
+                ${this.quoteHtml(this.quoteViewOf(result))}
                 ${result.comments ? `<div class="report-card-comment">${this.escapeHtml(result.comments)}</div>` : ''}
                 ${truncationHtml}
             `;
@@ -4378,6 +4702,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                     <span class="verifier-report-group-collective-label">${this.t('Combined verdict')}</span>
                     <span class="report-card-verdict ${verdictClass}">${verdictLabel}</span>${reasonTypeHtml}
                 </div>
+                ${this.quoteHtml(this.quoteViewOf(result))}
                 ${result.comments ? `<div class="report-card-comment">${this.escapeHtml(result.comments)}</div>` : ''}
                 ${truncationHtml}
             `;
@@ -4418,6 +4743,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                         <span class="report-card-verdict ${verdictClass}">${verdictLabel}</span>${reasonTypeHtml}
                     </span>
                 </div>
+                ${this.quoteHtml(this.quoteViewOf(result))}
                 ${result.comments ? `<div class="report-card-comment">${this.escapeHtml(result.comments)}</div>` : ''}
                 ${truncationHtml}
             `;
@@ -4433,6 +4759,17 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
             }
 
             return row;
+        }
+
+        // Neutralizes the few characters that would break out of a wikitable
+        // cell or start a template. Quoted source text is arbitrary prose from
+        // the open web, so it cannot be trusted to be wikitext-safe.
+        escapeWikitableCell(str) {
+            return String(str == null ? '' : str)
+                .replace(/\n/g, ' ')
+                .replace(/\|/g, '&#124;')
+                .replace(/\{/g, '&#123;')
+                .replace(/\}/g, '&#125;');
         }
 
         escapeHtml(str) {
@@ -4516,6 +4853,15 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                     default: verdictWiki = r.verdict; break;
                 }
                 let commentsClean = (r.comments || '').replace(/\n/g, ' ');
+                // Verified quote first, as the evidence the reader can check;
+                // the model's explanation follows it. Unverified quotes are
+                // left out of the on-wiki report entirely.
+                if (r.sourceQuote && r.quoteVerified) {
+                    commentsClean = `''"${this.escapeWikitableCell(r.sourceQuote)}"''<br />`
+                        + this.escapeWikitableCell(commentsClean);
+                } else {
+                    commentsClean = this.escapeWikitableCell(commentsClean);
+                }
                 if (r.truncated && r.verdict !== 'SUPPORTED') {
                     const note = r.isGroup
                         ? this.t("''(Combined sources are long, only partially checked.)''")
@@ -4597,12 +4943,14 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                     text += `  ${this.t('Claim: {text}', { text: claimExcerpt })}\n`;
                     const urls = (r.members || []).filter(m => m.url).map(m => `[${m.citationNumber}] ${m.url}`);
                     if (urls.length) text += `  ${this.t('Sources: {urls}', { urls: urls.join(' | ') })}\n`;
+                    if (r.sourceQuote && r.quoteVerified) text += `  ${this.t('Quote: "{text}"', { text: r.sourceQuote })}\n`;
                     if (r.comments) text += `  ${this.t('Comments: {text}', { text: r.comments })}\n`;
                     if (r.truncated && r.verdict !== 'SUPPORTED') text += `  ${this.t('Note: Combined sources are long, only partially checked.')}\n`;
                 } else {
                     text += `[${r.citationNumber}] ${this.t(r.verdict)}\n`;
                     text += `  ${this.t('Claim: {text}', { text: claimExcerpt })}\n`;
                     if (r.url) text += `  ${this.t('Source: {url}', { url: r.url })}\n`;
+                    if (r.sourceQuote && r.quoteVerified) text += `  ${this.t('Quote: "{text}"', { text: r.sourceQuote })}\n`;
                     if (r.comments) text += `  ${this.t('Comments: {text}', { text: r.comments })}\n`;
                     if (r.truncated && r.verdict !== 'SUPPORTED') text += `  ${this.t('Note: Source is long, only partially checked.')}\n`;
                 }
@@ -4739,7 +5087,21 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                     const parsed = this.parseVerificationResult(apiResult.text);
                     this.reportTokenUsage.input += apiResult.usage.input;
                     this.reportTokenUsage.output += apiResult.usage.output;
-                    result = { ...base, verdict: parsed.verdict, confidence: parsed.confidence, comments: parsed.comments, reason_type: parsed.reason_type };
+                    // The group quote is checked against the assembled text of
+                    // every source in the group, so a verbatim quote from any
+                    // one of them verifies.
+                    const quoteView = this.buildQuoteView(parsed, assembledText);
+                    result = {
+                        ...base,
+                        verdict: parsed.verdict,
+                        confidence: parsed.confidence,
+                        comments: parsed.comments,
+                        reason_type: parsed.reason_type,
+                        sourceQuote: quoteView.quote,
+                        quoteVerified: quoteView.verified,
+                        quoteStatus: quoteView.status,
+                        quoteExpected: quoteView.expected,
+                    };
                 } catch (e) {
                     result = { ...base, verdict: 'ERROR', confidence: null, comments: e.message };
                 }
@@ -4944,6 +5306,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                             const parsed = this.parseVerificationResult(apiResult.text);
                             this.reportTokenUsage.input += apiResult.usage.input;
                             this.reportTokenUsage.output += apiResult.usage.output;
+                            const quoteView = this.buildQuoteView(parsed, sourceContent);
                             result = {
                                 citationNumber: citation.citationNumber,
                                 claimText: citation.claimText,
@@ -4953,6 +5316,10 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                                 confidence: parsed.confidence,
                                 comments: parsed.comments,
                                 reason_type: parsed.reason_type,
+                                sourceQuote: quoteView.quote,
+                                quoteVerified: quoteView.verified,
+                                quoteStatus: quoteView.status,
+                                quoteExpected: quoteView.expected,
                                 truncated: sourceTruncated
                             };
 
@@ -5091,6 +5458,9 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                     url: this.activeSourceUrl,
                     verdict,
                     comments,
+                    sourceQuote: this.lastQuoteView ? this.lastQuoteView.quote : '',
+                    quoteStatus: this.lastQuoteView ? this.lastQuoteView.status : '',
+                    quoteVerified: this.lastQuoteView ? this.lastQuoteView.verified : false,
                 });
                 container.appendChild(submitBtn.$element[0]);
             }
@@ -5112,6 +5482,10 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                 sourceUrl: result?.url ?? '',
                 llmVerdict: result?.verdict ?? '',
                 llmRationale: result?.comments ?? '',
+                // Only submit a quote we located in the source; an unverified
+                // one would pollute the dataset with possible fabrications.
+                llmQuote: result?.quoteVerified ? (result?.sourceQuote ?? '') : '',
+                llmQuoteVerified: result?.quoteStatus ?? '',
                 llmProvider: result?.providerName ?? provider.name ?? '',
                 llmModel: result?.model ?? provider.model ?? '',
                 fetchStatus: result?.fetchStatus ?? '',
@@ -5139,6 +5513,9 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
             if (commentsEl) {
                 commentsEl.textContent = '';
             }
+            const quoteEl = document.getElementById('verifier-quote');
+            if (quoteEl) quoteEl.innerHTML = '';
+            this.lastQuoteView = null;
             const nextEl = document.getElementById('verifier-verdict-next');
             if (nextEl) nextEl.textContent = '';
             this.hasResult = false;

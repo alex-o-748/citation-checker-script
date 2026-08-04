@@ -24,6 +24,7 @@ import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import { loadRows } from './io.js';
 import { canonicalizeVerdict, toTitleCase, VERDICT_LIST } from '../core/verdicts.js';
+import { quoteExpectedFor } from '../core/quote.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -64,7 +65,7 @@ function normalizeVerdict(verdict) {
 /**
  * Calculate accuracy metrics for a set of results
  */
-function calculateMetrics(results) {
+export function calculateMetrics(results) {
     const total = results.length;
     if (total === 0) return null;
 
@@ -145,10 +146,32 @@ function calculateMetrics(results) {
         ? wrongConfidences.reduce((a, b) => a + b, 0) / wrongConfidences.length
         : 0;
 
+    // Quote fidelity: of the entries where a supporting/contradicting passage
+    // should exist, how often did the model supply one, and how often was that
+    // quote actually found in the source (run_benchmark.js records the check).
+    // Providers that quote reliably are the ones whose rationales can be
+    // trusted at a glance — and whose rows are worth keeping in the dataset.
+    const quoteEligible = validResults.filter(r => quoteExpectedFor(
+        canonicalizeVerdict(r.predicted_verdict),
+        r.reason_type ?? null,
+    ));
+    const quoteOffered = quoteEligible.filter(r => r.source_quote);
+    const quoteVerified = quoteOffered.filter(r => r.quote_verified);
+
     return {
         total,
         valid: validTotal,
         errors: total - validTotal,
+        quotes: {
+            eligible: quoteEligible.length,
+            offered: quoteOffered.length,
+            verified: quoteVerified.length,
+            // Share of eligible entries that came with a quote at all.
+            offerRate: quoteEligible.length > 0 ? quoteOffered.length / quoteEligible.length : 0,
+            // Share of offered quotes that were found in the source verbatim.
+            // A low rate here means the model is paraphrasing or inventing.
+            fidelity: quoteOffered.length > 0 ? quoteVerified.length / quoteOffered.length : 0,
+        },
         exactMatches,
         partialMatches,
         exactAccuracy: validTotal > 0 ? exactMatches / validTotal : 0,
@@ -213,6 +236,10 @@ function generateMarkdownReport(analysis) {
         md += `- Exact match: ${m.exactMatches}/${m.valid} (${(m.exactAccuracy * 100).toFixed(1)}%)\n`;
         md += `- Lenient (includes partial): ${m.exactMatches + m.partialMatches}/${m.valid} (${(m.lenientAccuracy * 100).toFixed(1)}%)\n`;
         md += `- Binary (support vs not): ${(m.binaryAccuracy * 100).toFixed(1)}%\n`;
+        if (m.quotes && m.quotes.eligible > 0) {
+            md += `- Quote supplied: ${m.quotes.offered}/${m.quotes.eligible} (${(m.quotes.offerRate * 100).toFixed(1)}% of verdicts that should have one)\n`;
+            md += `- Quote found in source: ${m.quotes.verified}/${m.quotes.offered} (${(m.quotes.fidelity * 100).toFixed(1)}%)\n`;
+        }
         md += `- Errors: ${m.errors}\n\n`;
 
         md += '**Latency:**\n';
@@ -367,5 +394,7 @@ function main() {
     });
 }
 
-// Run
-main();
+// Run only when invoked as a script, not when imported by tests.
+if (process.argv[1] === __filename) {
+    main();
+}
