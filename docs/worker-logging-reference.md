@@ -123,8 +123,12 @@ be worse than an error message.
 CREATE TABLE feedback (
   id SERIAL PRIMARY KEY,
   ts TIMESTAMPTZ DEFAULT now(),
-  check_id TEXT REFERENCES verification_logs(check_id),
-  rating SMALLINT,           -- +1 / -1, null for correction-only or comment-only rows
+  -- Deliberately NOT a foreign key: /log and /feedback are two independent
+  -- fire-and-forget POSTs from the browser, so a dropped or slow log write
+  -- would make the FK reject a rating the user legitimately gave. An orphan
+  -- feedback row is recoverable; a rating the user was told failed is not.
+  check_id TEXT,
+  rating SMALLINT,           -- +1 / -1, null for correction-only rows
   corrected_verdict TEXT,    -- from the thumbs-down chips
   wiki_section TEXT,         -- talk-page section, filled in by the scrape (see below)
   client_id TEXT             -- random per-browser token, dedupe only
