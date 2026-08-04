@@ -96,9 +96,8 @@ export async function fetchSourceContent(url, pageNum, { workerBase = 'https://p
 }
 
 export function logVerification(payload, { workerBase = 'https://publicai-proxy.alaexis.workers.dev' } = {}) {
-    // Caller supplies the payload object:
-    //   { article_url, article_title, citation_number, source_url, provider,
-    //     verdict, confidence, reason_type }.
+    // Caller supplies the payload object; build it with buildLogPayload()
+    // from core/feedback.js so the keys line up with the Neon columns.
     try {
         fetch(`${workerBase}/log`, {
             method: 'POST',

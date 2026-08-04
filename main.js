@@ -1114,9 +1114,8 @@ async function fetchSourceContent(url, pageNum, { workerBase = 'https://publicai
 }
 
 function logVerification(payload, { workerBase = 'https://publicai-proxy.alaexis.workers.dev' } = {}) {
-    // Caller supplies the payload object:
-    //   { article_url, article_title, citation_number, source_url, provider,
-    //     verdict, confidence, reason_type }.
+    // Caller supplies the payload object; build it with buildLogPayload()
+    // from core/feedback.js so the keys line up with the Neon columns.
     try {
         fetch(`${workerBase}/log`, {
             method: 'POST',
@@ -1126,6 +1125,77 @@ function logVerification(payload, { workerBase = 'https://publicai-proxy.alaexis
     } catch (e) {
         // logging should never break the main flow
     }
+}
+
+// --- core/feedback.js ---
+// Feedback helpers: the check identifier and the verification-log payload.
+//
+// Every verification mints a short `check_id` client-side, at the moment the
+// verdict is parsed. Client-side rather than server-assigned so that logging
+// stays fire-and-forget — nothing has to await a round trip before the
+// feedback controls attached to a result become usable, and the id still
+// exists if the log write failed outright.
+//
+// The id is what lets a later rating or talk-page comment point back at the
+// exact check it is about. Collision risk is 32 bits against a low-volume,
+// human-paced event stream; a duplicate would mean one rating attaches to the
+// wrong row, which is not worth a longer id in the UI or the section heading.
+//
+// Inlined into main.js between <core-injected> markers, and importable from
+// tests.
+
+// Claim text and LLM rationale are unbounded in principle — a pathological
+// source or a runaway model response shouldn't push a multi-megabyte row into
+// the log table. Both are stored for interpretation, not verbatim archival.
+const MAX_LOGGED_TEXT = 2000;
+
+function truncateForLog(value, max = MAX_LOGGED_TEXT) {
+    if (value == null) return null;
+    const s = String(value).trim();
+    if (!s) return null;
+    return s.length > max ? s.slice(0, max - 1) + '…' : s;
+}
+
+// 8 hex characters. `source` is injectable so tests can pin the output;
+// production passes nothing and picks up the ambient Web Crypto.
+function newCheckId(source) {
+    const c = source ?? (typeof crypto !== 'undefined' ? crypto : null);
+    if (c && typeof c.randomUUID === 'function') {
+        return c.randomUUID().replace(/-/g, '').slice(0, 8);
+    }
+    if (c && typeof c.getRandomValues === 'function') {
+        const buf = c.getRandomValues(new Uint8Array(4));
+        return Array.from(buf, b => b.toString(16).padStart(2, '0')).join('');
+    }
+    // Neither API available (very old browser, exotic sandbox). Ratings and
+    // comments still work; ids are merely less uniformly distributed.
+    return Math.floor(Math.random() * 0x100000000).toString(16).padStart(8, '0');
+}
+
+// Shapes the POST /log body. Field names are snake_case to match the Neon
+// columns directly, so the worker can insert without a translation layer.
+function buildLogPayload(fields = {}) {
+    return {
+        check_id:        fields.checkId ?? null,
+        // 'source' for a single citation, 'group' for the collective verdict
+        // over an adjacent-citation group. Without it a group row is
+        // indistinguishable from a solo row whose source couldn't be fetched:
+        // both carry a null source_url.
+        kind:            fields.kind ?? 'source',
+        article_url:     fields.articleUrl ?? null,
+        article_title:   fields.articleTitle ?? null,
+        citation_number: fields.citationNumber ?? null,
+        source_url:      fields.sourceUrl ?? null,
+        provider:        fields.provider ?? null,
+        model:           fields.model ?? null,
+        verdict:         fields.verdict ?? null,
+        confidence:      fields.confidence ?? null,
+        reason_type:     fields.reasonType ?? null,
+        // Without these two a thumbs-down is uninterpretable: you know the
+        // check was wrong but not what it claimed or why it decided that.
+        claim_text:      truncateForLog(fields.claimText),
+        llm_comments:    truncateForLog(fields.comments),
+    };
 }
 
 // --- core/submission.js ---
@@ -1515,6 +1585,9 @@ function buildDatasetSubmissionUrl(
             this.activeSourceUrl = null;
             this.activeCitationNumber = null;
             this.activeRefElement = null;
+            // Id of the check currently shown in the sidebar; feedback on that
+            // result is keyed on it. Null until a verdict parses successfully.
+            this.activeCheckId = null;
             this.currentFetchId = 0;
             this.currentVerifyId = 0;
 
@@ -3787,17 +3860,37 @@ function buildDatasetSubmissionUrl(
                 + '(SUPPORTED, PARTIALLY SUPPORTED, NOT SUPPORTED, SOURCE UNAVAILABLE, contradiction, omission).';
         }
 
-        logVerification(verdict, confidence, reasonType) {
-            logVerification({
-                article_url: window.location.href,
-                article_title: typeof mw !== 'undefined' ? mw.config.get('wgTitle') : document.title,
-                citation_number: this.activeCitationNumber,
-                source_url: this.activeSourceUrl,
+        // Mints the check id, fires the log, and hands the id back so the
+        // caller can stash it on the result it just built. Every verdict the
+        // user can see gets one — including the ones that never reached an
+        // LLM — so the feedback controls are uniformly available.
+        //
+        // `parsed` is the verdict object ({ verdict, confidence, comments,
+        // reason_type }); `context` overrides the active-citation fields for
+        // the batch paths, which verify citations other than the selected one.
+        logVerification(parsed, context = {}) {
+            const checkId = newCheckId();
+            const provider = this.providers[this.currentProvider] || {};
+            // `in` rather than ??: the collective path passes sourceUrl: null
+            // deliberately (several sources, no single one to name), and that
+            // must not fall back to the sidebar's active citation.
+            const fromContext = (key, fallback) => (key in context ? context[key] : fallback);
+            logVerification(buildLogPayload({
+                checkId,
+                kind: context.kind,
+                articleUrl: window.location.href,
+                articleTitle: typeof mw !== 'undefined' ? mw.config.get('wgTitle') : document.title,
+                citationNumber: fromContext('citationNumber', this.activeCitationNumber),
+                sourceUrl: fromContext('sourceUrl', this.activeSourceUrl),
                 provider: this.currentProvider,
-                verdict: verdict,
-                confidence: confidence,
-                reason_type: reasonType ?? null,
-            });
+                model: provider.model || null,
+                verdict: parsed?.verdict,
+                confidence: parsed?.confidence,
+                reasonType: parsed?.reason_type ?? null,
+                claimText: fromContext('claimText', this.activeClaim),
+                comments: parsed?.comments,
+            }));
+            return checkId;
         }
 
         async verifyClaim() {
@@ -3825,15 +3918,20 @@ function buildDatasetSubmissionUrl(
                 }
 
                 this.updateStatus('Verification complete!');
-                this.displayResult(result);
 
-                // Fire-and-forget logging
+                // Fire-and-forget logging. Runs before displayResult() rather
+                // than after it: the feedback controls displayResult() renders
+                // are keyed on the check id minted here, and an unparseable
+                // response yields no id (and so no controls) by design.
+                this.activeCheckId = null;
                 try {
                     const jsonMatch = result.match(/```(?:json)?\s*([\s\S]*?)\s*```/) ||
                                      [null, result.match(/\{[\s\S]*\}/)?.[0]];
                     const parsed = JSON.parse(jsonMatch[1]);
-                    this.logVerification(parsed.verdict, parsed.confidence, parsed.reason_type);
+                    this.activeCheckId = this.logVerification(parsed);
                 } catch (e) {}
+
+                this.displayResult(result);
 
             } catch (error) {
                 if (verifyId !== this.currentVerifyId) {
@@ -4717,6 +4815,22 @@ function buildDatasetSubmissionUrl(
                 }
             }
 
+            // Collective verdicts were previously unlogged. They need a check
+            // id for the same reason the per-source rows do — they are a
+            // verdict the user is shown and can disagree with. kind='group'
+            // and the joined citation numbers keep them distinguishable;
+            // source_url stays null because there were several.
+            if (result.verdict !== 'ERROR') {
+                try {
+                    result.checkId = this.logVerification(result, {
+                        kind: 'group',
+                        citationNumber: result.citationNumber,
+                        sourceUrl: null,
+                        claimText,
+                    });
+                } catch (e) {}
+            }
+
             this.reportGroupResults.set(groupId, result);
             this.renderGroupCollectiveResult(result);
             this.renderReportSummary();
@@ -4883,6 +4997,15 @@ function buildDatasetSubmissionUrl(
                             fetchError: fetchResult.error,
                             truncated: false
                         };
+                        // Logged like any other verdict: the user sees it and
+                        // may well want to tell us the source is actually fine.
+                        try {
+                            result.checkId = this.logVerification(result, {
+                                citationNumber: citation.citationNumber,
+                                sourceUrl: citation.url,
+                                claimText: citation.claimText,
+                            });
+                        } catch (e) {}
                     } else {
                         const sourceTruncated = sourceContent.includes('\nTruncated: true');
                         // Verify via LLM. Retry transient failures (429 + 5xx +
@@ -4930,13 +5053,11 @@ function buildDatasetSubmissionUrl(
 
                             // Fire-and-forget logging
                             try {
-                                const savedCitationNumber = this.activeCitationNumber;
-                                const savedSourceUrl = this.activeSourceUrl;
-                                this.activeCitationNumber = citation.citationNumber;
-                                this.activeSourceUrl = citation.url;
-                                this.logVerification(parsed.verdict, parsed.confidence, parsed.reason_type);
-                                this.activeCitationNumber = savedCitationNumber;
-                                this.activeSourceUrl = savedSourceUrl;
+                                result.checkId = this.logVerification(parsed, {
+                                    citationNumber: citation.citationNumber,
+                                    sourceUrl: citation.url,
+                                    claimText: citation.claimText,
+                                });
                             } catch (e) {}
                         } catch (e) {
                             result = {
@@ -5113,6 +5234,7 @@ function buildDatasetSubmissionUrl(
             }
             const nextEl = document.getElementById('verifier-verdict-next');
             if (nextEl) nextEl.textContent = '';
+            this.activeCheckId = null;
             this.hasResult = false;
             this.renderUiState();
             const actionContainer = document.getElementById('verifier-action-container');

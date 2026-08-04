@@ -6,15 +6,52 @@
 CREATE TABLE verification_logs (
   id SERIAL PRIMARY KEY,
   ts TIMESTAMPTZ DEFAULT now(),
+  check_id TEXT UNIQUE,        -- minted client-side, joins feedback to the check
+  kind TEXT DEFAULT 'source',  -- 'source' | 'group'
   article_url TEXT,
   article_title TEXT,
-  citation_number TEXT,
-  source_url TEXT,
+  citation_number TEXT,        -- comma-joined for kind='group'
+  source_url TEXT,             -- null for kind='group' (several sources)
   provider TEXT,
+  model TEXT,
   verdict TEXT,
-  confidence INT
+  confidence INT,
+  reason_type TEXT,
+  claim_text TEXT,             -- truncated to 2000 chars client-side
+  llm_comments TEXT            -- ditto
 );
 ```
+
+Migration for the deployed table, which predates the last five columns:
+
+```sql
+ALTER TABLE verification_logs
+  ADD COLUMN check_id TEXT UNIQUE,
+  ADD COLUMN kind TEXT DEFAULT 'source',
+  ADD COLUMN model TEXT,
+  ADD COLUMN claim_text TEXT,
+  ADD COLUMN llm_comments TEXT;
+```
+
+(`reason_type` is already sent by the client; add it too if the deployed table
+is older than that change.)
+
+### Why `check_id` is minted in the browser
+
+The client generates the id (`newCheckId()` in `core/feedback.js`) instead of
+reading back a `SERIAL`. Logging stays fire-and-forget — the feedback controls
+attached to a result are usable immediately, with no round trip to await — and
+the id still exists if the log write failed. The cost is that the id is
+client-supplied and therefore untrusted; for research telemetry that is an
+acceptable trade, but don't build anything security-sensitive on it.
+
+### Why claim text and rationale are stored
+
+A rating against a row that holds only a verdict is uninterpretable: you learn
+that check `a7f3k2q9` was wrong without learning what it claimed or why the
+model decided that. Both fields are public content already (article prose and
+LLM output), and both are capped at `MAX_LOGGED_TEXT` before they leave the
+browser.
 
 ## Cloudflare Worker Changes
 
