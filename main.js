@@ -1146,6 +1146,15 @@ function logVerification(payload, { workerBase = 'https://publicai-proxy.alaexis
 //      `entry.<numeric-id>` from the pre-filled link.
 //   4. Run `npm run build` so the constants are re-inlined into main.js.
 
+// Cap for manually-pasted source text. Unlike fetched sources — which the
+// Cloudflare Worker proxy truncates server-side before they reach us — a manual
+// paste goes straight into the request body, so an oversized paste hits the
+// proxy's request-body limit (HTTP 413 "Request body too large"). We trim here
+// to stay comfortably under that limit (currently ~100 KB): budget = 100 KB
+// minus the ~6.5 KB system prompt, the claim/user-prompt boilerplate, and
+// JSON-escaping + UTF-8 overhead on the source itself. 80 000 chars leaves room.
+const MAX_MANUAL_SOURCE_CHARS = 80000;
+
 // Sentinel substring that marks scaffolded values as not-yet-configured.
 // isDatasetSubmissionConfigured() looks for this exact token; don't reuse it
 // anywhere else in this file.
@@ -3351,6 +3360,22 @@ function buildDatasetSubmissionUrl(
             const wasTrimmed = text.length > MAX_MANUAL_SOURCE_CHARS;
             if (wasTrimmed) {
                 text = text.slice(0, MAX_MANUAL_SOURCE_CHARS);
+            }
+
+            // The previous verdict was computed against whatever source content
+            // is being replaced (a failed fetch, or nothing). Leaving it on
+            // screen would show a stale assessment — e.g. still saying "SOURCE
+            // UNAVAILABLE: only a JS-disabled notice" after a PDF upload — that
+            // reads as though the override was ignored, even though activeSource
+            // below is correctly updated. Clear it so the panel goes back to
+            // "ready to verify" until the user re-runs it against the new text.
+            this.clearResult();
+            this.currentVerifyId++;
+            // clearResult() also wipes the group-membership badge (it's meant
+            // to be re-populated by a fresh citation selection); the claim and
+            // its group haven't changed here, only the source, so restore it.
+            if (this.activeRefElement) {
+                this.renderClaimGroupIndicator(this.activeRefElement);
             }
 
             this.activeSource = `Manual source text:\n\n${text}`;
