@@ -19,7 +19,7 @@ import sys
 
 # ---- palette (matches the PNG renders) -----------------------------------
 COL_S = "#1abea0"     # teal  -- the S (drawn above the V)
-COL_V = "#3878dc"     # blue  -- the V
+COL_V = "#6B21A8"     # purple -- the V (matches the sidebar accent)
 COL_2 = "#e6a23c"     # amber -- the superscript 2
 COL_TXT = "#22303f"   # dark slate -- the wordmark
 
