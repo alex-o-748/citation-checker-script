@@ -19,7 +19,6 @@ Rules:
 - Accept paraphrasing and straightforward implications, but not speculative inferences or logical leaps.
 - Distinguish between definitive statements and uncertain/hedged language. Claims stated as facts require sources that make definitive statements, not speculation or tentative assertions.
 - Names from languages using non-Latin scripts (Arabic, Chinese, Japanese, Korean, Russian, Hindi, etc.) may have multiple valid romanizations/transliterations. For example, "Yasmin" and "Yazmeen," or "Chekhov" and "Tchekhov," are variant spellings of the same name. Do not treat transliteration differences as factual errors.
-- Given names (especially of saints, historical or religious figures) are often localized differently per language, even when the rest of the name is unchanged. For example, "Paul" and "Paolo," or "John" and "Giovanni"/"Juan"/"Jean," are the same name in different languages. If the source is in another language, check whether a localized form of the name matches before concluding it is not mentioned.
 
 Source text evaluation:
 Before analyzing, check if the provided "source text" is actually usable content.
@@ -164,7 +163,6 @@ Rules:
 - Accept paraphrasing and straightforward implications, but not speculative inferences or logical leaps.
 - Distinguish between definitive statements and uncertain/hedged language. Claims stated as facts require sources that make definitive statements, not speculation or tentative assertions.
 - Names from languages using non-Latin scripts (Arabic, Chinese, Japanese, Korean, Russian, Hindi, etc.) may have multiple valid romanizations/transliterations. For example, "Yasmin" and "Yazmeen," or "Chekhov" and "Tchekhov," are variant spellings of the same name. Do not treat transliteration differences as factual errors.
-- Given names (especially of saints, historical or religious figures) are often localized differently per language, even when the rest of the name is unchanged. For example, "Paul" and "Paolo," or "John" and "Giovanni"/"Juan"/"Jean," are the same name in different languages. If a source is in another language, check whether a localized form of the name matches before concluding it is not mentioned.
 
 Source text evaluation:
 Some of the provided sources may be unusable — a paywall, login page, library catalog/metadata page (e.g. WorldCat, Google Books, JSTOR preview), cookie/JavaScript notice, 404/redirect, or an explicit "[This source could not be retrieved: ...]" note. Ignore unusable sources and judge the claim against the sources that DO contain usable article/book content.
