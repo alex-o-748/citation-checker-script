@@ -9,6 +9,9 @@ import {
   nowikiWrap,
   buildTalkSectionTitle,
   buildTalkSectionBody,
+  buildCommentUrl,
+  FEEDBACK_TALK_PAGE,
+  FEEDBACK_PRELOAD_PAGE,
 } from '../core/feedback.js';
 import { postFeedback } from '../core/worker.js';
 
@@ -246,13 +249,18 @@ test('buildTalkSectionTitle keeps joined citation numbers for group checks', () 
   );
 });
 
-test('buildTalkSectionBody includes the check id twice: heading-adjacent and machine-readable', () => {
-  const body = buildTalkSectionBody({ ...CONTEXT, note: 'The source does say it, on page 4.' });
-  assert.match(body, /<!-- source-verifier check: a7f3k2q9 -->$/);
-});
+
+
+
+
+
+
+
+
+
 
 test('buildTalkSectionBody records article, source, verdict, claim and reasoning', () => {
-  const body = buildTalkSectionBody({ ...CONTEXT, note: 'Disagree.' });
+  const body = buildTalkSectionBody(CONTEXT);
   assert.match(body, /\* '''Article:''' \[https:\/\/en\.wikipedia\.org\/wiki\/Barack_Obama Barack Obama\], citation \[12\]/);
   assert.match(body, /\* '''Source:''' https:\/\/example\.com\/source/);
   assert.match(body, /\* '''Tool's verdict:''' NOT SUPPORTED \(Claude, claude-sonnet-4-6\)/);
@@ -260,53 +268,81 @@ test('buildTalkSectionBody records article, source, verdict, claim and reasoning
   assert.match(body, /\* '''Tool's reasoning:''' <nowiki>The source never mentions Honolulu\.<\/nowiki>/);
 });
 
-test('buildTalkSectionBody signs the post', () => {
-  assert.match(buildTalkSectionBody({ ...CONTEXT, note: 'x' }), /\n~~~~\n/);
+test('buildTalkSectionBody leaves room for the editor to write, above the signature', () => {
+  const body = buildTalkSectionBody(CONTEXT);
+  const guide = body.indexOf('<!-- Write your comment below, then publish. -->');
+  const signature = body.indexOf('~~~~');
+  assert.ok(guide !== -1, 'the edit box should say where to write');
+  assert.ok(guide < signature, 'the writing space must come before the signature');
 });
 
-test('buildTalkSectionBody includes the corrected verdict when one was chosen', () => {
-  const body = buildTalkSectionBody({ ...CONTEXT, correctedVerdict: 'SUPPORTED', note: 'x' });
+test('buildTalkSectionBody ends with the machine-readable check id', () => {
+  assert.match(buildTalkSectionBody(CONTEXT), /<!-- source-verifier check: a7f3k2q9 -->$/);
+});
+
+test('buildTalkSectionBody includes a corrected verdict when one was chosen', () => {
+  const body = buildTalkSectionBody({ ...CONTEXT, correctedVerdict: 'SUPPORTED' });
   assert.match(body, /\* '''Editor says it should be:''' SUPPORTED/);
 });
 
 test('buildTalkSectionBody omits the correction line when none was chosen', () => {
-  assert.equal(buildTalkSectionBody({ ...CONTEXT, note: 'x' }).includes('should be'), false);
-});
-
-test("buildTalkSectionBody leaves the editor's own note as wikitext", () => {
-  // Their edit, their signature — they may legitimately want to link things.
-  const body = buildTalkSectionBody({ ...CONTEXT, note: 'See [[WP:V]] and {{tl|cite web}}.' });
-  assert.match(body, /See \[\[WP:V\]\] and \{\{tl\|cite web\}\}\./);
+  assert.equal(buildTalkSectionBody(CONTEXT).includes('should be'), false);
 });
 
 test('buildTalkSectionBody neutralises template syntax smuggled in via a source URL', () => {
-  const body = buildTalkSectionBody({
-    ...CONTEXT,
-    sourceUrl: 'https://evil.example/{{delete}}',
-    note: 'x',
-  });
+  const body = buildTalkSectionBody({ ...CONTEXT, sourceUrl: 'https://evil.example/{{delete}}' });
   assert.equal(body.includes('{{delete}}'), false);
   assert.match(body, /%7Bdelete%7D/);
 });
 
 test('buildTalkSectionBody keeps a claim containing wiki markup inert', () => {
-  const body = buildTalkSectionBody({
-    ...CONTEXT,
-    claimText: "== Injected heading ==\n{{db-g3}}",
-    note: 'x',
-  });
+  const body = buildTalkSectionBody({ ...CONTEXT, claimText: '== Injected heading ==\n{{db-g3}}' });
   assert.match(body, /<nowiki>== Injected heading == \{\{db-g3\}\}<\/nowiki>/);
 });
 
-test('buildTalkSectionBody works with no note at all', () => {
-  const body = buildTalkSectionBody(CONTEXT);
-  assert.match(body, /~~~~/);
-  assert.match(body, /source-verifier check: a7f3k2q9/);
-});
-
 test('buildTalkSectionBody omits lines it has no data for', () => {
-  const body = buildTalkSectionBody({ checkId: 'abc', note: 'Just a thought.' });
+  const body = buildTalkSectionBody({ checkId: 'abc' });
   assert.equal(body.includes("'''Source:'''"), false);
   assert.equal(body.includes("'''Claim checked:'''"), false);
-  assert.match(body, /Just a thought\./);
+  assert.match(body, /source-verifier check: abc/);
+});
+
+// --- the comment URL ----------------------------------------------------
+
+test('buildCommentUrl opens a new section on the talk page', () => {
+  const params = new URL(buildCommentUrl(CONTEXT)).searchParams;
+  assert.equal(params.get('title'), FEEDBACK_TALK_PAGE);
+  assert.equal(params.get('action'), 'edit');
+  assert.equal(params.get('section'), 'new');
+});
+
+test('buildCommentUrl sets the heading via preloadtitle', () => {
+  const params = new URL(buildCommentUrl(CONTEXT)).searchParams;
+  assert.equal(params.get('preloadtitle'), 'Feedback: Barack Obama [12] (check a7f3k2q9)');
+});
+
+test('buildCommentUrl passes the whole body as a single preload parameter', () => {
+  // The preload page is just `$1`, so the script stays the only place the
+  // section layout is defined and that page never has to change.
+  const params = new URL(buildCommentUrl(CONTEXT)).searchParams;
+  assert.equal(params.get('preload'), FEEDBACK_PRELOAD_PAGE);
+  assert.equal(params.getAll('preloadparams[]').length, 1);
+  assert.equal(params.get('preloadparams[]'), buildTalkSectionBody(CONTEXT));
+});
+
+test('buildCommentUrl round-trips wikitext through the query string intact', () => {
+  const context = { ...CONTEXT, claimText: 'A & B = C; 100% "sure" +/-' };
+  const params = new URL(buildCommentUrl(context)).searchParams;
+  assert.match(params.get('preloadparams[]'), /A & B = C; 100% "sure" \+\/-/);
+});
+
+test('buildCommentUrl carries a chosen correction into the preloaded text', () => {
+  const params = new URL(buildCommentUrl({ ...CONTEXT, correctedVerdict: 'SUPPORTED' })).searchParams;
+  assert.match(params.get('preloadparams[]'), /Editor says it should be:''' SUPPORTED/);
+});
+
+test('buildCommentUrl points at en.wikipedia regardless of the wiki in use', () => {
+  // The talk page is always the en.wikipedia one, even when the script is
+  // running on another language wiki.
+  assert.ok(buildCommentUrl(CONTEXT).startsWith('https://en.wikipedia.org/w/index.php?'));
 });

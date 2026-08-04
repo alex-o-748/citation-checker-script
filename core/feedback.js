@@ -21,10 +21,11 @@
 // rather than a redesign.
 export const FEEDBACK_TALK_PAGE = 'User talk:Alaexis/AI_Source_Verification';
 
-// Absolute, because the script also runs on other-language wikis where a
-// same-wiki link would resolve to a page that doesn't exist.
-export const FEEDBACK_TALK_PAGE_URL =
-    'https://en.wikipedia.org/wiki/User_talk:Alaexis/AI_Source_Verification';
+// A one-line page whose entire content is `$1`. It exists only because
+// MediaWiki will not accept body text directly in an edit URL; see
+// buildCommentUrl(). Nothing about it needs to change when the section layout
+// does.
+export const FEEDBACK_PRELOAD_PAGE = 'User:Alaexis/AI_Source_Verification/feedback-preload';
 
 // Claim text and LLM rationale are unbounded in principle — a pathological
 // source or a runaway model response shouldn't push a multi-megabyte row into
@@ -120,14 +121,20 @@ export function buildTalkSectionTitle({ articleTitle, citationNumber, checkId } 
     return `Feedback: ${title}${num ? ` [${num}]` : ''} (check ${checkId ?? 'unknown'})`;
 }
 
+// The context half of a talk-page section: everything the tool knows, with a
+// gap for the editor to write in. It is preloaded into Wikipedia's own new
+// section form rather than posted by the script, so this text is a starting
+// point the editor sees and can change, not a finished comment.
+//
 // The check id appears twice on purpose: in the heading, where a human reading
 // the talk page can see which check is under discussion, and in a trailing
 // HTML comment, which is what the talk-page scraper can match on without
-// having to parse headings.
+// having to parse headings. HTML comments are also how the "write here"
+// guidance is delivered — visible in the edit box, invisible once published.
 export function buildTalkSectionBody(fields = {}) {
     const {
         articleUrl, articleTitle, citationNumber, claimText, sourceUrl,
-        verdict, comments, providerName, model, correctedVerdict, checkId, note,
+        verdict, comments, providerName, model, correctedVerdict, checkId,
     } = fields;
 
     const clean = v => String(v ?? '').replace(/\s+/g, ' ').trim();
@@ -155,13 +162,35 @@ export function buildTalkSectionBody(fields = {}) {
     const reasoning = nowikiWrap(comments);
     if (reasoning) lines.push(`* '''Tool's reasoning:''' ${reasoning}`);
 
-    const body = [lines.join('\n')];
-    const typed = String(note ?? '').trim();
-    // The note is the editor's own prose in their own signed edit, so it is
-    // left as wikitext rather than escaped.
-    if (typed) body.push(typed);
-    body.push('~~~~');
-    body.push(`<!-- source-verifier check: ${checkId ?? 'unknown'} -->`);
+    return [
+        lines.join('\n'),
+        '<!-- Write your comment below, then publish. -->',
+        '',
+        '~~~~',
+        `<!-- source-verifier check: ${checkId ?? 'unknown'} -->`,
+    ].filter(line => line !== undefined).join('\n\n');
+}
 
-    return body.filter(Boolean).join('\n\n');
+// The URL that opens Wikipedia's own "add new section" form with the context
+// already in the edit box.
+//
+// A URL can name the page and set the heading, but there is no parameter for
+// body text — hence preload, which starts the edit box off with the contents
+// of another page, substituting $1, $2… from preloadparams. FEEDBACK_PRELOAD_PAGE
+// contains nothing but `$1`, so the whole body travels as one parameter and
+// buildTalkSectionBody stays the only place the layout is defined. That page
+// never needs to change.
+export function buildCommentUrl(fields = {}, {
+    wikiBase = 'https://en.wikipedia.org/w/index.php',
+    talkPage = FEEDBACK_TALK_PAGE,
+    preloadPage = FEEDBACK_PRELOAD_PAGE,
+} = {}) {
+    const params = new URLSearchParams();
+    params.set('title', talkPage);
+    params.set('action', 'edit');
+    params.set('section', 'new');
+    params.set('preloadtitle', buildTalkSectionTitle(fields));
+    params.set('preload', preloadPage);
+    params.set('preloadparams[]', buildTalkSectionBody(fields));
+    return `${wikiBase}?${params.toString()}`;
 }

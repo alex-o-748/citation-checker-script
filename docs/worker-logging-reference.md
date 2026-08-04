@@ -126,7 +126,7 @@ CREATE TABLE feedback (
   check_id TEXT REFERENCES verification_logs(check_id),
   rating SMALLINT,           -- +1 / -1, null for correction-only or comment-only rows
   corrected_verdict TEXT,    -- from the thumbs-down chips
-  wiki_section TEXT,         -- talk-page section title, when the editor commented
+  wiki_section TEXT,         -- talk-page section, filled in by the scrape (see below)
   client_id TEXT             -- random per-browser token, dedupe only
 );
 
@@ -134,7 +134,7 @@ CREATE INDEX feedback_check_id_idx ON feedback (check_id);
 ```
 
 A single check can produce several rows: a thumbs-down, then a corrected
-verdict, then a comment. Only the first carries `rating`, so
+verdict. Only the first carries `rating`, so
 `count(*) FILTER (WHERE rating IS NOT NULL)` is the rating count and doesn't
 double-count a rating the editor then elaborated on.
 
@@ -185,11 +185,43 @@ where the user clicked:
 | Written comment | New section on `User talk:Alaexis/AI_Source_Verification` | Needs to be public and to support follow-up questions. A database is a terrible forum. |
 
 `check_id` is on both sides, so the two can be joined: the heading and a
-trailing HTML comment on each talk section carry the id, and `wiki_section`
-records the heading against the check row at post time — without waiting for
-the scheduled talk-page scrape to notice it.
+trailing HTML comment on each talk section carry the id, and the scheduled
+talk-page scrape matches on it.
 
-Comments are posted with `mw.Api#postWithEditToken` from inside the sidebar, so
-the editor never leaves the article. On wikis other than en.wikipedia the post
-goes through `mw.ForeignApi`, since the talk page is always the en.wikipedia
-one.
+### The comment path uses Wikipedia's own edit form
+
+The script does not write the comment. Clicking **Comment** opens
+`action=edit&section=new` on the talk page in a new tab, with the context
+already in the edit box, and the editor writes and publishes there.
+
+That means preview, the signature button, DiscussionTools, and — the reason
+this beats an API post — native handling of blocks, protection, CAPTCHAs and
+abuse filters. An API post turns every one of those into a generic failure the
+script has to explain badly. It also means nothing is ever written under
+someone's account without them seeing the exact text first, because the text is
+sitting in their edit box.
+
+A URL can set the target page and the heading (`preloadtitle`) but has no
+parameter for body text. That is what `preload` is for: it starts the edit box
+off with the contents of another page, substituting `$1`, `$2`… from
+`preloadparams[]`. So:
+
+**`User:Alaexis/AI_Source_Verification/feedback-preload`** contains exactly:
+
+```
+$1<noinclude>
+Preload target for [[User:Alaexis/AI_Source_Verification|Source Verifier]]'s
+feedback button. The single $1 above is substituted with the feedback text at
+edit time — please don't add anything else to this page or edit summaries
+break. Deleting this page breaks the script's Comment button.
+</noinclude>
+```
+
+The whole body travels as one parameter, so `buildTalkSectionBody()` in
+`core/feedback.js` stays the only place the section layout is defined and this
+page never needs to change again.
+
+The trade for all of this: because the editor publishes it themselves, the
+script never learns whether they went through with it. So `wiki_section` is not
+written at click time — the daily scrape resolves the link instead, matching
+the `<!-- source-verifier check: … -->` marker in each section.

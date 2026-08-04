@@ -1165,10 +1165,11 @@ function postFeedback(payload, { workerBase = 'https://publicai-proxy.alaexis.wo
 // rather than a redesign.
 const FEEDBACK_TALK_PAGE = 'User talk:Alaexis/AI_Source_Verification';
 
-// Absolute, because the script also runs on other-language wikis where a
-// same-wiki link would resolve to a page that doesn't exist.
-const FEEDBACK_TALK_PAGE_URL =
-    'https://en.wikipedia.org/wiki/User_talk:Alaexis/AI_Source_Verification';
+// A one-line page whose entire content is `$1`. It exists only because
+// MediaWiki will not accept body text directly in an edit URL; see
+// buildCommentUrl(). Nothing about it needs to change when the section layout
+// does.
+const FEEDBACK_PRELOAD_PAGE = 'User:Alaexis/AI_Source_Verification/feedback-preload';
 
 // Claim text and LLM rationale are unbounded in principle — a pathological
 // source or a runaway model response shouldn't push a multi-megabyte row into
@@ -1264,14 +1265,20 @@ function buildTalkSectionTitle({ articleTitle, citationNumber, checkId } = {}) {
     return `Feedback: ${title}${num ? ` [${num}]` : ''} (check ${checkId ?? 'unknown'})`;
 }
 
+// The context half of a talk-page section: everything the tool knows, with a
+// gap for the editor to write in. It is preloaded into Wikipedia's own new
+// section form rather than posted by the script, so this text is a starting
+// point the editor sees and can change, not a finished comment.
+//
 // The check id appears twice on purpose: in the heading, where a human reading
 // the talk page can see which check is under discussion, and in a trailing
 // HTML comment, which is what the talk-page scraper can match on without
-// having to parse headings.
+// having to parse headings. HTML comments are also how the "write here"
+// guidance is delivered — visible in the edit box, invisible once published.
 function buildTalkSectionBody(fields = {}) {
     const {
         articleUrl, articleTitle, citationNumber, claimText, sourceUrl,
-        verdict, comments, providerName, model, correctedVerdict, checkId, note,
+        verdict, comments, providerName, model, correctedVerdict, checkId,
     } = fields;
 
     const clean = v => String(v ?? '').replace(/\s+/g, ' ').trim();
@@ -1299,15 +1306,37 @@ function buildTalkSectionBody(fields = {}) {
     const reasoning = nowikiWrap(comments);
     if (reasoning) lines.push(`* '''Tool's reasoning:''' ${reasoning}`);
 
-    const body = [lines.join('\n')];
-    const typed = String(note ?? '').trim();
-    // The note is the editor's own prose in their own signed edit, so it is
-    // left as wikitext rather than escaped.
-    if (typed) body.push(typed);
-    body.push('~~~~');
-    body.push(`<!-- source-verifier check: ${checkId ?? 'unknown'} -->`);
+    return [
+        lines.join('\n'),
+        '<!-- Write your comment below, then publish. -->',
+        '',
+        '~~~~',
+        `<!-- source-verifier check: ${checkId ?? 'unknown'} -->`,
+    ].filter(line => line !== undefined).join('\n\n');
+}
 
-    return body.filter(Boolean).join('\n\n');
+// The URL that opens Wikipedia's own "add new section" form with the context
+// already in the edit box.
+//
+// A URL can name the page and set the heading, but there is no parameter for
+// body text — hence preload, which starts the edit box off with the contents
+// of another page, substituting $1, $2… from preloadparams. FEEDBACK_PRELOAD_PAGE
+// contains nothing but `$1`, so the whole body travels as one parameter and
+// buildTalkSectionBody stays the only place the layout is defined. That page
+// never needs to change.
+function buildCommentUrl(fields = {}, {
+    wikiBase = 'https://en.wikipedia.org/w/index.php',
+    talkPage = FEEDBACK_TALK_PAGE,
+    preloadPage = FEEDBACK_PRELOAD_PAGE,
+} = {}) {
+    const params = new URLSearchParams();
+    params.set('title', talkPage);
+    params.set('action', 'edit');
+    params.set('section', 'new');
+    params.set('preloadtitle', buildTalkSectionTitle(fields));
+    params.set('preload', preloadPage);
+    params.set('preloadparams[]', buildTalkSectionBody(fields));
+    return `${wikiBase}?${params.toString()}`;
 }
 
 // --- core/submission.js ---
@@ -1440,18 +1469,6 @@ function buildDatasetSubmissionUrl(
         'Thanks — recorded.': 'Merci — c’est enregistré.',
         'Could not record that, sorry.': 'Impossible d’enregistrer, désolé.',
         'Comment': 'Commenter',
-        'Comment on talk page': 'Commenter sur la page de discussion',
-        'What did it get wrong, or what would you like to ask?':
-            'Qu’est-ce qui est erroné, ou que souhaitez-vous demander ?',
-        'Posted publicly to the script\'s talk page as {user}, along with the claim, the source and the verdict.':
-            'Publié publiquement sur la page de discussion du script en tant que {user}, avec l’affirmation, la source et le verdict.',
-        'Show exactly what will be posted': 'Voir exactement ce qui sera publié',
-        'Post to talk page': 'Publier sur la page de discussion',
-        'Write something first.': 'Écrivez d’abord quelque chose.',
-        'Posting…': 'Publication…',
-        'Posted to the talk page — thanks.': 'Publié sur la page de discussion — merci.',
-        'Could not post. You can still comment on the talk page directly.':
-            'Échec de la publication. Vous pouvez commenter directement sur la page de discussion.',
         'Edit Section': 'Modifier la section',
         'Copy Report (Wikitext)': 'Copier le rapport (wikicode)',
         'Copy Report (Plain Text)': 'Copier le rapport (texte brut)',
@@ -2942,38 +2959,6 @@ function buildDatasetSubmissionUrl(
                 .verifier-feedback-chip .oo-ui-buttonElement-button:hover {
                     border-color: var(--sv-border-chip-hover);
                     background: var(--sv-bg-chip-hover);
-                }
-                .verifier-feedback-comment {
-                    margin-top: 6px;
-                }
-                .verifier-feedback-comment-actions {
-                    display: flex;
-                    gap: 4px;
-                    margin-top: 4px;
-                }
-                .verifier-feedback-notice {
-                    color: var(--sv-ink-hint);
-                    font-size: 11px;
-                    margin-top: 4px;
-                }
-                .verifier-feedback-preview {
-                    font-size: 11px;
-                    margin-top: 4px;
-                }
-                .verifier-feedback-preview summary {
-                    color: var(--sv-ink-subtle);
-                    cursor: pointer;
-                }
-                .verifier-feedback-preview pre {
-                    background: var(--sv-bg-inset);
-                    border: 1px solid var(--sv-border-2);
-                    color: var(--sv-ink-3);
-                    padding: 6px;
-                    margin: 4px 0 0;
-                    max-height: 180px;
-                    overflow: auto;
-                    white-space: pre-wrap;
-                    word-break: break-word;
                 }
                 .verifier-feedback-status {
                     color: var(--sv-ink-subtle);
@@ -5414,6 +5399,14 @@ function buildDatasetSubmissionUrl(
         // conversation: it needs to be public, and it needs to support
         // follow-up questions, so it goes on-wiki as a talk-page section. The
         // check id appears on both sides, which is what lets them be joined.
+        //
+        // The script never writes the comment itself. Clicking Comment opens
+        // Wikipedia's own new-section form with the context preloaded, and the
+        // editor writes and publishes there, in the interface they already
+        // know — with preview, signature, and native handling of blocks,
+        // CAPTCHAs and abuse filters. The cost is that the script never learns
+        // whether they went through with it, so the talk section is joined to
+        // the check row by the scheduled scrape rather than at click time.
 
         // Random per-browser token, minted once. Lets repeat clicks from one
         // browser be collapsed without recording anything about the user.
@@ -5435,17 +5428,6 @@ function buildDatasetSubmissionUrl(
                 ...fields,
                 clientId: this.getFeedbackClientId(),
             }));
-        }
-
-        // Comments always land on the en.wikipedia talk page, even when the
-        // script is running on another wiki — so a plain mw.Api (which posts
-        // to the current wiki) is only correct on en.
-        async getTalkPageApi() {
-            if (typeof mw !== 'undefined' && mw.config.get('wgServerName') === 'en.wikipedia.org') {
-                return new mw.Api();
-            }
-            await mw.loader.using('mediawiki.ForeignApi');
-            return new mw.ForeignApi('https://en.wikipedia.org/w/api.php');
         }
 
         // Everything the feedback controls need about one displayed verdict,
@@ -5515,6 +5497,20 @@ function buildDatasetSubmissionUrl(
             row.appendChild(up.$element[0]);
             row.appendChild(down.$element[0]);
 
+            // Opens Wikipedia's own new-section form with the context already
+            // in the edit box. Kept as a real href rather than a window.open
+            // so middle-click and open-in-new-tab behave normally; the target
+            // is rebuilt if a correction is chosen, so that choice travels
+            // into the comment.
+            const commentBtn = new OO.ui.ButtonWidget({
+                label: this.t('Comment'),
+                icon: 'feedback',
+                framed: false,
+                href: buildCommentUrl(context),
+                target: '_blank',
+            });
+            row.appendChild(commentBtn.$element[0]);
+
             // A thumbs-down plus one more click yields a labelled example —
             // the same thing the Google Form existed to collect, at a fraction
             // of the friction.
@@ -5530,6 +5526,7 @@ function buildDatasetSubmissionUrl(
                     chips.forEach(c => c.setDisabled(true));
                     chip.$element.addClass('is-chosen');
                     setStatus(this.t('Thanks — recorded.'));
+                    commentBtn.setHref(buildCommentUrl({ ...context, correctedVerdict }));
                     // rating is omitted here: the thumbs-down already counted,
                     // and a second row carrying it would double-count.
                     this.sendFeedback({ checkId: context.checkId, correctedVerdict: verdict })
@@ -5539,134 +5536,12 @@ function buildDatasetSubmissionUrl(
                 return chip;
             });
 
-            const commentPanel = this.buildFeedbackCommentPanel(context, {
-                setStatus,
-                getCorrectedVerdict: () => correctedVerdict,
-            });
-            row.appendChild(commentPanel.button.$element[0]);
-
             wrap.appendChild(row);
             wrap.appendChild(correction);
-            if (commentPanel.panel) wrap.appendChild(commentPanel.panel);
             wrap.appendChild(status);
             return wrap;
         }
 
-        // The comment half. Logged-out users get a plain link to the talk page
-        // instead of an in-place composer: posting needs an account, and a
-        // form that fails on submit is a worse experience than a link.
-        buildFeedbackCommentPanel(context, { setStatus, getCorrectedVerdict }) {
-            const userName = typeof mw !== 'undefined' ? mw.config.get('wgUserName') : null;
-            if (!userName) {
-                return {
-                    button: new OO.ui.ButtonWidget({
-                        label: this.t('Comment on talk page'),
-                        icon: 'feedback',
-                        framed: false,
-                        href: FEEDBACK_TALK_PAGE_URL,
-                        target: '_blank',
-                    }),
-                    panel: null,
-                };
-            }
-
-            const panel = document.createElement('div');
-            panel.className = 'verifier-feedback-comment';
-            panel.hidden = true;
-
-            const input = new OO.ui.MultilineTextInputWidget({
-                rows: 3,
-                autosize: true,
-                placeholder: this.t('What did it get wrong, or what would you like to ask?'),
-            });
-            panel.appendChild(input.$element[0]);
-
-            const notice = document.createElement('div');
-            notice.className = 'verifier-feedback-notice';
-            notice.textContent = this.t('Posted publicly to the script\'s talk page as {user}, along with the claim, the source and the verdict.', { user: userName });
-            panel.appendChild(notice);
-
-            // Nothing gets posted under someone's name without showing them
-            // the exact wikitext first.
-            const preview = document.createElement('details');
-            preview.className = 'verifier-feedback-preview';
-            const previewSummary = document.createElement('summary');
-            previewSummary.textContent = this.t('Show exactly what will be posted');
-            const previewBody = document.createElement('pre');
-            preview.appendChild(previewSummary);
-            preview.appendChild(previewBody);
-            const refreshPreview = () => {
-                previewBody.textContent =
-                    '== ' + buildTalkSectionTitle(context) + ' ==\n\n' +
-                    buildTalkSectionBody({
-                        ...context,
-                        note: input.getValue(),
-                        correctedVerdict: getCorrectedVerdict(),
-                    });
-            };
-            input.on('change', refreshPreview);
-            refreshPreview();
-            panel.appendChild(preview);
-
-            const postBtn = new OO.ui.ButtonWidget({ label: this.t('Post to talk page'), flags: ['progressive'] });
-            const cancelBtn = new OO.ui.ButtonWidget({ label: this.t('Cancel'), framed: false });
-            const actions = document.createElement('div');
-            actions.className = 'verifier-feedback-comment-actions';
-            actions.appendChild(postBtn.$element[0]);
-            actions.appendChild(cancelBtn.$element[0]);
-            panel.appendChild(actions);
-
-            const button = new OO.ui.ButtonWidget({ label: this.t('Comment'), icon: 'feedback', framed: false });
-            button.on('click', () => {
-                panel.hidden = !panel.hidden;
-                if (!panel.hidden) {
-                    refreshPreview();
-                    input.focus();
-                }
-            });
-            cancelBtn.on('click', () => { panel.hidden = true; });
-
-            postBtn.on('click', async () => {
-                const note = input.getValue().trim();
-                if (!note) {
-                    setStatus(this.t('Write something first.'), true);
-                    return;
-                }
-                postBtn.setDisabled(true);
-                cancelBtn.setDisabled(true);
-                setStatus(this.t('Posting…'));
-                const sectionTitle = buildTalkSectionTitle(context);
-                try {
-                    const api = await this.getTalkPageApi();
-                    await api.postWithEditToken({
-                        action: 'edit',
-                        title: FEEDBACK_TALK_PAGE,
-                        section: 'new',
-                        sectiontitle: sectionTitle,
-                        text: buildTalkSectionBody({
-                            ...context,
-                            note,
-                            correctedVerdict: getCorrectedVerdict(),
-                        }),
-                        summary: 'Feedback via [[User:Alaexis/AI_Source_Verification|Source Verifier]]',
-                        formatversion: 2,
-                    });
-                    panel.hidden = true;
-                    button.setDisabled(true);
-                    setStatus(this.t('Posted to the talk page — thanks.'));
-                    // Recorded so the check row points at the discussion
-                    // immediately, rather than waiting on the talk-page scrape.
-                    this.sendFeedback({ checkId: context.checkId, wikiSection: sectionTitle }).catch(() => {});
-                } catch (e) {
-                    postBtn.setDisabled(false);
-                    cancelBtn.setDisabled(false);
-                    console.error('[CitationVerifier] Talk page post failed:', e);
-                    setStatus(this.t('Could not post. You can still comment on the talk page directly.'), true);
-                }
-            });
-
-            return { button, panel };
-        }
 
         clearResult() {
             const verdictEl = document.getElementById('verifier-verdict');
