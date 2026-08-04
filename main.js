@@ -19,6 +19,7 @@ Rules:
 - Accept paraphrasing and straightforward implications, but not speculative inferences or logical leaps.
 - Distinguish between definitive statements and uncertain/hedged language. Claims stated as facts require sources that make definitive statements, not speculation or tentative assertions.
 - Names from languages using non-Latin scripts (Arabic, Chinese, Japanese, Korean, Russian, Hindi, etc.) may have multiple valid romanizations/transliterations. For example, "Yasmin" and "Yazmeen," or "Chekhov" and "Tchekhov," are variant spellings of the same name. Do not treat transliteration differences as factual errors.
+- Given names (especially of saints, historical or religious figures) are often localized differently per language, even when the rest of the name is unchanged. For example, "Paul" and "Paolo," or "John" and "Giovanni"/"Juan"/"Jean," are the same name in different languages. If the source is in another language, check whether a localized form of the name matches before concluding it is not mentioned.
 
 Source text evaluation:
 Before analyzing, check if the provided "source text" is actually usable content.
@@ -163,6 +164,7 @@ Rules:
 - Accept paraphrasing and straightforward implications, but not speculative inferences or logical leaps.
 - Distinguish between definitive statements and uncertain/hedged language. Claims stated as facts require sources that make definitive statements, not speculation or tentative assertions.
 - Names from languages using non-Latin scripts (Arabic, Chinese, Japanese, Korean, Russian, Hindi, etc.) may have multiple valid romanizations/transliterations. For example, "Yasmin" and "Yazmeen," or "Chekhov" and "Tchekhov," are variant spellings of the same name. Do not treat transliteration differences as factual errors.
+- Given names (especially of saints, historical or religious figures) are often localized differently per language, even when the rest of the name is unchanged. For example, "Paul" and "Paolo," or "John" and "Giovanni"/"Juan"/"Jean," are the same name in different languages. If a source is in another language, check whether a localized form of the name matches before concluding it is not mentioned.
 
 Source text evaluation:
 Some of the provided sources may be unusable — a paywall, login page, library catalog/metadata page (e.g. WorldCat, Google Books, JSTOR preview), cookie/JavaScript notice, 404/redirect, or an explicit "[This source could not be retrieved: ...]" note. Ignore unusable sources and judge the claim against the sources that DO contain usable article/book content.
@@ -1146,15 +1148,6 @@ function logVerification(payload, { workerBase = 'https://publicai-proxy.alaexis
 //      `entry.<numeric-id>` from the pre-filled link.
 //   4. Run `npm run build` so the constants are re-inlined into main.js.
 
-// Cap for manually-pasted source text. Unlike fetched sources — which the
-// Cloudflare Worker proxy truncates server-side before they reach us — a manual
-// paste goes straight into the request body, so an oversized paste hits the
-// proxy's request-body limit (HTTP 413 "Request body too large"). We trim here
-// to stay comfortably under that limit (currently ~100 KB): budget = 100 KB
-// minus the ~6.5 KB system prompt, the claim/user-prompt boilerplate, and
-// JSON-escaping + UTF-8 overhead on the source itself. 80 000 chars leaves room.
-const MAX_MANUAL_SOURCE_CHARS = 80000;
-
 // Sentinel substring that marks scaffolded values as not-yet-configured.
 // isDatasetSubmissionConfigured() looks for this exact token; don't reuse it
 // anywhere else in this file.
@@ -1205,6 +1198,18 @@ function buildDatasetSubmissionUrl(
     return `${formUrl}?${params.toString()}`;
 }
 // </core-injected>
+
+// Cap for manually-pasted source text. Unlike fetched sources — which the
+// Cloudflare Worker proxy truncates server-side before they reach us — a manual
+// paste goes straight into the request body, so an oversized paste hits the
+// proxy's request-body limit (HTTP 413 "Request body too large"). We trim here
+// to stay comfortably under that limit (currently ~100 KB): budget = 100 KB
+// minus the ~6.5 KB system prompt, the claim/user-prompt boilerplate, and
+// JSON-escaping + UTF-8 overhead on the source itself. 80 000 chars leaves room.
+// Browser-only (used by loadManualSourceText()); not shared with core/, so it
+// lives here rather than inside the <core-injected> block, which npm run build
+// regenerates wholesale from core/ and would otherwise silently drop this.
+const MAX_MANUAL_SOURCE_CHARS = 80000;
 
     // ========================================
     // UI LOCALIZATION (i18n)
