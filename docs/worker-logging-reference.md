@@ -18,11 +18,13 @@ CREATE TABLE verification_logs (
   confidence INT,
   reason_type TEXT,
   claim_text TEXT,             -- truncated to 2000 chars client-side
-  llm_comments TEXT            -- ditto
+  llm_comments TEXT,           -- ditto
+  source_quote TEXT,           -- ditto; '' when the model offered no quote
+  quote_status TEXT            -- exact | normalized | partial | not-found | too-short | empty | no-source
 );
 ```
 
-Migration for the deployed table, which predates the last five columns:
+Migration for the deployed table, which predates the last seven columns:
 
 ```sql
 ALTER TABLE verification_logs
@@ -30,11 +32,40 @@ ALTER TABLE verification_logs
   ADD COLUMN kind TEXT DEFAULT 'source',
   ADD COLUMN model TEXT,
   ADD COLUMN claim_text TEXT,
-  ADD COLUMN llm_comments TEXT;
+  ADD COLUMN llm_comments TEXT,
+  ADD COLUMN source_quote TEXT,
+  ADD COLUMN quote_status TEXT;
 ```
 
 (`reason_type` is already sent by the client; add it too if the deployed table
 is older than that change.)
+
+The client sends `source_quote` / `quote_status` whether or not the columns
+exist — the INSERT statement in the Worker names its columns explicitly, so an
+unmigrated table simply drops them rather than erroring. Add the columns to the
+INSERT once they exist.
+
+### Why unverified quotes are logged
+
+`quote_status` is the outcome of checking the model's quote against the source
+text it was shown (`core/quote.js`). The UI shows a quote only when that check
+passes; the log stores it either way.
+
+That asymmetry is deliberate. A `not-found` row means the model produced a
+passage the source does not contain — which is the most interesting row in the
+table, both for judging a provider and for spotting a claim whose source was
+misread. Filtering those out at the client would leave a log that can only tell
+you about the cases that already went well:
+
+```sql
+-- quote fidelity per provider
+SELECT provider,
+       count(*) FILTER (WHERE source_quote <> '')                    AS offered,
+       count(*) FILTER (WHERE quote_status IN ('exact','normalized')) AS verified
+FROM verification_logs
+WHERE verdict IN ('SUPPORTED', 'PARTIALLY SUPPORTED')
+GROUP BY provider;
+```
 
 ### Why `check_id` is minted in the browser
 
