@@ -150,9 +150,20 @@ export const EDITOR_EXPLANATION_LABEL = "Editor's explanation";
 // having to parse headings. HTML comments are also how the "write here"
 // guidance is delivered — visible in the edit box, invisible once published.
 //
-// The signature stays last (bar that invisible comment) because DiscussionTools
-// attributes a comment by the signature that ends it; content after it lands
-// the reply button in the wrong place.
+// Nothing here emits a signature, and nothing here may. Four tildes are not
+// text: they are an instruction to MediaWiki's pre-save transform, which runs
+// over the *whole page* on every save, so a preloaded signature belongs to
+// whoever saves next rather than to the editor who opened the form. If the
+// tildes survive that first save unexpanded — the new topic tool handles
+// signing itself — they sit in the page as a landmine until some unrelated
+// account saves it and gets its own name and timestamp stamped in. That is
+// exactly what happened to check 4d9d0118, which a passing bot signed.
+// Signing is the editor's, and their editor's, business; we only ask for it.
+//
+// The same trap applies to the guidance below, which is why it spells out
+// "sign" in words. Literal tildes inside an HTML comment are still expanded by
+// the pre-save transform — invisible in the rendered page, and still a
+// landmine in the wikitext.
 export function buildTalkSectionBody(fields = {}) {
     const {
         articleUrl, articleTitle, citationNumber, claimText, sourceUrl,
@@ -200,8 +211,7 @@ export function buildTalkSectionBody(fields = {}) {
     // after the invisible comment — renders as "Editor's explanation: <prose>"
     // rather than leaving a bold heading dangling above the text.
     blocks.push(
-        `'''${EDITOR_EXPLANATION_LABEL}:''' <!-- Write your explanation here, then publish. -->`,
-        '~~~~',
+        `'''${EDITOR_EXPLANATION_LABEL}:''' <!-- Write your explanation here, then sign and publish. -->`,
         `<!-- source-verifier check: ${checkId ?? 'unknown'} -->`,
     );
 

@@ -270,12 +270,25 @@ test('buildTalkSectionBody records article, source, verdict, claim and reasoning
   assert.match(body, /\* '''Tool's reasoning:''' <nowiki>The source never mentions Honolulu\.<\/nowiki>/);
 });
 
-test('buildTalkSectionBody leaves room for the editor to write, above the signature', () => {
+test('buildTalkSectionBody tells the editor where to write and to sign', () => {
   const body = buildTalkSectionBody(CONTEXT);
-  const guide = body.indexOf('<!-- Write your explanation here, then publish. -->');
-  const signature = body.indexOf('~~~~');
-  assert.ok(guide !== -1, 'the edit box should say where to write');
-  assert.ok(guide < signature, 'the writing space must come before the signature');
+  assert.match(body, /<!-- Write your explanation here, then sign and publish\. -->/);
+});
+
+// Four tildes are an instruction to MediaWiki's pre-save transform, which runs
+// over the whole page on every save — a preloaded signature belongs to whoever
+// saves next, not to the editor who opened the form, and if it survives that
+// save unexpanded it gets some later account's name stamped in. The HTML
+// comments are covered too: the transform does not skip them.
+test('buildTalkSectionBody never emits a signature, anywhere', () => {
+  for (const fields of [CONTEXT, { ...CONTEXT, correctedVerdict: 'SUPPORTED' }, { checkId: 'x' }, {}]) {
+    assert.equal(buildTalkSectionBody(fields).includes('~~~'), false);
+  }
+});
+
+test('buildCommentUrl never carries a signature into the preload', () => {
+  const preloaded = new URL(buildCommentUrl(CONTEXT)).searchParams.get('preloadparams[]');
+  assert.equal(preloaded.includes('~~~'), false);
 });
 
 test('buildTalkSectionBody collapses the tool output behind a hidden box', () => {

@@ -246,11 +246,47 @@ Two things follow from that split and are load-bearing:
   silently truncates the box. As body text between two templates they are
   inert. `{{cot}}`/`{{cob}}` is wrong for a different reason — it renders "the
   following discussion is closed", and this was never a discussion.
-- **The signature stays last**, bar the invisible check-id comment.
-  DiscussionTools attributes a comment by the signature that ends it, so
-  content after the signature puts the reply button in the wrong place.
+- **Nothing preloads a signature.** See below.
 
 `CHECK_DETAILS_TITLE` and `EDITOR_EXPLANATION_LABEL` are exported from
 `core/feedback.js` because they are the seam between this layout and anything
 reading it back: the scrape tells machine context from human text by those two
 strings.
+
+### Never preload four tildes
+
+The preloaded body used to end with `~~~~`, on the assumption that the editor's
+save would expand it into their signature. It does not reliably, and the
+failure is silent and delayed.
+
+Four tildes are not text. They are an instruction to MediaWiki's **pre-save
+transform**, which runs over the *entire page wikitext on every save* — not
+just the part the saver typed. So a preloaded signature belongs to whoever
+saves the page next, whenever that happens. Two things follow:
+
+1. If the first save does not expand them — `action=edit&section=new` on
+   en.wiki is handled by DiscussionTools' new topic tool, which manages
+   signature placement itself rather than passing preloaded tildes through —
+   the tildes land in the saved page intact.
+2. Literal tildes sitting in saved wikitext are a landmine. The next account to
+   save that page, for any unrelated reason, gets *its* name and *its* edit
+   timestamp stamped in.
+
+That is the observed failure on check `4d9d0118`: the section was signed
+`DeadbeefBot II … 21:01, 4 August 2026 (UTC)` — a bot that had merely edited
+the page, at the time it did so.
+
+The guidance comment therefore spells out "sign" in words. Tildes inside an
+HTML comment are expanded too — the pre-save transform does not skip comments —
+so the landmine would simply be invisible instead of absent.
+`tests/feedback.test.js` fails on `~~~` appearing anywhere in the body or in
+the preload parameter.
+
+**Consequence for the scrape.** `section_is_new()` dated sections by finding a
+`(UTC)` timestamp, which the preloaded signature used to guarantee. Dating now
+depends on the editor's editor signing for them (DiscussionTools does;
+the classic form prompts). So a section carrying the check-id marker with *no*
+timestamp at all is now let through rather than dropped: it is almost always
+one published with nothing written in it, for which the extraction prompt
+returns no items. If unsigned sections turn out to be common, the durable fix
+is a ledger of processed check ids rather than a timestamp watermark.
