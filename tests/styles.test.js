@@ -215,6 +215,19 @@ test('the dark-mode button background only targets framed buttons', () => {
   );
 });
 
+// The corrected-verdict chips are revealed by clearing `hidden` on their
+// container. That container is a flex row, and an author `display: flex`
+// outranks the user-agent's `[hidden] { display: none }` — which is how the
+// chips came to show under every verdict, thumbs-up included.
+test('the corrected-verdict chips stay collapsed while [hidden] is set', () => {
+  const css = generateCss();
+  assert.match(
+    css,
+    /\.verifier-feedback-correction\[hidden\]\s*\{[^}]*display:\s*none/,
+    'the correction row is display:flex, so [hidden] does nothing without an explicit reset'
+  );
+});
+
 test('token values stay in sync with the selected provider accent', () => {
   const css = generateCss('#123456');
   assert.ok(css.includes('--sv-accent: #123456;'), 'accent token does not track getCurrentColor()');

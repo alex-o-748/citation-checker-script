@@ -2930,31 +2930,86 @@ function buildDatasetSubmissionUrl(
                     display: flex;
                     align-items: center;
                     flex-wrap: wrap;
-                    gap: 4px;
+                    gap: 6px;
+                }
+                /* [hidden] has to be restated: the display:flex above outranks
+                   the user-agent's [hidden] rule, so without this the
+                   corrected-verdict chips show under every verdict — including
+                   the thumbs-up they are meant to stay out of. */
+                .verifier-feedback-correction[hidden] {
+                    display: none;
                 }
                 .verifier-feedback-correction {
-                    margin-top: 4px;
+                    margin-top: 6px;
                 }
                 .verifier-feedback-prompt {
                     color: var(--sv-ink-subtle);
                     font-size: 11px;
                 }
+                /* The four verdicts are long enough to wrap in a 400px sidebar.
+                   Giving the question its own line lets them wrap as one block
+                   instead of one chip trailing the label and the rest below. */
+                .verifier-feedback-correction .verifier-feedback-prompt {
+                    flex-basis: 100%;
+                }
                 .verifier-feedback .oo-ui-buttonElement {
                     margin: 0;
                 }
-                .verifier-feedback .oo-ui-buttonElement-button {
+                /* One pill shape for every control in the row. The thumbs used
+                   to be bare 11px emoji beside a full-size Comment button,
+                   which read as decoration rather than as something to click. */
+                .verifier-feedback-row .oo-ui-buttonElement-button {
+                    box-sizing: border-box;
+                    min-height: 26px;
+                    padding: 3px 10px;
+                    border: 1px solid var(--sv-border-chip);
+                    border-radius: 13px;
+                    background: var(--sv-bg-chip-off);
+                    color: var(--sv-ink-chip);
                     font-size: 11px;
-                    padding: 2px 6px;
+                    line-height: 18px;
                 }
-                .verifier-feedback .is-chosen .oo-ui-buttonElement-button {
+                .verifier-feedback-row .oo-ui-buttonElement-button:hover {
+                    border-color: var(--sv-border-chip-hover);
                     background: var(--sv-bg-chip-hover);
-                    border-radius: 2px;
+                }
+                /* OOUI absolutely positions a frameless icon at the button's
+                   padding edge and clears it with a label margin sized to the
+                   icon alone. The pill's own padding moves the icon inward, so
+                   the two end up flush; padding restores the gap without
+                   fighting OOUI's higher-specificity margin rule. */
+                .verifier-feedback-row .oo-ui-iconElement .oo-ui-labelElement-label {
+                    padding-left: 6px;
+                }
+                .verifier-feedback-thumb .oo-ui-buttonElement-button {
+                    font-size: 15px;
+                    padding: 3px 12px;
+                }
+                /* Both thumbs are disabled after the first click, and OOUI's
+                   disabled dimming would flatten the two into looking alike.
+                   The chosen one keeps full contrast and gains an accent ring;
+                   the other fades, so the recorded answer stays readable. */
+                .verifier-feedback .is-chosen .oo-ui-buttonElement-button {
+                    border-color: var(--sv-accent-fg);
+                    box-shadow: inset 0 0 0 1px var(--sv-accent-fg);
+                    background: var(--sv-bg-chip-hover);
+                    color: var(--sv-ink-chip);
+                    opacity: 1;
+                }
+                .verifier-feedback .is-chosen .oo-ui-labelElement-label {
+                    color: var(--sv-ink-chip);
+                    opacity: 1;
+                }
+                .verifier-feedback .is-dimmed {
+                    opacity: 0.35;
                 }
                 .verifier-feedback-chip .oo-ui-buttonElement-button {
                     border: 1px solid var(--sv-border-chip);
                     border-radius: 10px;
                     background: var(--sv-bg-chip-off);
                     color: var(--sv-ink-chip-off);
+                    font-size: 11px;
+                    padding: 2px 8px;
                 }
                 .verifier-feedback-chip .oo-ui-buttonElement-button:hover {
                     border-color: var(--sv-border-chip-hover);
@@ -2967,6 +3022,22 @@ function buildDatasetSubmissionUrl(
                 }
                 .verifier-feedback-status:empty {
                     display: none;
+                }
+                /* The chips' own confirmation is a flex item, so it needs a full
+                   row of its own to land under them rather than beside them. */
+                .verifier-feedback-correction .verifier-feedback-status {
+                    flex-basis: 100%;
+                    margin-top: 2px;
+                }
+                /* The confirmation sits directly under whatever was clicked, so
+                   it has to carry its own weight rather than blend into the
+                   surrounding grey captions. */
+                .verifier-feedback-status.is-done {
+                    color: var(--sv-ok-fg);
+                    font-weight: 600;
+                }
+                .verifier-feedback-status.is-done::before {
+                    content: '✓ ';
                 }
                 .verifier-feedback-status.is-error {
                     color: var(--sv-error-fg);
@@ -5461,13 +5532,24 @@ function buildDatasetSubmissionUrl(
             const wrap = document.createElement('div');
             wrap.className = 'verifier-feedback';
 
-            const status = document.createElement('div');
-            status.className = 'verifier-feedback-status';
-            status.setAttribute('role', 'status');
-            const setStatus = (msg, isError = false) => {
-                status.textContent = msg;
-                status.classList.toggle('is-error', isError);
+            // Two status lines, not one: a confirmation the editor never sees
+            // is the same as no confirmation, so each sits immediately below
+            // the control that produced it — the rating under the thumbs, the
+            // correction under the chips.
+            const makeStatus = () => {
+                const el = document.createElement('div');
+                el.className = 'verifier-feedback-status';
+                el.setAttribute('role', 'status');
+                return el;
             };
+            const setStatusOn = (el) => (msg, isError = false) => {
+                el.textContent = msg;
+                el.classList.toggle('is-error', isError);
+                el.classList.toggle('is-done', !isError && !!msg);
+            };
+
+            const status = makeStatus();
+            const setStatus = setStatusOn(status);
 
             const row = document.createElement('div');
             row.className = 'verifier-feedback-row';
@@ -5479,18 +5561,26 @@ function buildDatasetSubmissionUrl(
             const correction = document.createElement('div');
             correction.className = 'verifier-feedback-correction';
             correction.hidden = true;
+            const correctionStatus = makeStatus();
+            const setCorrectionStatus = setStatusOn(correctionStatus);
             let correctedVerdict = null;
 
             const up = new OO.ui.ButtonWidget({ label: '👍', title: this.t('This verdict looks right'), framed: false });
             const down = new OO.ui.ButtonWidget({ label: '👎', title: this.t('This verdict looks wrong'), framed: false });
+            up.$element.addClass('verifier-feedback-thumb');
+            down.$element.addClass('verifier-feedback-thumb');
             const rate = (rating, button) => {
                 up.setDisabled(true);
                 down.setDisabled(true);
                 button.$element.addClass('is-chosen');
+                (button === up ? down : up).$element.addClass('is-dimmed');
                 setStatus(this.t('Thanks — recorded.'));
                 this.sendFeedback({ checkId: context.checkId, rating })
                     .catch(() => setStatus(this.t('Could not record that, sorry.'), true));
-                if (rating < 0) correction.hidden = false;
+                // The corrected-verdict chips are only worth asking for when the
+                // editor has said the verdict is wrong; after a thumbs-up there
+                // is nothing to correct.
+                correction.hidden = rating >= 0;
             };
             up.on('click', () => rate(1, up));
             down.on('click', () => rate(-1, down));
@@ -5523,22 +5613,26 @@ function buildDatasetSubmissionUrl(
                 chip.$element.addClass('verifier-feedback-chip');
                 chip.on('click', () => {
                     correctedVerdict = verdict;
-                    chips.forEach(c => c.setDisabled(true));
+                    chips.forEach(c => {
+                        c.setDisabled(true);
+                        if (c !== chip) c.$element.addClass('is-dimmed');
+                    });
                     chip.$element.addClass('is-chosen');
-                    setStatus(this.t('Thanks — recorded.'));
+                    setCorrectionStatus(this.t('Thanks — recorded.'));
                     commentBtn.setHref(buildCommentUrl({ ...context, correctedVerdict }));
                     // rating is omitted here: the thumbs-down already counted,
                     // and a second row carrying it would double-count.
                     this.sendFeedback({ checkId: context.checkId, correctedVerdict: verdict })
-                        .catch(() => setStatus(this.t('Could not record that, sorry.'), true));
+                        .catch(() => setCorrectionStatus(this.t('Could not record that, sorry.'), true));
                 });
                 correction.appendChild(chip.$element[0]);
                 return chip;
             });
+            correction.appendChild(correctionStatus);
 
             wrap.appendChild(row);
-            wrap.appendChild(correction);
             wrap.appendChild(status);
+            wrap.appendChild(correction);
             return wrap;
         }
 
