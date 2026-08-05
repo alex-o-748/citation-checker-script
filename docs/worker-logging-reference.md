@@ -229,3 +229,28 @@ The trade for all of this: because the editor publishes it themselves, the
 script never learns whether they went through with it. So `wiki_section` is not
 written at click time — the daily scrape resolves the link instead, matching
 the `<!-- source-verifier check: … -->` marker in each section.
+
+### The section is split by who wrote what
+
+Everything the tool produced — article, source, verdict, claim, rationale —
+goes inside a `{{hidden begin|title=Check details}}` … `{{hidden end}}` box.
+Everything the editor supplies stays visible above the signature: the
+corrected verdict, and their prose under an **`Editor's explanation:`** label.
+A reader scanning the talk page sees the human argument, not five bullets of
+machine output; the context is one click away when they want to check it.
+
+Two things follow from that split and are load-bearing:
+
+- **The begin/end template pair, not `{{collapse|…}}`.** The latter makes the
+  bullets a template *parameter*, where a stray `|` or `=` in a source URL
+  silently truncates the box. As body text between two templates they are
+  inert. `{{cot}}`/`{{cob}}` is wrong for a different reason — it renders "the
+  following discussion is closed", and this was never a discussion.
+- **The signature stays last**, bar the invisible check-id comment.
+  DiscussionTools attributes a comment by the signature that ends it, so
+  content after the signature puts the reply button in the wrong place.
+
+`CHECK_DETAILS_TITLE` and `EDITOR_EXPLANATION_LABEL` are exported from
+`core/feedback.js` because they are the seam between this layout and anything
+reading it back: the scrape tells machine context from human text by those two
+strings.

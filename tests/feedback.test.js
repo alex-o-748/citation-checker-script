@@ -12,6 +12,8 @@ import {
   buildCommentUrl,
   FEEDBACK_TALK_PAGE,
   FEEDBACK_PRELOAD_PAGE,
+  CHECK_DETAILS_TITLE,
+  EDITOR_EXPLANATION_LABEL,
 } from '../core/feedback.js';
 import { postFeedback } from '../core/worker.js';
 
@@ -270,10 +272,41 @@ test('buildTalkSectionBody records article, source, verdict, claim and reasoning
 
 test('buildTalkSectionBody leaves room for the editor to write, above the signature', () => {
   const body = buildTalkSectionBody(CONTEXT);
-  const guide = body.indexOf('<!-- Write your comment below, then publish. -->');
+  const guide = body.indexOf('<!-- Write your explanation here, then publish. -->');
   const signature = body.indexOf('~~~~');
   assert.ok(guide !== -1, 'the edit box should say where to write');
   assert.ok(guide < signature, 'the writing space must come before the signature');
+});
+
+test('buildTalkSectionBody collapses the tool output behind a hidden box', () => {
+  const body = buildTalkSectionBody(CONTEXT);
+  const open = body.indexOf(`{{hidden begin|title=${CHECK_DETAILS_TITLE}}}`);
+  const close = body.indexOf('{{hidden end}}');
+  assert.ok(open !== -1, 'the tool output needs an opening collapse tag');
+  assert.ok(close > open, 'the collapse box must be closed after it is opened');
+  assert.equal(body.split('{{hidden end}}').length - 1, 1, 'exactly one closing tag');
+
+  for (const line of ["* '''Article:'''", "* '''Source:'''", "* '''Tool's verdict:'''",
+                      "* '''Claim checked:'''", "* '''Tool's reasoning:'''"]) {
+    const at = body.indexOf(line);
+    assert.ok(at > open && at < close, `${line} belongs inside the collapse box`);
+  }
+});
+
+test('buildTalkSectionBody keeps the editor explanation label outside the collapse box', () => {
+  const body = buildTalkSectionBody(CONTEXT);
+  assert.match(body, new RegExp(`'''${EDITOR_EXPLANATION_LABEL}:'''`));
+  assert.ok(
+    body.indexOf(`'''${EDITOR_EXPLANATION_LABEL}:'''`) > body.indexOf('{{hidden end}}'),
+    'the editor writes below the collapsed machine context, not inside it',
+  );
+});
+
+test('buildTalkSectionBody omits the collapse box when the tool reported nothing', () => {
+  const body = buildTalkSectionBody({ checkId: 'a7f3k2q9' });
+  assert.equal(body.includes('{{hidden begin'), false);
+  assert.equal(body.includes('{{hidden end}}'), false);
+  assert.match(body, new RegExp(`'''${EDITOR_EXPLANATION_LABEL}:'''`));
 });
 
 test('buildTalkSectionBody ends with the machine-readable check id', () => {
@@ -282,7 +315,15 @@ test('buildTalkSectionBody ends with the machine-readable check id', () => {
 
 test('buildTalkSectionBody includes a corrected verdict when one was chosen', () => {
   const body = buildTalkSectionBody({ ...CONTEXT, correctedVerdict: 'SUPPORTED' });
-  assert.match(body, /\* '''Editor says it should be:''' SUPPORTED/);
+  assert.match(body, /'''Editor says it should be:''' SUPPORTED/);
+});
+
+test("buildTalkSectionBody keeps the corrected verdict visible, not collapsed", () => {
+  const body = buildTalkSectionBody({ ...CONTEXT, correctedVerdict: 'SUPPORTED' });
+  assert.ok(
+    body.indexOf("'''Editor says it should be:'''") > body.indexOf('{{hidden end}}'),
+    'the editor\'s correction is the point of the section — it must not be hidden',
+  );
 });
 
 test('buildTalkSectionBody omits the correction line when none was chosen', () => {

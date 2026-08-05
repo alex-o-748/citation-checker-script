@@ -125,6 +125,13 @@ The tool helps Wikipedia editors verify whether cited sources actually support t
 
 Below is content from one section of the Wikipedia Talk page for this userscript. It may contain feature requests, bug reports, questions, or general discussion from Wikipedia editors who use the tool.
 
+Sections opened from the tool's Comment button have a fixed shape: the tool's own
+output sits inside a {{hidden begin|title=Check details}} ... {{hidden end}} box,
+and the editor's own words follow an "Editor's explanation:" label (sometimes
+preceded by "Editor says it should be:"). Treat the collapsed box as context
+only — the actionable request is in what the editor wrote. A section whose
+explanation is still empty carries no request at all.
+
 Your job:
 1. Extract all ACTIONABLE items (feature requests and bug reports only)
 2. Ignore: thank-yous, general questions with no clear ask, already-resolved discussions, noise, meta-discussion about Wikipedia
