@@ -14,7 +14,7 @@ Wikipedia citation verification user script. An AI-powered sidebar tool that let
 main.js                          # Main Wikipedia user script (~2,700 lines, single class)
 package.json                     # Top-level deps + `npm test` / `npm run build` scripts
 core/                            # Shared pure logic, imported by both benchmark/ and main.js (via sync)
-  claim.js, parsing.js, prompts.js, providers.js, quote.js, submission.js, urls.js, worker.js
+  claim.js, feedback.js, parsing.js, prompts.js, providers.js, quote.js, submission.js, urls.js, worker.js
 cli/verify.js                    # Node CLI front-end (verify a single citation from the command line)
 bin/ccs                          # Executable shim for the CLI
 scripts/sync-main.js             # Inlines core/ modules into main.js for the userscript build
@@ -79,6 +79,8 @@ docs/                            # Reference docs + design plans (see docs/READM
 | `verifyGroupCollective()` | Collective verdict for an adjacent-citation group (combines the group's sources into one LLM call; see `docs/design-plans/2026-06-23-collective-group-verification.md`) |
 | `getReportUnits()` | Merge per-source results + collective group verdicts into one entry per claim (drives summary pills + exports) |
 | `generateWikitextReport()` | Generate wiki markup for failed citations |
+| `logVerification()` | Mint a `check_id`, log the verdict + claim + rationale + source quote to the worker, return the id |
+| `buildFeedbackControls()` | 👍/👎/comment row under a result; ratings go to Neon, comments to the talk page (see `docs/worker-logging-reference.md`) |
 
 ## Benchmark Suite
 
@@ -149,8 +151,8 @@ A stable-id refactor (content hash, or a CSV-supplied id column independent of l
 The model returns a `source_quote` field alongside its verdict — the passage
 from the source that supports or contradicts the claim. **It is not trusted.**
 `core/quote.js` looks the quote up in the source text the model was shown, and
-only a quote that is actually found there is displayed as evidence, exported to
-a wikitext report, or submitted to the dataset.
+only a quote that is actually found there is displayed as evidence or exported
+to a wikitext report.
 
 | Status | Meaning | Shown? |
 | --- | --- | --- |
@@ -170,6 +172,13 @@ feature exists for.
 unverifiable quote is worth flagging: omission and SOURCE UNAVAILABLE verdicts
 have nothing to quote, so a stray quote there is ignored rather than warned
 about.
+
+The **verification log is the exception**: `logVerification()` records
+`source_quote` and `quote_status` on every row regardless of outcome. The UI
+hides an unverified quote because showing it would mislead an editor; the log
+keeps it because a `not-found` row is precisely the one worth inspecting later.
+Don't "tidy" this into dropping unverified quotes at the log boundary — that
+would delete the signal the column exists to carry.
 
 Quoted source text is arbitrary web prose. It goes through `escapeHtml()` into
 the panel and `escapeWikitableCell()` (pipes, braces, newlines) into a

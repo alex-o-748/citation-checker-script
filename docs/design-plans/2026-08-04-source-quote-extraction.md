@@ -1,6 +1,6 @@
 # Extracting a verified source quote alongside the verdict
 
-> **Status (2026-08-04):** Implemented on branch `claude/quote-extraction-verdicts-8tprub`. Benchmark re-run outstanding — see "Open item" below.
+> **Status (2026-08-05):** Implemented on branch `claude/quote-extraction-verdicts-8tprub`, merged with `dev`. Benchmark re-run outstanding — see "Open item" below.
 
 ## Problem
 
@@ -89,14 +89,18 @@ The `status` (`exact` / `normalized` / `partial` / `not-found` / …) is retaine
 in the result object regardless, so the benchmark can measure quote fidelity
 even where the UI stays quiet.
 
-### 4. Only verified quotes leave the tool
+### 4. Only verified quotes leave the tool — except into the log
 
-The wikitext report, the plaintext export, and the dataset submission all carry
-the quote **only when it verified**. An on-wiki report is read by other editors
-who have no way to know a quote was unchecked; the dataset is the thing whose
-quality this change is meant to improve. The verification *status* is submitted
-alongside, so a low-fidelity provider is visible in the data rather than
-silently degrading it.
+The wikitext report and the plaintext export carry the quote **only when it
+verified**. An on-wiki report is read by other editors who have no way to know
+a quote was unchecked.
+
+The verification log is the deliberate exception. `logVerification()` records
+`source_quote` and `quote_status` on every row regardless of outcome, because a
+`not-found` row is the most informative row in the table: it identifies a
+provider that fabricates passages, and it flags a specific check worth
+re-reading. Hiding it from an editor and hiding it from the researcher are
+different decisions, and only the first one is right.
 
 Source text is arbitrary prose from the open web, so quotes are passed through
 `escapeWikitableCell()` (pipes, braces, newlines) before entering a wikitable,
@@ -115,11 +119,29 @@ panel. This does change the benchmark-tuned prompt — see below.
 | `core/quote.js` | **New.** `normalizeForMatch`, `verifyQuote`, `quoteExpectedFor`. |
 | `core/prompts.js` | `source_quote` in both schemas + copy rules; all 11 few-shot examples updated. Fixed an unescaped `\"` that made one example invalid JSON. |
 | `core/parsing.js` | Parses `source_quote` (with `sourceQuote` / `quote` aliases); always a string. |
-| `core/submission.js` | Optional `llmQuote` / `llmQuoteVerified` Form fields, and `DATASET_SUBMISSION_OPTIONAL_KEYS` so unconfigured optional fields no longer disable submission. |
+| `core/submission.js` | Optional `llmQuote` / `llmQuoteVerified` Form fields, and `DATASET_SUBMISSION_OPTIONAL_KEYS` so unconfigured optional fields no longer disable submission. Now reaches only the wikitext report's Submit column — see "Merging with dev". |
+| `core/feedback.js` | `source_quote` / `quote_status` in the `/log` payload. |
 | `main.js` | `buildQuoteView` / `quoteViewOf` / `quoteHtml`; evidence block in the panel and in all three report surfaces; quote in both exports; `escapeWikitableCell`; French prompt directive not to translate the quote. |
 | `cli/verify.js` | Prints the quote when verified, its failure status when not. |
 | `benchmark/run_benchmark.js` | Records `source_quote`, `quote_status`, `quote_verified` per result. |
 | `benchmark/analyze_results.js` | Per-provider quote **offer rate** and **fidelity**; `calculateMetrics` exported and `main()` gated for tests. |
+
+## Merging with dev
+
+While this branch was in flight, `dev` replaced the panel's Google Form
+submission button with in-place rating controls (`buildFeedbackControls`) and
+started logging every verification to Neon with a client-minted `check_id`.
+That is the same data-quality goal this design was aimed at, reached by a
+better route: a database keyed to the exact check, rather than a form the
+editor has to fill in.
+
+So the quote follows the verification log rather than the Form. The Form
+scaffolding survives only where `dev` still uses it — the Submit column of the
+generated wikitext report — and the panel-level quote submission was dropped
+with the button it hung off.
+
+The merge required a schema addition; see `docs/worker-logging-reference.md`
+for the migration and the reason unverified quotes are stored.
 
 ## Open item: benchmark re-run
 
