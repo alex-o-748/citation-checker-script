@@ -100,6 +100,22 @@ test('translations are non-empty and actually differ from English', () => {
   assert.deepEqual(untranslated.map(([en]) => en), ['ERROR'], 'untranslated Spanish strings');
 });
 
+// es.wikipedia's interface never addresses the reader in the second person —
+// tú, vos and usted are each regionally marked, so its own messages use
+// infinitives for actions and impersonal "se" for statements. These are the
+// giveaway tokens: the informal pronouns and possessives, the tú-form verbs the
+// UI would plausibly reach for, and the singular imperatives of those verbs.
+const SECOND_PERSON_ES = /\b(tu|tus|ti|tuyo|tuya|tuyos|tuyas|vos|usted|ustedes|quieres|puedes|debes|tienes|pegues|haz|pega|introduce|prueba|comprueba|considera|lee|añade|ten|dudes|tómala|tómalo)\b/i;
+
+test('Spanish never addresses the reader in the second person', () => {
+  const offenders = [];
+  for (const [en, es] of Object.entries(MESSAGES.es)) {
+    const hit = es.match(SECOND_PERSON_ES);
+    if (hit) offenders.push(`${JSON.stringify(en)} → ${JSON.stringify(es)} (${hit[0]})`);
+  }
+  assert.deepEqual(offenders, [], `use an infinitive or impersonal "se" instead:\n${offenders.join('\n')}`);
+});
+
 test('every this.t() key in main.js has a translation in every language', () => {
   const keys = new Set();
   for (const m of SRC.matchAll(/this\.t\(\s*('(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*")/g)) {

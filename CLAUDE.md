@@ -157,7 +157,9 @@ The sidebar UI is localized (currently French and Spanish); the LLM prompts in `
 
 **To add a user-facing string:** wrap it in `this.t()` and add it to *every* table. **To add a language:** write its table, register it in `MESSAGES` and `PROMPT_LANGUAGES`; `detectUiLang()` and `localizeSystemPrompt()` pick it up with no further wiring.
 
-`tests/i18n.test.js` enforces this: it fails if the tables disagree on their key set, if a translation drops or renames a `{placeholder}`, if a literal `this.t()` key in `main.js` is untranslated, or if language detection stops resolving regional variants (`es-419`) while correctly ignoring codes that merely share a prefix (`frr`, `frp`).
+**Register:** Spanish never addresses the reader in the second person. `tú`, `vos` and `usted` are each regionally marked, so es.wikipedia's own interface uses infinitives for actions ("Subir archivo", "Informar de un error visual") and impersonal `se` for statements — `ES_MESSAGES` follows that. French uses the `vous` imperative, matching fr.wikipedia.
+
+`tests/i18n.test.js` enforces this: it fails if the tables disagree on their key set, if a translation drops or renames a `{placeholder}`, if a literal `this.t()` key in `main.js` is untranslated, if a Spanish string slips into the second person, or if language detection stops resolving regional variants (`es-419`) while correctly ignoring codes that merely share a prefix (`frr`, `frp`).
 
 ### Styling is token-driven — never write a theme-specific rule (read before touching CSS)
 

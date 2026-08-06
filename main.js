@@ -1453,14 +1453,17 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
             'Sur 186 citations annotées par des humains, un signalement « non confirmée » a été validé par un relecteur dans environ deux tiers des cas. Considérez chaque verdict comme une raison de lire la source, et non comme une conclusion.',
     };
 
-    // Spanish. Addressed to the editor as "tú" (the register es.wikipedia uses
-    // in its own interface messages), and «angle quotes» rather than "".
+    // Spanish. es.wikipedia's interface deliberately avoids addressing the
+    // reader in any second person, because tú/vos/usted all carry regional
+    // baggage — its own messages use infinitives for actions ("Subir archivo",
+    // "Informar de un error visual") and impersonal "se" for statements. These
+    // follow that: no tuteo, no possessive "tu", and «angle quotes» over "".
     const ES_MESSAGES = {
         // Sidebar structure
         'Source Verifier': 'Verificador de fuentes',
         'Selected Claim': 'Afirmación seleccionada',
         'Click on a reference number [1] next to a claim to verify it against its source.':
-            'Haz clic en un número de referencia [1] junto a una afirmación para verificarla con su fuente.',
+            'Hacer clic en un número de referencia [1] junto a una afirmación para verificarla con su fuente.',
         'Source Content': 'Contenido de la fuente',
         'No source loaded yet.': 'Todavía no se ha cargado ninguna fuente.',
         'Verification Result': 'Resultado de la verificación',
@@ -1472,12 +1475,12 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
         'Verifying...': 'Verificando…',
         'Change Key': 'Cambiar la clave',
         'Remove API Key': 'Eliminar la clave API',
-        'Paste the source text here...': 'Pega aquí el texto de la fuente…',
+        'Paste the source text here...': 'Pegar aquí el texto de la fuente…',
         'Load Text': 'Cargar el texto',
         'Cancel': 'Cancelar',
         'Paste source text manually': 'Pegar el texto de la fuente manualmente',
         'Replace the fetched source content with text you paste in (e.g., the full article from The Wikipedia Library)':
-            'Sustituir el contenido obtenido de la fuente por un texto que pegues (por ejemplo, el artículo completo de la Biblioteca de Wikipedia)',
+            'Sustituir el contenido obtenido de la fuente por un texto pegado manualmente (por ejemplo, el artículo completo de la Biblioteca de Wikipedia)',
         'Verify All Citations': 'Verificar todas las citas',
         'Stop': 'Detener',
         'Back to Report': 'Volver al informe',
@@ -1488,21 +1491,21 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
         'Copy Report (Plain Text)': 'Copiar el informe (texto plano)',
 
         // Provider info
-        '✓ Using your {name} API key': '✓ Usando tu clave API de {name}',
+        '✓ Using your {name} API key': '✓ Usando la clave API de {name}',
         '✓ Free to use. Optional: ': '✓ Uso gratuito. Opcional: ',
-        'add your {name} API key': 'añade tu clave API de {name}',
+        'add your {name} API key': 'añadir una clave API de {name}',
         '✓ Free to use': '✓ Uso gratuito',
         'API key configured for {name}': 'Clave API configurada para {name}',
         'API key required for {name}': 'Se necesita una clave API para {name}',
         'Results are logged for research. Your username is not recorded.':
-            'Los resultados se registran con fines de investigación. Tu nombre de usuario no se registra.',
+            'Los resultados se registran con fines de investigación. El nombre de usuario no se registra.',
 
         // Verifier tab + first-run notification
         'Verify': 'Verificar',
         'Verify claims against sources': 'Verificar afirmaciones con sus fuentes',
         'Citation Verifier': 'Verificador de citas',
         'Citation Verifier installed — click the ':
-            'Verificador de citas instalado: haz clic en la pestaña ',
+            'Verificador de citas instalado: abrir la pestaña ',
         ' tab to get started.': ' para empezar.',
 
         // Source display
@@ -1516,11 +1519,11 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
             '⚠ La fuente es extensa y solo puede comprobarse parcialmente.',
         'Source URL:': 'URL de la fuente:',
         'No URL found. Please paste the source text below:':
-            'No se ha encontrado ninguna URL. Pega el texto de la fuente a continuación:',
+            'No se ha encontrado ninguna URL. Pegar el texto de la fuente a continuación:',
         'Manual Source Text:': 'Texto de la fuente introducido manualmente:',
         'No source loaded.': 'No hay ninguna fuente cargada.',
         'Click "Verify Claim" to verify the selected claim against the source.':
-            'Haz clic en «Verificar la afirmación» para verificar la afirmación seleccionada con la fuente.',
+            'Hacer clic en «Verificar la afirmación» para verificar la afirmación seleccionada con la fuente.',
         'Part of a group of {count} citations: {numbers}':
             'Forma parte de un grupo de {count} citas: {numbers}',
 
@@ -1578,17 +1581,17 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
         'Individual sources': 'Fuentes individuales',
         'Combined verdict': 'Veredicto combinado',
         'All citations are hidden by the current filters. Click a filter chip above to show them.':
-            'Los filtros actuales ocultan todas las citas. Haz clic en uno de los filtros de arriba para mostrarlas.',
+            'Los filtros actuales ocultan todas las citas. Hacer clic en uno de los filtros de arriba para mostrarlas.',
 
         // Notifications / dialogs
         'Report copied to clipboard!': '¡Informe copiado al portapapeles!',
         'No citations found on this page.': 'No se han encontrado citas en esta página.',
         'Are you sure you want to remove the stored API key?':
-            '¿Seguro que quieres eliminar la clave API guardada?',
-        'Enter your {name} API Key...': 'Introduce tu clave API de {name}…',
+            '¿Eliminar la clave API guardada?',
+        'Enter your {name} API Key...': 'Introducir la clave API de {name}…',
         'Set {name} API Key': 'Configurar la clave API de {name}',
         'Enter your {name} API Key to enable source verification:':
-            'Introduce tu clave API de {name} para activar la verificación de fuentes:',
+            'Introducir la clave API de {name} para activar la verificación de fuentes:',
         'This will verify {citations} citations from {sources} unique sources.{groupNote}\n\nEstimated time: ~{minutes} minutes.\n\nContinue?':
             'Esto verificará {citations} citas procedentes de {sources} fuentes distintas.{groupNote}\n\nTiempo estimado: ~{minutes} minutos.\n\n¿Continuar?',
         'This will verify {citations} citations from {sources} unique sources.{groupNote}\n\nEstimated time: ~{minutes} minute.\n\nContinue?':
@@ -1608,7 +1611,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
         'Submit': 'Enviar',
         'Citation verification report': 'Informe de verificación de citas',
         'This is an experimental check of the article sources by [[User:Alaexis/AI_Source_Verification|Citation Verifier]]. Treat it with caution, be aware of its [[User:Alaexis/AI_Source_Verification#Limitations|limitations]] and feel free to leave feedback at [[User_talk:Alaexis/AI_Source_Verification|the talk page]].':
-            'Esta es una comprobación experimental de las fuentes del artículo hecha por [[User:Alaexis/AI_Source_Verification|Citation Verifier]]. Tómala con cautela, ten en cuenta sus [[User:Alaexis/AI_Source_Verification#Limitations|limitaciones]] y no dudes en dejar tus comentarios en [[User_talk:Alaexis/AI_Source_Verification|la página de discusión]].',
+            'Esta es una comprobación experimental de las fuentes del artículo hecha por [[User:Alaexis/AI_Source_Verification|Citation Verifier]]. Conviene tomarla con cautela y tener en cuenta sus [[User:Alaexis/AI_Source_Verification#Limitations|limitaciones]]; los comentarios son bienvenidos en [[User_talk:Alaexis/AI_Source_Verification|la página de discusión]].',
         'Revision checked: ': 'Revisión comprobada: ',
         '! # !! Verdict !! Source !! Comments !! class="unsortable" | Submit':
             '! # !! Veredicto !! Fuente !! Comentarios !! class="unsortable" | Enviar',
@@ -1656,27 +1659,27 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
         'Done': 'Hecho',
         'Open settings': 'Abrir la configuración',
         'Upload PDF': 'Subir un PDF',
-        'or paste the text below': 'o pega el texto a continuación',
+        'or paste the text below': 'o pegar el texto a continuación',
         'Click any citation number in the article to check whether its source actually supports the claim.':
-            'Haz clic en cualquier número de cita del artículo para comprobar si su fuente respalda realmente la afirmación.',
+            'Hacer clic en cualquier número de cita del artículo para comprobar si su fuente respalda realmente la afirmación.',
         'Ready · free, no setup needed': 'Listo · gratuito, sin configuración',
-        'Ready · using your API key': 'Listo · con tu clave API',
+        'Ready · using your API key': 'Listo · con la clave API configurada',
         'Add an API key in settings to start':
-            'Añade una clave API en la configuración para empezar',
+            'Añadir una clave API en la configuración para empezar',
         'Checking citations…': 'Comprobando las citas…',
         'Model: {model}': 'Modelo: {model}',
         // Verdict framing: the assessment is attributed, and each verdict says
         // what the editor should do next.
         'AI assessment': 'Evaluación de la IA',
         'Read the source before changing the article — this is a machine reading, not a fact.':
-            'Lee la fuente antes de modificar el artículo: es una lectura automática, no un hecho.',
+            'Conviene leer la fuente antes de modificar el artículo: es una lectura automática, no un hecho.',
         'Spot-check the source yourself — this is a machine reading, not a fact.':
-            'Comprueba la fuente por tu cuenta: es una lectura automática, no un hecho.',
+            'Conviene comprobar la fuente personalmente: es una lectura automática, no un hecho.',
         'The tool could not read this source. Try pasting the text or uploading a PDF.':
-            'La herramienta no ha podido leer esta fuente. Prueba a pegar el texto o a subir un PDF.',
+            'La herramienta no ha podido leer esta fuente. Se puede pegar el texto o subir un PDF.',
         'How accurate is this?': '¿Qué fiabilidad tiene?',
         'Measured against 186 human-labelled citations, a "not supported" flag was confirmed by a reviewer roughly two thirds of the time. Treat every verdict as a reason to read the source, not as a conclusion.':
-            'Sobre 186 citas etiquetadas por personas, un aviso de «no respaldada» fue confirmado por un revisor en aproximadamente dos tercios de los casos. Considera cada veredicto como un motivo para leer la fuente, no como una conclusión.',
+            'Sobre 186 citas etiquetadas por personas, un aviso de «no respaldada» fue confirmado por un revisor en aproximadamente dos tercios de los casos. Conviene considerar cada veredicto como un motivo para leer la fuente, no como una conclusión.',
     };
 
     // Registered UI languages, keyed by the MediaWiki language-code prefix that
