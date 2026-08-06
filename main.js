@@ -1231,7 +1231,6 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
 
     const FR_MESSAGES = {
         // Sidebar structure
-        'Source Verifier': 'Vérificateur de sources',
         'Selected Claim': 'Affirmation sélectionnée',
         'Click on a reference number [1] next to a claim to verify it against its source.':
             'Cliquez sur un numéro de référence [1] à côté d’une affirmation pour la vérifier par rapport à sa source.',
@@ -1256,7 +1255,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
         'Stop': 'Arrêter',
         'Back to Report': 'Retour au rapport',
         'Save': 'Enregistrer',
-        'Give feedback': 'Donner un avis',
+        'Give feedback': 'Signaler un problème',
         'Edit Section': 'Modifier la section',
         'Copy Report (Wikitext)': 'Copier le rapport (wikicode)',
         'Copy Report (Plain Text)': 'Copier le rapport (texte brut)',
@@ -1264,7 +1263,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
         // Provider info
         '✓ Using your {name} API key': '✓ Utilisation de votre clé API {name}',
         '✓ Free to use. Optional: ': '✓ Gratuit. Facultatif : ',
-        'add your {name} API key': 'ajouter votre clé API {name}',
+        'add your {name} API key': 'ajoutez votre clé API {name}',
         '✓ Free to use': '✓ Gratuit',
         'API key configured for {name}': 'Clé API configurée pour {name}',
         'API key required for {name}': 'Clé API requise pour {name}',
@@ -1318,13 +1317,13 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
         'Fetching source for [{num}]': 'Récupération de la source pour [{num}]',
         'Verifying citation [{num}]': 'Analyse de la citation [{num}]',
         'Rate limited, retrying in {secs}s...':
-            'Limite de débit atteinte, nouvelle tentative dans {secs}s…',
+            'Limite de débit atteinte, nouvelle tentative dans {secs} s…',
         'Checking combined sources {token}': 'Vérification des sources combinées {token}',
         'Completed: {count} citations checked': 'Terminé : {count} citations vérifiées',
         'Completed: {count} citation checked': 'Terminé : {count} citation vérifiée',
         'Cancelled after {done} of {total} citations': 'Annulé après {done} sur {total} citations',
         'Cancelled after {done} of {total} citation': 'Annulé après {done} sur {total} citation',
-        ' · ~{duration} remaining': ' · ~{duration} restant',
+        ' · ~{duration} remaining': ' · ~{duration} restant(e)(s)',
 
         // Report summary
         'supported': 'confirmées',
@@ -1355,7 +1354,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
         'Individual sources': 'Sources individuelles',
         'Combined verdict': 'Verdict combiné',
         'All citations are hidden by the current filters. Click a filter chip above to show them.':
-            'Toutes les citations sont masquées par les filtres actuels. Cliquez sur une puce de filtre ci-dessus pour les afficher.',
+            'Toutes les citations sont masquées par les filtres actuels. Cliquez sur un filtre ci-dessus pour les afficher.',
 
         // Notifications / dialogs
         'Report copied to clipboard!': 'Rapport copié dans le presse-papiers !',
@@ -1382,28 +1381,26 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
         'Could not fetch source content': 'Impossible de récupérer le contenu de la source',
 
         // Exported reports (wikitext + plain text)
-        'Submit': 'Soumettre',
+        'Submit': 'Signaler',
         'Citation verification report': 'Rapport de vérification des citations',
         'This is an experimental check of the article sources by [[User:Alaexis/AI_Source_Verification|Citation Verifier]]. Treat it with caution, be aware of its [[User:Alaexis/AI_Source_Verification#Limitations|limitations]] and feel free to leave feedback at [[User_talk:Alaexis/AI_Source_Verification|the talk page]].':
-            'Ceci est une vérification expérimentale des sources de l’article par [[:en:User:Alaexis/AI_Source_Verification|Citation Verifier]]. À prendre avec précaution : tenez compte de ses [[:en:User:Alaexis/AI_Source_Verification#Limitations|limites]] et n’hésitez pas à laisser un retour sur [[:en:User_talk:Alaexis/AI_Source_Verification|la page de discussion]].',
+            'Ceci est une vérification expérimentale des sources de l’article par [[:en:User:Alaexis/AI_Source_Verification|Citation Verifier]]. Les résultats sont à prendre avec précaution : tenez compte de ses [[:en:User:Alaexis/AI_Source_Verification#Limitations|limites]] et n’hésitez pas à laisser un retour sur [[:en:User_talk:Alaexis/AI_Source_Verification|la page de discussion de l’outil]].',
         'Revision checked: ': 'Révision vérifiée : ',
         '! # !! Verdict !! Source !! Comments !! class="unsortable" | Submit':
-            '! # !! Verdict !! Source !! Commentaires !! class="unsortable" | Soumettre',
+            '! # !! Verdict !! Source !! Commentaires !! class="unsortable" | Signaler',
         '! # !! Verdict !! Source !! Comments':
             '! # !! Verdict !! Source !! Commentaires',
-        '{{tick}} Supported': '{{tick}} Confirmée',
-        '{{bang}} Partially supported': '{{bang}} Partiellement confirmée',
-        '{{cross}} Not supported': '{{cross}} Non confirmée',
-        '{{hmmm}} Source unavailable': '{{hmmm}} Source indisponible',
+        '{{tick}} Supported': '{{Oui-}} Confirmée',
+        '{{bang}} Partially supported': 'Partiellement confirmée',
+        '{{cross}} Not supported': '{{Non-}} Non confirmée',
+        '{{hmmm}} Source unavailable': 'Source indisponible',
         "''(Combined sources are long, only partially checked.)''":
             "''(Sources combinées longues, vérifiées partiellement seulement.)''",
         "''(Source is long, only partially checked.)''":
             "''(Source longue, vérifiée partiellement seulement.)''",
-        '(combined)': '(combiné)',
-        // Link text for the source column of the wikitext table: [url source]
-        'source': 'source',
+        '(combined)': '(combinées)',
         "'''Summary:''' {supported} supported, {partial} partially supported, {notSupported} not supported, {unavailable} source unavailable out of {claims}.":
-            "'''Résumé :''' {supported} confirmées, {partial} partiellement confirmées, {notSupported} non confirmées, {unavailable} source indisponible sur {claims}.",
+            "'''Résumé :''' {supported} confirmées, {partial} partiellement confirmées, {notSupported} non confirmées, {unavailable} sources indisponibles sur {claims}.",
         '{count} citations': '{count} citations',
         '{count} citation': '{count} citation',
         '{claims} claims ({citations} citations)': '{claims} affirmations ({citations} citations)',
@@ -1411,6 +1408,8 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
         'a PublicAI-hosted open-source LLM': 'un LLM open source hébergé par PublicAI',
         'a HuggingFace-hosted open-source LLM ({model})':
             'un LLM open source hébergé par HuggingFace ({model})',
+        'a Wikimedia Lift Wing-hosted open-source LLM ({model})':
+            'un LLM open source hébergé par Wikimedia Lift Wing ({model})',
         'Generated by [[User:Alaexis/AI_Source_Verification|Citation Verifier]] using {model} on ~~~~~.':
             'Généré par [[:en:User:Alaexis/AI_Source_Verification|Citation Verifier]] avec {model} le ~~~~~.',
         ' Tokens used: {input} input, {output} output.':
@@ -1974,7 +1973,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
             sidebar.innerHTML = `
                 <div id="verifier-sidebar-header">
                     ${this.logoMarkSvg()}
-                    <h3><a href="https://en.wikipedia.org/wiki/User:Alaexis/AI_Source_Verification" target="_blank" id="verifier-title-link">${this.t('Source Verifier')}</a></h3>
+                    <h3><a href="https://en.wikipedia.org/wiki/User:Alaexis/AI_Source_Verification" target="_blank" id="verifier-title-link">${this.t('Citation Verifier')}</a></h3>
                     <div id="verifier-sidebar-controls">
                         <div id="verifier-settings-btn-container"></div>
                         <div id="verifier-close-btn-container"></div>
@@ -4413,6 +4412,11 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
 
         formatDuration(ms) {
             const s = Math.round(ms / 1000);
+            if (this.lang === 'fr') {
+                if (s < 60) return `${s} s`;
+                const m = Math.floor(s / 60);
+                return `${m} min ${s % 60} s`;
+            }
             if (s < 60) return `${s}s`;
             const m = Math.floor(s / 60);
             return `${m}m ${s % 60}s`;
@@ -4947,9 +4951,9 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
             if (this.currentProvider === 'publicai') {
                 modelDesc = this.t('a PublicAI-hosted open-source LLM');
             } else if (this.currentProvider === 'huggingface') {
-                modelDesc = `a HuggingFace-hosted open-source LLM (${provider.model})`;
+                modelDesc = this.t('a HuggingFace-hosted open-source LLM ({model})', { model: provider.model });
             } else if (this.currentProvider === 'liftwing') {
-                modelDesc = `a Wikimedia Lift Wing-hosted open-source LLM (${provider.model})`;
+                modelDesc = this.t('a Wikimedia Lift Wing-hosted open-source LLM ({model})', { model: provider.model });
             } else {
                 modelDesc = provider.model;
             }
