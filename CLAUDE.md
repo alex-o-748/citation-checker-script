@@ -143,6 +143,22 @@ When you regenerate `dataset.json` after a CSV reorder, you must also walk `resu
 
 A stable-id refactor (content hash, or a CSV-supplied id column independent of line number) would eliminate the class of bug entirely.
 
+### UI localization — every user-facing string goes through `this.t()`
+
+The sidebar UI is localized (currently French and Spanish); the LLM prompts in `core/prompts.js` stay English, because the few-shot examples are tuned against the benchmark. Three pieces in `main.js`, all just above the `WikipediaSourceVerifier` class:
+
+| Piece | Holds |
+|-------|-------|
+| `FR_MESSAGES` / `ES_MESSAGES` | Translations, keyed by the **English source string** |
+| `MESSAGES` / `PROMPT_LANGUAGES` | Registry of language code → table, and → the language's name as given to the LLM |
+| `detectUiLang()` | Maps `wgContentLanguage` (then `wgUserLanguage`) to a registry key, else `'en'` |
+
+`this.t('Verify Claim')` looks the string up in the active table and falls back to the English key, so a missing translation degrades to English rather than showing a key. Interpolate with `{name}` placeholders: `this.t('Set {name} API Key', { name })`.
+
+**To add a user-facing string:** wrap it in `this.t()` and add it to *every* table. **To add a language:** write its table, register it in `MESSAGES` and `PROMPT_LANGUAGES`; `detectUiLang()` and `localizeSystemPrompt()` pick it up with no further wiring.
+
+`tests/i18n.test.js` enforces this: it fails if the tables disagree on their key set, if a translation drops or renames a `{placeholder}`, if a literal `this.t()` key in `main.js` is untranslated, or if language detection stops resolving regional variants (`es-419`) while correctly ignoring codes that merely share a prefix (`frr`, `frp`).
+
 ### Styling is token-driven — never write a theme-specific rule (read before touching CSS)
 
 Styles live in three methods in `main.js`:
