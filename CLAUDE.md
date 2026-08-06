@@ -79,7 +79,7 @@ docs/                            # Reference docs + design plans (see docs/READM
 | `getReportUnits()` | Merge per-source results + collective group verdicts into one entry per claim (drives summary pills + exports) |
 | `generateWikitextReport()` | Generate wiki markup for failed citations |
 | `logVerification()` | Mint a `check_id`, log the verdict + claim + rationale to the worker, return the id |
-| `buildFeedbackControls()` | 👍/👎/comment row under a result; ratings go to Neon, comments to the talk page (see `docs/worker-logging-reference.md`) |
+| `buildFeedbackControls()` | Yes/No/Comment row under a result; ratings go to Neon, comments to the talk page (see `docs/worker-logging-reference.md`) |
 
 ## Benchmark Suite
 

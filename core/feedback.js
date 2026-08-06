@@ -121,16 +121,49 @@ export function buildTalkSectionTitle({ articleTitle, citationNumber, checkId } 
     return `Feedback: ${title}${num ? ` [${num}]` : ''} (check ${checkId ?? 'unknown'})`;
 }
 
-// The context half of a talk-page section: everything the tool knows, with a
-// gap for the editor to write in. It is preloaded into Wikipedia's own new
-// section form rather than posted by the script, so this text is a starting
-// point the editor sees and can change, not a finished comment.
+// Title of the collapsed box holding the tool's own output, and the label
+// introducing the editor's prose. Exported because they are the seam between
+// this layout and anything reading it back — the talk-page scraper tells
+// machine context from human text by these two strings.
+export const CHECK_DETAILS_TITLE = 'Check details';
+export const EDITOR_EXPLANATION_LABEL = "Editor's explanation";
+
+// A talk-page section, split by who wrote what: everything the tool produced
+// is collapsed behind {{hidden begin}}, and everything the editor supplies —
+// the corrected verdict and their explanation — stays visible. A reader
+// scanning the talk page sees the human argument; the machine context is one
+// click away when they want to check it.
+//
+// The begin/end template pair is deliberate. {{collapse|...}} would make the
+// bullets a template *parameter*, where a stray | or = in a source URL
+// silently truncates the box; as body text between two templates they are
+// inert. {{cot}}/{{cob}} is also wrong here — it renders "the following
+// discussion is closed", and this was never a discussion.
+//
+// It is preloaded into Wikipedia's own new section form rather than posted by
+// the script, so this text is a starting point the editor sees and can
+// change, not a finished comment.
 //
 // The check id appears twice on purpose: in the heading, where a human reading
 // the talk page can see which check is under discussion, and in a trailing
 // HTML comment, which is what the talk-page scraper can match on without
 // having to parse headings. HTML comments are also how the "write here"
 // guidance is delivered — visible in the edit box, invisible once published.
+//
+// Nothing here emits a signature, and nothing here may. Four tildes are not
+// text: they are an instruction to MediaWiki's pre-save transform, which runs
+// over the *whole page* on every save, so a preloaded signature belongs to
+// whoever saves next rather than to the editor who opened the form. If the
+// tildes survive that first save unexpanded — the new topic tool handles
+// signing itself — they sit in the page as a landmine until some unrelated
+// account saves it and gets its own name and timestamp stamped in. That is
+// exactly what happened to check 4d9d0118, which a passing bot signed.
+// Signing is the editor's, and their editor's, business; we only ask for it.
+//
+// The same trap applies to the guidance below, which is why it spells out
+// "sign" in words. Literal tildes inside an HTML comment are still expanded by
+// the pre-save transform — invisible in the rendered page, and still a
+// landmine in the wikitext.
 export function buildTalkSectionBody(fields = {}) {
     const {
         articleUrl, articleTitle, citationNumber, claimText, sourceUrl,
@@ -139,36 +172,50 @@ export function buildTalkSectionBody(fields = {}) {
 
     const clean = v => String(v ?? '').replace(/\s+/g, ' ').trim();
     const label = clean(articleTitle) || clean(articleUrl);
-    const lines = [];
+    const toolLines = [];
 
     if (articleUrl && label) {
         const cite = clean(citationNumber);
-        lines.push(`* '''Article:''' [${encodeURI(String(articleUrl))} ${label}]${cite ? `, citation [${cite}]` : ''}`);
+        toolLines.push(`* '''Article:''' [${encodeURI(String(articleUrl))} ${label}]${cite ? `, citation [${cite}]` : ''}`);
     }
     if (sourceUrl) {
         // encodeURI neutralises {{ }} (the one wikitext construct a citation
         // URL could plausibly smuggle in) while leaving the link clickable.
-        lines.push(`* '''Source:''' ${encodeURI(String(sourceUrl))}`);
+        toolLines.push(`* '''Source:''' ${encodeURI(String(sourceUrl))}`);
     }
     if (verdict) {
         const by = [clean(providerName), clean(model)].filter(Boolean).join(', ');
-        lines.push(`* '''Tool's verdict:''' ${clean(verdict)}${by ? ` (${by})` : ''}`);
-    }
-    if (correctedVerdict) {
-        lines.push(`* '''Editor says it should be:''' ${clean(correctedVerdict)}`);
+        toolLines.push(`* '''Tool's verdict:''' ${clean(verdict)}${by ? ` (${by})` : ''}`);
     }
     const claim = nowikiWrap(claimText);
-    if (claim) lines.push(`* '''Claim checked:''' ${claim}`);
+    if (claim) toolLines.push(`* '''Claim checked:''' ${claim}`);
     const reasoning = nowikiWrap(comments);
-    if (reasoning) lines.push(`* '''Tool's reasoning:''' ${reasoning}`);
+    if (reasoning) toolLines.push(`* '''Tool's reasoning:''' ${reasoning}`);
 
-    return [
-        lines.join('\n'),
-        '<!-- Write your comment below, then publish. -->',
-        '',
-        '~~~~',
+    const blocks = [];
+
+    if (toolLines.length) {
+        blocks.push([
+            `{{hidden begin|title=${CHECK_DETAILS_TITLE}}}`,
+            ...toolLines,
+            '{{hidden end}}',
+        ].join('\n'));
+    }
+    // The editor's, not the tool's, so it stays outside the box — on a
+    // thumbs-down this line is the disagreement itself, and burying it would
+    // leave the visible section saying nothing.
+    if (correctedVerdict) {
+        blocks.push(`'''Editor says it should be:''' ${clean(correctedVerdict)}`);
+    }
+    // Label and guidance share a line so that writing at the obvious spot —
+    // after the invisible comment — renders as "Editor's explanation: <prose>"
+    // rather than leaving a bold heading dangling above the text.
+    blocks.push(
+        `'''${EDITOR_EXPLANATION_LABEL}:''' <!-- Write your explanation here, then sign and publish. -->`,
         `<!-- source-verifier check: ${checkId ?? 'unknown'} -->`,
-    ].filter(line => line !== undefined).join('\n\n');
+    );
+
+    return blocks.join('\n\n');
 }
 
 // The URL that opens Wikipedia's own "add new section" form with the context

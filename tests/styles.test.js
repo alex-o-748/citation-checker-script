@@ -215,6 +215,54 @@ test('the dark-mode button background only targets framed buttons', () => {
   );
 });
 
+// The corrected-verdict chips are revealed by clearing `hidden` on their
+// container. That container is a flex row, and an author `display: flex`
+// outranks the user-agent's `[hidden] { display: none }` — which is how the
+// chips came to show under every verdict, thumbs-up included.
+test('the corrected-verdict chips stay collapsed while [hidden] is set', () => {
+  const css = generateCss();
+  assert.match(
+    css,
+    /\.verifier-feedback-correction\[hidden\]\s*\{[^}]*display:\s*none/,
+    'the correction row is display:flex, so [hidden] does nothing without an explicit reset'
+  );
+});
+
+// #verifier-action-container holds two unrelated things: the full-width
+// "Edit Section" call to action, appended straight to it, and the feedback
+// controls, which live in a .verifier-feedback wrapper inside it. An unscoped
+// width rule stretched every feedback button too, so Yes / No / Comment and the
+// correction chips shrank to unrelated widths instead of sitting as a row.
+test('the full-width CTA rule cannot reach the feedback controls', () => {
+  const css = generateCss();
+  const leaking = [...css.matchAll(/([^{}]*#verifier-action-container[^{}]*)\{([^}]*)\}/g)]
+    .filter((m) => /width:\s*100%/.test(m[2]))
+    .map((m) => m[1].trim())
+    .filter((selector) => !selector.includes('>'));
+
+  assert.deepEqual(
+    leaking, [],
+    `these rules stretch every button in the action container, not just the CTA:\n${leaking.join('\n')}`
+  );
+});
+
+// OOUI renders the icon span on every button whether or not an icon was set,
+// so `.oo-ui-iconElement-icon + .oo-ui-labelElement-label` also matches labels
+// with nothing beside them. Unqualified, it offset the text of every icon-less
+// button — visible as the correction chips' labels sitting right of centre.
+test('the icon-to-label gap only applies where an icon was actually set', () => {
+  const css = generateCss();
+  const selectors = [...css.matchAll(/([^{}]*\.oo-ui-iconElement-icon \+ \.oo-ui-labelElement-label[^{}]*)\{/g)]
+    .map((m) => m[1].trim());
+  assert.ok(selectors.length, 'the icon-to-label gap rule has gone missing');
+
+  const unqualified = selectors.filter((selector) => !/\.oo-ui-iconElement[\s>]/.test(selector));
+  assert.deepEqual(
+    unqualified, [],
+    `these rules gap every label, including buttons with no icon:\n${unqualified.join('\n')}`
+  );
+});
+
 test('token values stay in sync with the selected provider accent', () => {
   const css = generateCss('#123456');
   assert.ok(css.includes('--sv-accent: #123456;'), 'accent token does not track getCurrentColor()');
