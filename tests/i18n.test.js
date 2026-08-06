@@ -119,6 +119,19 @@ test('Spanish never addresses the reader in the second person', () => {
   assert.deepEqual(offenders, [], `use an infinitive or impersonal "se" instead:\n${offenders.join('\n')}`);
 });
 
+test('wiki links in translated strings point at the English wiki', () => {
+  // The script's user page only exists on en.wikipedia, so an unprefixed
+  // [[User:…]] in a report or edit summary is a redlink on every other wiki.
+  // The English keys stay unprefixed — there the local link is the right one.
+  const offenders = [];
+  for (const lang of LANGS) {
+    for (const [en, translated] of Object.entries(MESSAGES[lang])) {
+      if (/\[\[(?!:en:)User[ _]?(talk)?:/i.test(translated)) offenders.push(`${lang}: ${JSON.stringify(en)}`);
+    }
+  }
+  assert.deepEqual(offenders, [], 'use [[:en:User:…]] in translated strings');
+});
+
 test('every this.t() key in main.js has a translation in every language', () => {
   const keys = new Set();
   for (const m of SRC.matchAll(/this\.t\(\s*('(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*")/g)) {
