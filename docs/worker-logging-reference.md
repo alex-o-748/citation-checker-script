@@ -10,6 +10,7 @@ CREATE TABLE verification_logs (
   kind TEXT DEFAULT 'source',  -- 'source' | 'group'
   article_url TEXT,
   article_title TEXT,
+  revision_id BIGINT,          -- the article revision the check ran against
   citation_number TEXT,        -- comma-joined for kind='group'
   source_url TEXT,             -- null for kind='group' (several sources)
   provider TEXT,
@@ -30,11 +31,26 @@ ALTER TABLE verification_logs
   ADD COLUMN kind TEXT DEFAULT 'source',
   ADD COLUMN model TEXT,
   ADD COLUMN claim_text TEXT,
-  ADD COLUMN llm_comments TEXT;
+  ADD COLUMN llm_comments TEXT,
+  ADD COLUMN revision_id BIGINT;
 ```
 
 (`reason_type` is already sent by the client; add it too if the deployed table
 is older than that change.)
+
+### Why the revision id is recorded
+
+Without it a logged verdict describes a page that has since moved on. A
+disagreement about a verdict can't be separated from an edit to the claim, and
+two prompt or model versions can't be compared, because they were never shown
+the same text — the fixed page is the whole point. `normalizeRevisionId()` in
+`core/feedback.js` is the gate: a positive integer or null, never `wgRevisionId`'s
+0 (a preview or special page, which is not a revision).
+
+The client sends `wgRevisionId` — the revision actually on screen, and so the
+one that was read — falling back to `wgCurRevisionId`. The two differ only when
+an old revision is being viewed, which is exactly the case where naming the
+current one would be wrong.
 
 ### Why `check_id` is minted in the browser
 
@@ -232,8 +248,13 @@ the `<!-- source-verifier check: … -->` marker in each section.
 
 ### The section is split by who wrote what
 
-Everything the tool produced — article, source, verdict, claim, rationale —
-goes inside a `{{hidden begin|title=Check details}}` … `{{hidden end}}` box.
+Everything the tool produced — article, revision, source, verdict, claim,
+rationale — goes inside a `{{hidden begin|title=Check details}}` … `{{hidden end}}` box.
+The **Article** line carries the revision as a permalink
+(`…, citation [12], revision [<permalink> 1234567]`) for the same reason the log
+column exists: the plain article link points at whatever the page says today, so
+without it a reader arriving at the section a month later can't tell whether
+they are looking at the text the tool read.
 Everything the editor supplies stays visible above the signature: the
 corrected verdict, and their prose under an **`Editor's explanation:`** label.
 A reader scanning the talk page sees the human argument, not five bullets of

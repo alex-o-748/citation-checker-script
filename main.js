@@ -1183,6 +1183,20 @@ function truncateForLog(value, max = MAX_LOGGED_TEXT) {
     return s.length > max ? s.slice(0, max - 1) + '…' : s;
 }
 
+// MediaWiki revision ids are positive integers. Normalising to a number (or
+// null) rather than passing whatever the caller had keeps the log column
+// numeric, and — because every consumer stringifies the result of this — makes
+// the id inert wikitext by construction, with no separate escaping step to
+// forget. `wgRevisionId` is 0 on a page that has no revision (a preview, a
+// special page), which is not a revision and must not be recorded as one.
+function normalizeRevisionId(value) {
+    if (value == null) return null;
+    const s = String(value).trim();
+    if (!/^\d+$/.test(s)) return null;
+    const n = Number(s);
+    return Number.isSafeInteger(n) && n > 0 ? n : null;
+}
+
 // 8 hex characters. `source` is injectable so tests can pin the output;
 // production passes nothing and picks up the ambient Web Crypto.
 function newCheckId(source) {
@@ -1211,6 +1225,12 @@ function buildLogPayload(fields = {}) {
         kind:            fields.kind ?? 'source',
         article_url:     fields.articleUrl ?? null,
         article_title:   fields.articleTitle ?? null,
+        // The article revision the check ran against. Without it a logged
+        // verdict is not reproducible: the page it describes is a moving
+        // target, so a disagreement about the verdict can't be separated from
+        // an edit to the claim, and two model versions can't be compared
+        // because they were never shown the same text.
+        revision_id:     normalizeRevisionId(fields.revisionId),
         citation_number: fields.citationNumber ?? null,
         source_url:      fields.sourceUrl ?? null,
         provider:        fields.provider ?? null,
@@ -1312,6 +1332,7 @@ function buildTalkSectionBody(fields = {}) {
     const {
         articleUrl, articleTitle, citationNumber, claimText, sourceUrl,
         verdict, comments, providerName, model, correctedVerdict, checkId,
+        revisionId, revisionUrl,
     } = fields;
 
     const clean = v => String(v ?? '').replace(/\s+/g, ' ').trim();
@@ -1320,7 +1341,18 @@ function buildTalkSectionBody(fields = {}) {
 
     if (articleUrl && label) {
         const cite = clean(citationNumber);
-        toolLines.push(`* '''Article:''' [${encodeURI(String(articleUrl))} ${label}]${cite ? `, citation [${cite}]` : ''}`);
+        // The revision is what makes the report reproducible, and it belongs
+        // on the Article line because it is a property of the article, not of
+        // the check: the plain link goes to whatever the page says today, so
+        // without the permalink a reader arriving at this section a month
+        // later cannot tell whether they are looking at the text the tool
+        // read. Linked when the caller supplied a permalink, bare otherwise —
+        // the number alone still identifies the revision.
+        const rev = normalizeRevisionId(revisionId);
+        const revText = rev === null ? '' : (revisionUrl
+            ? `[${encodeURI(String(revisionUrl))} ${rev}]`
+            : String(rev));
+        toolLines.push(`* '''Article:''' [${encodeURI(String(articleUrl))} ${label}]${cite ? `, citation [${cite}]` : ''}${revText ? `, revision ${revText}` : ''}`);
     }
     if (sourceUrl) {
         // encodeURI neutralises {{ }} (the one wikitext construct a citation
@@ -1404,15 +1436,6 @@ function buildCommentUrl(fields = {}, {
 //      `entry.<numeric-id>` from the pre-filled link.
 //   4. Run `npm run build` so the constants are re-inlined into main.js.
 
-// Cap for manually-pasted source text. Unlike fetched sources — which the
-// Cloudflare Worker proxy truncates server-side before they reach us — a manual
-// paste goes straight into the request body, so an oversized paste hits the
-// proxy's request-body limit (HTTP 413 "Request body too large"). We trim here
-// to stay comfortably under that limit (currently ~100 KB): budget = 100 KB
-// minus the ~6.5 KB system prompt, the claim/user-prompt boilerplate, and
-// JSON-escaping + UTF-8 overhead on the source itself. 80 000 chars leaves room.
-const MAX_MANUAL_SOURCE_CHARS = 80000;
-
 // Sentinel substring that marks scaffolded values as not-yet-configured.
 // isDatasetSubmissionConfigured() looks for this exact token; don't reuse it
 // anywhere else in this file.
@@ -1463,6 +1486,19 @@ function buildDatasetSubmissionUrl(
     return `${formUrl}?${params.toString()}`;
 }
 // </core-injected>
+
+// Cap for manually-pasted source text. Unlike fetched sources — which the
+// Cloudflare Worker proxy truncates server-side before they reach us — a manual
+// paste goes straight into the request body, so an oversized paste hits the
+// proxy's request-body limit (HTTP 413 "Request body too large"). We trim here
+// to stay comfortably under that limit (currently ~100 KB): budget = 100 KB
+// minus the ~6.5 KB system prompt, the claim/user-prompt boilerplate, and
+// JSON-escaping + UTF-8 overhead on the source itself. 80 000 chars leaves room.
+//
+// Deliberately *below* the </core-injected> marker: it has no counterpart in
+// core/, so while it sat inside the injected region the next `npm run build`
+// silently deleted it, taking loadManualSourceText() with it.
+const MAX_MANUAL_SOURCE_CHARS = 80000;
 
     // ========================================
     // UI LOCALIZATION (i18n)
@@ -4220,6 +4256,7 @@ function buildDatasetSubmissionUrl(
                 kind: context.kind,
                 articleUrl: window.location.href,
                 articleTitle: typeof mw !== 'undefined' ? mw.config.get('wgTitle') : document.title,
+                revisionId: this.getArticleRevisionId(),
                 citationNumber: fromContext('citationNumber', this.activeCitationNumber),
                 sourceUrl: fromContext('sourceUrl', this.activeSourceUrl),
                 provider: this.currentProvider,
@@ -4858,6 +4895,22 @@ function buildDatasetSubmissionUrl(
             actionsEl.appendChild(copyTextBtn.$element[0]);
         }
 
+        // The revision the check ran against, recorded so a logged verdict or
+        // a talk-page report stays reproducible after the article moves on.
+        // `wgRevisionId` is the revision actually on screen and so the one that
+        // was read; it differs from `wgCurRevisionId` only when an old revision
+        // is being viewed, which is exactly the case where naming the current
+        // revision would be a lie.
+        getArticleRevisionId() {
+            if (typeof mw === 'undefined') return null;
+            try {
+                return normalizeRevisionId(mw.config.get('wgRevisionId'))
+                    ?? normalizeRevisionId(mw.config.get('wgCurRevisionId'));
+            } catch (e) {
+                return null;
+            }
+        }
+
         getRevisionPermalinkUrl(revId) {
             if (!revId || typeof mw === 'undefined') return null;
             try {
@@ -5242,7 +5295,7 @@ function buildDatasetSubmissionUrl(
             this.sourceCache = new Map();
             this.reportTokenUsage = { input: 0, output: 0 };
             this.hasReport = true;
-            this.reportRevisionId = mw.config.get('wgCurRevisionId') || null;
+            this.reportRevisionId = this.getArticleRevisionId();
 
             this.showReportView();
             document.getElementById('verifier-report-results').innerHTML = '';
@@ -5580,12 +5633,15 @@ function buildDatasetSubmissionUrl(
         // from either a report result object or the sidebar's active state.
         feedbackContextFor(result) {
             const provider = this.providers[this.currentProvider] || {};
+            const revisionId = this.getArticleRevisionId();
             return {
                 checkId: result?.checkId ?? null,
                 articleUrl: (typeof window !== 'undefined' && window.location)
                     ? `${window.location.origin}${window.location.pathname}`
                     : '',
                 articleTitle: typeof mw !== 'undefined' ? mw.config.get('wgTitle') : document.title,
+                revisionId,
+                revisionUrl: this.getRevisionPermalinkUrl(revisionId),
                 citationNumber: result?.citationNumber ?? '',
                 claimText: result?.claimText ?? '',
                 sourceUrl: result?.url ?? '',
