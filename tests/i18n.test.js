@@ -94,10 +94,11 @@ test('translations are non-empty and actually differ from English', () => {
       assert.ok(translated.length > 0, `${lang}: ${JSON.stringify(en)} translates to an empty string`);
     }
   }
-  // 'ERROR' and 'source' are genuinely identical in French; everything else
-  // being identical would mean a key was copied without being translated.
+  // A handful of strings are genuinely the same word in Spanish. Anything else
+  // matching English means a key was copied over without being translated.
+  const SAME_IN_SPANISH = ['ERROR', 'Error: {message}'];
   const untranslated = Object.entries(MESSAGES.es).filter(([en, es]) => en === es);
-  assert.deepEqual(untranslated.map(([en]) => en), ['ERROR'], 'untranslated Spanish strings');
+  assert.deepEqual(untranslated.map(([en]) => en), SAME_IN_SPANISH, 'untranslated Spanish strings');
 });
 
 // es.wikipedia's interface never addresses the reader in the second person —
@@ -116,6 +117,19 @@ test('Spanish never addresses the reader in the second person', () => {
     if (hit) offenders.push(`${JSON.stringify(en)} → ${JSON.stringify(es)} (${hit[0]})`);
   }
   assert.deepEqual(offenders, [], `use an infinitive or impersonal "se" instead:\n${offenders.join('\n')}`);
+});
+
+test('wiki links in translated strings point at the English wiki', () => {
+  // The script's user page only exists on en.wikipedia, so an unprefixed
+  // [[User:…]] in a report or edit summary is a redlink on every other wiki.
+  // The English keys stay unprefixed — there the local link is the right one.
+  const offenders = [];
+  for (const lang of LANGS) {
+    for (const [en, translated] of Object.entries(MESSAGES[lang])) {
+      if (/\[\[(?!:en:)User[ _]?(talk)?:/i.test(translated)) offenders.push(`${lang}: ${JSON.stringify(en)}`);
+    }
+  }
+  assert.deepEqual(offenders, [], 'use [[:en:User:…]] in translated strings');
 });
 
 test('every this.t() key in main.js has a translation in every language', () => {
