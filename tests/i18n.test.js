@@ -102,10 +102,15 @@ test('translations are non-empty and actually differ from English', () => {
 
 // es.wikipedia's interface never addresses the reader in the second person —
 // tú, vos and usted are each regionally marked, so its own messages use
-// infinitives for actions and impersonal "se" for statements. These are the
-// giveaway tokens: the informal pronouns and possessives, the tú-form verbs the
-// UI would plausibly reach for, and the singular imperatives of those verbs.
-const SECOND_PERSON_ES = /\b(tu|tus|ti|tuyo|tuya|tuyos|tuyas|vos|usted|ustedes|quieres|puedes|debes|tienes|pegues|haz|pega|introduce|prueba|comprueba|considera|lee|añade|ten|dudes|tómala|tómalo)\b/i;
+// infinitives for actions and impersonal "se" for statements.
+//
+// Pronouns, possessives and tú-form verbs are banned outright. The singular
+// imperatives are spelled identically to the third-person indicative, which the
+// impersonal register needs ("se comprueba", "se lee"), so those are banned only
+// when *not* preceded by "se" — that is what separates a command to the reader
+// from a statement about the tool.
+const SECOND_PERSON_ES =
+  /\b(?:tu|tus|ti|tuyo|tuya|tuyos|tuyas|vos|usted|ustedes|quieres|puedes|debes|tienes|pegues)\b|(?<!\bse )\b(?:haz|pega|introduce|prueba|comprueba|considera|lee|añade|ten|dudes|tómala|tómalo)\b/i;
 
 test('Spanish never addresses the reader in the second person', () => {
   const offenders = [];
@@ -114,6 +119,24 @@ test('Spanish never addresses the reader in the second person', () => {
     if (hit) offenders.push(`${JSON.stringify(en)} → ${JSON.stringify(es)} (${hit[0]})`);
   }
   assert.deepEqual(offenders, [], `use an infinitive or impersonal "se" instead:\n${offenders.join('\n')}`);
+});
+
+// The infinitive register is for action labels (buttons, links, placeholders).
+// A full sentence opening with one reads as a clipped fragment — running prose
+// wants impersonal "se" or a framing verb ("Se puede hacer clic en…",
+// "Conviene leer…"). A label never ends in a full stop, so that is the tell.
+const OPENS_WITH_INFINITIVE =
+  /^(hacer|pegar|introducir|añadir|abrir|subir|cargar|verificar|comprobar|copiar|eliminar|guardar|cambiar|sustituir|detener|volver|enviar|editar|configurar|mostrar|ocultar|leer|usar)\b/i;
+
+test('Spanish sentences use impersonal "se" rather than a bare infinitive', () => {
+  const offenders = Object.entries(MESSAGES.es).filter(
+    ([, es]) => /[.?]\s*$/.test(es) && OPENS_WITH_INFINITIVE.test(es.trim())
+  );
+  assert.deepEqual(
+    offenders.map(([en]) => en),
+    [],
+    'a full sentence should not open with a bare infinitive — recast it impersonally'
+  );
 });
 
 test('every this.t() key in main.js has a translation in every language', () => {
