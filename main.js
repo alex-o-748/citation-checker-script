@@ -2964,6 +2964,20 @@ function buildDatasetSubmissionUrl(
                 .verifier-feedback .oo-ui-buttonElement {
                     margin: 0;
                 }
+                /* OOUI gives a button min-height: 32px but leaves its line box
+                   at the natural height of the text, and an inline-block puts
+                   the leftover space entirely below — so the label sits high in
+                   the box. Icons don't: they are absolutely positioned at
+                   top: 50%, which is why this only reads as broken on the
+                   correction chips, the one button here with no icon beside the
+                   text. inline-flex centres the content vertically without
+                   taking the button out of the inline flow; horizontal
+                   placement is left alone, since the icon is out of flow and
+                   centring the label would slide it under the icon. */
+                .verifier-feedback .oo-ui-buttonElement-button {
+                    display: inline-flex;
+                    align-items: center;
+                }
                 /* Yes / No / Comment are the same widget — a frameless OOUI
                    button with an icon and a label — and deliberately carry no
                    styling of our own. Anything we add here is a way for the
