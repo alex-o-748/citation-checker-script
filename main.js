@@ -5,6 +5,24 @@
 (function() {
     'use strict';
 
+    // The ResourceLoader modules the sidebar needs. The icons-* entries are not
+    // optional polish: OOUI renders an icon span and reserves its width whether
+    // or not the module defining the glyph is present, so a missing one leaves a
+    // blank gap rather than an error — visible only on pages where no other
+    // gadget happens to have loaded it. Every icon name the script passes to a
+    // widget must have its module here; tests/icon_modules.test.js enforces it.
+    const OOUI_MODULES = [
+        'oojs-ui-core',
+        'oojs-ui-widgets',
+        'oojs-ui-windows',
+        'oojs-ui.styles.icons-content',        // articles
+        'oojs-ui.styles.icons-editing-advanced', // copy
+        'oojs-ui.styles.icons-editing-core',   // edit
+        'oojs-ui.styles.icons-interactions',   // cancel, check, close, feedback, settings
+        'oojs-ui.styles.icons-moderation',     // trash
+        'oojs-ui.styles.icons-movement',       // arrowPrevious
+    ];
+
 // <core-injected>
 // --- core/prompts.js ---
 // Pure prompt-generation logic. Imported by core/ consumers (CLI, benchmark).
@@ -1778,8 +1796,14 @@ function buildDatasetSubmissionUrl(
             });
         }
         
+        // Every icons-* module here backs an icon the script actually names.
+        // An unloaded module does not fail loudly — OOUI still renders the icon
+        // span and still reserves its width, so the button keeps a blank gap
+        // where the glyph should be, and only looks right on pages where some
+        // other gadget happened to pull the module in. tests/icon_modules.test.js
+        // keeps this list and the `icon:` names in step.
         async loadOOUI() {
-            await mw.loader.using(['oojs-ui-core', 'oojs-ui-widgets', 'oojs-ui-windows', 'oojs-ui.styles.icons-interactions']);
+            await mw.loader.using(OOUI_MODULES);
         }
         
         getCurrentApiKey() {
@@ -5705,7 +5729,7 @@ function buildDatasetSubmissionUrl(
     }
     
     if (typeof mw !== 'undefined' && [0, 2, 118].includes(mw.config.get('wgNamespaceNumber'))) {
-        mw.loader.using(['mediawiki.util', 'mediawiki.api', 'oojs-ui-core', 'oojs-ui-widgets', 'oojs-ui-windows', 'oojs-ui.styles.icons-interactions']).then(function() {
+        mw.loader.using(['mediawiki.util', 'mediawiki.api', ...OOUI_MODULES]).then(function() {
             $(function() {
                 new WikipediaSourceVerifier();
             });
