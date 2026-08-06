@@ -1455,15 +1455,18 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
 
     // Spanish. es.wikipedia's interface deliberately avoids addressing the
     // reader in any second person, because tú/vos/usted all carry regional
-    // baggage — its own messages use infinitives for actions ("Subir archivo",
-    // "Informar de un error visual") and impersonal "se" for statements. These
-    // follow that: no tuteo, no possessive "tu", and «angle quotes» over "".
+    // baggage. Two registers do the work, and the split matters: an *action
+    // label* — button, link, menu item, input placeholder — takes a bare
+    // infinitive ("Subir archivo", "Buscar en Wikipedia"), but a *sentence* of
+    // running prose takes impersonal "se" ("Se puede hacer clic en…"), because
+    // a bare infinitive reads as a clipped fragment there. No tuteo, no
+    // possessive "tu", and «angle quotes» over "".
     const ES_MESSAGES = {
         // Sidebar structure
         'Source Verifier': 'Verificador de fuentes',
         'Selected Claim': 'Afirmación seleccionada',
         'Click on a reference number [1] next to a claim to verify it against its source.':
-            'Hacer clic en un número de referencia [1] junto a una afirmación para verificarla con su fuente.',
+            'Se puede hacer clic en un número de referencia [1] junto a una afirmación para verificarla con su fuente.',
         'Source Content': 'Contenido de la fuente',
         'No source loaded yet.': 'Todavía no se ha cargado ninguna fuente.',
         'Verification Result': 'Resultado de la verificación',
@@ -1505,8 +1508,8 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
         'Verify claims against sources': 'Verificar afirmaciones con sus fuentes',
         'Citation Verifier': 'Verificador de citas',
         'Citation Verifier installed — click the ':
-            'Verificador de citas instalado: abrir la pestaña ',
-        ' tab to get started.': ' para empezar.',
+            'Verificador de citas instalado: la pestaña ',
+        ' tab to get started.': ' permite empezar.',
 
         // Source display
         '✓ PDF content extracted{pageInfo}': '✓ Contenido del PDF extraído{pageInfo}',
@@ -1519,11 +1522,11 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
             '⚠ La fuente es extensa y solo puede comprobarse parcialmente.',
         'Source URL:': 'URL de la fuente:',
         'No URL found. Please paste the source text below:':
-            'No se ha encontrado ninguna URL. Pegar el texto de la fuente a continuación:',
+            'No se ha encontrado ninguna URL; el texto de la fuente puede pegarse a continuación:',
         'Manual Source Text:': 'Texto de la fuente introducido manualmente:',
         'No source loaded.': 'No hay ninguna fuente cargada.',
         'Click "Verify Claim" to verify the selected claim against the source.':
-            'Hacer clic en «Verificar la afirmación» para verificar la afirmación seleccionada con la fuente.',
+            'Al hacer clic en «Verificar la afirmación» se comprueba la afirmación seleccionada con la fuente.',
         'Part of a group of {count} citations: {numbers}':
             'Forma parte de un grupo de {count} citas: {numbers}',
 
@@ -1581,7 +1584,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
         'Individual sources': 'Fuentes individuales',
         'Combined verdict': 'Veredicto combinado',
         'All citations are hidden by the current filters. Click a filter chip above to show them.':
-            'Los filtros actuales ocultan todas las citas. Hacer clic en uno de los filtros de arriba para mostrarlas.',
+            'Los filtros actuales ocultan todas las citas. Se puede hacer clic en uno de los filtros de arriba para mostrarlas.',
 
         // Notifications / dialogs
         'Report copied to clipboard!': '¡Informe copiado al portapapeles!',
@@ -1591,7 +1594,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
         'Enter your {name} API Key...': 'Introducir la clave API de {name}…',
         'Set {name} API Key': 'Configurar la clave API de {name}',
         'Enter your {name} API Key to enable source verification:':
-            'Introducir la clave API de {name} para activar la verificación de fuentes:',
+            'Se necesita la clave API de {name} para activar la verificación de fuentes:',
         'This will verify {citations} citations from {sources} unique sources.{groupNote}\n\nEstimated time: ~{minutes} minutes.\n\nContinue?':
             'Esto verificará {citations} citas procedentes de {sources} fuentes distintas.{groupNote}\n\nTiempo estimado: ~{minutes} minutos.\n\n¿Continuar?',
         'This will verify {citations} citations from {sources} unique sources.{groupNote}\n\nEstimated time: ~{minutes} minute.\n\nContinue?':
@@ -1661,7 +1664,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
         'Upload PDF': 'Subir un PDF',
         'or paste the text below': 'o pegar el texto a continuación',
         'Click any citation number in the article to check whether its source actually supports the claim.':
-            'Hacer clic en cualquier número de cita del artículo para comprobar si su fuente respalda realmente la afirmación.',
+            'Se puede hacer clic en cualquier número de cita del artículo para comprobar si su fuente respalda realmente la afirmación.',
         'Ready · free, no setup needed': 'Listo · gratuito, sin configuración',
         'Ready · using your API key': 'Listo · con la clave API configurada',
         'Add an API key in settings to start':
@@ -4370,13 +4373,37 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
             // Group blocks are filtered by their COLLECTIVE verdict (the one
             // shown in the filter pills), not by the individual per-source
             // rows. Inside a visible group every row stays visible regardless
-            // of its verdict — the rows are debug detail. A group whose
-            // collective check hasn't finished yet (no data-collective-verdict)
-            // stays visible.
+            // of its verdict — the rows are debug detail.
+            //
+            // Two group states have no collective verdict to filter on, and
+            // they are not the same:
+            //
+            //  - Pending: the collective check hasn't run yet. getReportUnits()
+            //    contributes nothing for the group, so the pills don't count it
+            //    either. Stays visible; resolves when the check completes.
+            //  - Skipped: verifyGroupCollective() bailed because at most one
+            //    source was retrievable, so a combined verdict would just
+            //    restate the single per-source one. getReportUnits() then falls
+            //    back to counting each MEMBER as its own unit — so the pills do
+            //    count these, and the block has to honour the filters the same
+            //    way, or the summary claims citations are hidden while they are
+            //    still on screen. Hide it once every member's verdict is
+            //    filtered off.
             const groups = resultsEl.querySelectorAll('.verifier-report-group');
             groups.forEach(groupEl => {
                 const collectiveVerdict = groupEl.dataset.collectiveVerdict;
-                const hidden = collectiveVerdict ? !!this.reportFilters[collectiveVerdict] : false;
+                let hidden;
+                if (collectiveVerdict) {
+                    hidden = !!this.reportFilters[collectiveVerdict];
+                } else if (groupEl.dataset.collectiveSkipped === 'true') {
+                    const rows = groupEl.querySelectorAll('.verifier-report-group-row');
+                    hidden = rows.length > 0 && Array.from(rows).every(row => {
+                        const cls = classes.find(c => row.classList.contains(`verdict-${c}`));
+                        return cls && !!this.reportFilters[cls];
+                    });
+                } else {
+                    hidden = false;
+                }
                 groupEl.style.display = hidden ? 'none' : '';
             });
 
@@ -4652,11 +4679,15 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
             }
         }
 
+        // Called when the collective check is skipped for want of a second
+        // retrievable source. Marks the block so applyReportFilters() knows to
+        // filter it by its members rather than leaving it permanently visible.
         hideGroupCollectiveSlot(groupId) {
             const resultsEl = document.getElementById('verifier-report-results');
             if (!resultsEl) return;
             const groupEl = resultsEl.querySelector(`.verifier-report-group[data-group-id="${CSS.escape(groupId)}"]`);
             if (!groupEl) return;
+            groupEl.dataset.collectiveSkipped = 'true';
             const slot = groupEl.querySelector('.verifier-report-group-collective');
             if (slot) slot.style.display = 'none';
         }
@@ -4952,6 +4983,13 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
             if (availableCount <= 1) {
                 this.reportGroupResults.set(groupId, { skipped: true, groupId });
                 this.hideGroupCollectiveSlot(groupId);
+                // Marking the group skipped changes what getReportUnits()
+                // returns for it (members instead of nothing), so the pills and
+                // the filter state both have to be recomputed — the success
+                // path below does the same. Without this a group skipped as the
+                // last step of a run keeps stale counts until the next toggle.
+                this.renderReportSummary();
+                this.applyReportFilters();
                 return;
             }
 

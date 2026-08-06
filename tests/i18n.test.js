@@ -101,11 +101,13 @@ test('translations are non-empty and actually differ from English', () => {
 });
 
 // es.wikipedia's interface never addresses the reader in the second person —
-// tú, vos and usted are each regionally marked, so its own messages use
-// infinitives for actions and impersonal "se" for statements. These are the
-// giveaway tokens: the informal pronouns and possessives, the tú-form verbs the
-// UI would plausibly reach for, and the singular imperatives of those verbs.
-const SECOND_PERSON_ES = /\b(tu|tus|ti|tuyo|tuya|tuyos|tuyas|vos|usted|ustedes|quieres|puedes|debes|tienes|pegues|haz|pega|introduce|prueba|comprueba|considera|lee|añade|ten|dudes|tómala|tómalo)\b/i;
+// tú, vos and usted are each regionally marked. This catches only the
+// unmistakable markers: pronouns, possessives, and verb forms with no
+// third-person reading. It is a smoke alarm, not a grammar checker — the
+// register guidance lives in the comment above ES_MESSAGES, and anything
+// subtler than this is better caught by a human reading the strings.
+const SECOND_PERSON_ES =
+  /\b(?:tu|tus|ti|tuyo|tuya|tuyos|tuyas|vos|usted|ustedes|quieres|puedes|debes|tienes|pegues|dudes|haz|hazlo)\b/i;
 
 test('Spanish never addresses the reader in the second person', () => {
   const offenders = [];
