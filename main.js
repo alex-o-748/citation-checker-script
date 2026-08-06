@@ -4653,14 +4653,21 @@ function buildDatasetSubmissionUrl(
             const actionDiv = document.createElement('div');
             actionDiv.className = 'report-card-action';
 
+            // Framed on purpose. Below this sits the feedback row — frameless
+            // icon-and-label buttons — and a frameless Edit Section is the same
+            // shape and weight as those, so it reads as the first of four
+            // buttons in one group rather than as the card's action. The two
+            // do different jobs: this one edits the article, the row below
+            // rates the tool, and the frame is what says so. Left-aligned like
+            // every other line in the card; right-aligning it would zigzag the
+            // scan path without fixing the weight.
             if (result.refElement && (result.verdict === 'NOT SUPPORTED' || result.verdict === 'PARTIALLY SUPPORTED' || result.verdict === 'SOURCE UNAVAILABLE')) {
                 const editBtn = new OO.ui.ButtonWidget({
                     label: this.t('Edit Section'),
                     flags: ['progressive'],
                     icon: 'edit',
                     href: this.buildEditUrl(result.refElement),
-                    target: '_blank',
-                    framed: false
+                    target: '_blank'
                 });
                 actionDiv.appendChild(editBtn.$element[0]);
             }
@@ -4697,14 +4704,14 @@ function buildDatasetSubmissionUrl(
             // One shared "Edit Section" button per group: every member is in
             // the same article section by definition, so a per-row button
             // would just be repetition. Wire it to the first member's ref.
+            // Framed to match the per-card button, for the same reason.
             if (firstResult.refElement) {
                 const editBtn = new OO.ui.ButtonWidget({
                     label: this.t('Edit Section'),
                     flags: ['progressive'],
                     icon: 'edit',
                     href: this.buildEditUrl(firstResult.refElement),
-                    target: '_blank',
-                    framed: false
+                    target: '_blank'
                 });
                 groupEl.querySelector('.verifier-report-group-edit').appendChild(editBtn.$element[0]);
             }
