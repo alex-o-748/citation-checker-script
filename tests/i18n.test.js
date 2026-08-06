@@ -94,10 +94,11 @@ test('translations are non-empty and actually differ from English', () => {
       assert.ok(translated.length > 0, `${lang}: ${JSON.stringify(en)} translates to an empty string`);
     }
   }
-  // 'ERROR' and 'source' are genuinely identical in French; everything else
-  // being identical would mean a key was copied without being translated.
+  // A handful of strings are genuinely the same word in Spanish. Anything else
+  // matching English means a key was copied over without being translated.
+  const SAME_IN_SPANISH = ['ERROR', 'Error: {message}'];
   const untranslated = Object.entries(MESSAGES.es).filter(([en, es]) => en === es);
-  assert.deepEqual(untranslated.map(([en]) => en), ['ERROR'], 'untranslated Spanish strings');
+  assert.deepEqual(untranslated.map(([en]) => en), SAME_IN_SPANISH, 'untranslated Spanish strings');
 });
 
 // es.wikipedia's interface never addresses the reader in the second person —

@@ -1309,6 +1309,9 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
         'Partial': 'Partielle',
         'Not Supported': 'Non confirmée',
         'Unavailable': 'Indisponible',
+        // Reason tag on a 'not supported' verdict
+        'Contradiction': 'Contradiction',
+        'Omission': 'Omission',
 
         // Report progress
         'Checking citation [{num}]': 'Vérification de la citation [{num}]',
@@ -1451,6 +1454,42 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
         'How accurate is this?': 'Quelle est la fiabilité de cet outil ?',
         'Measured against 186 human-labelled citations, a "not supported" flag was confirmed by a reviewer roughly two thirds of the time. Treat every verdict as a reason to read the source, not as a conclusion.':
             'Sur 186 citations annotées par des humains, un signalement « non confirmée » a été validé par un relecteur dans environ deux tiers des cas. Considérez chaque verdict comme une raison de lire la source, et non comme une conclusion.',
+
+        // Status strip
+        'Could not extract claim text': 'Impossible d’extraire le texte de l’affirmation',
+        'No URL found in reference. Please paste the source text below.':
+            'Aucune URL trouvée dans la référence. Veuillez coller le texte de la source ci-dessous.',
+        'Google Books sources cannot be fetched. Please paste the source text below.':
+            'Les sources Google Books ne peuvent pas être récupérées. Veuillez coller le texte de la source ci-dessous.',
+        'Fetching source content...': 'Récupération du contenu de la source…',
+        'Could not fetch source{status}{reason}. Please paste the source text below.':
+            'Impossible de récupérer la source{status}{reason}. Veuillez coller le texte de la source ci-dessous.',
+        'Source fetched. Ready to verify.': 'Source récupérée. Prêt à vérifier.',
+        'Ready to verify claim against source': 'Prêt à vérifier l’affirmation par rapport à la source',
+        'Error: {message}': 'Erreur : {message}',
+        'Please enter some source text': 'Veuillez saisir un texte de source',
+        'Source text loaded (trimmed to {count} characters). Ready to verify.':
+            'Texte de la source chargé (tronqué à {count} caractères). Prêt à vérifier.',
+        'Source text loaded. Ready to verify.': 'Texte de la source chargé. Prêt à vérifier.',
+        'Cancelled': 'Annulé',
+        'Please choose a PDF file.': 'Veuillez choisir un fichier PDF.',
+        'Reading {name}…': 'Lecture de {name}…',
+        'This PDF has no selectable text (it looks scanned). Please paste the relevant passage instead.':
+            'Ce PDF ne contient pas de texte sélectionnable (il semble numérisé). Veuillez plutôt coller le passage concerné.',
+        'Loaded text from {name}. Ready to verify.': 'Texte chargé depuis {name}. Prêt à vérifier.',
+        'Could not read that PDF: {message}. Try pasting the text instead.':
+            'Impossible de lire ce PDF : {message}. Essayez plutôt de coller le texte.',
+        'Switched to {name}': 'Basculé vers {name}',
+        'Paste replacement source text below, then click Load Text.':
+            'Collez le texte de remplacement ci-dessous, puis cliquez sur « Charger le texte ».',
+        'This provider does not require an API key.': 'Ce fournisseur ne nécessite pas de clé API.',
+        'API key set successfully!': 'Clé API enregistrée !',
+        'This provider does not use a stored API key.': 'Ce fournisseur n’utilise pas de clé API enregistrée.',
+        'API key removed successfully!': 'Clé API supprimée !',
+        'Missing API key (for this provider), claim, or source content':
+            'Clé API (pour ce fournisseur), affirmation ou contenu de la source manquant',
+        'Verifying claim against source...': 'Vérification de l’affirmation par rapport à la source…',
+        'Verification complete!': 'Vérification terminée !',
     };
 
     // Spanish. es.wikipedia's interface deliberately avoids addressing the
@@ -1541,6 +1580,9 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
         'Partial': 'Parcial',
         'Not Supported': 'No respaldada',
         'Unavailable': 'No disponible',
+        // Reason tag on a 'not supported' verdict
+        'Contradiction': 'Contradicción',
+        'Omission': 'Omisión',
 
         // Report progress
         'Checking citation [{num}]': 'Comprobando la cita [{num}]',
@@ -1683,6 +1725,42 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
         'How accurate is this?': '¿Qué fiabilidad tiene?',
         'Measured against 186 human-labelled citations, a "not supported" flag was confirmed by a reviewer roughly two thirds of the time. Treat every verdict as a reason to read the source, not as a conclusion.':
             'Sobre 186 citas etiquetadas por personas, un aviso de «no respaldada» fue confirmado por un revisor en aproximadamente dos tercios de los casos. Conviene considerar cada veredicto como un motivo para leer la fuente, no como una conclusión.',
+
+        // Status strip
+        'Could not extract claim text': 'No se ha podido extraer el texto de la afirmación',
+        'No URL found in reference. Please paste the source text below.':
+            'No se ha encontrado ninguna URL en la referencia; el texto de la fuente puede pegarse a continuación.',
+        'Google Books sources cannot be fetched. Please paste the source text below.':
+            'Las fuentes de Google Books no se pueden obtener; el texto de la fuente puede pegarse a continuación.',
+        'Fetching source content...': 'Obteniendo el contenido de la fuente…',
+        'Could not fetch source{status}{reason}. Please paste the source text below.':
+            'No se ha podido obtener la fuente{status}{reason}; el texto de la fuente puede pegarse a continuación.',
+        'Source fetched. Ready to verify.': 'Fuente obtenida. Todo listo para verificar.',
+        'Ready to verify claim against source': 'Todo listo para verificar la afirmación con la fuente',
+        'Error: {message}': 'Error: {message}',
+        'Please enter some source text': 'Hace falta introducir el texto de la fuente',
+        'Source text loaded (trimmed to {count} characters). Ready to verify.':
+            'Texto de la fuente cargado (recortado a {count} caracteres). Todo listo para verificar.',
+        'Source text loaded. Ready to verify.': 'Texto de la fuente cargado. Todo listo para verificar.',
+        'Cancelled': 'Cancelado',
+        'Please choose a PDF file.': 'Hace falta elegir un archivo PDF.',
+        'Reading {name}…': 'Leyendo {name}…',
+        'This PDF has no selectable text (it looks scanned). Please paste the relevant passage instead.':
+            'Este PDF no tiene texto seleccionable (parece escaneado); conviene pegar el fragmento correspondiente.',
+        'Loaded text from {name}. Ready to verify.': 'Texto cargado desde {name}. Todo listo para verificar.',
+        'Could not read that PDF: {message}. Try pasting the text instead.':
+            'No se ha podido leer el PDF: {message}. Se puede pegar el texto en su lugar.',
+        'Switched to {name}': 'Se ha cambiado a {name}',
+        'Paste replacement source text below, then click Load Text.':
+            'El texto de sustitución puede pegarse a continuación y cargarse con «Cargar el texto».',
+        'This provider does not require an API key.': 'Este proveedor no necesita una clave API.',
+        'API key set successfully!': '¡Clave API guardada!',
+        'This provider does not use a stored API key.': 'Este proveedor no usa ninguna clave API guardada.',
+        'API key removed successfully!': '¡Clave API eliminada!',
+        'Missing API key (for this provider), claim, or source content':
+            'Falta la clave API (para este proveedor), la afirmación o el contenido de la fuente',
+        'Verifying claim against source...': 'Verificando la afirmación con la fuente…',
+        'Verification complete!': '¡Verificación completada!',
     };
 
     // Registered UI languages, keyed by the MediaWiki language-code prefix that
@@ -3480,7 +3558,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                 
                 const claim = this.extractClaimText(refElement);
                 if (!claim) {
-                    this.updateStatus('Could not extract claim text', true);
+                    this.updateStatus(this.t('Could not extract claim text'), true);
                     return;
                 }
                 
@@ -3502,20 +3580,20 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                 
                 if (!refUrl) {
                     this.showSourceTextInput();
-                    this.updateStatus('No URL found in reference. Please paste the source text below.');
+                    this.updateStatus(this.t('No URL found in reference. Please paste the source text below.'));
                     return;
                 }
 
                 if (this.isGoogleBooksUrl(refUrl)) {
                     this.showSourceTextInput();
-                    this.updateStatus('Google Books sources cannot be fetched. Please paste the source text below.');
+                    this.updateStatus(this.t('Google Books sources cannot be fetched. Please paste the source text below.'));
                     return;
                 }
 
                 this.hideSourceTextInput();
                 this.activeSource = null;
                 this.updateButtonVisibility();
-                this.updateStatus('Fetching source content...');
+                this.updateStatus(this.t('Fetching source content...'));
                 const fetchId = ++this.currentFetchId;
                 const pageNum = this.extractPageNumber(refElement);
                 const fetchResult = await this.fetchSourceContent(refUrl, pageNum);
@@ -3528,7 +3606,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                     this.showSourceTextInput();
                     const status = fetchResult.status != null ? ` (HTTP ${fetchResult.status})` : '';
                     const reason = fetchResult.error ? `: ${fetchResult.error}` : '';
-                    this.updateStatus(`Could not fetch source${status}${reason}. Please paste the source text below.`, true);
+                    this.updateStatus(this.t('Could not fetch source{status}{reason}. Please paste the source text below.', { status, reason }), true);
                     return;
                 }
 
@@ -3569,11 +3647,11 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
 
                 this.updateButtonVisibility();
                 this.refreshOverrideButton();
-                this.updateStatus(contentFetched ? 'Source fetched. Ready to verify.' : 'Ready to verify claim against source');
+                this.updateStatus(this.t(contentFetched ? 'Source fetched. Ready to verify.' : 'Ready to verify claim against source'));
                 
             } catch (error) {
                 console.error('Error handling reference click:', error);
-                this.updateStatus(`Error: ${error.message}`, true);
+                this.updateStatus(this.t('Error: {message}', { message: error.message }), true);
             }
         }
         
@@ -3616,7 +3694,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
         loadManualSourceText() {
             let text = this.sourceTextInput.getValue().trim();
             if (!text) {
-                this.updateStatus('Please enter some source text', true);
+                this.updateStatus(this.t('Please enter some source text'), true);
                 return;
             }
 
@@ -3646,15 +3724,15 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
             this.activeSource = `Manual source text:\n\n${text}`;
             const preview = `${text.substring(0, 200)}${text.length > 200 ? '...' : ''}`;
             const truncationHtml = wasTrimmed
-                ? '<div class="verifier-truncation-warning">⚠ The source is long and can only be checked partially.</div>'
+                ? `<div class="verifier-truncation-warning">${this.t('⚠ The source is long and can only be checked partially.')}</div>`
                 : '';
-            document.getElementById('verifier-source-text').innerHTML = `<strong>Manual Source Text:</strong><br><em>${preview}</em>${truncationHtml}`;
+            document.getElementById('verifier-source-text').innerHTML = `<strong>${this.t('Manual Source Text:')}</strong><br><em>${preview}</em>${truncationHtml}`;
             this.sourceInputForOverride = false;
             this.hideSourceTextInput();
             this.updateButtonVisibility();
             this.updateStatus(wasTrimmed
-                ? `Source text loaded (trimmed to ${MAX_MANUAL_SOURCE_CHARS.toLocaleString()} characters). Ready to verify.`
-                : 'Source text loaded. Ready to verify.');
+                ? this.t('Source text loaded (trimmed to {count} characters). Ready to verify.', { count: MAX_MANUAL_SOURCE_CHARS.toLocaleString() })
+                : this.t('Source text loaded. Ready to verify.'));
         }
 
         cancelManualSourceText() {
@@ -3667,7 +3745,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                 document.getElementById('verifier-source-text').textContent = this.t('No source loaded.');
             }
             this.updateButtonVisibility();
-            this.updateStatus('Cancelled');
+            this.updateStatus(this.t('Cancelled'));
         }
 
         // Lazily load PDF.js the first time a user picks a PDF, and cache the
@@ -3720,22 +3798,22 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
             if (!file) return;
             const looksPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
             if (!looksPdf) {
-                this.updateStatus('Please choose a PDF file.', true);
+                this.updateStatus(this.t('Please choose a PDF file.'), true);
                 return;
             }
-            this.updateStatus(`Reading ${file.name}…`);
+            this.updateStatus(this.t('Reading {name}…', { name: file.name }));
             try {
                 const text = await this.extractPdfText(file);
                 if (!text) {
-                    this.updateStatus('This PDF has no selectable text (it looks scanned). Please paste the relevant passage instead.', true);
+                    this.updateStatus(this.t('This PDF has no selectable text (it looks scanned). Please paste the relevant passage instead.'), true);
                     return;
                 }
                 this.sourceTextInput.setValue(text);
                 this.loadManualSourceText();
-                this.updateStatus(`Loaded text from ${file.name}. Ready to verify.`);
+                this.updateStatus(this.t('Loaded text from {name}. Ready to verify.', { name: file.name }));
             } catch (error) {
                 console.error('PDF extraction failed:', error);
-                this.updateStatus(`Could not read that PDF: ${error.message}. Try pasting the text instead.`, true);
+                this.updateStatus(this.t('Could not read that PDF: {message}. Try pasting the text instead.', { message: error.message }), true);
             }
         }
 
@@ -3885,7 +3963,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                 localStorage.setItem('source_verifier_provider', this.currentProvider);
                 this.updateButtonVisibility();
                 this.updateTheme();
-                this.updateStatus(`Switched to ${this.providers[this.currentProvider].name}`);
+                this.updateStatus(this.t('Switched to {name}', { name: this.providers[this.currentProvider].name }));
             });
             
             this.buttons.setKey.on('click', () => {
@@ -3934,7 +4012,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
 
             this.buttons.overrideText.on('click', () => {
                 this.showSourceTextInput(true);
-                this.updateStatus('Paste replacement source text below, then click Load Text.');
+                this.updateStatus(this.t('Paste replacement source text below, then click Load Text.'));
             });
 
             this.buttons.verifyAll.on('click', () => {
@@ -3967,7 +4045,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
             const provider = this.providers[this.currentProvider];
 
             if (!provider.requiresKey && !provider.optionalKey) {
-                this.updateStatus('This provider does not require an API key.');
+                this.updateStatus(this.t('This provider does not require an API key.'));
                 return;
             }
             
@@ -4011,7 +4089,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                     if (key) {
                         this.setCurrentApiKey(key);
                         this.updateButtonVisibility();
-                        this.updateStatus('API key set successfully!');
+                        this.updateStatus(this.t('API key set successfully!'));
                         
                         if (this.activeClaim && this.activeSource) {
                             this.updateButtonVisibility();
@@ -4025,7 +4103,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
         removeApiKey() {
             const provider = this.providers[this.currentProvider];
             if (!provider.requiresKey && !provider.optionalKey) {
-                this.updateStatus('This provider does not use a stored API key.');
+                this.updateStatus(this.t('This provider does not use a stored API key.'));
                 return;
             }
             
@@ -4033,7 +4111,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                 if (confirmed) {
                     this.removeCurrentApiKey();
                     this.updateButtonVisibility();
-                    this.updateStatus('API key removed successfully!');
+                    this.updateStatus(this.t('API key removed successfully!'));
                 }
             });
         }
@@ -4097,7 +4175,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
             
             // Only require a browser key for providers that need it
             if ((requiresKey && !hasKey) || !this.activeClaim || !this.activeSource) {
-                this.updateStatus('Missing API key (for this provider), claim, or source content', true);
+                this.updateStatus(this.t('Missing API key (for this provider), claim, or source content'), true);
                 return;
             }
             
@@ -4106,7 +4184,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                 this.buttons.verify.setDisabled(true);
                 this.buttons.verify.setLabel(this.t('Verifying...'));
                 this.buttons.verify.setIcon('clock');
-                this.updateStatus('Verifying claim against source...');
+                this.updateStatus(this.t('Verifying claim against source...'));
 
                 const apiResult = await this.callProviderAPI(this.activeClaim, this.activeSource);
                 const result = apiResult.text;
@@ -4115,7 +4193,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                     return;
                 }
 
-                this.updateStatus('Verification complete!');
+                this.updateStatus(this.t('Verification complete!'));
                 this.displayResult(result);
 
                 // Fire-and-forget logging
@@ -4131,7 +4209,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                     return;
                 }
                 console.error('Verification error:', error);
-                this.updateStatus(`Error: ${error.message}`, true);
+                this.updateStatus(this.t('Error: {message}', { message: error.message }), true);
                 document.getElementById('verifier-verdict').textContent = this.t('ERROR');
                 document.getElementById('verifier-verdict').className = 'source-unavailable';
                 document.getElementById('verifier-comments').textContent = error.message;
@@ -4194,7 +4272,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
 	        const tag = document.createElement('span');
 	        tag.id = 'verifier-reason-type';
 	        tag.className = `reason-type-tag reason-type-${result.reason_type}`;
-	        tag.textContent = result.reason_type === 'contradiction' ? 'Contradiction' : 'Omission';
+	        tag.textContent = this.reasonTypeLabel(result.reason_type);
 	        verdictEl.after(tag);
 	    }
 
@@ -4507,6 +4585,13 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
             });
         }
 
+        // The reason_type enum itself stays English — it is parsed
+        // programmatically and round-trips to the dataset — but the tag shown
+        // next to a "not supported" verdict is UI text, so it gets translated.
+        reasonTypeLabel(reasonType) {
+            return reasonType === 'contradiction' ? this.t('Contradiction') : this.t('Omission');
+        }
+
         verdictClassFor(verdict) {
             switch (verdict) {
                 case 'SUPPORTED': return { cls: 'supported', label: this.t('Supported') };
@@ -4559,7 +4644,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                 ? `<div class="report-card-truncated">${this.t('⚠ Source is long, only partially checked.')}</div>`
                 : '';
             const reasonTypeHtml = (result.verdict === 'NOT SUPPORTED' && result.reason_type)
-                ? `<span class="reason-type-tag reason-type-${result.reason_type}">${result.reason_type === 'contradiction' ? 'Contradiction' : 'Omission'}</span>`
+                ? `<span class="reason-type-tag reason-type-${result.reason_type}">${this.reasonTypeLabel(result.reason_type)}</span>`
                 : '';
             card.innerHTML = `
                 <div class="report-card-header">
@@ -4655,7 +4740,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
             if (!slot) return;
 
             const reasonTypeHtml = (result.verdict === 'NOT SUPPORTED' && result.reason_type)
-                ? `<span class="reason-type-tag reason-type-${result.reason_type}">${result.reason_type === 'contradiction' ? 'Contradiction' : 'Omission'}</span>`
+                ? `<span class="reason-type-tag reason-type-${result.reason_type}">${this.reasonTypeLabel(result.reason_type)}</span>`
                 : '';
             const truncationHtml = (result.truncated && result.verdict !== 'SUPPORTED')
                 ? `<div class="report-card-truncated">${this.t('⚠ Combined sources are long, only partially checked.')}</div>`
@@ -4700,7 +4785,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                 ? `<div class="report-card-truncated">${this.t('⚠ Source is long, only partially checked.')}</div>`
                 : '';
             const reasonTypeHtml = (result.verdict === 'NOT SUPPORTED' && result.reason_type)
-                ? `<span class="reason-type-tag reason-type-${result.reason_type}">${result.reason_type === 'contradiction' ? 'Contradiction' : 'Omission'}</span>`
+                ? `<span class="reason-type-tag reason-type-${result.reason_type}">${this.reasonTypeLabel(result.reason_type)}</span>`
                 : '';
             row.innerHTML = `
                 <div class="verifier-report-group-row-header">
@@ -5027,7 +5112,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                                 if (willRetry) {
                                     this.updateReportProgress(
                                         progressCurrent, progressTotal,
-                                        `Rate limited, retrying in ${Math.round(backoff / 1000)}s...`,
+                                        this.t('Rate limited, retrying in {secs}s...', { secs: Math.round(backoff / 1000) }),
                                         startTime
                                     );
                                 }
