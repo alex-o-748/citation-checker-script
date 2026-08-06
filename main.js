@@ -1463,6 +1463,8 @@ function buildDatasetSubmissionUrl(
 
         // Feedback controls
         'Was this right?': 'Est-ce correct ?',
+        'Yes': 'Oui',
+        'No': 'Non',
         'This verdict looks right': 'Ce verdict semble correct',
         'This verdict looks wrong': 'Ce verdict semble erroné',
         'What should it have been?': 'Quel aurait dû être le verdict ?',
@@ -2645,7 +2647,14 @@ function buildDatasetSubmissionUrl(
                 #verifier-action-container {
                     margin-top: 10px;
                 }
-                #verifier-action-container .oo-ui-buttonElement {
+                /* Direct children only. "Edit Section" is the panel's primary
+                   call to action and is appended straight to this container, so
+                   it spans the full width. The feedback controls live in a
+                   .verifier-feedback wrapper inside the same container, and an
+                   unscoped rule stretched every one of their buttons too —
+                   which is what made Yes/No/Comment and the correction chips
+                   shrink to unrelated widths instead of sitting as a row. */
+                #verifier-action-container > .oo-ui-buttonElement {
                     width: 100%;
                 }
                 #verifier-title-link {
@@ -2655,7 +2664,7 @@ function buildDatasetSubmissionUrl(
                 #verifier-title-link:hover {
                     text-decoration: underline;
                 }
-                #verifier-action-container .oo-ui-buttonElement-button {
+                #verifier-action-container > .oo-ui-buttonElement > .oo-ui-buttonElement-button {
                     width: 100%;
                     justify-content: center;
                 }
@@ -2955,43 +2964,18 @@ function buildDatasetSubmissionUrl(
                 .verifier-feedback .oo-ui-buttonElement {
                     margin: 0;
                 }
-                /* One pill shape for every control in the row. The thumbs used
-                   to be bare 11px emoji beside a full-size Comment button,
-                   which read as decoration rather than as something to click. */
-                .verifier-feedback-row .oo-ui-buttonElement-button {
-                    box-sizing: border-box;
-                    min-height: 26px;
-                    padding: 3px 10px;
-                    border: 1px solid var(--sv-border-chip);
-                    border-radius: 13px;
-                    background: var(--sv-bg-chip-off);
-                    color: var(--sv-ink-chip);
-                    font-size: 11px;
-                    line-height: 18px;
-                }
-                .verifier-feedback-row .oo-ui-buttonElement-button:hover {
-                    border-color: var(--sv-border-chip-hover);
-                    background: var(--sv-bg-chip-hover);
-                }
-                /* OOUI absolutely positions a frameless icon at the button's
-                   padding edge and clears it with a label margin sized to the
-                   icon alone. The pill's own padding moves the icon inward, so
-                   the two end up flush; padding restores the gap without
-                   fighting OOUI's higher-specificity margin rule. */
-                .verifier-feedback-row .oo-ui-iconElement .oo-ui-labelElement-label {
-                    padding-left: 6px;
-                }
-                .verifier-feedback-thumb .oo-ui-buttonElement-button {
-                    font-size: 15px;
-                    padding: 3px 12px;
-                }
-                /* Both thumbs are disabled after the first click, and OOUI's
-                   disabled dimming would flatten the two into looking alike.
-                   The chosen one keeps full contrast and gains an accent ring;
-                   the other fades, so the recorded answer stays readable. */
+                /* Yes / No / Comment are the same widget — a frameless OOUI
+                   button with an icon and a label — and deliberately carry no
+                   styling of our own. Anything we add here is a way for the
+                   three to stop matching, which is how the row ended up with
+                   two emoji next to an icon-and-label button. */
+                /* The ring marks the recorded answer. Both buttons are disabled
+                   after the first click and OOUI dims them identically, so
+                   without it the row forgets which way the editor voted. It is
+                   an inset shadow rather than a border so nothing reflows. */
                 .verifier-feedback .is-chosen .oo-ui-buttonElement-button {
-                    border-color: var(--sv-accent-fg);
                     box-shadow: inset 0 0 0 1px var(--sv-accent-fg);
+                    border-radius: 2px;
                     background: var(--sv-bg-chip-hover);
                     color: var(--sv-ink-chip);
                     opacity: 1;
@@ -5521,7 +5505,7 @@ function buildDatasetSubmissionUrl(
             };
         }
 
-        // The 👍 / 👎 / comment row. Returns null when the check has no id —
+        // The Yes / No / Comment row. Returns null when the check has no id —
         // an unparseable or errored verdict has nothing to attach feedback to,
         // and offering controls that silently go nowhere would be worse than
         // offering none.
@@ -5565,8 +5549,23 @@ function buildDatasetSubmissionUrl(
             const setCorrectionStatus = setStatusOn(correctionStatus);
             let correctedVerdict = null;
 
-            const up = new OO.ui.ButtonWidget({ label: '👍', title: this.t('This verdict looks right'), framed: false });
-            const down = new OO.ui.ButtonWidget({ label: '👎', title: this.t('This verdict looks wrong'), framed: false });
+            // Icon + label frameless buttons, exactly like Comment below. Two
+            // bare emoji beside an icon-and-label button read as decoration
+            // rather than as part of the same set; `check` and `close` come
+            // from oojs-ui.styles.icons-interactions, which is already loaded,
+            // and inherit the dark-mode icon inversion every other icon gets.
+            const up = new OO.ui.ButtonWidget({
+                label: this.t('Yes'),
+                icon: 'check',
+                title: this.t('This verdict looks right'),
+                framed: false,
+            });
+            const down = new OO.ui.ButtonWidget({
+                label: this.t('No'),
+                icon: 'close',
+                title: this.t('This verdict looks wrong'),
+                framed: false,
+            });
             up.$element.addClass('verifier-feedback-thumb');
             down.$element.addClass('verifier-feedback-thumb');
             const rate = (rating, button) => {

@@ -185,31 +185,39 @@ test('thumbs-down reveals the corrected-verdict chips; thumbs-up does not', asyn
   assert.equal(upEl.querySelector('.verifier-feedback-correction').hidden, true);
 });
 
-test('the chosen thumb is marked and the other one fades', async () => {
+test('Yes, No and Comment are built as one set of buttons', () => {
+  const ctx = makeHarness();
+  ctx.harness.buildFeedbackControls(RESULT);
+  const yes = ctx.byTitle('This verdict looks right');
+  const no = ctx.byTitle('This verdict looks wrong');
+  const comment = ctx.byLabel('Comment');
+
+  // Two bare emoji beside an icon-and-label button read as decoration rather
+  // than as part of the same set. All three are the same widget with the same
+  // trimmings, which is what keeps them looking like one row of controls.
+  for (const [name, button] of [['Yes', yes], ['No', no], ['Comment', comment]]) {
+    assert.ok(button, `${name} is missing from the row`);
+    assert.ok(button.cfg.icon, `${name} has no icon`);
+    assert.ok(button.cfg.label, `${name} has no label`);
+    assert.equal(button.cfg.framed, false, `${name} is framed but the others are not`);
+  }
+  // `check` and `close` ship in oojs-ui.styles.icons-interactions, which the
+  // script already loads; anything else would need a new module.
+  assert.equal(yes.cfg.icon, 'check');
+  assert.equal(no.cfg.icon, 'close');
+});
+
+test('the chosen answer is marked and the other one fades', async () => {
   const ctx = makeHarness();
   ctx.harness.buildFeedbackControls(RESULT);
   const up = ctx.byTitle('This verdict looks right');
   const down = ctx.byTitle('This verdict looks wrong');
-  // Both thumbs disable on the first click, so OOUI dims them equally. Without
+  // Both answers disable on the first click, so OOUI dims them equally. Without
   // a chosen/dimmed distinction the editor cannot tell which way they voted.
   await down.click();
   assert.equal(down.$element[0].classList.contains('is-chosen'), true);
   assert.equal(up.$element[0].classList.contains('is-dimmed'), true);
   assert.equal(down.$element[0].classList.contains('is-dimmed'), false);
-});
-
-test('the thumbs are styled as feedback-row buttons, not bare emoji', () => {
-  const ctx = makeHarness();
-  ctx.harness.buildFeedbackControls(RESULT);
-  // The hook the stylesheet sizes them through — without it they render at the
-  // 11px caption size beside a full-height Comment button.
-  for (const title of ['This verdict looks right', 'This verdict looks wrong']) {
-    assert.equal(
-      ctx.byTitle(title).$element[0].classList.contains('verifier-feedback-thumb'),
-      true,
-      `${title} is missing the thumb class`
-    );
-  }
 });
 
 test('every canonical verdict is offered as a correction chip', () => {

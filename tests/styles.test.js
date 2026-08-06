@@ -228,6 +228,24 @@ test('the corrected-verdict chips stay collapsed while [hidden] is set', () => {
   );
 });
 
+// #verifier-action-container holds two unrelated things: the full-width
+// "Edit Section" call to action, appended straight to it, and the feedback
+// controls, which live in a .verifier-feedback wrapper inside it. An unscoped
+// width rule stretched every feedback button too, so Yes / No / Comment and the
+// correction chips shrank to unrelated widths instead of sitting as a row.
+test('the full-width CTA rule cannot reach the feedback controls', () => {
+  const css = generateCss();
+  const leaking = [...css.matchAll(/([^{}]*#verifier-action-container[^{}]*)\{([^}]*)\}/g)]
+    .filter((m) => /width:\s*100%/.test(m[2]))
+    .map((m) => m[1].trim())
+    .filter((selector) => !selector.includes('>'));
+
+  assert.deepEqual(
+    leaking, [],
+    `these rules stretch every button in the action container, not just the CTA:\n${leaking.join('\n')}`
+  );
+});
+
 test('token values stay in sync with the selected provider accent', () => {
   const css = generateCss('#123456');
   assert.ok(css.includes('--sv-accent: #123456;'), 'accent token does not track getCurrentColor()');
