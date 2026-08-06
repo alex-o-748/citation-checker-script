@@ -1490,6 +1490,10 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
             'Clé API (pour ce fournisseur), affirmation ou contenu de la source manquant',
         'Verifying claim against source...': 'Vérification de l’affirmation par rapport à la source…',
         'Verification complete!': 'Vérification terminée !',
+
+        // Pre-filled wiki edit summary
+        'source does not support claim (checked with [[User:Alaexis/AI_Source_Verification|Source Verifier]])':
+            'la source n’appuie pas l’affirmation (vérifié avec [[User:Alaexis/AI_Source_Verification|Source Verifier]])',
     };
 
     // Spanish. es.wikipedia's interface deliberately avoids addressing the
@@ -1761,6 +1765,10 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
             'Falta la clave API (para este proveedor), la afirmación o el contenido de la fuente',
         'Verifying claim against source...': 'Verificando la afirmación con la fuente…',
         'Verification complete!': '¡Verificación completada!',
+
+        // Pre-filled wiki edit summary
+        'source does not support claim (checked with [[User:Alaexis/AI_Source_Verification|Source Verifier]])':
+            'la fuente no respalda la afirmación (comprobado con [[User:Alaexis/AI_Source_Verification|Source Verifier]])',
     };
 
     // Registered UI languages, keyed by the MediaWiki language-code prefix that
@@ -5439,7 +5447,12 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
         buildEditUrl(refElement) {
             const title = mw.config.get('wgPageName');
             const section = this.findSectionNumber(refElement);
-            const summary = 'source does not support claim (checked with [[User:Alaexis/AI_Source_Verification|Source Verifier]])';
+            // Goes into the wiki's edit-summary box, so it follows the UI
+            // language like the rest of the interface. The link target stays
+            // pointing at the English user page — that is where the script
+            // lives — and the tool's name is left untranslated, matching how
+            // the exported report credits it.
+            const summary = this.t('source does not support claim (checked with [[User:Alaexis/AI_Source_Verification|Source Verifier]])');
 
             const params = { action: 'edit', summary: summary };
             if (section > 0) {
