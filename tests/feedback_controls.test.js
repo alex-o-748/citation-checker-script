@@ -185,6 +185,41 @@ test('thumbs-down reveals the corrected-verdict chips; thumbs-up does not', asyn
   assert.equal(upEl.querySelector('.verifier-feedback-correction').hidden, true);
 });
 
+test('Yes, No and Comment are built as one set of buttons', () => {
+  const ctx = makeHarness();
+  ctx.harness.buildFeedbackControls(RESULT);
+  const yes = ctx.byTitle('This verdict looks right');
+  const no = ctx.byTitle('This verdict looks wrong');
+  const comment = ctx.byLabel('Comment');
+
+  // Two bare emoji beside an icon-and-label button read as decoration rather
+  // than as part of the same set. All three are the same widget with the same
+  // trimmings, which is what keeps them looking like one row of controls.
+  for (const [name, button] of [['Yes', yes], ['No', no], ['Comment', comment]]) {
+    assert.ok(button, `${name} is missing from the row`);
+    assert.ok(button.cfg.icon, `${name} has no icon`);
+    assert.ok(button.cfg.label, `${name} has no label`);
+    assert.equal(button.cfg.framed, false, `${name} is framed but the others are not`);
+  }
+  // `check` and `close` ship in oojs-ui.styles.icons-interactions, which the
+  // script already loads; anything else would need a new module.
+  assert.equal(yes.cfg.icon, 'check');
+  assert.equal(no.cfg.icon, 'close');
+});
+
+test('the chosen answer is marked and the other one fades', async () => {
+  const ctx = makeHarness();
+  ctx.harness.buildFeedbackControls(RESULT);
+  const up = ctx.byTitle('This verdict looks right');
+  const down = ctx.byTitle('This verdict looks wrong');
+  // Both answers disable on the first click, so OOUI dims them equally. Without
+  // a chosen/dimmed distinction the editor cannot tell which way they voted.
+  await down.click();
+  assert.equal(down.$element[0].classList.contains('is-chosen'), true);
+  assert.equal(up.$element[0].classList.contains('is-dimmed'), true);
+  assert.equal(down.$element[0].classList.contains('is-dimmed'), false);
+});
+
 test('every canonical verdict is offered as a correction chip', () => {
   const ctx = makeHarness();
   ctx.harness.buildFeedbackControls(RESULT);
@@ -203,6 +238,42 @@ test('choosing a corrected verdict records it without re-counting the rating', a
   assert.equal(ctx.posted[1].rating, null, 'the correction must not re-send the rating');
   assert.equal(ctx.posted[1].corrected_verdict, 'SUPPORTED');
   assert.equal(ctx.posted[1].check_id, 'a7f3k2q9');
+});
+
+// A confirmation the editor never sees is the same as no confirmation. The
+// single status line used to sit below the correction chips, so a thumbs-up —
+// which does not open the chips at all — reported "Thanks" further down the
+// panel than the button that was clicked.
+test('each confirmation sits with the control that produced it', async () => {
+  const ctx = makeHarness();
+  const el = ctx.harness.buildFeedbackControls(RESULT);
+  const correction = el.querySelector('.verifier-feedback-correction');
+  const ratingStatus = [...el.children].find(c => c.classList.contains('verifier-feedback-status'));
+  const chipStatus = correction.querySelector('.verifier-feedback-status');
+
+  assert.ok(ratingStatus, 'the rating has no status line of its own');
+  assert.ok(chipStatus, 'the correction chips have no status line of their own');
+  assert.equal(
+    ratingStatus.compareDocumentPosition(correction) & 4 /* DOCUMENT_POSITION_FOLLOWING */,
+    4,
+    'the rating confirmation must come before the correction block, not after it'
+  );
+
+  await ctx.byTitle('This verdict looks wrong').click();
+  assert.match(ratingStatus.textContent, /Thanks/);
+  assert.equal(chipStatus.textContent, '');
+
+  await ctx.byLabel('SUPPORTED').click();
+  assert.match(chipStatus.textContent, /Thanks/);
+});
+
+test('a recorded confirmation is marked as such, not left as plain caption text', async () => {
+  const ctx = makeHarness();
+  const el = ctx.harness.buildFeedbackControls(RESULT);
+  await ctx.byTitle('This verdict looks right').click();
+  const status = el.querySelector('.verifier-feedback-status');
+  assert.equal(status.classList.contains('is-done'), true);
+  assert.equal(status.classList.contains('is-error'), false);
 });
 
 test('a failed rating tells the user instead of silently doing nothing', async () => {

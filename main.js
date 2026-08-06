@@ -1510,6 +1510,8 @@ function buildDatasetSubmissionUrl(
 
         // Feedback controls
         'Was this right?': 'Est-ce correct ?',
+        'Yes': 'Oui',
+        'No': 'Non',
         'This verdict looks right': 'Ce verdict semble correct',
         'This verdict looks wrong': 'Ce verdict semble erroné',
         'What should it have been?': 'Quel aurait dû être le verdict ?',
@@ -2692,7 +2694,14 @@ function buildDatasetSubmissionUrl(
                 #verifier-action-container {
                     margin-top: 10px;
                 }
-                #verifier-action-container .oo-ui-buttonElement {
+                /* Direct children only. "Edit Section" is the panel's primary
+                   call to action and is appended straight to this container, so
+                   it spans the full width. The feedback controls live in a
+                   .verifier-feedback wrapper inside the same container, and an
+                   unscoped rule stretched every one of their buttons too —
+                   which is what made Yes/No/Comment and the correction chips
+                   shrink to unrelated widths instead of sitting as a row. */
+                #verifier-action-container > .oo-ui-buttonElement {
                     width: 100%;
                 }
                 #verifier-title-link {
@@ -2702,7 +2711,7 @@ function buildDatasetSubmissionUrl(
                 #verifier-title-link:hover {
                     text-decoration: underline;
                 }
-                #verifier-action-container .oo-ui-buttonElement-button {
+                #verifier-action-container > .oo-ui-buttonElement > .oo-ui-buttonElement-button {
                     width: 100%;
                     justify-content: center;
                 }
@@ -2977,31 +2986,75 @@ function buildDatasetSubmissionUrl(
                     display: flex;
                     align-items: center;
                     flex-wrap: wrap;
-                    gap: 4px;
+                    gap: 6px;
+                }
+                /* [hidden] has to be restated: the display:flex above outranks
+                   the user-agent's [hidden] rule, so without this the
+                   corrected-verdict chips show under every verdict — including
+                   the thumbs-up they are meant to stay out of. */
+                .verifier-feedback-correction[hidden] {
+                    display: none;
                 }
                 .verifier-feedback-correction {
-                    margin-top: 4px;
+                    margin-top: 6px;
                 }
                 .verifier-feedback-prompt {
                     color: var(--sv-ink-subtle);
                     font-size: 11px;
                 }
+                /* The four verdicts are long enough to wrap in a 400px sidebar.
+                   Giving the question its own line lets them wrap as one block
+                   instead of one chip trailing the label and the rest below. */
+                .verifier-feedback-correction .verifier-feedback-prompt {
+                    flex-basis: 100%;
+                }
                 .verifier-feedback .oo-ui-buttonElement {
                     margin: 0;
                 }
+                /* OOUI gives a button min-height: 32px but leaves its line box
+                   at the natural height of the text, and an inline-block puts
+                   the leftover space entirely below — so the label sits high in
+                   the box. Icons don't: they are absolutely positioned at
+                   top: 50%, which is why this only reads as broken on the
+                   correction chips, the one button here with no icon beside the
+                   text. inline-flex centres the content vertically without
+                   taking the button out of the inline flow; horizontal
+                   placement is left alone, since the icon is out of flow and
+                   centring the label would slide it under the icon. */
                 .verifier-feedback .oo-ui-buttonElement-button {
-                    font-size: 11px;
-                    padding: 2px 6px;
+                    display: inline-flex;
+                    align-items: center;
                 }
+                /* Yes / No / Comment are the same widget — a frameless OOUI
+                   button with an icon and a label — and deliberately carry no
+                   styling of our own. Anything we add here is a way for the
+                   three to stop matching, which is how the row ended up with
+                   two emoji next to an icon-and-label button. */
+                /* The ring marks the recorded answer. Both buttons are disabled
+                   after the first click and OOUI dims them identically, so
+                   without it the row forgets which way the editor voted. It is
+                   an inset shadow rather than a border so nothing reflows. */
                 .verifier-feedback .is-chosen .oo-ui-buttonElement-button {
-                    background: var(--sv-bg-chip-hover);
+                    box-shadow: inset 0 0 0 1px var(--sv-accent-fg);
                     border-radius: 2px;
+                    background: var(--sv-bg-chip-hover);
+                    color: var(--sv-ink-chip);
+                    opacity: 1;
+                }
+                .verifier-feedback .is-chosen .oo-ui-labelElement-label {
+                    color: var(--sv-ink-chip);
+                    opacity: 1;
+                }
+                .verifier-feedback .is-dimmed {
+                    opacity: 0.35;
                 }
                 .verifier-feedback-chip .oo-ui-buttonElement-button {
                     border: 1px solid var(--sv-border-chip);
                     border-radius: 10px;
                     background: var(--sv-bg-chip-off);
                     color: var(--sv-ink-chip-off);
+                    font-size: 11px;
+                    padding: 2px 8px;
                 }
                 .verifier-feedback-chip .oo-ui-buttonElement-button:hover {
                     border-color: var(--sv-border-chip-hover);
@@ -3014,6 +3067,22 @@ function buildDatasetSubmissionUrl(
                 }
                 .verifier-feedback-status:empty {
                     display: none;
+                }
+                /* The chips' own confirmation is a flex item, so it needs a full
+                   row of its own to land under them rather than beside them. */
+                .verifier-feedback-correction .verifier-feedback-status {
+                    flex-basis: 100%;
+                    margin-top: 2px;
+                }
+                /* The confirmation sits directly under whatever was clicked, so
+                   it has to carry its own weight rather than blend into the
+                   surrounding grey captions. */
+                .verifier-feedback-status.is-done {
+                    color: var(--sv-ok-fg);
+                    font-weight: 600;
+                }
+                .verifier-feedback-status.is-done::before {
+                    content: '✓ ';
                 }
                 .verifier-feedback-status.is-error {
                     color: var(--sv-error-fg);
@@ -3136,7 +3205,12 @@ function buildDatasetSubmissionUrl(
                     font-weight: bold;
                     color: var(--sv-accent-fg);
                 }
-                #source-verifier-sidebar .oo-ui-iconElement-icon + .oo-ui-labelElement-label {
+                /* OOUI renders the icon span on every button, icon or not, so
+                   the sibling selector alone puts this gap on labels with
+                   nothing beside them — it was pushing the text in each
+                   correction chip 4px right of centre. The widget root only
+                   carries .oo-ui-iconElement when an icon was really set. */
+                #source-verifier-sidebar .oo-ui-iconElement .oo-ui-iconElement-icon + .oo-ui-labelElement-label {
                     margin-left: 4px;
                 }
                 #verifier-report-actions {
@@ -5497,7 +5571,7 @@ function buildDatasetSubmissionUrl(
             };
         }
 
-        // The 👍 / 👎 / comment row. Returns null when the check has no id —
+        // The Yes / No / Comment row. Returns null when the check has no id —
         // an unparseable or errored verdict has nothing to attach feedback to,
         // and offering controls that silently go nowhere would be worse than
         // offering none.
@@ -5508,13 +5582,24 @@ function buildDatasetSubmissionUrl(
             const wrap = document.createElement('div');
             wrap.className = 'verifier-feedback';
 
-            const status = document.createElement('div');
-            status.className = 'verifier-feedback-status';
-            status.setAttribute('role', 'status');
-            const setStatus = (msg, isError = false) => {
-                status.textContent = msg;
-                status.classList.toggle('is-error', isError);
+            // Two status lines, not one: a confirmation the editor never sees
+            // is the same as no confirmation, so each sits immediately below
+            // the control that produced it — the rating under the thumbs, the
+            // correction under the chips.
+            const makeStatus = () => {
+                const el = document.createElement('div');
+                el.className = 'verifier-feedback-status';
+                el.setAttribute('role', 'status');
+                return el;
             };
+            const setStatusOn = (el) => (msg, isError = false) => {
+                el.textContent = msg;
+                el.classList.toggle('is-error', isError);
+                el.classList.toggle('is-done', !isError && !!msg);
+            };
+
+            const status = makeStatus();
+            const setStatus = setStatusOn(status);
 
             const row = document.createElement('div');
             row.className = 'verifier-feedback-row';
@@ -5526,18 +5611,41 @@ function buildDatasetSubmissionUrl(
             const correction = document.createElement('div');
             correction.className = 'verifier-feedback-correction';
             correction.hidden = true;
+            const correctionStatus = makeStatus();
+            const setCorrectionStatus = setStatusOn(correctionStatus);
             let correctedVerdict = null;
 
-            const up = new OO.ui.ButtonWidget({ label: '👍', title: this.t('This verdict looks right'), framed: false });
-            const down = new OO.ui.ButtonWidget({ label: '👎', title: this.t('This verdict looks wrong'), framed: false });
+            // Icon + label frameless buttons, exactly like Comment below. Two
+            // bare emoji beside an icon-and-label button read as decoration
+            // rather than as part of the same set; `check` and `close` come
+            // from oojs-ui.styles.icons-interactions, which is already loaded,
+            // and inherit the dark-mode icon inversion every other icon gets.
+            const up = new OO.ui.ButtonWidget({
+                label: this.t('Yes'),
+                icon: 'check',
+                title: this.t('This verdict looks right'),
+                framed: false,
+            });
+            const down = new OO.ui.ButtonWidget({
+                label: this.t('No'),
+                icon: 'close',
+                title: this.t('This verdict looks wrong'),
+                framed: false,
+            });
+            up.$element.addClass('verifier-feedback-thumb');
+            down.$element.addClass('verifier-feedback-thumb');
             const rate = (rating, button) => {
                 up.setDisabled(true);
                 down.setDisabled(true);
                 button.$element.addClass('is-chosen');
+                (button === up ? down : up).$element.addClass('is-dimmed');
                 setStatus(this.t('Thanks — recorded.'));
                 this.sendFeedback({ checkId: context.checkId, rating })
                     .catch(() => setStatus(this.t('Could not record that, sorry.'), true));
-                if (rating < 0) correction.hidden = false;
+                // The corrected-verdict chips are only worth asking for when the
+                // editor has said the verdict is wrong; after a thumbs-up there
+                // is nothing to correct.
+                correction.hidden = rating >= 0;
             };
             up.on('click', () => rate(1, up));
             down.on('click', () => rate(-1, down));
@@ -5570,22 +5678,26 @@ function buildDatasetSubmissionUrl(
                 chip.$element.addClass('verifier-feedback-chip');
                 chip.on('click', () => {
                     correctedVerdict = verdict;
-                    chips.forEach(c => c.setDisabled(true));
+                    chips.forEach(c => {
+                        c.setDisabled(true);
+                        if (c !== chip) c.$element.addClass('is-dimmed');
+                    });
                     chip.$element.addClass('is-chosen');
-                    setStatus(this.t('Thanks — recorded.'));
+                    setCorrectionStatus(this.t('Thanks — recorded.'));
                     commentBtn.setHref(buildCommentUrl({ ...context, correctedVerdict }));
                     // rating is omitted here: the thumbs-down already counted,
                     // and a second row carrying it would double-count.
                     this.sendFeedback({ checkId: context.checkId, correctedVerdict: verdict })
-                        .catch(() => setStatus(this.t('Could not record that, sorry.'), true));
+                        .catch(() => setCorrectionStatus(this.t('Could not record that, sorry.'), true));
                 });
                 correction.appendChild(chip.$element[0]);
                 return chip;
             });
+            correction.appendChild(correctionStatus);
 
             wrap.appendChild(row);
-            wrap.appendChild(correction);
             wrap.appendChild(status);
+            wrap.appendChild(correction);
             return wrap;
         }
 
