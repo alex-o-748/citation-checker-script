@@ -104,21 +104,65 @@ test('translations are non-empty and actually differ from English', () => {
 // tú, vos and usted are each regionally marked, so its own messages use
 // infinitives for actions and impersonal "se" for statements.
 //
-// Pronouns, possessives and tú-form verbs are banned outright. The singular
-// imperatives are spelled identically to the third-person indicative, which the
-// impersonal register needs ("se comprueba", "se lee"), so those are banned only
-// when *not* preceded by "se" — that is what separates a command to the reader
-// from a statement about the tool.
-const SECOND_PERSON_ES =
-  /\b(?:tu|tus|ti|tuyo|tuya|tuyos|tuyas|vos|usted|ustedes|quieres|puedes|debes|tienes|pegues)\b|(?<!\bse )\b(?:haz|pega|introduce|prueba|comprueba|considera|lee|añade|ten|dudes|tómala|tómalo)\b/i;
+// Two checks, because the evidence differs in strength.
+//
+// (1) Forms that can only be second person: the pronouns and possessives, and
+// verb forms with no third-person reading. "haz" is an imperative outright
+// (the indicative is "hace"); "tienes"/"puedes" are tú-form indicatives;
+// "dudes"/"pegues" are tú-form subjunctives; "tómala" is an imperative with an
+// enclitic, which the indicative cannot take. These are banned anywhere in a
+// string.
+const ALWAYS_SECOND_PERSON =
+  /\b(?:tu|tus|ti|tuyo|tuya|tuyos|tuyas|vos|usted|ustedes|quieres|puedes|debes|tienes|hagas|tengas|pongas|pegues|dudes|haz|ten|pon|tómala|tómalo|tenlo|hazlo)\b/i;
+
+// (2) Forms spelled identically as tú-imperative and third-person indicative
+// ("comprueba", "lee", "añade"). Membership alone proves nothing — "La
+// herramienta comprueba la fuente" is perfectly good impersonal prose. What
+// separates them is position: an imperative aimed at the reader opens its
+// clause, whereas an indicative follows its subject. So these are flagged only
+// as the first word of a clause.
+//
+// The residual false positive is a clause that opens with one of these verbs
+// under an *elided* third-person subject ("Comprueba la fuente y emite un
+// veredicto."). Naming the subject fixes both the warning and the ambiguity.
+const AMBIGUOUS_IMPERATIVES = new Set([
+  'pega', 'introduce', 'prueba', 'comprueba', 'considera', 'lee', 'añade', 'abre',
+  'guarda', 'elige', 'selecciona', 'escribe', 'mira', 'revisa', 'copia', 'carga',
+  'sube', 'cambia', 'verifica', 'muestra', 'oculta', 'envía', 'edita', 'usa',
+  'toma', 'deja', 'recuerda', 'evita', 'vuelve', 'sustituye', 'pulsa', 'busca',
+  'marca', 'espera', 'continúa', 'empieza'
+]);
+
+// The first word of each clause, with leading symbols (⚠, ✓, «) stripped.
+function clauseOpeners(text) {
+  return text
+    .split(/[.;:!?\n]+|\s—\s/)
+    .map((clause) => clause.replace(/^[^\p{L}]+/u, '').trim())
+    .filter(Boolean)
+    .map((clause) => clause.split(/[\s,]+/)[0].toLowerCase());
+}
 
 test('Spanish never addresses the reader in the second person', () => {
   const offenders = [];
   for (const [en, es] of Object.entries(MESSAGES.es)) {
-    const hit = es.match(SECOND_PERSON_ES);
+    const hit = es.match(ALWAYS_SECOND_PERSON);
     if (hit) offenders.push(`${JSON.stringify(en)} → ${JSON.stringify(es)} (${hit[0]})`);
   }
   assert.deepEqual(offenders, [], `use an infinitive or impersonal "se" instead:\n${offenders.join('\n')}`);
+});
+
+test('Spanish does not open a clause with an imperative', () => {
+  const offenders = [];
+  for (const [en, es] of Object.entries(MESSAGES.es)) {
+    const hit = clauseOpeners(es).find((word) => AMBIGUOUS_IMPERATIVES.has(word));
+    if (hit) offenders.push(`${JSON.stringify(en)} → ${JSON.stringify(es)} (${hit})`);
+  }
+  assert.deepEqual(
+    offenders,
+    [],
+    `a clause-initial "${[...AMBIGUOUS_IMPERATIVES][0]}"-type verb reads as a command to the reader; `
+      + `recast it impersonally, or name the subject if it is really third person:\n${offenders.join('\n')}`
+  );
 });
 
 // The infinitive register is for action labels (buttons, links, placeholders).
