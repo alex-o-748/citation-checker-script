@@ -3144,7 +3144,12 @@ function buildDatasetSubmissionUrl(
                     font-weight: bold;
                     color: var(--sv-accent-fg);
                 }
-                #source-verifier-sidebar .oo-ui-iconElement-icon + .oo-ui-labelElement-label {
+                /* OOUI renders the icon span on every button, icon or not, so
+                   the sibling selector alone puts this gap on labels with
+                   nothing beside them — it was pushing the text in each
+                   correction chip 4px right of centre. The widget root only
+                   carries .oo-ui-iconElement when an icon was really set. */
+                #source-verifier-sidebar .oo-ui-iconElement .oo-ui-iconElement-icon + .oo-ui-labelElement-label {
                     margin-left: 4px;
                 }
                 #verifier-report-actions {

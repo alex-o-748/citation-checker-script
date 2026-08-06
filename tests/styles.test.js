@@ -246,6 +246,23 @@ test('the full-width CTA rule cannot reach the feedback controls', () => {
   );
 });
 
+// OOUI renders the icon span on every button whether or not an icon was set,
+// so `.oo-ui-iconElement-icon + .oo-ui-labelElement-label` also matches labels
+// with nothing beside them. Unqualified, it offset the text of every icon-less
+// button — visible as the correction chips' labels sitting right of centre.
+test('the icon-to-label gap only applies where an icon was actually set', () => {
+  const css = generateCss();
+  const selectors = [...css.matchAll(/([^{}]*\.oo-ui-iconElement-icon \+ \.oo-ui-labelElement-label[^{}]*)\{/g)]
+    .map((m) => m[1].trim());
+  assert.ok(selectors.length, 'the icon-to-label gap rule has gone missing');
+
+  const unqualified = selectors.filter((selector) => !/\.oo-ui-iconElement[\s>]/.test(selector));
+  assert.deepEqual(
+    unqualified, [],
+    `these rules gap every label, including buttons with no icon:\n${unqualified.join('\n')}`
+  );
+});
+
 test('token values stay in sync with the selected provider accent', () => {
   const css = generateCss('#123456');
   assert.ok(css.includes('--sv-accent: #123456;'), 'accent token does not track getCurrentColor()');
