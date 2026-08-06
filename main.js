@@ -4373,13 +4373,37 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
             // Group blocks are filtered by their COLLECTIVE verdict (the one
             // shown in the filter pills), not by the individual per-source
             // rows. Inside a visible group every row stays visible regardless
-            // of its verdict — the rows are debug detail. A group whose
-            // collective check hasn't finished yet (no data-collective-verdict)
-            // stays visible.
+            // of its verdict — the rows are debug detail.
+            //
+            // Two group states have no collective verdict to filter on, and
+            // they are not the same:
+            //
+            //  - Pending: the collective check hasn't run yet. getReportUnits()
+            //    contributes nothing for the group, so the pills don't count it
+            //    either. Stays visible; resolves when the check completes.
+            //  - Skipped: verifyGroupCollective() bailed because at most one
+            //    source was retrievable, so a combined verdict would just
+            //    restate the single per-source one. getReportUnits() then falls
+            //    back to counting each MEMBER as its own unit — so the pills do
+            //    count these, and the block has to honour the filters the same
+            //    way, or the summary claims citations are hidden while they are
+            //    still on screen. Hide it once every member's verdict is
+            //    filtered off.
             const groups = resultsEl.querySelectorAll('.verifier-report-group');
             groups.forEach(groupEl => {
                 const collectiveVerdict = groupEl.dataset.collectiveVerdict;
-                const hidden = collectiveVerdict ? !!this.reportFilters[collectiveVerdict] : false;
+                let hidden;
+                if (collectiveVerdict) {
+                    hidden = !!this.reportFilters[collectiveVerdict];
+                } else if (groupEl.dataset.collectiveSkipped === 'true') {
+                    const rows = groupEl.querySelectorAll('.verifier-report-group-row');
+                    hidden = rows.length > 0 && Array.from(rows).every(row => {
+                        const cls = classes.find(c => row.classList.contains(`verdict-${c}`));
+                        return cls && !!this.reportFilters[cls];
+                    });
+                } else {
+                    hidden = false;
+                }
                 groupEl.style.display = hidden ? 'none' : '';
             });
 
@@ -4655,11 +4679,15 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
             }
         }
 
+        // Called when the collective check is skipped for want of a second
+        // retrievable source. Marks the block so applyReportFilters() knows to
+        // filter it by its members rather than leaving it permanently visible.
         hideGroupCollectiveSlot(groupId) {
             const resultsEl = document.getElementById('verifier-report-results');
             if (!resultsEl) return;
             const groupEl = resultsEl.querySelector(`.verifier-report-group[data-group-id="${CSS.escape(groupId)}"]`);
             if (!groupEl) return;
+            groupEl.dataset.collectiveSkipped = 'true';
             const slot = groupEl.querySelector('.verifier-report-group-collective');
             if (slot) slot.style.display = 'none';
         }
@@ -4955,6 +4983,13 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
             if (availableCount <= 1) {
                 this.reportGroupResults.set(groupId, { skipped: true, groupId });
                 this.hideGroupCollectiveSlot(groupId);
+                // Marking the group skipped changes what getReportUnits()
+                // returns for it (members instead of nothing), so the pills and
+                // the filter state both have to be recomputed — the success
+                // path below does the same. Without this a group skipped as the
+                // last step of a run keeps stale counts until the next toggle.
+                this.renderReportSummary();
+                this.applyReportFilters();
                 return;
             }
 
