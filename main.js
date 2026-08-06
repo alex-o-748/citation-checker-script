@@ -1212,26 +1212,22 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
     // ========================================
     // UI LOCALIZATION (i18n)
     // ========================================
-    // The interface is English by default. When the script runs on a French
-    // wiki (wgContentLanguage === 'fr'), user-facing strings are shown in
-    // French. Only the on-screen UI, notifications, dialogs and report output
-    // are localized — the LLM prompts (in core/prompts.js) stay in English by
-    // design, since the few-shot examples are tuned against the benchmark.
+    // The interface is English by default. When the script runs on a wiki whose
+    // language has a message table below (French, Spanish), user-facing strings
+    // are shown in that language. Only the on-screen UI, notifications, dialogs
+    // and report output are localized — the LLM prompts (in core/prompts.js)
+    // stay in English by design, since the few-shot examples are tuned against
+    // the benchmark.
     //
     // Strings are keyed by their English source text: `this.t('Verify Claim')`.
-    // FR_MESSAGES supplies the French override; a missing key falls back to the
-    // English key itself, so untranslated strings degrade gracefully. Use
+    // The per-language table supplies the override; a missing key falls back to
+    // the English key itself, so untranslated strings degrade gracefully. Use
     // `{name}`-style placeholders for interpolation: t('Set {name} API Key', {name}).
-    function detectUiLang() {
-        try {
-            if (typeof mw !== 'undefined') {
-                const lang = mw.config.get('wgContentLanguage')
-                    || mw.config.get('wgUserLanguage') || 'en';
-                if (String(lang).toLowerCase().startsWith('fr')) return 'fr';
-            }
-        } catch (e) { /* non-MediaWiki context: keep English */ }
-        return 'en';
-    }
+    //
+    // Adding a language: write its table, register it in MESSAGES, and add its
+    // name to PROMPT_LANGUAGES so verdict comments come back in that language
+    // too. detectUiLang() picks it up automatically — no other wiring.
+    // `tests/i18n.test.js` fails if a table drifts out of parity with French.
 
     const FR_MESSAGES = {
         // Sidebar structure
@@ -1401,6 +1397,8 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
         "''(Source is long, only partially checked.)''":
             "''(Source longue, vérifiée partiellement seulement.)''",
         '(combined)': '(combiné)',
+        // Link text for the source column of the wikitext table: [url source]
+        'source': 'source',
         "'''Summary:''' {supported} supported, {partial} partially supported, {notSupported} not supported, {unavailable} source unavailable out of {claims}.":
             "'''Résumé :''' {supported} confirmées, {partial} partiellement confirmées, {notSupported} non confirmées, {unavailable} source indisponible sur {claims}.",
         '{count} citations': '{count} citations',
@@ -1455,9 +1453,269 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
             'Sur 186 citations annotées par des humains, un signalement « non confirmée » a été validé par un relecteur dans environ deux tiers des cas. Considérez chaque verdict comme une raison de lire la source, et non comme une conclusion.',
     };
 
+    // Spanish. es.wikipedia's interface deliberately avoids addressing the
+    // reader in any second person, because tú/vos/usted all carry regional
+    // baggage — its own messages use infinitives for actions ("Subir archivo",
+    // "Informar de un error visual") and impersonal "se" for statements. These
+    // follow that: no tuteo, no possessive "tu", and «angle quotes» over "".
+    const ES_MESSAGES = {
+        // Sidebar structure
+        'Source Verifier': 'Verificador de fuentes',
+        'Selected Claim': 'Afirmación seleccionada',
+        'Click on a reference number [1] next to a claim to verify it against its source.':
+            'Hacer clic en un número de referencia [1] junto a una afirmación para verificarla con su fuente.',
+        'Source Content': 'Contenido de la fuente',
+        'No source loaded yet.': 'Todavía no se ha cargado ninguna fuente.',
+        'Verification Result': 'Resultado de la verificación',
+
+        // Buttons and inputs
+        'Close': 'Cerrar',
+        'Set API Key': 'Configurar la clave API',
+        'Verify Claim': 'Verificar la afirmación',
+        'Verifying...': 'Verificando…',
+        'Change Key': 'Cambiar la clave',
+        'Remove API Key': 'Eliminar la clave API',
+        'Paste the source text here...': 'Pegar aquí el texto de la fuente…',
+        'Load Text': 'Cargar el texto',
+        'Cancel': 'Cancelar',
+        'Paste source text manually': 'Pegar el texto de la fuente manualmente',
+        'Replace the fetched source content with text you paste in (e.g., the full article from The Wikipedia Library)':
+            'Sustituir el contenido obtenido de la fuente por un texto pegado manualmente (por ejemplo, el artículo completo de la Biblioteca de Wikipedia)',
+        'Verify All Citations': 'Verificar todas las citas',
+        'Stop': 'Detener',
+        'Back to Report': 'Volver al informe',
+        'Save': 'Guardar',
+        'Give feedback': 'Enviar comentarios',
+        'Edit Section': 'Editar la sección',
+        'Copy Report (Wikitext)': 'Copiar el informe (wikitexto)',
+        'Copy Report (Plain Text)': 'Copiar el informe (texto plano)',
+
+        // Provider info
+        '✓ Using your {name} API key': '✓ Usando la clave API de {name}',
+        '✓ Free to use. Optional: ': '✓ Uso gratuito. Opcional: ',
+        'add your {name} API key': 'añadir una clave API de {name}',
+        '✓ Free to use': '✓ Uso gratuito',
+        'API key configured for {name}': 'Clave API configurada para {name}',
+        'API key required for {name}': 'Se necesita una clave API para {name}',
+        'Results are logged for research. Your username is not recorded.':
+            'Los resultados se registran con fines de investigación. El nombre de usuario no se registra.',
+
+        // Verifier tab + first-run notification
+        'Verify': 'Verificar',
+        'Verify claims against sources': 'Verificar afirmaciones con sus fuentes',
+        'Citation Verifier': 'Verificador de citas',
+        'Citation Verifier installed — click the ':
+            'Verificador de citas instalado: abrir la pestaña ',
+        ' tab to get started.': ' para empezar.',
+
+        // Source display
+        '✓ PDF content extracted{pageInfo}': '✓ Contenido del PDF extraído{pageInfo}',
+        ' (page {page} of {total})': ' (página {page} de {total})',
+        ' ({pages} pages)': ' ({pages} páginas)',
+        '✓ Content fetched successfully': '✓ Contenido obtenido correctamente',
+        'Content will be fetched by AI during verification.':
+            'La IA obtendrá el contenido durante la verificación.',
+        '⚠ The source is long and can only be checked partially.':
+            '⚠ La fuente es extensa y solo puede comprobarse parcialmente.',
+        'Source URL:': 'URL de la fuente:',
+        'No URL found. Please paste the source text below:':
+            'No se ha encontrado ninguna URL. Pegar el texto de la fuente a continuación:',
+        'Manual Source Text:': 'Texto de la fuente introducido manualmente:',
+        'No source loaded.': 'No hay ninguna fuente cargada.',
+        'Click "Verify Claim" to verify the selected claim against the source.':
+            'Hacer clic en «Verificar la afirmación» para verificar la afirmación seleccionada con la fuente.',
+        'Part of a group of {count} citations: {numbers}':
+            'Forma parte de un grupo de {count} citas: {numbers}',
+
+        // Verdicts (full, shown for a single verification)
+        'SUPPORTED': 'RESPALDADA',
+        'PARTIALLY SUPPORTED': 'PARCIALMENTE RESPALDADA',
+        'NOT SUPPORTED': 'NO RESPALDADA',
+        'SOURCE UNAVAILABLE': 'FUENTE NO DISPONIBLE',
+        'ERROR': 'ERROR',
+        // Verdicts (short, shown on report cards/chips)
+        'Supported': 'Respaldada',
+        'Partial': 'Parcial',
+        'Not Supported': 'No respaldada',
+        'Unavailable': 'No disponible',
+
+        // Report progress
+        'Checking citation [{num}]': 'Comprobando la cita [{num}]',
+        'Fetching source for [{num}]': 'Obteniendo la fuente de [{num}]',
+        'Verifying citation [{num}]': 'Verificando la cita [{num}]',
+        'Rate limited, retrying in {secs}s...':
+            'Límite de solicitudes alcanzado, reintentando en {secs} s…',
+        'Checking combined sources {token}': 'Comprobando las fuentes combinadas {token}',
+        'Completed: {count} citations checked': 'Completado: {count} citas comprobadas',
+        'Completed: {count} citation checked': 'Completado: {count} cita comprobada',
+        'Cancelled after {done} of {total} citations': 'Cancelado tras {done} de {total} citas',
+        'Cancelled after {done} of {total} citation': 'Cancelado tras {done} de {total} cita',
+        ' · ~{duration} remaining': ' · ~{duration} restante',
+
+        // Report summary
+        'supported': 'respaldadas',
+        'partial': 'parciales',
+        'not supported': 'no respaldadas',
+        'unavailable': 'no disponibles',
+        'errors': 'errores',
+        'Show {label} citations': 'Mostrar las citas «{label}»',
+        'Hide {label} citations': 'Ocultar las citas «{label}»',
+        '{count} citations checked': '{count} citas comprobadas',
+        '{count} citation checked': '{count} cita comprobada',
+        '{citations} citations across {claims} claims':
+            '{citations} citas repartidas en {claims} afirmaciones',
+        '{citations} citations across {claims} claim':
+            '{citations} citas repartidas en {claims} afirmación',
+        ' · {count} hidden by filter': ' · {count} ocultas por el filtro',
+        ' · {input} input + {output} output tokens':
+            ' · {input} tokens de entrada + {output} de salida',
+        'Revision: ': 'Revisión: ',
+
+        // Report cards / groups
+        '⚠ Source is long, only partially checked.':
+            '⚠ La fuente es extensa; solo se ha comprobado parcialmente.',
+        '⚠ Combined sources are long, only partially checked.':
+            '⚠ Las fuentes combinadas son extensas; solo se han comprobado parcialmente.',
+        'Group of {size} · {numbers}': 'Grupo de {size} · {numbers}',
+        'Checking combined sources…': 'Comprobando las fuentes combinadas…',
+        'Individual sources': 'Fuentes individuales',
+        'Combined verdict': 'Veredicto combinado',
+        'All citations are hidden by the current filters. Click a filter chip above to show them.':
+            'Los filtros actuales ocultan todas las citas. Hacer clic en uno de los filtros de arriba para mostrarlas.',
+
+        // Notifications / dialogs
+        'Report copied to clipboard!': '¡Informe copiado al portapapeles!',
+        'No citations found on this page.': 'No se han encontrado citas en esta página.',
+        'Are you sure you want to remove the stored API key?':
+            '¿Eliminar la clave API guardada?',
+        'Enter your {name} API Key...': 'Introducir la clave API de {name}…',
+        'Set {name} API Key': 'Configurar la clave API de {name}',
+        'Enter your {name} API Key to enable source verification:':
+            'Introducir la clave API de {name} para activar la verificación de fuentes:',
+        'This will verify {citations} citations from {sources} unique sources.{groupNote}\n\nEstimated time: ~{minutes} minutes.\n\nContinue?':
+            'Esto verificará {citations} citas procedentes de {sources} fuentes distintas.{groupNote}\n\nTiempo estimado: ~{minutes} minutos.\n\n¿Continuar?',
+        'This will verify {citations} citations from {sources} unique sources.{groupNote}\n\nEstimated time: ~{minutes} minute.\n\nContinue?':
+            'Esto verificará {citations} citas procedentes de {sources} fuentes distintas.{groupNote}\n\nTiempo estimado: ~{minutes} minuto.\n\n¿Continuar?',
+        '\n\nThis includes {count} combined-source checks for adjacent citation groups.':
+            '\n\nEsto incluye {count} comprobaciones de fuentes combinadas para grupos de citas adyacentes.',
+        '\n\nThis includes {count} combined-source check for adjacent citation groups.':
+            '\n\nEsto incluye {count} comprobación de fuentes combinadas para grupos de citas adyacentes.',
+
+        // Generated result comments
+        'No URL found in reference': 'No se ha encontrado ninguna URL en la referencia',
+        'None of the grouped sources could be retrieved.':
+            'No se ha podido obtener ninguna de las fuentes del grupo.',
+        'Could not fetch source content': 'No se ha podido obtener el contenido de la fuente',
+
+        // Exported reports (wikitext + plain text)
+        'Submit': 'Enviar',
+        'Citation verification report': 'Informe de verificación de citas',
+        'This is an experimental check of the article sources by [[User:Alaexis/AI_Source_Verification|Citation Verifier]]. Treat it with caution, be aware of its [[User:Alaexis/AI_Source_Verification#Limitations|limitations]] and feel free to leave feedback at [[User_talk:Alaexis/AI_Source_Verification|the talk page]].':
+            'Esta es una comprobación experimental de las fuentes del artículo hecha por [[User:Alaexis/AI_Source_Verification|Citation Verifier]]. Conviene tomarla con cautela y tener en cuenta sus [[User:Alaexis/AI_Source_Verification#Limitations|limitaciones]]; los comentarios son bienvenidos en [[User_talk:Alaexis/AI_Source_Verification|la página de discusión]].',
+        'Revision checked: ': 'Revisión comprobada: ',
+        '! # !! Verdict !! Source !! Comments !! class="unsortable" | Submit':
+            '! # !! Veredicto !! Fuente !! Comentarios !! class="unsortable" | Enviar',
+        '! # !! Verdict !! Source !! Comments':
+            '! # !! Veredicto !! Fuente !! Comentarios',
+        '{{tick}} Supported': '{{tick}} Respaldada',
+        '{{bang}} Partially supported': '{{bang}} Parcialmente respaldada',
+        '{{cross}} Not supported': '{{cross}} No respaldada',
+        '{{hmmm}} Source unavailable': '{{hmmm}} Fuente no disponible',
+        "''(Combined sources are long, only partially checked.)''":
+            "''(Las fuentes combinadas son extensas; solo se han comprobado parcialmente.)''",
+        "''(Source is long, only partially checked.)''":
+            "''(La fuente es extensa; solo se ha comprobado parcialmente.)''",
+        '(combined)': '(combinada)',
+        // Link text for the source column of the wikitext table: [url source]
+        'source': 'fuente',
+        "'''Summary:''' {supported} supported, {partial} partially supported, {notSupported} not supported, {unavailable} source unavailable out of {claims}.":
+            "'''Resumen:''' {supported} respaldadas, {partial} parcialmente respaldadas, {notSupported} no respaldadas, {unavailable} con la fuente no disponible, de un total de {claims}.",
+        '{count} citations': '{count} citas',
+        '{count} citation': '{count} cita',
+        '{claims} claims ({citations} citations)': '{claims} afirmaciones ({citations} citas)',
+        '{claims} claim ({citations} citations)': '{claims} afirmación ({citations} citas)',
+        'a PublicAI-hosted open-source LLM': 'un LLM de código abierto alojado por PublicAI',
+        'a HuggingFace-hosted open-source LLM ({model})':
+            'un LLM de código abierto alojado por HuggingFace ({model})',
+        'Generated by [[User:Alaexis/AI_Source_Verification|Citation Verifier]] using {model} on ~~~~~.':
+            'Generado por [[User:Alaexis/AI_Source_Verification|Citation Verifier]] con {model} el ~~~~~.',
+        ' Tokens used: {input} input, {output} output.':
+            ' Tokens utilizados: {input} de entrada, {output} de salida.',
+        'Citation Verification Report: {title}': 'Informe de verificación de citas: {title}',
+        'Provider: {name}': 'Proveedor: {name}',
+        'Revision: {rev}': 'Revisión: {rev}',
+        'Claim: {text}': 'Afirmación: {text}',
+        'Sources: {urls}': 'Fuentes: {urls}',
+        'Source: {url}': 'Fuente: {url}',
+        'Comments: {text}': 'Comentarios: {text}',
+        'Note: Combined sources are long, only partially checked.':
+            'Nota: Las fuentes combinadas son extensas; solo se han comprobado parcialmente.',
+        'Note: Source is long, only partially checked.':
+            'Nota: La fuente es extensa; solo se ha comprobado parcialmente.',
+        'Tokens used: {input} input, {output} output':
+            'Tokens utilizados: {input} de entrada, {output} de salida',
+        // Sidebar chrome and the state-driven panel
+        'Settings': 'Configuración',
+        'Done': 'Hecho',
+        'Open settings': 'Abrir la configuración',
+        'Upload PDF': 'Subir un PDF',
+        'or paste the text below': 'o pegar el texto a continuación',
+        'Click any citation number in the article to check whether its source actually supports the claim.':
+            'Hacer clic en cualquier número de cita del artículo para comprobar si su fuente respalda realmente la afirmación.',
+        'Ready · free, no setup needed': 'Listo · gratuito, sin configuración',
+        'Ready · using your API key': 'Listo · con la clave API configurada',
+        'Add an API key in settings to start':
+            'Añadir una clave API en la configuración para empezar',
+        'Checking citations…': 'Comprobando las citas…',
+        'Model: {model}': 'Modelo: {model}',
+        // Verdict framing: the assessment is attributed, and each verdict says
+        // what the editor should do next.
+        'AI assessment': 'Evaluación de la IA',
+        'Read the source before changing the article — this is a machine reading, not a fact.':
+            'Conviene leer la fuente antes de modificar el artículo: es una lectura automática, no un hecho.',
+        'Spot-check the source yourself — this is a machine reading, not a fact.':
+            'Conviene comprobar la fuente personalmente: es una lectura automática, no un hecho.',
+        'The tool could not read this source. Try pasting the text or uploading a PDF.':
+            'La herramienta no ha podido leer esta fuente. Se puede pegar el texto o subir un PDF.',
+        'How accurate is this?': '¿Qué fiabilidad tiene?',
+        'Measured against 186 human-labelled citations, a "not supported" flag was confirmed by a reviewer roughly two thirds of the time. Treat every verdict as a reason to read the source, not as a conclusion.':
+            'Sobre 186 citas etiquetadas por personas, un aviso de «no respaldada» fue confirmado por un revisor en aproximadamente dos tercios de los casos. Conviene considerar cada veredicto como un motivo para leer la fuente, no como una conclusión.',
+    };
+
+    // Registered UI languages, keyed by the MediaWiki language-code prefix that
+    // selects them. English is the absence of a table, not an entry here.
+    const MESSAGES = {
+        fr: FR_MESSAGES,
+        es: ES_MESSAGES
+    };
+
+    // How each localized language is named to the LLM when asking it to write
+    // its free-text "comments" in that language. Keys must match MESSAGES.
+    const PROMPT_LANGUAGES = {
+        fr: 'French (français)',
+        es: 'Spanish (español)'
+    };
+
+    // Pick the UI language from the wiki's content language, falling back to the
+    // user's interface language. Matching is by prefix, so regional variants
+    // (es-419, fr-ca) resolve to their base table.
+    function detectUiLang() {
+        try {
+            if (typeof mw !== 'undefined') {
+                const lang = String(mw.config.get('wgContentLanguage')
+                    || mw.config.get('wgUserLanguage') || 'en').toLowerCase();
+                for (const code of Object.keys(MESSAGES)) {
+                    if (lang === code || lang.startsWith(code + '-')) return code;
+                }
+            }
+        } catch (e) { /* non-MediaWiki context: keep English */ }
+        return 'en';
+    }
+
     class WikipediaSourceVerifier {
         constructor() {
-            // UI language: 'fr' on French wikis, 'en' everywhere else.
+            // UI language: a key of MESSAGES on wikis in that language,
+            // 'en' everywhere else.
             this.lang = detectUiLang();
 
             this.providers = {
@@ -1600,10 +1858,11 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
         }
         
         // Translate an English source string to the active UI language.
-        // Missing French keys fall back to the English text. Supports
+        // Missing keys fall back to the English text. Supports
         // `{placeholder}` interpolation from an optional params object.
         t(en, params) {
-            let s = (this.lang === 'fr' && FR_MESSAGES[en] != null) ? FR_MESSAGES[en] : en;
+            const table = MESSAGES[this.lang];
+            let s = (table && table[en] != null) ? table[en] : en;
             if (params) {
                 for (const key of Object.keys(params)) {
                     s = s.split('{' + key + '}').join(String(params[key]));
@@ -3800,17 +4059,18 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
             return generateUserPrompt(claim, sourceInfo);
         }
 
-        // When the UI is French, ask the model to write its free-text
-        // explanation in French so the "comments" shown next to each verdict
-        // match the rest of the interface. The verdict and reason_type values
-        // are parsed programmatically, so they must stay in the English enum;
-        // the directive is appended (not spliced) to leave the benchmark-tuned
-        // few-shot prompt in core/prompts.js untouched. English wikis get the
-        // prompt verbatim.
+        // When the UI is localized, ask the model to write its free-text
+        // explanation in that language so the "comments" shown next to each
+        // verdict match the rest of the interface. The verdict and reason_type
+        // values are parsed programmatically, so they must stay in the English
+        // enum; the directive is appended (not spliced) to leave the
+        // benchmark-tuned few-shot prompt in core/prompts.js untouched. English
+        // wikis get the prompt verbatim.
         localizeSystemPrompt(prompt) {
-            if (this.lang !== 'fr') return prompt;
-            return prompt + '\n\nLANGUAGE: Write the "comments" field in French (français). '
-                + 'You may quote the source verbatim in its original language, but write your own explanation in French. '
+            const language = PROMPT_LANGUAGES[this.lang];
+            if (!language) return prompt;
+            return prompt + `\n\nLANGUAGE: Write the "comments" field in ${language}. `
+                + `You may quote the source verbatim in its original language, but write your own explanation in ${language}. `
                 + 'Keep the "verdict" and "reason_type" values exactly as specified above, in English '
                 + '(SUPPORTED, PARTIALLY SUPPORTED, NOT SUPPORTED, SOURCE UNAVAILABLE, contradiction, omission).';
         }
