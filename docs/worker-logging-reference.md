@@ -6,15 +6,68 @@
 CREATE TABLE verification_logs (
   id SERIAL PRIMARY KEY,
   ts TIMESTAMPTZ DEFAULT now(),
+  check_id TEXT UNIQUE,        -- minted client-side, joins feedback to the check
+  kind TEXT DEFAULT 'source',  -- 'source' | 'group'
   article_url TEXT,
   article_title TEXT,
-  citation_number TEXT,
-  source_url TEXT,
+  revision_id BIGINT,          -- the article revision the check ran against
+  citation_number TEXT,        -- comma-joined for kind='group'
+  source_url TEXT,             -- null for kind='group' (several sources)
   provider TEXT,
+  model TEXT,
   verdict TEXT,
-  confidence INT
+  confidence INT,
+  reason_type TEXT,
+  claim_text TEXT,             -- truncated to 2000 chars client-side
+  llm_comments TEXT            -- ditto
 );
 ```
+
+Migration for the deployed table, which predates the last five columns:
+
+```sql
+ALTER TABLE verification_logs
+  ADD COLUMN check_id TEXT UNIQUE,
+  ADD COLUMN kind TEXT DEFAULT 'source',
+  ADD COLUMN model TEXT,
+  ADD COLUMN claim_text TEXT,
+  ADD COLUMN llm_comments TEXT,
+  ADD COLUMN revision_id BIGINT;
+```
+
+(`reason_type` is already sent by the client; add it too if the deployed table
+is older than that change.)
+
+### Why the revision id is recorded
+
+Without it a logged verdict describes a page that has since moved on. A
+disagreement about a verdict can't be separated from an edit to the claim, and
+two prompt or model versions can't be compared, because they were never shown
+the same text — the fixed page is the whole point. `normalizeRevisionId()` in
+`core/feedback.js` is the gate: a positive integer or null, never `wgRevisionId`'s
+0 (a preview or special page, which is not a revision).
+
+The client sends `wgRevisionId` — the revision actually on screen, and so the
+one that was read — falling back to `wgCurRevisionId`. The two differ only when
+an old revision is being viewed, which is exactly the case where naming the
+current one would be wrong.
+
+### Why `check_id` is minted in the browser
+
+The client generates the id (`newCheckId()` in `core/feedback.js`) instead of
+reading back a `SERIAL`. Logging stays fire-and-forget — the feedback controls
+attached to a result are usable immediately, with no round trip to await — and
+the id still exists if the log write failed. The cost is that the id is
+client-supplied and therefore untrusted; for research telemetry that is an
+acceptable trade, but don't build anything security-sensitive on it.
+
+### Why claim text and rationale are stored
+
+A rating against a row that holds only a verdict is uninterpretable: you learn
+that check `a7f3k2q9` was wrong without learning what it claimed or why the
+model decided that. Both fields are public content already (article prose and
+LLM output), and both are capped at `MAX_LOGGED_TEXT` before they leave the
+browser.
 
 ## Cloudflare Worker Changes
 
@@ -73,3 +126,188 @@ if (request.method === 'OPTIONS' && url.pathname === '/log') {
 - `neon()` from `@neondatabase/serverless` uses HTTP queries (no TCP), which works in Cloudflare Workers
 - CORS headers are needed since the script runs on `en.wikipedia.org` and posts to the Worker domain
 - The `.catch()` ensures a failed DB write never surfaces as an error to the client
+
+## Feedback endpoint
+
+Ratings and talk-page pointers arrive on a second endpoint. Same shape as
+`/log`, with one difference: it **awaits the insert and reports failure**.
+`/log` is invisible telemetry and should never surface an error; `/feedback` is
+the response to a button the user deliberately pressed, so a silent no-op would
+be worse than an error message.
+
+```sql
+CREATE TABLE feedback (
+  id SERIAL PRIMARY KEY,
+  ts TIMESTAMPTZ DEFAULT now(),
+  -- Deliberately NOT a foreign key: /log and /feedback are two independent
+  -- fire-and-forget POSTs from the browser, so a dropped or slow log write
+  -- would make the FK reject a rating the user legitimately gave. An orphan
+  -- feedback row is recoverable; a rating the user was told failed is not.
+  check_id TEXT,
+  rating SMALLINT,           -- +1 / -1, null for correction-only rows
+  corrected_verdict TEXT,    -- from the thumbs-down chips
+  wiki_section TEXT,         -- talk-page section, filled in by the scrape (see below)
+  client_id TEXT             -- random per-browser token, dedupe only
+);
+
+CREATE INDEX feedback_check_id_idx ON feedback (check_id);
+```
+
+A single check can produce several rows: a thumbs-down, then a corrected
+verdict. Only the first carries `rating`, so
+`count(*) FILTER (WHERE rating IS NOT NULL)` is the rating count and doesn't
+double-count a rating the editor then elaborated on.
+
+```javascript
+if (request.method === 'POST' && url.pathname === '/feedback') {
+  const body = await request.json();
+  const sql = neon(env.DATABASE_URL);
+
+  try {
+    await sql`INSERT INTO feedback
+        (check_id, rating, corrected_verdict, wiki_section, client_id)
+        VALUES (${body.check_id}, ${body.rating}, ${body.corrected_verdict},
+                ${body.wiki_section}, ${body.client_id})`;
+    return new Response('ok', { headers: { 'Access-Control-Allow-Origin': '*' } });
+  } catch (err) {
+    console.error('Feedback write failed:', err);
+    return new Response('error', {
+      status: 500,
+      headers: { 'Access-Control-Allow-Origin': '*' },
+    });
+  }
+}
+```
+
+`OPTIONS /feedback` needs the same preflight response as `OPTIONS /log`.
+
+### What is deliberately not stored
+
+No username, on any row. The sidebar tells users that results are logged
+without recording who ran them, and a rating is covered by that promise. A
+talk-page comment *is* signed — but that signature lives on the wiki, where the
+editor chose to put it, not in this table. `wiki_section` points at the
+discussion; resolving it to a person means going to the wiki and looking.
+
+`client_id` is a random token minted once per browser in `localStorage`. It
+exists so repeat clicks can be collapsed and distinct-ish users counted; it is
+not derived from anything about the user and does not survive clearing site
+data.
+
+## Feedback routing
+
+Where a piece of feedback goes is decided by what kind of thing it is, not by
+where the user clicked:
+
+| Feedback | Destination | Why |
+|----------|-------------|-----|
+| 👍 / 👎, corrected verdict | Neon, via `POST /feedback` | High volume, only useful aggregated, must join to the check. An edit per rating would be absurd friction and unaggregatable. |
+| Written comment | New section on `User talk:Alaexis/AI_Source_Verification` | Needs to be public and to support follow-up questions. A database is a terrible forum. |
+
+`check_id` is on both sides, so the two can be joined: the heading and a
+trailing HTML comment on each talk section carry the id, and the scheduled
+talk-page scrape matches on it.
+
+### The comment path uses Wikipedia's own edit form
+
+The script does not write the comment. Clicking **Comment** opens
+`action=edit&section=new` on the talk page in a new tab, with the context
+already in the edit box, and the editor writes and publishes there.
+
+That means preview, the signature button, DiscussionTools, and — the reason
+this beats an API post — native handling of blocks, protection, CAPTCHAs and
+abuse filters. An API post turns every one of those into a generic failure the
+script has to explain badly. It also means nothing is ever written under
+someone's account without them seeing the exact text first, because the text is
+sitting in their edit box.
+
+A URL can set the target page and the heading (`preloadtitle`) but has no
+parameter for body text. That is what `preload` is for: it starts the edit box
+off with the contents of another page, substituting `$1`, `$2`… from
+`preloadparams[]`. So:
+
+**`User:Alaexis/AI_Source_Verification/feedback-preload`** contains exactly:
+
+```
+$1<noinclude>
+Preload target for [[User:Alaexis/AI_Source_Verification|Source Verifier]]'s
+feedback button. The single $1 above is substituted with the feedback text at
+edit time — please don't add anything else to this page or edit summaries
+break. Deleting this page breaks the script's Comment button.
+</noinclude>
+```
+
+The whole body travels as one parameter, so `buildTalkSectionBody()` in
+`core/feedback.js` stays the only place the section layout is defined and this
+page never needs to change again.
+
+The trade for all of this: because the editor publishes it themselves, the
+script never learns whether they went through with it. So `wiki_section` is not
+written at click time — the daily scrape resolves the link instead, matching
+the `<!-- source-verifier check: … -->` marker in each section.
+
+### The section is split by who wrote what
+
+Everything the tool produced — article, revision, source, verdict, claim,
+rationale — goes inside a `{{hidden begin|title=Check details}}` … `{{hidden end}}` box.
+The **Article** line carries the revision as a permalink
+(`…, citation [12], revision [<permalink> 1234567]`) for the same reason the log
+column exists: the plain article link points at whatever the page says today, so
+without it a reader arriving at the section a month later can't tell whether
+they are looking at the text the tool read.
+Everything the editor supplies stays visible above the signature: the
+corrected verdict, and their prose under an **`Editor's explanation:`** label.
+A reader scanning the talk page sees the human argument, not five bullets of
+machine output; the context is one click away when they want to check it.
+
+Two things follow from that split and are load-bearing:
+
+- **The begin/end template pair, not `{{collapse|…}}`.** The latter makes the
+  bullets a template *parameter*, where a stray `|` or `=` in a source URL
+  silently truncates the box. As body text between two templates they are
+  inert. `{{cot}}`/`{{cob}}` is wrong for a different reason — it renders "the
+  following discussion is closed", and this was never a discussion.
+- **Nothing preloads a signature.** See below.
+
+`CHECK_DETAILS_TITLE` and `EDITOR_EXPLANATION_LABEL` are exported from
+`core/feedback.js` because they are the seam between this layout and anything
+reading it back: the scrape tells machine context from human text by those two
+strings.
+
+### Never preload four tildes
+
+The preloaded body used to end with `~~~~`, on the assumption that the editor's
+save would expand it into their signature. It does not reliably, and the
+failure is silent and delayed.
+
+Four tildes are not text. They are an instruction to MediaWiki's **pre-save
+transform**, which runs over the *entire page wikitext on every save* — not
+just the part the saver typed. So a preloaded signature belongs to whoever
+saves the page next, whenever that happens. Two things follow:
+
+1. If the first save does not expand them — `action=edit&section=new` on
+   en.wiki is handled by DiscussionTools' new topic tool, which manages
+   signature placement itself rather than passing preloaded tildes through —
+   the tildes land in the saved page intact.
+2. Literal tildes sitting in saved wikitext are a landmine. The next account to
+   save that page, for any unrelated reason, gets *its* name and *its* edit
+   timestamp stamped in.
+
+That is the observed failure on check `4d9d0118`: the section was signed
+`DeadbeefBot II … 21:01, 4 August 2026 (UTC)` — a bot that had merely edited
+the page, at the time it did so.
+
+The guidance comment therefore spells out "sign" in words. Tildes inside an
+HTML comment are expanded too — the pre-save transform does not skip comments —
+so the landmine would simply be invisible instead of absent.
+`tests/feedback.test.js` fails on `~~~` appearing anywhere in the body or in
+the preload parameter.
+
+**Consequence for the scrape.** `section_is_new()` dated sections by finding a
+`(UTC)` timestamp, which the preloaded signature used to guarantee. Dating now
+depends on the editor's editor signing for them (DiscussionTools does;
+the classic form prompts). So a section carrying the check-id marker with *no*
+timestamp at all is now let through rather than dropped: it is almost always
+one published with nothing written in it, for which the extraction prompt
+returns no items. If unsigned sections turn out to be common, the durable fix
+is a ledger of processed check ids rather than a timestamp watermark.

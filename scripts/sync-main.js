@@ -22,6 +22,7 @@ const CORE_ORDER = [
   'claim.js',
   'providers.js',
   'worker.js',
+  'feedback.js',
   'submission.js',
 ];
 

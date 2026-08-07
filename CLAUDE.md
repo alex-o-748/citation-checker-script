@@ -14,7 +14,7 @@ Wikipedia citation verification user script. An AI-powered sidebar tool that let
 main.js                          # Main Wikipedia user script (~2,700 lines, single class)
 package.json                     # Top-level deps + `npm test` / `npm run build` scripts
 core/                            # Shared pure logic, imported by both benchmark/ and main.js (via sync)
-  claim.js, parsing.js, prompts.js, providers.js, submission.js, urls.js, worker.js
+  claim.js, feedback.js, parsing.js, prompts.js, providers.js, submission.js, urls.js, worker.js
 cli/verify.js                    # Node CLI front-end (verify a single citation from the command line)
 bin/ccs                          # Executable shim for the CLI
 scripts/sync-main.js             # Inlines core/ modules into main.js for the userscript build
@@ -78,6 +78,8 @@ docs/                            # Reference docs + design plans (see docs/READM
 | `verifyGroupCollective()` | Collective verdict for an adjacent-citation group (combines the group's sources into one LLM call; see `docs/design-plans/2026-06-23-collective-group-verification.md`) |
 | `getReportUnits()` | Merge per-source results + collective group verdicts into one entry per claim (drives summary pills + exports) |
 | `generateWikitextReport()` | Generate wiki markup for failed citations |
+| `logVerification()` | Mint a `check_id`, log the verdict + claim + rationale to the worker, return the id |
+| `buildFeedbackControls()` | Yes/No/Comment row under a result; ratings go to Neon, comments to the talk page (see `docs/worker-logging-reference.md`) |
 
 ## Benchmark Suite
 
