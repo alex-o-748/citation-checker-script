@@ -34,6 +34,8 @@ import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import { extractClaimText as extractClaimTextFromRef } from '../core/claim.js';
 import { canonicalizeVerdict, toTitleCase } from '../core/verdicts.js';
+import { parseArchiveOrgUrl } from '../core/urls.js';
+import { recoverWaybackBody } from '../core/worker.js';
 import { writeWithMetadata, todayIso, loadRows } from './io.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -168,16 +170,24 @@ function fetchURL(url) {
  * Fetch source content via proxy, with direct fetch fallback
  */
 async function fetchSourceContent(url) {
+    // Archive.org snapshots are fetched through the raw `id_` endpoint, which
+    // serves the archived response without Wayback's playback chrome. Same
+    // treatment the userscript gives them in core/worker.js.
+    const archiveInfo = parseArchiveOrgUrl(url);
+    const fetchUrl = archiveInfo
+        ? `https://web.archive.org/web/${archiveInfo.timestamp}id_/${archiveInfo.originalUrl}`
+        : url;
+
     // Try proxy first
     try {
         log(`    Trying proxy fetch...`);
-        const proxyUrl = `${PROXY_URL}?fetch=${encodeURIComponent(url)}`;
+        const proxyUrl = `${PROXY_URL}?fetch=${encodeURIComponent(fetchUrl)}`;
         const response = await fetchWithRetry(proxyUrl);
         const data = JSON.parse(response);
 
         if (data.content && data.content.length > 100) {
             log(`    Proxy success: ${data.content.length} chars`);
-            return data.content;
+            return recoverWaybackBody(data.content);
         }
         log(`    Proxy returned insufficient content: ${data.content?.length || 0} chars`);
     } catch (error) {
@@ -187,7 +197,7 @@ async function fetchSourceContent(url) {
     // Try direct fetch as fallback
     try {
         log(`    Trying direct fetch...`);
-        const html = await fetchWithRetry(url);
+        const html = await fetchWithRetry(fetchUrl);
 
         // Basic HTML text extraction
         const textMatch = html.match(/<article[^>]*>([\s\S]*?)<\/article>/i) ||

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { fetchSourceContent, logVerification } from '../core/worker.js';
+import { fetchSourceContent, logVerification, recoverWaybackBody } from '../core/worker.js';
 
 function mockFetch(impl) {
   const original = globalThis.fetch;
@@ -242,6 +242,42 @@ test('logVerification posts payload and swallows failures', async () => {
     }));
     assert.equal(mock.calls[0].url, 'https://publicai-proxy.alaexis.workers.dev/log');
     assert.equal(mock.calls[0].opts.method, 'POST');
+  } finally {
+    mock.restore();
+  }
+});
+
+const WAYBACK_BANNER = 'The Wayback Machine - https://web.archive.org/web/2020/x';
+
+test('recoverWaybackBody strips a Wayback banner that survived extraction', () => {
+  const input = `${'p'.repeat(300)}${WAYBACK_BANNER} ${'a'.repeat(600)}`;
+  const recovered = recoverWaybackBody(input);
+  assert.ok(!recovered.includes('Wayback Machine'));
+  assert.equal(recovered, 'a'.repeat(600));
+});
+
+test('recoverWaybackBody leaves text without a banner unchanged', () => {
+  const text = 'no banner here, just article prose';
+  assert.equal(recoverWaybackBody(text), text);
+});
+
+test('recoverWaybackBody keeps the original when the banner appears too early', () => {
+  const input = `${'p'.repeat(10)}${WAYBACK_BANNER} ${'a'.repeat(600)}`;
+  assert.equal(recoverWaybackBody(input), input);
+});
+
+test('recoverWaybackBody keeps the original when too little content follows', () => {
+  const input = `${'p'.repeat(300)}${WAYBACK_BANNER} ${'a'.repeat(100)}`;
+  assert.equal(recoverWaybackBody(input), input);
+});
+
+test('fetchSourceContent recovers the article body when the banner survives the fetch', async () => {
+  const content = `${'p'.repeat(300)}${WAYBACK_BANNER} ${'a'.repeat(600)}`;
+  const mock = mockFetch(async () => ({ ok: true, status: 200, json: async () => ({ content }) }));
+  try {
+    const result = await fetchSourceContent('https://example.com/page', null);
+    assert.ok(!result.content.includes('Wayback Machine'));
+    assert.ok(result.content.includes(`Source Content:\n${'a'.repeat(600)}`));
   } finally {
     mock.restore();
   }
