@@ -1,12 +1,12 @@
 # Batch source checks as an Edit Suggestions feed
 
-> **Status (2026-08-07):** Proposed. Requirements analysis for the WMF Edit Suggestions integration — no implementation started. Open to alternatives on every numbered decision below.
+> **Status (2026-08-07):** Proposed. Requirements analysis for the WMF Edit Suggestions integration — no implementation started. Revised same day after the maintainer settled the precision approach (§1) and the Foundation suggested Toolforge for hosting (§5).
 
 ## The use case
 
-The Wikimedia Foundation wants sourcing problems to appear as **edit suggestions**: an
-editor opens an article and sees "this claim may not be supported by its
-citation" alongside the other suggested-edit types.
+The Wikimedia Foundation wants sourcing problems to appear as **edit
+suggestions**: an editor opens an article and sees "this claim may not be
+supported by its citation" alongside the other suggested-edit types.
 
 That inverts how this tool works today. The current shape is:
 
@@ -17,9 +17,9 @@ editor clicks [14] → fetch source → one LLM call → verdict in the sidebar
 The proposed shape is:
 
 ```
-crawler picks N articles → fetch every source → LLM per citation → write to DB
-                                                                      ↓
-                            editor opens article → Suggestions API reads DB → cards
+scheduled job picks N articles → fetch every source → LLM per citation → findings DB
+                                                                             ↓
+                                   editor opens article → API reads DB → suggestion cards
 ```
 
 Three properties change, and nearly every requirement below falls out of one of
@@ -31,63 +31,51 @@ them:
 | **Cost of a wrong answer** | Editor reads the rationale, disagrees, closes the panel | A suggestion is pushed at an editor who did not ask for it |
 | **What identifies a finding** | The `[14]` on screen, right now | A row in a database that must still point at the right claim after the article has been edited |
 
-## 1. Precision is the blocking requirement
+## 1. Precision: publish conservatively, measure the threshold
 
-This is the one that decides whether the feature is viable, so it goes first.
+**Decision (maintainer):** ship a deliberately narrow filter rather than
+treating overall accuracy as a gate. Publish only high-confidence
+NOT SUPPORTED findings — `reason_type: "contradiction"` first — and accept low
+coverage as the price. This is the right call: there is no shortage of
+citations to check, so recall costs nothing but throughput, and precision is
+the only number an editor experiences.
 
-In the live tool, a wrong verdict costs the editor the ten seconds it takes to
-read the rationale and dismiss it — they *asked* for the check. As an edit
-suggestion it is unsolicited, and a suggestion queue that is wrong a third of
-the time trains editors to ignore the whole queue, including the correct items.
+The benchmark numbers below are therefore **not a blocker** — they are the
+input for choosing where to put the threshold. Computed from
+`benchmark/analysis.json` (186 entries, latest run); "flag" = NOT SUPPORTED or
+PARTIALLY SUPPORTED, i.e. anything that would generate a suggestion:
 
-Current numbers, computed from `benchmark/analysis.json` (186 entries, latest
-run). "Flag" = the model returned NOT SUPPORTED or PARTIALLY SUPPORTED, i.e.
-anything that would generate a suggestion:
+| Provider | Exact acc. | NOT SUPPORTED precision | NOT SUPPORTED recall | Any-flag precision |
+| --- | --- | --- | --- | --- |
+| Gemini 2.5 Flash | 66.7% | 71% | 83% | 77% |
+| Qwen SEA-LION | 60.0% | 72% | 57% | 84% |
+| Apertus 70B | 54.2% | 50% | 39% | 64% |
+| Claude Sonnet 4.5 | 48.9% | 50% | 15% | 81% |
 
-| Provider | Exact acc. | NOT SUPPORTED precision | NOT SUPPORTED recall | Any-flag precision | Any-flag recall |
-| --- | --- | --- | --- | --- | --- |
-| Gemini 2.5 Flash | 66.7% | 71% | 83% | 77% | 84% |
-| Qwen SEA-LION | 60.0% | 72% | 57% | 84% | 42% |
-| Apertus 70B | 54.2% | 50% | 39% | 64% | 62% |
-| Claude Sonnet 4.5 | 48.9% | 50% | 15% | 81% | 33% |
+What the conservative-start decision still requires:
 
-Read the precision column as: **between 1-in-6 and 1-in-2 suggestions would be
-wrong.** That is the number to move before anything ships, and it is a
-different optimization target than the one the benchmark has been tuned for so
-far — the project has been chasing exact-match accuracy across four classes,
-where this use case only cares about the precision of the flagged class.
-
-What follows from that:
-
-1. **Report precision/recall on the flag class, not just exact accuracy.**
-   `analyze_results.js` should emit a precision-at-threshold curve for
-   "flag vs no-flag". Everything else in this section depends on being able to
-   measure it.
-2. **Gate on confidence, and tune the threshold on the benchmark.** The verdict
-   already carries a 0–100 confidence (`core/parsing.js`). Publishing only
-   high-confidence NOT SUPPORTED findings trades recall for precision, which is
-   exactly the trade this use case wants — there is no shortage of citations to
-   check, so low recall costs nothing but coverage. Note the calibration
-   figure in `analysis.json` (Apertus: 79 avg confidence when correct, 74 when
-   wrong) — confidence is only weakly discriminative today, so this needs
-   validating rather than assuming.
-3. **Consider an ensemble gate.** `benchmark/voting.js` and
-   `compute_ensemble.js` already exist. "Two independent models both say NOT
-   SUPPORTED" is the cheapest large precision win available, at 2× inference
-   cost — and inference cost is not the binding constraint in a batch pipeline
-   the way latency is in the live one.
-4. **Suppress PARTIALLY SUPPORTED entirely, at least for v1.** It is the class
-   the models confuse most (Claude: 26 of 53 partial cases called Supported),
-   the hardest for an editor to act on, and it is often an artifact of
-   between-citations claim extraction splitting a compound sentence rather than
-   a real sourcing defect. NOT SUPPORTED with `reason_type: "contradiction"` is
-   the highest-precision, most actionable signal the tool produces — start
-   there.
-5. **Never publish SOURCE UNAVAILABLE as an editor-facing suggestion.** It is
-   a statement about the crawler's luck, not about the article. A dead link is
-   a real maintenance issue, but it is one existing bots already handle, and a
-   paywall or bot-block is not an article defect at all. Keep these rows in the
-   DB (they are operationally valuable — see §7) and filter them at the API.
+1. **Report precision on the flag class.** `analyze_results.js` currently
+   reports exact accuracy across four classes, which is a different target.
+   Add flag-class precision/recall and a precision-vs-confidence-threshold
+   curve — that curve is what the threshold gets read off.
+2. **Validate that confidence discriminates.** The gate assumes high confidence
+   means more reliable. Today's calibration is weak (Apertus averages 79 when
+   correct, 74 when wrong), so the threshold may need to be very high, or
+   confidence may need to be replaced by an ensemble gate as the filter.
+   `benchmark/voting.js` and `compute_ensemble.js` already exist, and 2×
+   inference cost is affordable in batch in a way it is not in the live path.
+3. **Split `reason_type` in the metrics.** The plan leans on contradictions
+   being more reliable than omissions. Plausible — a contradiction is grounded
+   in a quoted passage, an omission is an absence-of-evidence claim that a
+   truncated source produces spuriously — but it is currently an untested
+   assumption, and `reason_type` is already stored per result, so it is a cheap
+   thing to confirm.
+4. **Keep PARTIALLY SUPPORTED out of v1.** Most-confused class, hardest to act
+   on, and often an artifact of between-citations claim extraction splitting a
+   compound sentence rather than a real sourcing defect.
+5. **Never publish SOURCE UNAVAILABLE.** It describes the crawler's luck, not
+   the article. Store it (§7 — it is operationally valuable) and filter it at
+   the API.
 
 ## 2. A finding needs a stable anchor
 
@@ -115,63 +103,58 @@ A stored finding needs to identify, in this order of preference:
   reader can tell how stale the finding is and diff against current.
 
 And the API needs a resolution step at read time: given a finding and the
-*current* wikitext, locate the claim; if it can't be located, drop the
-suggestion silently. The reader side must be prepared to fail to match — this
-is the normal case for a stale finding, not an error.
+*current* article, locate the claim; if it can't be located, drop the
+suggestion silently. Failing to match is the normal case for a stale finding,
+not an error.
 
 **Wikitext vs HTML is a real gap.** Everything in `core/` operates on rendered
 HTML — `getCitationGroup` walks `.reference` elements, `extractClaimText` uses
 DOM Ranges. Edit suggestions are consumed in an editor working on **wikitext**
-(or on the VE DOM). Whoever builds the suggestion card has to map
-HTML-derived claim text back to a wikitext offset. Parsoid HTML carries
-`data-mw` and `about`/`id` attributes that make this tractable — worth pinning
-down early with the Suggestions team, because if the mapping has to happen on
-our side it is a substantial new component, and if it happens on theirs we only
-have to hand over clean claim text.
+(or on the VE DOM). Whoever builds the suggestion card has to map HTML-derived
+claim text back to a wikitext offset. Parsoid HTML carries `data-mw` and
+`about`/`id` attributes that make this tractable — worth pinning down early
+with the Suggestions team, because if the mapping has to happen on our side it
+is a substantial new component, and if it happens on theirs we only have to
+hand over clean claim text.
 
 ## 3. Staleness and invalidation
 
 Once results outlive the page view, the pipeline owns a cache-invalidation
 problem it does not have today:
 
-- **Article edited** → every finding on that revision is suspect. Cheap
-  mitigation: re-resolve the claim hash at read time (§2) and drop
-  non-matching findings. Proper mitigation: subscribe to the EventStreams
-  recentchange feed and mark findings dirty on edit.
+- **Article edited** → every finding on that revision is suspect. On Toolforge
+  this is cheap: Wiki Replicas expose `page.page_latest`, so a single indexed
+  query tells the job which of its findings were computed against a superseded
+  revision. No EventStreams consumer needed for v1.
 - **Claim fixed by an editor** → must stop being suggested immediately, and the
   fix is exactly the outcome the feature exists to produce. Claim-hash
   resolution handles this for free: the editor rewrites the claim, the hash
   stops matching, the suggestion disappears.
 - **Source changed underneath a live URL** → invisible to us. A TTL is the only
-  practical answer. Something like 90 days feels right; it should be a
-  configurable per-finding `expires_at` rather than a constant baked into
-  queries.
+  practical answer — a per-finding `expires_at` rather than a constant baked
+  into queries.
 - **Citation removed or replaced** → resolution fails, finding drops.
-
-The cheap version of all of this is: store `expires_at`, resolve claim hashes at
-read time, and re-crawl on a fixed cadence. The expensive version is
-event-driven invalidation. Start cheap.
 
 ## 4. What has to be built (and what already exists)
 
-The good news is that the 2026 `core/` extraction did most of the hard work
-already. `core/` is pure ESM with no browser assumptions, and `cli/verify.js`
-is a working headless end-to-end path: Wikipedia REST fetch → JSDOM → claim
-extraction → proxy fetch → LLM → parsed verdict, with typed exit codes.
+The 2026 `core/` extraction did most of the hard work. `core/` is pure ESM with
+no browser assumptions, and `cli/verify.js` is a working headless end-to-end
+path: Wikipedia REST fetch → JSDOM → claim extraction → source fetch → LLM →
+parsed verdict, with typed exit codes.
 
 **Reusable unchanged:** `core/claim.js`, `core/urls.js`, `core/parsing.js`,
-`core/prompts.js`, `core/providers.js`, `core/verdicts.js`, `core/retry.js`,
-`core/worker.js`.
+`core/prompts.js`, `core/providers.js`, `core/verdicts.js`, `core/retry.js`.
 
 **What's missing:**
 
 | Piece | Notes |
 | --- | --- |
-| **Article-level headless runner** | `cli/verify.js` does one citation; `verifyAllCitations()` does a whole article but is 250 lines welded to the sidebar DOM, OOUI confirm dialogs, progress bars, and `mw.config`. The orchestration logic (source cache, group collective pass, retry, cancellation) is worth extracting to `core/` and sharing, rather than writing a third copy |
-| **Work queue / scheduler** | Which articles, in what order, how often. Does not exist in any form |
-| **Findings store** | `verification_logs` is a fire-and-forget telemetry log with no idempotency key, no revision, no claim text, no rationale. A findings table is a new schema, not an extension of that one (see §6) |
+| **Article-level headless runner** | `cli/verify.js` does one citation; `verifyAllCitations()` does a whole article but is ~250 lines welded to the sidebar DOM, OOUI confirm dialogs, progress bars, and `mw.config`. The orchestration (source cache, collective group pass, retry, cancellation) is worth extracting to `core/` and sharing, rather than writing a third copy |
+| **Swappable fetch transport** | `core/worker.js` hardcodes the Cloudflare proxy. Server-side there is no CORS problem, so the batch path should fetch directly (§5) behind the same `{ content, error, status }` contract |
+| **Work queue** | Which articles, in what order. Does not exist in any form |
+| **Findings store** | `verification_logs` is a fire-and-forget telemetry log with no idempotency key, no revision, no claim text, no rationale. A findings table is a new schema, not an extension of that one (§6) |
 | **Read API** | New. Auth, per-article and per-wiki queries, filtering |
-| **Feedback ingestion** | Accept/reject signal from editors flowing back (see §9) |
+| **Feedback ingestion** | Accept/reject signal from editors flowing back (§9) |
 | **Cost accounting** | `usage` is returned per call by every provider in `core/providers.js` and thrown away outside the benchmark |
 
 One structural note: `main.js` is built by inlining `core/` via
@@ -179,224 +162,281 @@ One structural note: `main.js` is built by inlining `core/` via
 `benchmark/` and `cli/` do — resist any temptation to fork logic into the
 service.
 
-## 5. What the proxy has to become
+## 5. Hosting on Toolforge
 
-The worker (`publicai-proxy.alaexis.workers.dev`, source not in this repo) is
-currently sized for a human clicking citations. In the batch world it becomes
-the hot path for every fetch and most inference, and the load profile inverts:
-bursty, unattended, high-volume, no human to notice when it degrades.
+The Foundation suggested [Toolforge](https://wikitech.wikimedia.org/wiki/Help:Toolforge),
+and it is a good fit for most of this. It also resolves the ownership problem
+the current architecture has, where inference and fetching run through one
+personal Cloudflare Worker on one person's API credits.
 
-**Politeness and blocking.** Today, fetches are spread across many editors'
-sessions. A crawler concentrates them on one Cloudflare egress. Publishers will
-rate-limit or block, and the current failure mode — SOURCE UNAVAILABLE — is
-indistinguishable from a genuinely dead link, so blocking would silently
-corrupt the dataset rather than announce itself. Needed: a descriptive
-User-Agent with a contact URL, per-host rate limiting and backoff,
-`robots.txt` respect, and — importantly — a distinction in the response between
-"dead" and "we were refused". `fetchSourceContent()` already returns `status`,
-so the schema is there; the worker needs to populate it accurately and the
-consumer needs to treat 403/429 as *retry later*, never as a finding.
+### What Toolforge supplies that we would otherwise build
 
-**Fetch caching and dedup.** One source often backs claims across many
-articles, and re-crawls hit the same URLs repeatedly. A content-addressed cache
-in the worker (R2 or KV, keyed on URL + page, with the extracted text and a
-fetch timestamp) removes most of the fetch load and, incidentally, makes runs
-reproducible — a benchmark property this project already cares about
-(`--change-axis source_text` in `docs/comparing-benchmark-runs.md`). The
-userscript's `sourceCache` does this per-run, in memory; the batch pipeline
-needs it durable and shared.
+| Need | Toolforge answer |
+| --- | --- |
+| Scheduler (§4) | [Jobs framework](https://wikitech.wikimedia.org/wiki/Help:Toolforge/Running_jobs) — `toolforge jobs run --schedule '<cron>'` for the batch sweep, `--continuous` for a queue-draining worker (auto-restarted on failure) |
+| Findings store (§6) | [ToolsDB](https://wikitech.wikimedia.org/wiki/Help:Toolforge/ToolsDB) — shared MariaDB at `tools.db.svc.wikimedia.cloud`, databases named `<credentialUser>__<name>` |
+| Article selection (§8) | [Wiki Replicas](https://wikitech.wikimedia.org/wiki/Help:Toolforge/Database) — query `templatelinks` / `categorylinks` for `{{Failed verification}}`, `{{Citation needed}}` etc. directly, instead of crawling to find candidates |
+| Staleness detection (§3) | Wiki Replicas `page.page_latest` |
+| Read API (§4) | Toolforge web service, Node.js supported via the build service |
+| Secrets | [Envvars](https://wikitech.wikimedia.org/wiki/Help:Toolforge/Envvars) for any provider API key |
+| Deploy | Buildpack build from the git repo; the repo is already Node ESM with `engines: >=18` |
+| Licensing | Toolforge requires an OSI-approved license. The repo is MIT — already compliant |
+| Bulk corpus | [Shared storage](https://wikitech.wikimedia.org/wiki/Help:Shared_storage) at `/public/dumps` (XML/wikitext dumps, pagecounts, Wikidata JSON) |
 
-**The 413 ceiling.** `core/providers.js` handles a 413 from the proxy with a
-message telling the *user* to trim the source or switch providers. There is no
-user in a batch run. The pipeline needs an automatic path: chunk the source and
-verify against the most relevant chunk, or route oversized requests to a
-direct-call provider. As it stands, every long source silently fails.
+Two of these are more than conveniences. **Wiki Replicas collapses §8 from "a
+component to design" into "a SQL query"** — and gives the maintenance-template
+signal that `MAINTENANCE_MARKER_RE` in `core/claim.js` already knows how to
+recognize. And **the jobs framework means there is no scheduler to write**,
+only a queue table and a job that drains it.
 
-**Quota exhaustion is the realistic failure mode, and it is currently silent.**
-In the latest benchmark, 31 of 186 calls failed for *both* PublicAI-hosted
-models — all of them `HTTP 402: Insufficient wallet balance`. Not flakiness:
-the credits ran out partway through and every subsequent call failed
-identically. 17% of that run is void, and nothing in the pipeline announced it.
-`core/retry.js` doesn't retry 402 (correctly — retrying won't help), but a
-batch runner needs to **halt** on 402/401 rather than burn through the queue
-writing failures. Add: pre-flight quota check, hard stop on auth/billing
-errors, and alerting.
+### What changes in the design
 
-**Auth.** `/log` currently accepts unauthenticated POSTs with
-`Access-Control-Allow-Origin: *` — fine for anonymous telemetry, unacceptable
-for a store that feeds editor-facing suggestions. Writes need a service
-credential; reads need their own auth and rate limits.
+**The Cloudflare Worker stops being on the batch path.** Its main job is CORS,
+which only exists because `main.js` runs on `en.wikipedia.org`. A Toolforge job
+fetches sources directly. Three consequences, all good:
 
-**Where it should run.** Right now inference and fetching are routed through
-one personal Cloudflare Worker paid for by one person's API credits. If this
-becomes a Foundation-facing feature, that is a bus-factor and a funding
-problem, not a technical one — but it needs an owner. Lift Wing is already
-wired up as a provider (`callLiftwingAPI` in `core/providers.js`, routed via
-the same worker) and is the obvious home for WMF-hosted inference; the batch
-path would want to call it directly rather than through a personal proxy.
+- The **413 body cap disappears** — that was the proxy's request-size limit, not
+  a model limit, and `core/providers.js` currently handles it by telling the
+  *user* to trim the source. There is no user in batch; removing the cap removes
+  the need for a chunking fallback in v1.
+- Fetch behavior becomes ours to control (User-Agent, per-host backoff,
+  `robots.txt`), rather than the worker's.
+- `core/worker.js` needs a transport seam so the userscript keeps the proxy and
+  the batch path fetches directly. Same `{ content, error, status }` contract,
+  two implementations.
+
+The worker is still needed **for the userscript**. Worth considering as a
+follow-up: a Toolforge web service could take over that role too, retiring the
+personal Cloudflare account entirely and putting the CORS proxy, the batch job,
+and the findings API in one WMF-hosted, open-source tool.
+
+**Lift Wing becomes the obvious inference backend.** `callLiftwingAPI` already
+exists in `core/providers.js`. WMF-hosted inference from WMF-hosted compute
+means no API key in envvars, no billing, no per-call cost accounting, and no
+question about a Wikimedia tool sending content to a commercial vendor. It also
+removes the failure mode that voided 17% of the last benchmark run: 31 of 186
+calls failed on *both* PublicAI models with `HTTP 402: Insufficient wallet
+balance` — credits ran out partway through and every subsequent call failed
+identically, unannounced. (If a commercial provider is used anyway, the runner
+must **halt** on 401/402 rather than burn through the queue writing failures.
+`core/retry.js` correctly doesn't retry those, but nothing currently stops the
+loop.)
+
+Caveat worth checking: the worker clamps Lift Wing `max_tokens` to 4096 and
+strips `<think>` blocks from reasoning models. Calling Lift Wing directly means
+reimplementing the strip, or the verdict parser sees reasoning text.
+
+### Constraints that bite
+
+- **2 vCPU / 8 GB, ~4 GB per job.** Fine — this workload is I/O-bound (HTTP
+  fetches and API calls), not compute. JSDOM on a large article is the main
+  memory consumer and is comfortably inside 4 GB for one article at a time.
+- **No GPU, and only platform-provided or buildpack-installed packages.** This
+  rules out running models on-platform. The MiniCheck evaluation floated in
+  `docs/researcher-feedback-review.md` cannot run here; inference is Lift Wing
+  or an external API, full stop.
+- **500 simultaneous connections per wiki, and a tool using >50 may be stopped
+  without warning.** Keep API concurrency low (single digits) and prefer
+  Replicas and dumps for anything bulk. This is not a constraint the current
+  benchmark runner respects — `--concurrency` is per-host with no wiki-specific
+  ceiling.
+- **Best-effort platform.** Wiki Replica lag is explicitly best-effort and has
+  historically run 24h+ behind during incidents. Fine for a batch producer;
+  a risk if a production MediaWiki surface reads our API synchronously (see the
+  open question below).
+
+### The open question that has to be settled first
+
+**Is it acceptable to fetch arbitrary third-party publisher URLs from
+Toolforge?** This is the tool's core operation and it is not a typical
+Toolforge workload. The documentation does not address outbound crawling of
+external sites; [Wikimedia network guidelines](https://wikitech.wikimedia.org/wiki/Wikimedia_network_guidelines)
+say hosts needing outbound web access should use HTTP proxies where possible,
+and the [Toolforge rules](https://wikitech.wikimedia.org/wiki/Help:Toolforge/Rules)
+are about benefit-to-the-movement rather than egress.
+
+Concentrating what is currently thousands of editors' individual fetches onto
+Wikimedia IP space, unattended and at volume, is a reputational exposure for
+WMF (publishers blocking Wikimedia ranges) as much as a technical one. It needs
+clearing with WMCS admins on `cloud@` or Phabricator **before** any of this is
+built, because a "no" changes the architecture completely — the fetch tier
+would have to stay off-platform, and the current Cloudflare worker becomes a
+permanent component rather than a legacy one.
+
+Whatever the answer, the fetcher needs a descriptive User-Agent with a contact
+URL, per-host rate limiting and backoff, and `robots.txt` respect. And it must
+distinguish "dead link" from "we were refused" — today a 403 and a 404 both
+surface as SOURCE UNAVAILABLE, so a publisher block would silently corrupt the
+findings rather than announce itself. `fetchSourceContent()` already returns
+`status`; the consumer has to treat 403/429 as *retry later*, never as a
+finding.
 
 ## 6. Storage
 
-`verification_logs` is a telemetry log. A findings store is a different table:
+ToolsDB is **MariaDB**, so the schema below is MySQL-dialect rather than the
+Postgres the existing `verification_logs` table uses. Databases ending in `_p`
+are world-readable and reachable from Quarry and Superset — worth taking, both
+because publishing the findings fits movement norms and because it lets others
+audit and build on the data without asking us for access.
 
 ```sql
 CREATE TABLE citation_findings (
-  id              BIGSERIAL PRIMARY KEY,
-  wiki            TEXT NOT NULL,        -- 'enwiki' — this is per-wiki from day one
-  page_id         INT  NOT NULL,        -- stable across renames, unlike the title
-  page_title      TEXT NOT NULL,        -- denormalized for display
-  revision_id     BIGINT NOT NULL,      -- the oldid this was computed against
-  claim_hash      TEXT NOT NULL,        -- normalized claim text hash — the anchor (§2)
-  claim_text      TEXT NOT NULL,        -- for display and for re-resolution
-  citation_number INT,                  -- display only; NOT an identifier
-  ref_name        TEXT,                 -- <ref name="..."> when present
-  source_url      TEXT,
-  source_hash     TEXT,                 -- content hash of the fetched text
-  group_id        TEXT,                 -- adjacent-citation group (core/claim.js)
-  is_collective   BOOLEAN,              -- collective vs per-source verdict
-  verdict         TEXT NOT NULL,
-  confidence      INT,
-  reason_type     TEXT,                 -- 'contradiction' | 'omission'
-  rationale       TEXT,                 -- the model's comments — editors need the why
-  provider        TEXT,
-  model           TEXT,
-  prompt_version  TEXT NOT NULL,        -- invalidate findings when prompts change
-  fetch_status    INT,                  -- upstream HTTP status; distinguishes fetch failures
-  source_truncated BOOLEAN,
-  tokens_in       INT,
-  tokens_out      INT,
-  cost_usd        NUMERIC,
-  created_at      TIMESTAMPTZ DEFAULT now(),
-  expires_at      TIMESTAMPTZ,
-  published       BOOLEAN DEFAULT false, -- passed the precision gate in §1
-  UNIQUE (wiki, page_id, claim_hash, source_url, provider, prompt_version)
+  id               BIGINT AUTO_INCREMENT PRIMARY KEY,
+  wiki             VARBINARY(32)  NOT NULL,  -- 'enwiki' — per-wiki from day one
+  page_id          INT UNSIGNED   NOT NULL,  -- stable across renames, unlike the title
+  page_title       VARBINARY(255) NOT NULL,  -- denormalized for display
+  revision_id      BIGINT UNSIGNED NOT NULL, -- the oldid this was computed against
+  claim_hash       BINARY(32)     NOT NULL,  -- normalized claim text hash — the anchor (§2)
+  claim_text       TEXT           NOT NULL,  -- for display and re-resolution
+  citation_number  INT,                      -- display only; NOT an identifier
+  ref_name         VARBINARY(255),           -- <ref name="..."> when present
+  source_url       TEXT,
+  source_hash      BINARY(32),               -- content hash of the fetched text
+  group_id         VARBINARY(64),            -- adjacent-citation group (core/claim.js)
+  is_collective    TINYINT(1)     NOT NULL DEFAULT 0,
+  verdict          VARBINARY(32)  NOT NULL,
+  confidence       TINYINT UNSIGNED,
+  reason_type      VARBINARY(16),            -- 'contradiction' | 'omission'
+  rationale        TEXT,                     -- the model's comments — editors need the why
+  provider         VARBINARY(32),
+  model            VARBINARY(128),
+  prompt_version   VARBINARY(32)  NOT NULL,  -- invalidate findings when prompts change
+  fetch_status     SMALLINT,                 -- upstream HTTP status
+  source_truncated TINYINT(1)     NOT NULL DEFAULT 0,
+  tokens_in        INT,
+  tokens_out       INT,
+  created_at       TIMESTAMP      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  expires_at       TIMESTAMP      NULL,
+  published        TINYINT(1)     NOT NULL DEFAULT 0,  -- passed the §1 filter
+  UNIQUE KEY uniq_finding (wiki, page_id, claim_hash, source_hash, provider, prompt_version),
+  KEY idx_lookup (wiki, page_id, published),
+  KEY idx_expiry (expires_at)
 );
 ```
 
-Three fields carry more weight than they look like they do:
+Three columns carry more weight than they look like they do:
 
 - **`prompt_version`** — the system prompt's 9 few-shot examples are load-bearing
   (CLAUDE.md says so explicitly), and changing them changes verdicts. Without a
-  version column there is no way to answer "which findings were produced by the
-  prompt we no longer trust", and no way to invalidate them.
-- **`published`** — separates *what we computed* from *what we show*. The
-  precision gate (§1) is a filter on this column, which means the threshold can
-  be re-tuned without re-running inference.
+  version column there is no way to answer "which findings came from the prompt
+  we no longer trust", and no way to invalidate them.
+- **`published`** — separates *what we computed* from *what we show*. The §1
+  filter is a predicate on this column, which means the threshold can be
+  re-tuned without re-running any inference.
 - **`rationale`** — a suggestion that says "this citation may not support the
   claim" with no reasoning is unactionable, and the model's quoted-evidence
   comment is the most useful thing it produces.
 
-Adjacent-citation groups are already handled by
+Note `source_hash` rather than `source_url` in the unique key: the same source
+reached via a live URL and via a Wayback snapshot should not produce two
+findings. `core/worker.js` already falls back to Wayback transparently.
+
+Adjacent-citation groups are handled by
 `docs/design-plans/2026-06-23-collective-group-verification.md`: for a group,
 the **collective** verdict is the one to publish, not the per-source verdicts —
 that design exists precisely because per-source verdicts on grouped citations
-are misleading. `getReportUnits()` in `main.js` implements the merge and is the
+mislead. `getReportUnits()` in `main.js` implements the merge and is the
 reference for the semantics.
 
 ## 7. Coverage
 
-Not every citation is checkable, and the batch pipeline should be explicit about
-its denominator rather than treating "unchecked" as "fine":
+Not every citation is checkable, and the pipeline should be explicit about its
+denominator rather than treating "unchecked" as "fine":
 
 - **Google Books URLs are skipped outright** (`isGoogleBooksUrl`, `core/urls.js`).
 - **Offline sources** — books, journals, newspapers — have no URL. In the live
   tool the editor can upload a PDF or paste text (`handlePdfFileSelected`,
-  `loadManualSourceText`). There is no equivalent in batch, and no way to
-  invent one.
+  `loadManualSourceText`). There is no batch equivalent and no way to invent one.
 - **Paywalls, bot-blocks, and JS-rendered pages** fetch "successfully" and
-  return login walls or empty shells. The prompt has explicit guidance for
-  spotting unusable sources, which is why SOURCE UNAVAILABLE exists as a
-  verdict — but see §1.5: these are not suggestions.
+  return login walls or empty shells.
 
-Worth measuring before committing to a coverage estimate: run the pipeline over
-a few hundred articles and report what fraction of citations reach the LLM at
-all. My expectation is that it is well under half, and that is fine — but the
-Foundation should hear it as a number up front rather than discover it later.
+Combined with the conservative §1 filter, published findings will be a small
+fraction of citations examined. That is the intended trade, but the Foundation
+should hear the number up front rather than discover it later — so the first
+pilot run should report the funnel explicitly: citations seen → had a URL →
+fetched → verified → flagged → published.
 
 ## 8. Article selection
 
-Nothing exists here and it deserves thought, because it determines both cost and
-perceived quality. Options, roughly in increasing order of sophistication:
+With Wiki Replicas this is a query rather than a component. Roughly in
+increasing order of sophistication:
 
-- Articles already carrying `{{failed verification}}` / `{{citation needed}}`
-  — the highest prior, and a built-in ground-truth signal, since
-  `MAINTENANCE_MARKER_RE` in `core/claim.js` already detects them.
-- High-traffic articles (pageview API), where a fixed error rate does the most
-  damage.
-- Articles in WikiProject or campaign scope, if the Suggestions surface is
-  already organized that way.
+- Pages transcluding `{{Failed verification}}` / `{{Citation needed}}` — highest
+  prior, and a built-in ground-truth signal, since `MAINTENANCE_MARKER_RE` in
+  `core/claim.js` already detects those markers in the extracted claim.
+- High-traffic articles (pageviews come from the Analytics API, not Replicas),
+  where a fixed error rate does the most damage.
+- WikiProject or campaign scope, if the Suggestions surface is organized that
+  way.
 - Recently-edited articles, where a new unsourced claim is freshest.
 
-The cheapest useful thing to build first is a queue table with a priority
-column and a manual seed list.
+The cheapest useful first version is a queue table with a priority column, fed
+by the first of these.
 
 ## 9. The feedback loop is the real prize
 
 If a suggestion card carries accept/reject, every interaction becomes a labeled
 example — exactly the data `Benchmarking_data_Citations.csv` is painstakingly
-hand-built from today (189 rows, and a documented history of ground-truth
+hand-built from today (189 rows, with a documented history of ground-truth
 audits). At Foundation scale this would produce more labeled data in a week
 than the project has accumulated in a year.
 
-That argues for designing the feedback capture **into the first version**, not
-bolting it on: store the finding id, the editor's action, and — optionally, if
-the surface allows it — a reason. Feed it back into the benchmark dataset via
-the existing tooling. The `submission.js` Google-Form path is the current
-mechanism and is fine for volunteers, but a Foundation integration should write
-straight to the store.
+That argues for designing feedback capture **into the first version**. The
+`submission.js` Google-Form path is fine for volunteers; a Foundation
+integration should write straight to the store.
 
-One caution: this feedback is not the same as the current ground truth. Editors
-reject suggestions for reasons unrelated to correctness (already fixed, not
-worth it, disagree with the tag). Reject-rate is a usefulness metric; treat it
+One caution: this feedback is not the same as ground truth. Editors reject
+suggestions for reasons unrelated to correctness (already fixed, not worth it,
+disagree with the underlying tag). Reject-rate is a usefulness metric; treat it
 as a proxy for precision only after auditing a sample.
 
 ## 10. Governance
 
-Flagging sourcing problems at scale is a community-facing act, not just an
-engineering one. Things that will come up, best raised early:
-
 - **Per-wiki scope.** The prompt is English and its few-shot examples are tuned
   on English Wikipedia. The UI is localized (fr/es) but the prompts deliberately
-  are not, and `localizeSystemPrompt()` only asks for output in another
-  language. Extending to other wikis means new benchmark data per wiki, not just
-  translation.
-- **Attribution and transparency.** Editors should be able to see which model
-  produced a suggestion and when — the schema above supports it; the card
-  should surface it.
+  are not — `localizeSystemPrompt()` only asks for output in another language.
+  Extending to other wikis means new benchmark data per wiki, not translation.
+- **Attribution and transparency.** Editors should see which model produced a
+  suggestion and when. The schema supports it; the card should surface it.
 - **Opt-out.** Some projects will want none of this.
-- **No automated edits.** Suggestions only. This should be stated explicitly
-  somewhere durable.
+- **No automated edits.** Suggestions only, stated somewhere durable.
+- **Toolforge terms.** Code must benefit the movement and be openly licensed —
+  both already true.
 
 ## Suggested phasing
 
-1. **Measure.** Add flag-precision/recall + threshold curves to
-   `analyze_results.js`. Decide whether a confidence gate or an ensemble gets
-   precision to a defensible number. Nothing else matters until this lands.
-2. **Extract the orchestration.** Pull the article-level loop out of
-   `verifyAllCitations()` into `core/`, and add a `ccs verify-article` CLI
-   subcommand on top of it. This is useful on its own and is the batch runner's
-   engine.
-3. **Anchor.** Add claim-hash computation to `core/claim.js` (with tests) and
-   the resolution routine that maps a stored finding onto current article text.
-4. **Store.** `citation_findings` schema, authenticated write path, cost
-   accounting.
-5. **Harden the proxy.** Durable fetch cache, per-host politeness, 413 chunking,
-   402 halt-and-alert, service auth.
-6. **Serve.** Read API with the published-only filter and read-time resolution.
-7. **Close the loop.** Feedback ingestion into the benchmark dataset.
+1. **Clear the crawling question with WMCS.** Blocking, and it is an email, not
+   an engineering task. Everything else assumes the answer.
+2. **Measure the filter.** Flag-class precision, confidence-threshold curve, and
+   contradiction-vs-omission breakdown in `analyze_results.js`. This is what
+   sets the §1 threshold.
+3. **Extract the orchestration.** Pull the article-level loop out of
+   `verifyAllCitations()` into `core/`, add a transport seam to
+   `core/worker.js`, and expose it as a `ccs verify-article` subcommand. Useful
+   on its own, and it is the batch runner's engine.
+4. **Anchor.** Claim-hash computation in `core/claim.js` (with tests), plus the
+   resolution routine that maps a stored finding onto current article text.
+5. **Stand up the tool.** Toolforge tool account, buildpack deploy, ToolsDB
+   schema, a scheduled job over a hand-seeded article list, Lift Wing as
+   provider. Report the §7 funnel from the first run.
+6. **Serve.** Web service exposing published findings, with read-time claim
+   resolution.
+7. **Close the loop.** Feedback ingestion back into the benchmark dataset.
 
-Steps 1–3 are worth doing regardless of whether the Foundation integration
-happens — they improve the existing tool. Step 1 is the one that decides whether
-the rest is worth building.
+Steps 2–4 are worth doing regardless of whether the Foundation integration
+happens — they improve the existing tool and the CLI.
 
 ## Open questions for the Foundation
 
-1. Who hosts inference and the fetch proxy? Lift Wing for inference is the
-   obvious answer; the fetch side has no obvious home.
-2. Does the Suggestions surface resolve claim text to a wikitext location, or
-   must we hand over a wikitext offset?
-3. What precision bar does the Suggestions queue require? There is presumably a
-   number other suggestion types are held to.
-4. Which wikis, and what is the expected article volume? This sets the cost
-   envelope.
-5. Does the card surface accept/reject, and can that signal be exported back?
+1. **Is unattended crawling of third-party publisher URLs from Toolforge
+   acceptable to WMCS?** (§5 — blocking.)
+2. Can Lift Wing serve this volume, and which models? It removes the billing
+   and vendor questions entirely if so.
+3. Does the Suggestions surface resolve claim text to a wikitext location, or
+   must we hand over a wikitext offset? (§2.)
+4. Toolforge is best-effort with no SLA. Can a production Edit Suggestions
+   surface read from a Toolforge API, or does the data need to be exported into
+   a production store — and if so, who owns that hop?
+5. What precision bar does the Suggestions queue hold other suggestion types to?
+6. Which wikis, and what article volume? This sets the throughput target.
+7. Does the card surface accept/reject, and can that signal come back to us?
