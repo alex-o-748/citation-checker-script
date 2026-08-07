@@ -31,6 +31,65 @@ them:
 | **Cost of a wrong answer** | Editor reads the rationale, disagrees, closes the panel | A suggestion is pushed at an editor who did not ask for it |
 | **What identifies a finding** | The `[14]` on screen, right now | A row in a database that must still point at the right claim after the article has been edited |
 
+## Architecture at a glance
+
+Almost every component sits inside Wikimedia infrastructure — the article text,
+the article selection, the model, the database, the reader. Exactly one edge
+leaves it, and that edge is the prerequisite in §5.
+
+```mermaid
+flowchart TB
+  subgraph WEB["the open web"]
+    PUB["Publisher and archive sites"]
+  end
+
+  subgraph WMF["Wikimedia infrastructure"]
+    subgraph SVC["WMF services"]
+      REP[("Wiki Replicas")]
+      REST["Wikipedia REST / Parsoid"]
+      LW["Lift Wing"]
+    end
+
+    subgraph TF["Toolforge tool"]
+      SEL["1 - Select articles"]
+      EXT["2 - Extract claims"]
+      FET["3 - Fetch sources"]
+      VER["4 - Verify"]
+      DB[("5 - Findings, ToolsDB")]
+      API["6 - Publish and serve"]
+    end
+
+    ED["Edit Suggestions surface"]
+  end
+
+  REP -->|candidate pages, page_latest| SEL
+  SEL --> EXT
+  REST -->|article HTML at oldid| EXT
+  EXT --> FET
+  FET ==>|GET source URL - the only crossing| PUB
+  FET --> VER
+  VER -->|claim plus source| LW
+  LW -->|verdict| VER
+  VER --> DB
+  DB --> API
+  API -->|published findings only| ED
+  ED -->|accept / reject| API
+```
+
+| Stage | Does | Reuses |
+| --- | --- | --- |
+| 1 Select | Wiki Replicas query for pages carrying `{{Failed verification}}` / `{{Citation needed}}`; writes a priority queue | — (new) |
+| 2 Extract | Parsoid HTML at a pinned `oldid` → claim per citation, adjacent-group detection | `core/claim.js`, `core/urls.js` |
+| 3 Fetch | Cited URL → readable text, Wayback fallback, content-addressed cache | `core/worker.js` (needs a transport seam, §5) |
+| 4 Verify | One model call per claim → verdict, confidence, rationale | `core/prompts.js`, `core/providers.js`, `core/parsing.js` |
+| 5 Store | Row keyed on a claim-text hash, not the citation number (§2) | — (new) |
+| 6 Serve | Narrow publication filter (§1) + read-time claim re-resolution (§3) | — (new) |
+
+The live userscript path is unchanged and runs in parallel: browser → Cloudflare
+Worker → source and LLM. Both paths consume the same `core/` modules, the
+userscript via `scripts/sync-main.js` inlining and the batch runner by importing
+them directly.
+
 ## 1. Precision: publish conservatively, measure the threshold
 
 **Decision (maintainer):** ship a deliberately narrow filter rather than
