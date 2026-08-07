@@ -462,28 +462,153 @@ as a proxy for precision only after auditing a sample.
 - **Toolforge terms.** Code must benefit the movement and be openly licensed —
   both already true.
 
-## Suggested phasing
+## Build sequence
 
-1. **Clear the crawling question with WMCS.** Blocking, and it is an email, not
-   an engineering task. Everything else assumes the answer.
-2. **Measure the filter.** Flag-class precision, confidence-threshold curve, and
-   contradiction-vs-omission breakdown in `analyze_results.js`. This is what
-   sets the §1 threshold.
-3. **Extract the orchestration.** Pull the article-level loop out of
-   `verifyAllCitations()` into `core/`, add a transport seam to
-   `core/worker.js`, and expose it as a `ccs verify-article` subcommand. Useful
-   on its own, and it is the batch runner's engine.
-4. **Anchor.** Claim-hash computation in `core/claim.js` (with tests), plus the
-   resolution routine that maps a stored finding onto current article text.
-5. **Stand up the tool.** Toolforge tool account, buildpack deploy, ToolsDB
-   schema, a scheduled job over a hand-seeded article list, Lift Wing as
-   provider. Report the §7 funnel from the first run.
-6. **Serve.** Web service exposing published findings, with read-time claim
-   resolution.
-7. **Close the loop.** Feedback ingestion back into the benchmark dataset.
+The ordering principle: **answer the cheap questions with code that already
+exists, do the low-regret refactors while waiting on external answers, and
+build platform-specific infrastructure last** — because the schema and the API
+shape both depend on answers that are not in yet.
 
-Steps 2–4 are worth doing regardless of whether the Foundation integration
-happens — they improve the existing tool and the CLI.
+Three tracks run in parallel up to a go/no-go, then the work becomes serial.
+
+```mermaid
+flowchart TB
+  subgraph A["Track A - external lead time, start on day one"]
+    A1["Phabricator task: egress question to WMCS"]
+    A2["Lift Wing capacity and access"]
+    A3["Tool account + hello-world deploy"]
+  end
+
+  subgraph B["Track B - measure with existing code"]
+    B1["Flag-class precision + threshold curve"]
+    B2["Funnel run over ~50 articles"]
+  end
+
+  subgraph C["Track C - low-regret refactors"]
+    C1["Article orchestration into core/"]
+    C2["Fetch transport seam"]
+    C3["ccs verify-article"]
+    C4["Claim hash + resolution"]
+  end
+
+  GATE{"Go / no-go"}
+
+  A1 --> GATE
+  A2 --> GATE
+  B1 --> GATE
+  B2 --> GATE
+  C1 --> C3
+  C2 --> C3
+
+  GATE --> D1["ToolsDB schema + write path"]
+  A3 --> D2["Scheduled job on Toolforge"]
+  C3 --> D2
+  C4 --> D1
+  D1 --> D3["Selection query + work queue"]
+  D2 --> D3
+  D3 --> D4["Pilot run, report the funnel"]
+  D4 --> E1["Read API or export job"]
+  E1 --> E2["Feedback ingestion"]
+```
+
+### Track A — external lead time (day one, not engineering)
+
+Latency, not effort. All three should be in flight before any code is written,
+because none of them are things we can hurry.
+
+1. **The egress question to WMCS** (§5). A Phabricator task under
+   Cloud-Services, with the traffic shape and the mitigations already named.
+2. **Lift Wing access and capacity.** Determines whether there is a billing
+   conversation at all.
+3. **Toolforge tool account, plus a trivial deploy.** Membership approval takes
+   up to a week. Deploying a hello-world Node service immediately afterwards is
+   half a day and shakes out buildpack, Node version, and envvar surprises long
+   before they can block anything real.
+
+### Track B — measure before committing (existing code, ~days)
+
+The two genuine unknowns are measurement questions, not engineering ones, and
+both can be answered with what is already in the repo.
+
+4. **Flag-class precision, threshold curve, `reason_type` breakdown** in
+   `analyze_results.js`. Pure analysis over the `results.json` that already
+   exists — no new inference, no new data. Output: the §1 threshold, or the
+   discovery that confidence doesn't discriminate and the filter has to be an
+   ensemble instead.
+5. **The funnel, over ~50 real articles.** This one cannot come from the
+   benchmark: `dataset.json` is pre-filtered to citations whose sources were
+   fetchable, which is exactly the number we need to measure. So it needs a
+   throwaway script over `cli/verify.js`'s machinery, counting citations seen →
+   had a URL → fetched → verified → flagged → published.
+
+   At 50 articles from a laptop this is indistinguishable from an editor using
+   the tool, so it needs no permission and does not wait on Track A. And it is
+   deliberately a throwaway rather than waiting for step 6 to build it properly
+   — the go/no-go answer should not be gated on refactoring the most-used code
+   path in the shipped userscript.
+
+### Track C — low-regret refactors (worth doing either way)
+
+These improve the existing userscript and CLI whether or not the Foundation
+integration happens, and they are the batch runner's engine.
+
+6. **Extract the article-level orchestration** out of `verifyAllCitations()`
+   into `core/` — source cache, collective group pass, retry loop, progress
+   callbacks — leaving `main.js` as a thin UI adapter. This touches the
+   userscript's most-used path, so it should be a pure refactor with no
+   behavior change, verified by running the benchmark before and after:
+   `ccs compare` with `--change-axis` exists precisely to prove a change didn't
+   move verdicts.
+7. **Transport seam in `core/worker.js`** — proxy transport for the browser,
+   direct transport for Node, one `{ content, error, status }` contract.
+8. **`ccs verify-article <url>`** on top of 6 and 7. Independently useful, and
+   from here the batch runner is a loop around a CLI that already works.
+9. **Claim hashing and resolution** in `core/claim.js` (§2): normalize, hash,
+   and the routine that locates a stored claim in a current article or fails
+   cleanly. Pure logic, testable offline, and the thing the schema depends on —
+   which is why it comes before any table is created.
+
+### The gate
+
+Proceed when: WMCS has answered on egress, step 4 has produced a threshold that
+holds, and step 5 says coverage is high enough to be worth serving. A bad
+answer on any of the three changes what gets built rather than merely delaying
+it, which is the whole reason they sit before the infrastructure.
+
+### Then, serially
+
+10. **ToolsDB schema and write path** (§6) — informed by step 9's anchor format
+    and step 4's filter fields.
+11. **Selection query and work queue** (§8) — Wiki Replicas SQL, seeded from
+    maintenance templates.
+12. **The scheduled job**, wrapping step 8's runner, writing findings, halting
+    on auth/billing errors rather than draining the queue into failures.
+13. **Pilot run** over a hand-seeded list. Report the §7 funnel from real
+    infrastructure — this is the number the Foundation will want, measured
+    rather than estimated.
+14. **Serve.** Whether this is a read API or a periodic export depends on the
+    answer to open question 4 below; do not build it before that answer arrives,
+    because the two are different amounts of work.
+15. **Feedback ingestion** (§9), gated on whether the card exposes accept/reject
+    at all.
+
+### Deliberately not early
+
+- **The schema**, before step 9 fixes the anchor format.
+- **Wikitext offset mapping**, before open question 3 is answered — it is either
+  unnecessary or a substantial component, and we don't yet know which.
+- **Chunking oversized sources.** That was a limitation of the proxy's request
+  cap, and it disappears when the batch path fetches directly (§5).
+- **Multi-wiki anything.** The prompt's worked examples are tuned on English
+  Wikipedia; a second wiki needs its own benchmark data, not a translation.
+- **Feedback ingestion**, before knowing the card exposes it.
+
+### The critical path
+
+Track A → gate → steps 10–14. Tracks B and C are off the critical path
+entirely, which is the argument for starting all three on the same day: if
+WMCS takes three weeks, that time is spent on work that has standalone value,
+and if the answer comes back no, the only thing lost is Track A.
 
 ## Open questions for the Foundation
 
