@@ -1,4 +1,4 @@
-// {{Wikipedia:USync |repo=https://github.com/alex-o-748/citation-checker-script |ref=refs/heads/dev|path=main.js}}
+// {{Wikipedia:USync |repo=https://github.com/alex-o-748/citation-checker-script |ref=refs/heads/main|path=main.js}}
 //Inspired by User:Polygnotus/Scripts/AI_Source_Verification.js
 //Inspired by User:Phlsph7/SourceVerificationAIAssistant.js      
 
@@ -1503,30 +1503,25 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
     // ========================================
     // UI LOCALIZATION (i18n)
     // ========================================
-    // The interface is English by default. When the script runs on a French
-    // wiki (wgContentLanguage === 'fr'), user-facing strings are shown in
-    // French. Only the on-screen UI, notifications, dialogs and report output
-    // are localized — the LLM prompts (in core/prompts.js) stay in English by
-    // design, since the few-shot examples are tuned against the benchmark.
+    // The interface is English by default. When the script runs on a wiki whose
+    // language has a message table below (French, Spanish), user-facing strings
+    // are shown in that language. Only the on-screen UI, notifications, dialogs
+    // and report output are localized — the LLM prompts (in core/prompts.js)
+    // stay in English by design, since the few-shot examples are tuned against
+    // the benchmark.
     //
     // Strings are keyed by their English source text: `this.t('Verify Claim')`.
-    // FR_MESSAGES supplies the French override; a missing key falls back to the
-    // English key itself, so untranslated strings degrade gracefully. Use
+    // The per-language table supplies the override; a missing key falls back to
+    // the English key itself, so untranslated strings degrade gracefully. Use
     // `{name}`-style placeholders for interpolation: t('Set {name} API Key', {name}).
-    function detectUiLang() {
-        try {
-            if (typeof mw !== 'undefined') {
-                const lang = mw.config.get('wgContentLanguage')
-                    || mw.config.get('wgUserLanguage') || 'en';
-                if (String(lang).toLowerCase().startsWith('fr')) return 'fr';
-            }
-        } catch (e) { /* non-MediaWiki context: keep English */ }
-        return 'en';
-    }
+    //
+    // Adding a language: write its table, register it in MESSAGES, and add its
+    // name to PROMPT_LANGUAGES so verdict comments come back in that language
+    // too. detectUiLang() picks it up automatically — no other wiring.
+    // `tests/i18n.test.js` fails if a table drifts out of parity with French.
 
     const FR_MESSAGES = {
         // Sidebar structure
-        'Source Verifier': 'Vérificateur de sources',
         'Selected Claim': 'Affirmation sélectionnée',
         'Click on a reference number [1] next to a claim to verify it against its source.':
             'Cliquez sur un numéro de référence [1] à côté d’une affirmation pour la vérifier par rapport à sa source.',
@@ -1551,8 +1546,8 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
         'Stop': 'Arrêter',
         'Back to Report': 'Retour au rapport',
         'Save': 'Enregistrer',
-        'Give feedback': 'Donner un avis',
-
+        'Give feedback': 'Signaler un problème',
+      
         // Feedback controls
         'Was this right?': 'Est-ce correct ?',
         'Yes': 'Oui',
@@ -1570,7 +1565,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
         // Provider info
         '✓ Using your {name} API key': '✓ Utilisation de votre clé API {name}',
         '✓ Free to use. Optional: ': '✓ Gratuit. Facultatif : ',
-        'add your {name} API key': 'ajouter votre clé API {name}',
+        'add your {name} API key': 'ajoutez votre clé API {name}',
         '✓ Free to use': '✓ Gratuit',
         'API key configured for {name}': 'Clé API configurée pour {name}',
         'API key required for {name}': 'Clé API requise pour {name}',
@@ -1615,19 +1610,22 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
         'Partial': 'Partielle',
         'Not Supported': 'Non confirmée',
         'Unavailable': 'Indisponible',
+        // Reason tag on a 'not supported' verdict
+        'Contradiction': 'Contradiction',
+        'Omission': 'Omission',
 
         // Report progress
         'Checking citation [{num}]': 'Vérification de la citation [{num}]',
         'Fetching source for [{num}]': 'Récupération de la source pour [{num}]',
         'Verifying citation [{num}]': 'Analyse de la citation [{num}]',
         'Rate limited, retrying in {secs}s...':
-            'Limite de débit atteinte, nouvelle tentative dans {secs}s…',
+            'Limite de débit atteinte, nouvelle tentative dans {secs} s…',
         'Checking combined sources {token}': 'Vérification des sources combinées {token}',
         'Completed: {count} citations checked': 'Terminé : {count} citations vérifiées',
         'Completed: {count} citation checked': 'Terminé : {count} citation vérifiée',
         'Cancelled after {done} of {total} citations': 'Annulé après {done} sur {total} citations',
         'Cancelled after {done} of {total} citation': 'Annulé après {done} sur {total} citation',
-        ' · ~{duration} remaining': ' · ~{duration} restant',
+        ' · ~{duration} remaining': ' · ~{duration} restant(e)(s)',
 
         // Report summary
         'supported': 'confirmées',
@@ -1658,7 +1656,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
         'Individual sources': 'Sources individuelles',
         'Combined verdict': 'Verdict combiné',
         'All citations are hidden by the current filters. Click a filter chip above to show them.':
-            'Toutes les citations sont masquées par les filtres actuels. Cliquez sur une puce de filtre ci-dessus pour les afficher.',
+            'Toutes les citations sont masquées par les filtres actuels. Cliquez sur un filtre ci-dessus pour les afficher.',
 
         // Notifications / dialogs
         'Report copied to clipboard!': 'Rapport copié dans le presse-papiers !',
@@ -1685,26 +1683,26 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
         'Could not fetch source content': 'Impossible de récupérer le contenu de la source',
 
         // Exported reports (wikitext + plain text)
-        'Submit': 'Soumettre',
+        'Submit': 'Signaler',
         'Citation verification report': 'Rapport de vérification des citations',
         'This is an experimental check of the article sources by [[User:Alaexis/AI_Source_Verification|Citation Verifier]]. Treat it with caution, be aware of its [[User:Alaexis/AI_Source_Verification#Limitations|limitations]] and feel free to leave feedback at [[User_talk:Alaexis/AI_Source_Verification|the talk page]].':
-            'Ceci est une vérification expérimentale des sources de l’article par [[User:Alaexis/AI_Source_Verification|Citation Verifier]]. À prendre avec précaution : tenez compte de ses [[User:Alaexis/AI_Source_Verification#Limitations|limites]] et n’hésitez pas à laisser un retour sur [[User_talk:Alaexis/AI_Source_Verification|la page de discussion]].',
+            'Ceci est une vérification expérimentale des sources de l’article par [[:en:User:Alaexis/AI_Source_Verification|Citation Verifier]]. Les résultats sont à prendre avec précaution : tenez compte de ses [[:en:User:Alaexis/AI_Source_Verification#Limitations|limites]] et n’hésitez pas à laisser un retour sur [[:en:User_talk:Alaexis/AI_Source_Verification|la page de discussion de l’outil]].',
         'Revision checked: ': 'Révision vérifiée : ',
         '! # !! Verdict !! Source !! Comments !! class="unsortable" | Submit':
-            '! # !! Verdict !! Source !! Commentaires !! class="unsortable" | Soumettre',
+            '! # !! Verdict !! Source !! Commentaires !! class="unsortable" | Signaler',
         '! # !! Verdict !! Source !! Comments':
             '! # !! Verdict !! Source !! Commentaires',
-        '{{tick}} Supported': '{{tick}} Confirmée',
-        '{{bang}} Partially supported': '{{bang}} Partiellement confirmée',
-        '{{cross}} Not supported': '{{cross}} Non confirmée',
-        '{{hmmm}} Source unavailable': '{{hmmm}} Source indisponible',
+        '{{tick}} Supported': '{{Oui-}} Confirmée',
+        '{{bang}} Partially supported': 'Partiellement confirmée',
+        '{{cross}} Not supported': '{{Non-}} Non confirmée',
+        '{{hmmm}} Source unavailable': 'Source indisponible',
         "''(Combined sources are long, only partially checked.)''":
             "''(Sources combinées longues, vérifiées partiellement seulement.)''",
         "''(Source is long, only partially checked.)''":
             "''(Source longue, vérifiée partiellement seulement.)''",
-        '(combined)': '(combiné)',
+        '(combined)': '(combinées)',
         "'''Summary:''' {supported} supported, {partial} partially supported, {notSupported} not supported, {unavailable} source unavailable out of {claims}.":
-            "'''Résumé :''' {supported} confirmées, {partial} partiellement confirmées, {notSupported} non confirmées, {unavailable} source indisponible sur {claims}.",
+            "'''Résumé :''' {supported} confirmées, {partial} partiellement confirmées, {notSupported} non confirmées, {unavailable} sources indisponibles sur {claims}.",
         '{count} citations': '{count} citations',
         '{count} citation': '{count} citation',
         '{claims} claims ({citations} citations)': '{claims} affirmations ({citations} citations)',
@@ -1712,8 +1710,10 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
         'a PublicAI-hosted open-source LLM': 'un LLM open source hébergé par PublicAI',
         'a HuggingFace-hosted open-source LLM ({model})':
             'un LLM open source hébergé par HuggingFace ({model})',
+        'a Wikimedia Lift Wing-hosted open-source LLM ({model})':
+            'un LLM open source hébergé par Wikimedia Lift Wing ({model})',
         'Generated by [[User:Alaexis/AI_Source_Verification|Citation Verifier]] using {model} on ~~~~~.':
-            'Généré par [[User:Alaexis/AI_Source_Verification|Citation Verifier]] avec {model} le ~~~~~.',
+            'Généré par [[:en:User:Alaexis/AI_Source_Verification|Citation Verifier]] avec {model} le ~~~~~.',
         ' Tokens used: {input} input, {output} output.':
             ' Jetons utilisés : {input} en entrée, {output} en sortie.',
         'Citation Verification Report: {title}': 'Rapport de vérification des citations : {title}',
@@ -1755,11 +1755,357 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
         'How accurate is this?': 'Quelle est la fiabilité de cet outil ?',
         'Measured against 186 human-labelled citations, a "not supported" flag was confirmed by a reviewer roughly two thirds of the time. Treat every verdict as a reason to read the source, not as a conclusion.':
             'Sur 186 citations annotées par des humains, un signalement « non confirmée » a été validé par un relecteur dans environ deux tiers des cas. Considérez chaque verdict comme une raison de lire la source, et non comme une conclusion.',
+
+        // Status strip
+        'Could not extract claim text': 'Impossible d’extraire le texte de l’affirmation',
+        'No URL found in reference. Please paste the source text below.':
+            'Aucune URL trouvée dans la référence. Veuillez coller le texte de la source ci-dessous.',
+        'Google Books sources cannot be fetched. Please paste the source text below.':
+            'Les sources Google Books ne peuvent pas être récupérées. Veuillez coller le texte de la source ci-dessous.',
+        'Fetching source content...': 'Récupération du contenu de la source…',
+        'Could not fetch source{status}{reason}. Please paste the source text below.':
+            'Impossible de récupérer la source{status}{reason}. Veuillez coller le texte de la source ci-dessous.',
+        'Source fetched. Ready to verify.': 'Source récupérée. Prêt à vérifier.',
+        'Ready to verify claim against source': 'Prêt à vérifier l’affirmation par rapport à la source',
+        'Error: {message}': 'Erreur : {message}',
+        'Please enter some source text': 'Veuillez saisir un texte de source',
+        'Source text loaded (trimmed to {count} characters). Ready to verify.':
+            'Texte de la source chargé (tronqué à {count} caractères). Prêt à vérifier.',
+        'Source text loaded. Ready to verify.': 'Texte de la source chargé. Prêt à vérifier.',
+        'Cancelled': 'Annulé',
+        'Please choose a PDF file.': 'Veuillez choisir un fichier PDF.',
+        'Reading {name}…': 'Lecture de {name}…',
+        'This PDF has no selectable text (it looks scanned). Please paste the relevant passage instead.':
+            'Ce PDF ne contient pas de texte sélectionnable (il semble numérisé). Veuillez plutôt coller le passage concerné.',
+        'Loaded text from {name}. Ready to verify.': 'Texte chargé depuis {name}. Prêt à vérifier.',
+        'Could not read that PDF: {message}. Try pasting the text instead.':
+            'Impossible de lire ce PDF : {message}. Essayez plutôt de coller le texte.',
+        'Switched to {name}': 'Basculé vers {name}',
+        'Paste replacement source text below, then click Load Text.':
+            'Collez le texte de remplacement ci-dessous, puis cliquez sur « Charger le texte ».',
+        'This provider does not require an API key.': 'Ce fournisseur ne nécessite pas de clé API.',
+        'API key set successfully!': 'Clé API enregistrée !',
+        'This provider does not use a stored API key.': 'Ce fournisseur n’utilise pas de clé API enregistrée.',
+        'API key removed successfully!': 'Clé API supprimée !',
+        'Missing API key (for this provider), claim, or source content':
+            'Clé API (pour ce fournisseur), affirmation ou contenu de la source manquant',
+        'Verifying claim against source...': 'Vérification de l’affirmation par rapport à la source…',
+        'Verification complete!': 'Vérification terminée !',
+
+        // Pre-filled wiki edit summary
+        'source does not support claim (checked with [[User:Alaexis/AI_Source_Verification|Source Verifier]])':
+            'la source n’appuie pas l’affirmation (vérifié avec [[:en:User:Alaexis/AI_Source_Verification|Source Verifier]])',
     };
+
+    // Spanish. es.wikipedia's interface deliberately avoids addressing the
+    // reader in any second person, because tú/vos/usted all carry regional
+    // baggage. Two registers do the work, and the split matters: an *action
+    // label* — button, link, menu item, input placeholder — takes a bare
+    // infinitive ("Subir archivo", "Buscar en Wikipedia"), but a *sentence* of
+    // running prose takes impersonal "se" ("Se puede hacer clic en…"), because
+    // a bare infinitive reads as a clipped fragment there. No tuteo, no
+    // possessive "tu", and «angle quotes» over "".
+    const ES_MESSAGES = {
+        // Sidebar structure
+        'Source Verifier': 'Verificador de fuentes',
+        'Selected Claim': 'Afirmación seleccionada',
+        'Click on a reference number [1] next to a claim to verify it against its source.':
+            'Se puede hacer clic en un número de referencia [1] junto a una afirmación para verificarla con su fuente.',
+        'Source Content': 'Contenido de la fuente',
+        'No source loaded yet.': 'Todavía no se ha cargado ninguna fuente.',
+        'Verification Result': 'Resultado de la verificación',
+
+        // Buttons and inputs
+        'Close': 'Cerrar',
+        'Set API Key': 'Configurar la clave API',
+        'Verify Claim': 'Verificar la afirmación',
+        'Verifying...': 'Verificando…',
+        'Change Key': 'Cambiar la clave',
+        'Remove API Key': 'Eliminar la clave API',
+        'Paste the source text here...': 'Pegar aquí el texto de la fuente…',
+        'Load Text': 'Cargar el texto',
+        'Cancel': 'Cancelar',
+        'Paste source text manually': 'Pegar el texto de la fuente manualmente',
+        'Replace the fetched source content with text you paste in (e.g., the full article from The Wikipedia Library)':
+            'Sustituir el contenido obtenido de la fuente por un texto pegado manualmente (por ejemplo, el artículo completo de la Biblioteca de Wikipedia)',
+        'Verify All Citations': 'Verificar todas las citas',
+        'Stop': 'Detener',
+        'Back to Report': 'Volver al informe',
+        'Save': 'Guardar',
+        'Give feedback': 'Enviar comentarios',
+        'Edit Section': 'Editar la sección',
+        'Copy Report (Wikitext)': 'Copiar el informe (wikitexto)',
+        'Copy Report (Plain Text)': 'Copiar el informe (texto plano)',
+
+        // Provider info
+        '✓ Using your {name} API key': '✓ Usando la clave API de {name}',
+        '✓ Free to use. Optional: ': '✓ Uso gratuito. Opcional: ',
+        'add your {name} API key': 'añadir una clave API de {name}',
+        '✓ Free to use': '✓ Uso gratuito',
+        'API key configured for {name}': 'Clave API configurada para {name}',
+        'API key required for {name}': 'Se necesita una clave API para {name}',
+        'Results are logged for research. Your username is not recorded.':
+            'Los resultados se registran con fines de investigación. El nombre de usuario no se registra.',
+
+        // Verifier tab + first-run notification
+        'Verify': 'Verificar',
+        'Verify claims against sources': 'Verificar afirmaciones con sus fuentes',
+        'Citation Verifier': 'Verificador de citas',
+        'Citation Verifier installed — click the ':
+            'Verificador de citas instalado: la pestaña ',
+        ' tab to get started.': ' permite empezar.',
+
+        // Source display
+        '✓ PDF content extracted{pageInfo}': '✓ Contenido del PDF extraído{pageInfo}',
+        ' (page {page} of {total})': ' (página {page} de {total})',
+        ' ({pages} pages)': ' ({pages} páginas)',
+        '✓ Content fetched successfully': '✓ Contenido obtenido correctamente',
+        'Content will be fetched by AI during verification.':
+            'La IA obtendrá el contenido durante la verificación.',
+        '⚠ The source is long and can only be checked partially.':
+            '⚠ La fuente es extensa y solo puede comprobarse parcialmente.',
+        'Source URL:': 'URL de la fuente:',
+        'No URL found. Please paste the source text below:':
+            'No se ha encontrado ninguna URL; el texto de la fuente puede pegarse a continuación:',
+        'Manual Source Text:': 'Texto de la fuente introducido manualmente:',
+        'No source loaded.': 'No hay ninguna fuente cargada.',
+        'Click "Verify Claim" to verify the selected claim against the source.':
+            'Al hacer clic en «Verificar la afirmación» se comprueba la afirmación seleccionada con la fuente.',
+        'Part of a group of {count} citations: {numbers}':
+            'Forma parte de un grupo de {count} citas: {numbers}',
+
+        // Verdicts (full, shown for a single verification)
+        'SUPPORTED': 'RESPALDADA',
+        'PARTIALLY SUPPORTED': 'PARCIALMENTE RESPALDADA',
+        'NOT SUPPORTED': 'NO RESPALDADA',
+        'SOURCE UNAVAILABLE': 'FUENTE NO DISPONIBLE',
+        'ERROR': 'ERROR',
+        // Verdicts (short, shown on report cards/chips)
+        'Supported': 'Respaldada',
+        'Partial': 'Parcial',
+        'Not Supported': 'No respaldada',
+        'Unavailable': 'No disponible',
+        // Reason tag on a 'not supported' verdict
+        'Contradiction': 'Contradicción',
+        'Omission': 'Omisión',
+
+        // Report progress
+        'Checking citation [{num}]': 'Comprobando la cita [{num}]',
+        'Fetching source for [{num}]': 'Obteniendo la fuente de [{num}]',
+        'Verifying citation [{num}]': 'Verificando la cita [{num}]',
+        'Rate limited, retrying in {secs}s...':
+            'Límite de solicitudes alcanzado, reintentando en {secs} s…',
+        'Checking combined sources {token}': 'Comprobando las fuentes combinadas {token}',
+        'Completed: {count} citations checked': 'Completado: {count} citas comprobadas',
+        'Completed: {count} citation checked': 'Completado: {count} cita comprobada',
+        'Cancelled after {done} of {total} citations': 'Cancelado tras {done} de {total} citas',
+        'Cancelled after {done} of {total} citation': 'Cancelado tras {done} de {total} cita',
+        ' · ~{duration} remaining': ' · ~{duration} restante',
+
+        // Report summary
+        'supported': 'respaldadas',
+        'partial': 'parciales',
+        'not supported': 'no respaldadas',
+        'unavailable': 'no disponibles',
+        'errors': 'errores',
+        'Show {label} citations': 'Mostrar las citas «{label}»',
+        'Hide {label} citations': 'Ocultar las citas «{label}»',
+        '{count} citations checked': '{count} citas comprobadas',
+        '{count} citation checked': '{count} cita comprobada',
+        '{citations} citations across {claims} claims':
+            '{citations} citas repartidas en {claims} afirmaciones',
+        '{citations} citations across {claims} claim':
+            '{citations} citas repartidas en {claims} afirmación',
+        ' · {count} hidden by filter': ' · {count} ocultas por el filtro',
+        ' · {input} input + {output} output tokens':
+            ' · {input} tokens de entrada + {output} de salida',
+        'Revision: ': 'Revisión: ',
+
+        // Report cards / groups
+        '⚠ Source is long, only partially checked.':
+            '⚠ La fuente es extensa; solo se ha comprobado parcialmente.',
+        '⚠ Combined sources are long, only partially checked.':
+            '⚠ Las fuentes combinadas son extensas; solo se han comprobado parcialmente.',
+        'Group of {size} · {numbers}': 'Grupo de {size} · {numbers}',
+        'Checking combined sources…': 'Comprobando las fuentes combinadas…',
+        'Individual sources': 'Fuentes individuales',
+        'Combined verdict': 'Veredicto combinado',
+        'All citations are hidden by the current filters. Click a filter chip above to show them.':
+            'Los filtros actuales ocultan todas las citas. Se puede hacer clic en uno de los filtros de arriba para mostrarlas.',
+
+        // Notifications / dialogs
+        'Report copied to clipboard!': '¡Informe copiado al portapapeles!',
+        'No citations found on this page.': 'No se han encontrado citas en esta página.',
+        'Are you sure you want to remove the stored API key?':
+            '¿Eliminar la clave API guardada?',
+        'Enter your {name} API Key...': 'Introducir la clave API de {name}…',
+        'Set {name} API Key': 'Configurar la clave API de {name}',
+        'Enter your {name} API Key to enable source verification:':
+            'Se necesita la clave API de {name} para activar la verificación de fuentes:',
+        'This will verify {citations} citations from {sources} unique sources.{groupNote}\n\nEstimated time: ~{minutes} minutes.\n\nContinue?':
+            'Esto verificará {citations} citas procedentes de {sources} fuentes distintas.{groupNote}\n\nTiempo estimado: ~{minutes} minutos.\n\n¿Continuar?',
+        'This will verify {citations} citations from {sources} unique sources.{groupNote}\n\nEstimated time: ~{minutes} minute.\n\nContinue?':
+            'Esto verificará {citations} citas procedentes de {sources} fuentes distintas.{groupNote}\n\nTiempo estimado: ~{minutes} minuto.\n\n¿Continuar?',
+        '\n\nThis includes {count} combined-source checks for adjacent citation groups.':
+            '\n\nEsto incluye {count} comprobaciones de fuentes combinadas para grupos de citas adyacentes.',
+        '\n\nThis includes {count} combined-source check for adjacent citation groups.':
+            '\n\nEsto incluye {count} comprobación de fuentes combinadas para grupos de citas adyacentes.',
+
+        // Generated result comments
+        'No URL found in reference': 'No se ha encontrado ninguna URL en la referencia',
+        'None of the grouped sources could be retrieved.':
+            'No se ha podido obtener ninguna de las fuentes del grupo.',
+        'Could not fetch source content': 'No se ha podido obtener el contenido de la fuente',
+
+        // Exported reports (wikitext + plain text)
+        'Submit': 'Enviar',
+        'Citation verification report': 'Informe de verificación de citas',
+        'This is an experimental check of the article sources by [[User:Alaexis/AI_Source_Verification|Citation Verifier]]. Treat it with caution, be aware of its [[User:Alaexis/AI_Source_Verification#Limitations|limitations]] and feel free to leave feedback at [[User_talk:Alaexis/AI_Source_Verification|the talk page]].':
+            'Esta es una comprobación experimental de las fuentes del artículo hecha por [[:en:User:Alaexis/AI_Source_Verification|Citation Verifier]]. Conviene tomarla con cautela y tener en cuenta sus [[:en:User:Alaexis/AI_Source_Verification#Limitations|limitaciones]]; los comentarios son bienvenidos en [[:en:User_talk:Alaexis/AI_Source_Verification|la página de discusión]].',
+        'Revision checked: ': 'Revisión comprobada: ',
+        '! # !! Verdict !! Source !! Comments !! class="unsortable" | Submit':
+            '! # !! Veredicto !! Fuente !! Comentarios !! class="unsortable" | Enviar',
+        '! # !! Verdict !! Source !! Comments':
+            '! # !! Veredicto !! Fuente !! Comentarios',
+        '{{tick}} Supported': '{{tick}} Respaldada',
+        '{{bang}} Partially supported': '{{bang}} Parcialmente respaldada',
+        '{{cross}} Not supported': '{{cross}} No respaldada',
+        '{{hmmm}} Source unavailable': '{{hmmm}} Fuente no disponible',
+        "''(Combined sources are long, only partially checked.)''":
+            "''(Las fuentes combinadas son extensas; solo se han comprobado parcialmente.)''",
+        "''(Source is long, only partially checked.)''":
+            "''(La fuente es extensa; solo se ha comprobado parcialmente.)''",
+        '(combined)': '(combinada)',
+        // Link text for the source column of the wikitext table: [url source]
+        'source': 'fuente',
+        "'''Summary:''' {supported} supported, {partial} partially supported, {notSupported} not supported, {unavailable} source unavailable out of {claims}.":
+            "'''Resumen:''' {supported} respaldadas, {partial} parcialmente respaldadas, {notSupported} no respaldadas, {unavailable} con la fuente no disponible, de un total de {claims}.",
+        '{count} citations': '{count} citas',
+        '{count} citation': '{count} cita',
+        '{claims} claims ({citations} citations)': '{claims} afirmaciones ({citations} citas)',
+        '{claims} claim ({citations} citations)': '{claims} afirmación ({citations} citas)',
+        'a PublicAI-hosted open-source LLM': 'un LLM de código abierto alojado por PublicAI',
+        'a HuggingFace-hosted open-source LLM ({model})':
+            'un LLM de código abierto alojado por HuggingFace ({model})',
+        'Generated by [[User:Alaexis/AI_Source_Verification|Citation Verifier]] using {model} on ~~~~~.':
+            'Generado por [[:en:User:Alaexis/AI_Source_Verification|Citation Verifier]] con {model} el ~~~~~.',
+        ' Tokens used: {input} input, {output} output.':
+            ' Tokens utilizados: {input} de entrada, {output} de salida.',
+        'Citation Verification Report: {title}': 'Informe de verificación de citas: {title}',
+        'Provider: {name}': 'Proveedor: {name}',
+        'Revision: {rev}': 'Revisión: {rev}',
+        'Claim: {text}': 'Afirmación: {text}',
+        'Sources: {urls}': 'Fuentes: {urls}',
+        'Source: {url}': 'Fuente: {url}',
+        'Comments: {text}': 'Comentarios: {text}',
+        'Note: Combined sources are long, only partially checked.':
+            'Nota: Las fuentes combinadas son extensas; solo se han comprobado parcialmente.',
+        'Note: Source is long, only partially checked.':
+            'Nota: La fuente es extensa; solo se ha comprobado parcialmente.',
+        'Tokens used: {input} input, {output} output':
+            'Tokens utilizados: {input} de entrada, {output} de salida',
+        // Sidebar chrome and the state-driven panel
+        'Settings': 'Configuración',
+        'Done': 'Hecho',
+        'Open settings': 'Abrir la configuración',
+        'Upload PDF': 'Subir un PDF',
+        'or paste the text below': 'o pegar el texto a continuación',
+        'Click any citation number in the article to check whether its source actually supports the claim.':
+            'Se puede hacer clic en cualquier número de cita del artículo para comprobar si su fuente respalda realmente la afirmación.',
+        'Ready · free, no setup needed': 'Listo · gratuito, sin configuración',
+        'Ready · using your API key': 'Listo · con la clave API configurada',
+        'Add an API key in settings to start':
+            'Añadir una clave API en la configuración para empezar',
+        'Checking citations…': 'Comprobando las citas…',
+        'Model: {model}': 'Modelo: {model}',
+        // Verdict framing: the assessment is attributed, and each verdict says
+        // what the editor should do next.
+        'AI assessment': 'Evaluación de la IA',
+        'Read the source before changing the article — this is a machine reading, not a fact.':
+            'Conviene leer la fuente antes de modificar el artículo: es una lectura automática, no un hecho.',
+        'Spot-check the source yourself — this is a machine reading, not a fact.':
+            'Conviene comprobar la fuente personalmente: es una lectura automática, no un hecho.',
+        'The tool could not read this source. Try pasting the text or uploading a PDF.':
+            'La herramienta no ha podido leer esta fuente. Se puede pegar el texto o subir un PDF.',
+        'How accurate is this?': '¿Qué fiabilidad tiene?',
+        'Measured against 186 human-labelled citations, a "not supported" flag was confirmed by a reviewer roughly two thirds of the time. Treat every verdict as a reason to read the source, not as a conclusion.':
+            'Sobre 186 citas etiquetadas por personas, un aviso de «no respaldada» fue confirmado por un revisor en aproximadamente dos tercios de los casos. Conviene considerar cada veredicto como un motivo para leer la fuente, no como una conclusión.',
+
+        // Status strip
+        'Could not extract claim text': 'No se ha podido extraer el texto de la afirmación',
+        'No URL found in reference. Please paste the source text below.':
+            'No se ha encontrado ninguna URL en la referencia; el texto de la fuente puede pegarse a continuación.',
+        'Google Books sources cannot be fetched. Please paste the source text below.':
+            'Las fuentes de Google Books no se pueden obtener; el texto de la fuente puede pegarse a continuación.',
+        'Fetching source content...': 'Obteniendo el contenido de la fuente…',
+        'Could not fetch source{status}{reason}. Please paste the source text below.':
+            'No se ha podido obtener la fuente{status}{reason}; el texto de la fuente puede pegarse a continuación.',
+        'Source fetched. Ready to verify.': 'Fuente obtenida. Todo listo para verificar.',
+        'Ready to verify claim against source': 'Todo listo para verificar la afirmación con la fuente',
+        'Error: {message}': 'Error: {message}',
+        'Please enter some source text': 'Hace falta introducir el texto de la fuente',
+        'Source text loaded (trimmed to {count} characters). Ready to verify.':
+            'Texto de la fuente cargado (recortado a {count} caracteres). Todo listo para verificar.',
+        'Source text loaded. Ready to verify.': 'Texto de la fuente cargado. Todo listo para verificar.',
+        'Cancelled': 'Cancelado',
+        'Please choose a PDF file.': 'Hace falta elegir un archivo PDF.',
+        'Reading {name}…': 'Leyendo {name}…',
+        'This PDF has no selectable text (it looks scanned). Please paste the relevant passage instead.':
+            'Este PDF no tiene texto seleccionable (parece escaneado); conviene pegar el fragmento correspondiente.',
+        'Loaded text from {name}. Ready to verify.': 'Texto cargado desde {name}. Todo listo para verificar.',
+        'Could not read that PDF: {message}. Try pasting the text instead.':
+            'No se ha podido leer el PDF: {message}. Se puede pegar el texto en su lugar.',
+        'Switched to {name}': 'Se ha cambiado a {name}',
+        'Paste replacement source text below, then click Load Text.':
+            'El texto de sustitución puede pegarse a continuación y cargarse con «Cargar el texto».',
+        'This provider does not require an API key.': 'Este proveedor no necesita una clave API.',
+        'API key set successfully!': '¡Clave API guardada!',
+        'This provider does not use a stored API key.': 'Este proveedor no usa ninguna clave API guardada.',
+        'API key removed successfully!': '¡Clave API eliminada!',
+        'Missing API key (for this provider), claim, or source content':
+            'Falta la clave API (para este proveedor), la afirmación o el contenido de la fuente',
+        'Verifying claim against source...': 'Verificando la afirmación con la fuente…',
+        'Verification complete!': '¡Verificación completada!',
+
+        // Pre-filled wiki edit summary
+        'source does not support claim (checked with [[User:Alaexis/AI_Source_Verification|Source Verifier]])':
+            'la fuente no respalda la afirmación (comprobado con [[:en:User:Alaexis/AI_Source_Verification|Source Verifier]])',
+    };
+
+    // Registered UI languages, keyed by the MediaWiki language-code prefix that
+    // selects them. English is the absence of a table, not an entry here.
+    const MESSAGES = {
+        fr: FR_MESSAGES,
+        es: ES_MESSAGES
+    };
+
+    // How each localized language is named to the LLM when asking it to write
+    // its free-text "comments" in that language. Keys must match MESSAGES.
+    const PROMPT_LANGUAGES = {
+        fr: 'French (français)',
+        es: 'Spanish (español)'
+    };
+
+    // Pick the UI language from the wiki's content language, falling back to the
+    // user's interface language. Matching is by prefix, so regional variants
+    // (es-419, fr-ca) resolve to their base table.
+    function detectUiLang() {
+        try {
+            if (typeof mw !== 'undefined') {
+                const lang = String(mw.config.get('wgContentLanguage')
+                    || mw.config.get('wgUserLanguage') || 'en').toLowerCase();
+                for (const code of Object.keys(MESSAGES)) {
+                    if (lang === code || lang.startsWith(code + '-')) return code;
+                }
+            }
+        } catch (e) { /* non-MediaWiki context: keep English */ }
+        return 'en';
+    }
 
     class WikipediaSourceVerifier {
         constructor() {
-            // UI language: 'fr' on French wikis, 'en' everywhere else.
+            // UI language: a key of MESSAGES on wikis in that language,
+            // 'en' everywhere else.
             this.lang = detectUiLang();
 
             this.providers = {
@@ -1905,10 +2251,11 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
         }
         
         // Translate an English source string to the active UI language.
-        // Missing French keys fall back to the English text. Supports
+        // Missing keys fall back to the English text. Supports
         // `{placeholder}` interpolation from an optional params object.
         t(en, params) {
-            let s = (this.lang === 'fr' && FR_MESSAGES[en] != null) ? FR_MESSAGES[en] : en;
+            const table = MESSAGES[this.lang];
+            let s = (table && table[en] != null) ? table[en] : en;
             if (params) {
                 for (const key of Object.keys(params)) {
                     s = s.split('{' + key + '}').join(String(params[key]));
@@ -1931,7 +2278,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
             sidebar.innerHTML = `
                 <div id="verifier-sidebar-header">
                     ${this.logoMarkSvg()}
-                    <h3><a href="https://en.wikipedia.org/wiki/User:Alaexis/AI_Source_Verification" target="_blank" id="verifier-title-link">${this.t('Source Verifier')}</a></h3>
+                    <h3><a href="https://en.wikipedia.org/wiki/User:Alaexis/AI_Source_Verification" target="_blank" id="verifier-title-link">${this.t('Citation Verifier')}</a></h3>
                     <div id="verifier-sidebar-controls">
                         <div id="verifier-settings-btn-container"></div>
                         <div id="verifier-close-btn-container"></div>
@@ -3639,7 +3986,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                 
                 const claim = this.extractClaimText(refElement);
                 if (!claim) {
-                    this.updateStatus('Could not extract claim text', true);
+                    this.updateStatus(this.t('Could not extract claim text'), true);
                     return;
                 }
                 
@@ -3661,20 +4008,20 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                 
                 if (!refUrl) {
                     this.showSourceTextInput();
-                    this.updateStatus('No URL found in reference. Please paste the source text below.');
+                    this.updateStatus(this.t('No URL found in reference. Please paste the source text below.'));
                     return;
                 }
 
                 if (this.isGoogleBooksUrl(refUrl)) {
                     this.showSourceTextInput();
-                    this.updateStatus('Google Books sources cannot be fetched. Please paste the source text below.');
+                    this.updateStatus(this.t('Google Books sources cannot be fetched. Please paste the source text below.'));
                     return;
                 }
 
                 this.hideSourceTextInput();
                 this.activeSource = null;
                 this.updateButtonVisibility();
-                this.updateStatus('Fetching source content...');
+                this.updateStatus(this.t('Fetching source content...'));
                 const fetchId = ++this.currentFetchId;
                 const pageNum = this.extractPageNumber(refElement);
                 const fetchResult = await this.fetchSourceContent(refUrl, pageNum);
@@ -3687,7 +4034,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                     this.showSourceTextInput();
                     const status = fetchResult.status != null ? ` (HTTP ${fetchResult.status})` : '';
                     const reason = fetchResult.error ? `: ${fetchResult.error}` : '';
-                    this.updateStatus(`Could not fetch source${status}${reason}. Please paste the source text below.`, true);
+                    this.updateStatus(this.t('Could not fetch source{status}{reason}. Please paste the source text below.', { status, reason }), true);
                     return;
                 }
 
@@ -3728,11 +4075,11 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
 
                 this.updateButtonVisibility();
                 this.refreshOverrideButton();
-                this.updateStatus(contentFetched ? 'Source fetched. Ready to verify.' : 'Ready to verify claim against source');
+                this.updateStatus(this.t(contentFetched ? 'Source fetched. Ready to verify.' : 'Ready to verify claim against source'));
                 
             } catch (error) {
                 console.error('Error handling reference click:', error);
-                this.updateStatus(`Error: ${error.message}`, true);
+                this.updateStatus(this.t('Error: {message}', { message: error.message }), true);
             }
         }
         
@@ -3775,7 +4122,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
         loadManualSourceText() {
             let text = this.sourceTextInput.getValue().trim();
             if (!text) {
-                this.updateStatus('Please enter some source text', true);
+                this.updateStatus(this.t('Please enter some source text'), true);
                 return;
             }
 
@@ -3805,15 +4152,15 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
             this.activeSource = `Manual source text:\n\n${text}`;
             const preview = `${text.substring(0, 200)}${text.length > 200 ? '...' : ''}`;
             const truncationHtml = wasTrimmed
-                ? '<div class="verifier-truncation-warning">⚠ The source is long and can only be checked partially.</div>'
+                ? `<div class="verifier-truncation-warning">${this.t('⚠ The source is long and can only be checked partially.')}</div>`
                 : '';
-            document.getElementById('verifier-source-text').innerHTML = `<strong>Manual Source Text:</strong><br><em>${preview}</em>${truncationHtml}`;
+            document.getElementById('verifier-source-text').innerHTML = `<strong>${this.t('Manual Source Text:')}</strong><br><em>${preview}</em>${truncationHtml}`;
             this.sourceInputForOverride = false;
             this.hideSourceTextInput();
             this.updateButtonVisibility();
             this.updateStatus(wasTrimmed
-                ? `Source text loaded (trimmed to ${MAX_MANUAL_SOURCE_CHARS.toLocaleString()} characters). Ready to verify.`
-                : 'Source text loaded. Ready to verify.');
+                ? this.t('Source text loaded (trimmed to {count} characters). Ready to verify.', { count: MAX_MANUAL_SOURCE_CHARS.toLocaleString() })
+                : this.t('Source text loaded. Ready to verify.'));
         }
 
         cancelManualSourceText() {
@@ -3826,7 +4173,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                 document.getElementById('verifier-source-text').textContent = this.t('No source loaded.');
             }
             this.updateButtonVisibility();
-            this.updateStatus('Cancelled');
+            this.updateStatus(this.t('Cancelled'));
         }
 
         // Lazily load PDF.js the first time a user picks a PDF, and cache the
@@ -3879,22 +4226,22 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
             if (!file) return;
             const looksPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
             if (!looksPdf) {
-                this.updateStatus('Please choose a PDF file.', true);
+                this.updateStatus(this.t('Please choose a PDF file.'), true);
                 return;
             }
-            this.updateStatus(`Reading ${file.name}…`);
+            this.updateStatus(this.t('Reading {name}…', { name: file.name }));
             try {
                 const text = await this.extractPdfText(file);
                 if (!text) {
-                    this.updateStatus('This PDF has no selectable text (it looks scanned). Please paste the relevant passage instead.', true);
+                    this.updateStatus(this.t('This PDF has no selectable text (it looks scanned). Please paste the relevant passage instead.'), true);
                     return;
                 }
                 this.sourceTextInput.setValue(text);
                 this.loadManualSourceText();
-                this.updateStatus(`Loaded text from ${file.name}. Ready to verify.`);
+                this.updateStatus(this.t('Loaded text from {name}. Ready to verify.', { name: file.name }));
             } catch (error) {
                 console.error('PDF extraction failed:', error);
-                this.updateStatus(`Could not read that PDF: ${error.message}. Try pasting the text instead.`, true);
+                this.updateStatus(this.t('Could not read that PDF: {message}. Try pasting the text instead.', { message: error.message }), true);
             }
         }
 
@@ -4044,7 +4391,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                 localStorage.setItem('source_verifier_provider', this.currentProvider);
                 this.updateButtonVisibility();
                 this.updateTheme();
-                this.updateStatus(`Switched to ${this.providers[this.currentProvider].name}`);
+                this.updateStatus(this.t('Switched to {name}', { name: this.providers[this.currentProvider].name }));
             });
             
             this.buttons.setKey.on('click', () => {
@@ -4093,7 +4440,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
 
             this.buttons.overrideText.on('click', () => {
                 this.showSourceTextInput(true);
-                this.updateStatus('Paste replacement source text below, then click Load Text.');
+                this.updateStatus(this.t('Paste replacement source text below, then click Load Text.'));
             });
 
             this.buttons.verifyAll.on('click', () => {
@@ -4126,7 +4473,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
             const provider = this.providers[this.currentProvider];
 
             if (!provider.requiresKey && !provider.optionalKey) {
-                this.updateStatus('This provider does not require an API key.');
+                this.updateStatus(this.t('This provider does not require an API key.'));
                 return;
             }
             
@@ -4170,7 +4517,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                     if (key) {
                         this.setCurrentApiKey(key);
                         this.updateButtonVisibility();
-                        this.updateStatus('API key set successfully!');
+                        this.updateStatus(this.t('API key set successfully!'));
                         
                         if (this.activeClaim && this.activeSource) {
                             this.updateButtonVisibility();
@@ -4184,7 +4531,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
         removeApiKey() {
             const provider = this.providers[this.currentProvider];
             if (!provider.requiresKey && !provider.optionalKey) {
-                this.updateStatus('This provider does not use a stored API key.');
+                this.updateStatus(this.t('This provider does not use a stored API key.'));
                 return;
             }
             
@@ -4192,7 +4539,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                 if (confirmed) {
                     this.removeCurrentApiKey();
                     this.updateButtonVisibility();
-                    this.updateStatus('API key removed successfully!');
+                    this.updateStatus(this.t('API key removed successfully!'));
                 }
             });
         }
@@ -4221,17 +4568,18 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
             return generateUserPrompt(claim, sourceInfo);
         }
 
-        // When the UI is French, ask the model to write its free-text
-        // explanation in French so the "comments" shown next to each verdict
-        // match the rest of the interface. The verdict and reason_type values
-        // are parsed programmatically, so they must stay in the English enum;
-        // the directive is appended (not spliced) to leave the benchmark-tuned
-        // few-shot prompt in core/prompts.js untouched. English wikis get the
-        // prompt verbatim.
+        // When the UI is localized, ask the model to write its free-text
+        // explanation in that language so the "comments" shown next to each
+        // verdict match the rest of the interface. The verdict and reason_type
+        // values are parsed programmatically, so they must stay in the English
+        // enum; the directive is appended (not spliced) to leave the
+        // benchmark-tuned few-shot prompt in core/prompts.js untouched. English
+        // wikis get the prompt verbatim.
         localizeSystemPrompt(prompt) {
-            if (this.lang !== 'fr') return prompt;
-            return prompt + '\n\nLANGUAGE: Write the "comments" field in French (français). '
-                + 'You may quote the source verbatim in its original language, but write your own explanation in French. '
+            const language = PROMPT_LANGUAGES[this.lang];
+            if (!language) return prompt;
+            return prompt + `\n\nLANGUAGE: Write the "comments" field in ${language}. `
+                + `You may quote the source verbatim in its original language, but write your own explanation in ${language}. `
                 + 'Keep the "verdict" and "reason_type" values exactly as specified above, in English '
                 + '(SUPPORTED, PARTIALLY SUPPORTED, NOT SUPPORTED, SOURCE UNAVAILABLE, contradiction, omission).';
         }
@@ -4276,7 +4624,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
             
             // Only require a browser key for providers that need it
             if ((requiresKey && !hasKey) || !this.activeClaim || !this.activeSource) {
-                this.updateStatus('Missing API key (for this provider), claim, or source content', true);
+                this.updateStatus(this.t('Missing API key (for this provider), claim, or source content'), true);
                 return;
             }
             
@@ -4285,7 +4633,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                 this.buttons.verify.setDisabled(true);
                 this.buttons.verify.setLabel(this.t('Verifying...'));
                 this.buttons.verify.setIcon('clock');
-                this.updateStatus('Verifying claim against source...');
+                this.updateStatus(this.t('Verifying claim against source...'));
 
                 const apiResult = await this.callProviderAPI(this.activeClaim, this.activeSource);
                 const result = apiResult.text;
@@ -4294,7 +4642,8 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                     return;
                 }
 
-                this.updateStatus('Verification complete!');
+                this.updateStatus(this.t('Verification complete!'));
+                this.displayResult(result);
 
                 // Fire-and-forget logging. Runs before displayResult() rather
                 // than after it: the feedback controls displayResult() renders
@@ -4315,7 +4664,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                     return;
                 }
                 console.error('Verification error:', error);
-                this.updateStatus(`Error: ${error.message}`, true);
+                this.updateStatus(this.t('Error: {message}', { message: error.message }), true);
                 document.getElementById('verifier-verdict').textContent = this.t('ERROR');
                 document.getElementById('verifier-verdict').className = 'source-unavailable';
                 document.getElementById('verifier-comments').textContent = error.message;
@@ -4378,7 +4727,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
 	        const tag = document.createElement('span');
 	        tag.id = 'verifier-reason-type';
 	        tag.className = `reason-type-tag reason-type-${result.reason_type}`;
-	        tag.textContent = result.reason_type === 'contradiction' ? 'Contradiction' : 'Omission';
+	        tag.textContent = this.reasonTypeLabel(result.reason_type);
 	        verdictEl.after(tag);
 	    }
 
@@ -4511,6 +4860,11 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
 
         formatDuration(ms) {
             const s = Math.round(ms / 1000);
+            if (this.lang === 'fr') {
+                if (s < 60) return `${s} s`;
+                const m = Math.floor(s / 60);
+                return `${m} min ${s % 60} s`;
+            }
             if (s < 60) return `${s}s`;
             const m = Math.floor(s / 60);
             return `${m}m ${s % 60}s`;
@@ -4557,13 +4911,37 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
             // Group blocks are filtered by their COLLECTIVE verdict (the one
             // shown in the filter pills), not by the individual per-source
             // rows. Inside a visible group every row stays visible regardless
-            // of its verdict — the rows are debug detail. A group whose
-            // collective check hasn't finished yet (no data-collective-verdict)
-            // stays visible.
+            // of its verdict — the rows are debug detail.
+            //
+            // Two group states have no collective verdict to filter on, and
+            // they are not the same:
+            //
+            //  - Pending: the collective check hasn't run yet. getReportUnits()
+            //    contributes nothing for the group, so the pills don't count it
+            //    either. Stays visible; resolves when the check completes.
+            //  - Skipped: verifyGroupCollective() bailed because at most one
+            //    source was retrievable, so a combined verdict would just
+            //    restate the single per-source one. getReportUnits() then falls
+            //    back to counting each MEMBER as its own unit — so the pills do
+            //    count these, and the block has to honour the filters the same
+            //    way, or the summary claims citations are hidden while they are
+            //    still on screen. Hide it once every member's verdict is
+            //    filtered off.
             const groups = resultsEl.querySelectorAll('.verifier-report-group');
             groups.forEach(groupEl => {
                 const collectiveVerdict = groupEl.dataset.collectiveVerdict;
-                const hidden = collectiveVerdict ? !!this.reportFilters[collectiveVerdict] : false;
+                let hidden;
+                if (collectiveVerdict) {
+                    hidden = !!this.reportFilters[collectiveVerdict];
+                } else if (groupEl.dataset.collectiveSkipped === 'true') {
+                    const rows = groupEl.querySelectorAll('.verifier-report-group-row');
+                    hidden = rows.length > 0 && Array.from(rows).every(row => {
+                        const cls = classes.find(c => row.classList.contains(`verdict-${c}`));
+                        return cls && !!this.reportFilters[cls];
+                    });
+                } else {
+                    hidden = false;
+                }
                 groupEl.style.display = hidden ? 'none' : '';
             });
 
@@ -4667,6 +5045,13 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
             });
         }
 
+        // The reason_type enum itself stays English — it is parsed
+        // programmatically and round-trips to the dataset — but the tag shown
+        // next to a "not supported" verdict is UI text, so it gets translated.
+        reasonTypeLabel(reasonType) {
+            return reasonType === 'contradiction' ? this.t('Contradiction') : this.t('Omission');
+        }
+
         verdictClassFor(verdict) {
             switch (verdict) {
                 case 'SUPPORTED': return { cls: 'supported', label: this.t('Supported') };
@@ -4719,7 +5104,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                 ? `<div class="report-card-truncated">${this.t('⚠ Source is long, only partially checked.')}</div>`
                 : '';
             const reasonTypeHtml = (result.verdict === 'NOT SUPPORTED' && result.reason_type)
-                ? `<span class="reason-type-tag reason-type-${result.reason_type}">${result.reason_type === 'contradiction' ? 'Contradiction' : 'Omission'}</span>`
+                ? `<span class="reason-type-tag reason-type-${result.reason_type}">${this.reasonTypeLabel(result.reason_type)}</span>`
                 : '';
             card.innerHTML = `
                 <div class="report-card-header">
@@ -4812,7 +5197,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
             if (!slot) return;
 
             const reasonTypeHtml = (result.verdict === 'NOT SUPPORTED' && result.reason_type)
-                ? `<span class="reason-type-tag reason-type-${result.reason_type}">${result.reason_type === 'contradiction' ? 'Contradiction' : 'Omission'}</span>`
+                ? `<span class="reason-type-tag reason-type-${result.reason_type}">${this.reasonTypeLabel(result.reason_type)}</span>`
                 : '';
             const truncationHtml = (result.truncated && result.verdict !== 'SUPPORTED')
                 ? `<div class="report-card-truncated">${this.t('⚠ Combined sources are long, only partially checked.')}</div>`
@@ -4830,11 +5215,15 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
             if (feedback) slot.appendChild(feedback);
         }
 
+        // Called when the collective check is skipped for want of a second
+        // retrievable source. Marks the block so applyReportFilters() knows to
+        // filter it by its members rather than leaving it permanently visible.
         hideGroupCollectiveSlot(groupId) {
             const resultsEl = document.getElementById('verifier-report-results');
             if (!resultsEl) return;
             const groupEl = resultsEl.querySelector(`.verifier-report-group[data-group-id="${CSS.escape(groupId)}"]`);
             if (!groupEl) return;
+            groupEl.dataset.collectiveSkipped = 'true';
             const slot = groupEl.querySelector('.verifier-report-group-collective');
             if (slot) slot.style.display = 'none';
         }
@@ -4847,7 +5236,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                 ? `<div class="report-card-truncated">${this.t('⚠ Source is long, only partially checked.')}</div>`
                 : '';
             const reasonTypeHtml = (result.verdict === 'NOT SUPPORTED' && result.reason_type)
-                ? `<span class="reason-type-tag reason-type-${result.reason_type}">${result.reason_type === 'contradiction' ? 'Contradiction' : 'Omission'}</span>`
+                ? `<span class="reason-type-tag reason-type-${result.reason_type}">${this.reasonTypeLabel(result.reason_type)}</span>`
                 : '';
             row.innerHTML = `
                 <div class="verifier-report-group-row-header">
@@ -5011,9 +5400,9 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
             if (this.currentProvider === 'publicai') {
                 modelDesc = this.t('a PublicAI-hosted open-source LLM');
             } else if (this.currentProvider === 'huggingface') {
-                modelDesc = `a HuggingFace-hosted open-source LLM (${provider.model})`;
+                modelDesc = this.t('a HuggingFace-hosted open-source LLM ({model})', { model: provider.model });
             } else if (this.currentProvider === 'liftwing') {
-                modelDesc = `a Wikimedia Lift Wing-hosted open-source LLM (${provider.model})`;
+                modelDesc = this.t('a Wikimedia Lift Wing-hosted open-source LLM ({model})', { model: provider.model });
             } else {
                 modelDesc = provider.model;
             }
@@ -5140,6 +5529,13 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
             if (availableCount <= 1) {
                 this.reportGroupResults.set(groupId, { skipped: true, groupId });
                 this.hideGroupCollectiveSlot(groupId);
+                // Marking the group skipped changes what getReportUnits()
+                // returns for it (members instead of nothing), so the pills and
+                // the filter state both have to be recomputed — the success
+                // path below does the same. Without this a group skipped as the
+                // last step of a run keeps stale counts until the next toggle.
+                this.renderReportSummary();
+                this.applyReportFilters();
                 return;
             }
 
@@ -5177,7 +5573,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                                 if (willRetry) {
                                     this.updateReportProgress(
                                         progressCurrent, progressTotal,
-                                        `Rate limited, retrying in ${Math.round(backoff / 1000)}s...`,
+                                        this.t('Rate limited, retrying in {secs}s...', { secs: Math.round(backoff / 1000) }),
                                         startTime
                                     );
                                 }
@@ -5527,7 +5923,12 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
         buildEditUrl(refElement) {
             const title = mw.config.get('wgPageName');
             const section = this.findSectionNumber(refElement);
-            const summary = 'source does not support claim (checked with [[User:Alaexis/AI_Source_Verification|Source Verifier]])';
+            // Goes into the wiki's edit-summary box, so it follows the UI
+            // language like the rest of the interface. The link target stays
+            // pointing at the English user page — that is where the script
+            // lives — and the tool's name is left untranslated, matching how
+            // the exported report credits it.
+            const summary = this.t('source does not support claim (checked with [[User:Alaexis/AI_Source_Verification|Source Verifier]])');
 
             const params = { action: 'edit', summary: summary };
             if (section > 0) {
