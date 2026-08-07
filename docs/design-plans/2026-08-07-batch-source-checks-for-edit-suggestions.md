@@ -464,66 +464,84 @@ as a proxy for precision only after auditing a sample.
 
 ## Build sequence
 
-The ordering principle: **answer the cheap questions with code that already
-exists, do the low-regret refactors while waiting on external answers, and
-build platform-specific infrastructure last** — because the schema and the API
-shape both depend on answers that are not in yet.
+The ordering principle: **only stage 3 needs anyone's permission.** Selection,
+extraction, verification, storage and serving all sit inside Wikimedia
+infrastructure (Figure: Architecture at a glance), so the entire pipeline
+minus the source fetch can be built and demonstrated before WMCS answers
+anything.
 
-Three tracks run in parallel up to a go/no-go, then the work becomes serial.
+Two things make that practical:
+
+- A **Toolforge account already exists**, so the week-long membership approval
+  is not on the path. (Creating the per-tool *tool account* on toolsadmin is
+  self-serve and quick if it isn't there yet.)
+- `benchmark/dataset.json` carries **stored `source_text` for 182 of its 189
+  entries**, median ~7 KB, all of it really fetched from real citations. That is
+  a replay corpus: stages 4–6 can run against it end to end with zero outbound
+  requests.
+
+So the sequence front-loads a working vertical slice and leaves the open-web
+fetch as the last thing wired in.
 
 ```mermaid
 flowchart TB
   subgraph A["Track A - external lead time, start on day one"]
     A1["Phabricator task: egress question to WMCS"]
     A2["Lift Wing capacity and access"]
-    A3["Tool account + hello-world deploy"]
   end
 
   subgraph B["Track B - measure with existing code"]
     B1["Flag-class precision + threshold curve"]
-    B2["Funnel run over ~50 articles"]
+    B2["Funnel run over ~50 articles, off-platform"]
   end
 
-  subgraph C["Track C - low-regret refactors"]
-    C1["Article orchestration into core/"]
-    C2["Fetch transport seam"]
-    C3["ccs verify-article"]
-    C4["Claim hash + resolution"]
+  subgraph C["Track C - build inside the boundary, no permission needed"]
+    C1["Hello-world deploy + Lift Wing smoke test"]
+    C2["Article orchestration into core/"]
+    C3["Claim hash + resolution"]
+    C4["ToolsDB schema + write path"]
+    C5["Wiki Replicas selection query"]
+    C6["Replay pipeline over dataset.json"]
+    C7["Read API over published findings"]
   end
 
-  GATE{"Go / no-go"}
+  A1 --> GATE{"Egress answer"}
+  C1 --> C6
+  C2 --> C6
+  C3 --> C4
+  C4 --> C6
+  C6 --> C7
+  A2 --> C1
 
-  A1 --> GATE
-  A2 --> GATE
-  B1 --> GATE
-  B2 --> GATE
-  C1 --> C3
-  C2 --> C3
-
-  GATE --> D1["ToolsDB schema + write path"]
-  A3 --> D2["Scheduled job on Toolforge"]
-  C3 --> D2
-  C4 --> D1
-  D1 --> D3["Selection query + work queue"]
+  GATE --> D1["Transport seam + live fetch"]
+  C5 --> D2["Scheduled job over real articles"]
+  C6 --> D2
+  D1 --> D2
+  B1 --> D3["Publication filter switched on"]
+  B2 --> D3
   D2 --> D3
   D3 --> D4["Pilot run, report the funnel"]
-  D4 --> E1["Read API or export job"]
+  D4 --> E1["Hand-off / integration"]
   E1 --> E2["Feedback ingestion"]
 ```
 
 ### Track A — external lead time (day one, not engineering)
 
-Latency, not effort. All three should be in flight before any code is written,
-because none of them are things we can hurry.
+Latency, not effort. Both should be in flight before any code is written.
 
 1. **The egress question to WMCS** (§5). A Phabricator task under
    Cloud-Services, with the traffic shape and the mitigations already named.
+   Worth doing first: from an interactive Toolforge shell, check whether
+   outbound HTTPS to an arbitrary host works at all, and what the egress path
+   looks like. A handful of manual requests while exploring the platform is
+   ordinary development, categorically unlike an unattended crawler — and it
+   turns the ask from "is this possible?" into the narrower and more answerable
+   "it works technically; is it acceptable at this volume, with these
+   mitigations?"
 2. **Lift Wing access and capacity.** Determines whether there is a billing
-   conversation at all.
-3. **Toolforge tool account, plus a trivial deploy.** Membership approval takes
-   up to a week. Deploying a hello-world Node service immediately afterwards is
-   half a day and shakes out buildpack, Node version, and envvar surprises long
-   before they can block anything real.
+   conversation at all. Also testable early: a smoke call from Toolforge is
+   entirely inside WMF infrastructure and answers part of open question 2
+   before the meeting.
 
 ### Track B — measure before committing (existing code, ~days)
 
@@ -547,49 +565,61 @@ both can be answered with what is already in the repo.
    — the go/no-go answer should not be gated on refactoring the most-used code
    path in the shipped userscript.
 
-### Track C — low-regret refactors (worth doing either way)
+### Track C — build the pipeline inside the boundary (no permission needed)
 
-These improve the existing userscript and CLI whether or not the Foundation
-integration happens, and they are the batch runner's engine.
+Everything here runs entirely within Wikimedia infrastructure. None of it waits
+on Track A, and steps 6–8 improve the existing userscript and CLI regardless of
+what the Foundation decides.
 
-6. **Extract the article-level orchestration** out of `verifyAllCitations()`
+6. **Hello-world deploy, plus a Lift Wing smoke call.** Half a day. Shakes out
+   buildpack, Node version, and envvar surprises, and confirms the inference
+   path, before anything depends on either.
+7. **Extract the article-level orchestration** out of `verifyAllCitations()`
    into `core/` — source cache, collective group pass, retry loop, progress
    callbacks — leaving `main.js` as a thin UI adapter. This touches the
    userscript's most-used path, so it should be a pure refactor with no
    behavior change, verified by running the benchmark before and after:
    `ccs compare` with `--change-axis` exists precisely to prove a change didn't
    move verdicts.
-7. **Transport seam in `core/worker.js`** — proxy transport for the browser,
-   direct transport for Node, one `{ content, error, status }` contract.
-8. **`ccs verify-article <url>`** on top of 6 and 7. Independently useful, and
-   from here the batch runner is a loop around a CLI that already works.
-9. **Claim hashing and resolution** in `core/claim.js` (§2): normalize, hash,
+8. **Claim hashing and resolution** in `core/claim.js` (§2): normalize, hash,
    and the routine that locates a stored claim in a current article or fails
    cleanly. Pure logic, testable offline, and the thing the schema depends on —
    which is why it comes before any table is created.
+9. **ToolsDB schema and write path** (§6) — informed by step 8's anchor format
+   and step 4's filter fields.
+10. **Wiki Replicas selection query** (§8) — pages carrying maintenance
+    templates, into a priority queue table. Pure SQL against a replica that is
+    already accessible; nothing here touches the open web.
+11. **Replay the pipeline over `dataset.json`.** Feed the stored `source_text`
+    into stages 4–6 on Toolforge: verify, store against a claim hash, apply the
+    publication filter, expose the result. Zero outbound requests, real claims,
+    real sources, real verdicts.
 
-### The gate
+    This is the highest-value step in the whole sequence and it is available
+    immediately. It produces a **working system to demonstrate**, which is a
+    categorically better thing to bring to the Foundation than a design
+    document — and it de-risks every integration point except the one under
+    discussion.
+12. **Read API over published findings**, with read-time claim re-resolution.
+    Buildable and testable against the replayed corpus. Whether the *hand-off*
+    is this API or a periodic export depends on open question 4; the query layer
+    is the same either way, so only the last hop waits.
 
-Proceed when: WMCS has answered on egress, step 4 has produced a threshold that
-holds, and step 5 says coverage is high enough to be worth serving. A bad
-answer on any of the three changes what gets built rather than merely delaying
-it, which is the whole reason they sit before the infrastructure.
+### The gate — and what it actually gates
 
-### Then, serially
+Only **stage 3, at volume**. When WMCS answers:
 
-10. **ToolsDB schema and write path** (§6) — informed by step 9's anchor format
-    and step 4's filter fields.
-11. **Selection query and work queue** (§8) — Wiki Replicas SQL, seeded from
-    maintenance templates.
-12. **The scheduled job**, wrapping step 8's runner, writing findings, halting
-    on auth/billing errors rather than draining the queue into failures.
-13. **Pilot run** over a hand-seeded list. Report the §7 funnel from real
-    infrastructure — this is the number the Foundation will want, measured
-    rather than estimated.
-14. **Serve.** Whether this is a read API or a periodic export depends on the
-    answer to open question 4 below; do not build it before that answer arrives,
-    because the two are different amounts of work.
-15. **Feedback ingestion** (§9), gated on whether the card exposes accept/reject
+13. **Transport seam in `core/worker.js`** — proxy transport for the browser,
+    direct transport for Node, one `{ content, error, status }` contract — plus
+    `ccs verify-article <url>` on top of it. If the answer was no, this is where
+    the fetch tier stays off-platform instead, and the rest of the pipeline is
+    untouched.
+14. **Scheduled job over real articles**, wrapping step 7's runner, halting on
+    auth/billing errors rather than draining the queue into failures.
+15. **Switch on the publication filter** at the threshold step 4 produced.
+16. **Pilot run.** Report the §7 funnel from real infrastructure — measured
+    rather than estimated, which is the number the Foundation will want.
+17. **Feedback ingestion** (§9), gated on whether the card exposes accept/reject
     at all.
 
 ### Deliberately not early
@@ -605,10 +635,14 @@ it, which is the whole reason they sit before the infrastructure.
 
 ### The critical path
 
-Track A → gate → steps 10–14. Tracks B and C are off the critical path
-entirely, which is the argument for starting all three on the same day: if
-WMCS takes three weeks, that time is spent on work that has standalone value,
-and if the answer comes back no, the only thing lost is Track A.
+Track A → steps 13–16. Everything else is off it.
+
+The account already existing collapses what used to be the first week of
+waiting, and the replay corpus removes the fetch from the dependency chain
+entirely — so the pipeline can be standing up while WMCS deliberates. If the
+egress answer takes three weeks, those three weeks produce a demonstrable
+system; if it comes back no, only steps 13–14 change shape and nothing built
+is wasted.
 
 ## Open questions for the Foundation
 
