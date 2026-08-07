@@ -12,6 +12,7 @@ import {
   buildFeedbackPayload,
   buildTalkSectionBody,
   buildCommentUrl,
+  normalizeRevisionId,
   FEEDBACK_TALK_PAGE,
 } from '../core/feedback.js';
 
@@ -33,6 +34,19 @@ function feedbackMethods() {
   return src.slice(start, end + END_MARKER.length);
 }
 
+// The revision helpers live elsewhere in the class, so they are lifted
+// separately rather than stubbed — the point of the revision tests is that the
+// id the real reader produces is the one that reaches the comment link.
+function classMethod(name) {
+  const src = fs.readFileSync(MAIN_JS, 'utf8');
+  const open = `\n        ${name}(`;
+  const start = src.indexOf(open);
+  assert.ok(start !== -1, `${name}() not found in main.js — did the method get renamed?`);
+  const end = src.indexOf('\n        }\n', start);
+  assert.ok(end !== -1, `${name}() has no closing brace at class indentation`);
+  return src.slice(start + 1, end + '\n        }'.length);
+}
+
 // --- stubs --------------------------------------------------------------
 
 function jq(el) {
@@ -43,7 +57,7 @@ function jq(el) {
   };
 }
 
-function makeHarness({ postFeedback } = {}) {
+function makeHarness({ postFeedback, config } = {}) {
   const dom = new JSDOM('<!doctype html><body></body>');
   const { document } = dom.window;
   const widgets = [];
@@ -66,15 +80,25 @@ function makeHarness({ postFeedback } = {}) {
     click() { return Promise.all((this.handlers.click || []).map(fn => fn())); }
   }
 
-  // Only wgTitle is consulted now that nothing is posted through the API.
-  const mw = { config: { get: key => ({ wgTitle: 'Barack Obama' }[key] ?? null) } };
+  // wgTitle for the heading, and the revision/site keys the permalink is built
+  // from. Nothing is posted through the API, so no other config is consulted.
+  const defaultConfig = {
+    wgTitle: 'Barack Obama',
+    wgPageName: 'Barack_Obama',
+    wgServer: '//en.wikipedia.org',
+    wgScript: '/w/index.php',
+    wgRevisionId: 1234567,
+    wgCurRevisionId: 1234567,
+  };
+  const values = { ...defaultConfig, ...config };
+  const mw = { config: { get: key => values[key] ?? null } };
 
   const posted = [];
   const postFeedbackStub = postFeedback || (payload => { posted.push(payload); return Promise.resolve(true); });
 
   const Harness = new Function(
     'document', 'window', 'localStorage', 'OO', 'mw', 'VERDICT_LIST', 'newCheckId',
-    'buildFeedbackPayload', 'postFeedback', 'buildCommentUrl',
+    'buildFeedbackPayload', 'postFeedback', 'buildCommentUrl', 'normalizeRevisionId',
     `
     class Harness {
       constructor() {
@@ -86,6 +110,8 @@ function makeHarness({ postFeedback } = {}) {
         if (params) for (const k of Object.keys(params)) s = s.split('{' + k + '}').join(String(params[k]));
         return s;
       }
+${classMethod('getArticleRevisionId')}
+${classMethod('getRevisionPermalinkUrl')}
 ${feedbackMethods()}
     }
     return Harness;
@@ -104,6 +130,7 @@ ${feedbackMethods()}
     buildFeedbackPayload,
     payload => postFeedbackStub(payload),
     buildCommentUrl,
+    normalizeRevisionId,
   );
 
   return {
@@ -331,6 +358,37 @@ test('choosing a correction updates the comment link to carry it', async () => {
   assert.match(after, /Editor says it should be:''' SUPPORTED/);
 });
 
+// Reproducibility: the preloaded section has to name the revision that was
+// checked, and link it, or a reader coming to the talk page later has no fixed
+// page to compare a second run against.
+test('the comment link carries the revision the check ran against', () => {
+  const ctx = makeHarness();
+  ctx.harness.buildFeedbackControls(RESULT);
+  const body = new URL(ctx.byLabel('Comment').cfg.href).searchParams.get('preloadparams[]');
+  assert.match(
+    body,
+    /revision \[https:\/\/en\.wikipedia\.org\/w\/index\.php\?title=Barack_Obama&oldid=1234567 1234567\]/,
+  );
+});
+
+// wgRevisionId is the revision on screen, which is the one that was read.
+// Naming wgCurRevisionId while an old revision is displayed would record a
+// page the tool never saw.
+test('viewing an old revision records that revision, not the current one', () => {
+  const ctx = makeHarness({ config: { wgRevisionId: 111, wgCurRevisionId: 999 } });
+  ctx.harness.buildFeedbackControls(RESULT);
+  const body = new URL(ctx.byLabel('Comment').cfg.href).searchParams.get('preloadparams[]');
+  assert.match(body, /revision \[\S+oldid=111 111\]/);
+  assert.equal(body.includes('999'), false);
+});
+
+test('a page with no revision of its own contributes no revision line', () => {
+  const ctx = makeHarness({ config: { wgRevisionId: 0, wgCurRevisionId: 0 } });
+  ctx.harness.buildFeedbackControls(RESULT);
+  const body = new URL(ctx.byLabel('Comment').cfg.href).searchParams.get('preloadparams[]');
+  assert.equal(body.includes('revision'), false);
+});
+
 test('the preloaded text matches what the pure builder produces', () => {
   const ctx = makeHarness();
   ctx.harness.buildFeedbackControls(RESULT);
@@ -339,6 +397,8 @@ test('the preloaded text matches what the pure builder produces', () => {
     checkId: 'a7f3k2q9',
     articleUrl: 'https://en.wikipedia.org/wiki/Barack_Obama',
     articleTitle: 'Barack Obama',
+    revisionId: 1234567,
+    revisionUrl: 'https://en.wikipedia.org/w/index.php?title=Barack_Obama&oldid=1234567',
     citationNumber: '12',
     claimText: 'He was born in Honolulu.',
     sourceUrl: 'https://example.com/source',

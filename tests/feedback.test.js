@@ -7,6 +7,7 @@ import {
   buildLogPayload,
   buildFeedbackPayload,
   nowikiWrap,
+  normalizeRevisionId,
   buildTalkSectionTitle,
   buildTalkSectionBody,
   buildCommentUrl,
@@ -92,6 +93,7 @@ test('buildLogPayload maps camelCase fields onto the snake_case columns', () => 
     checkId: 'a7f3k2q9',
     articleUrl: 'https://en.wikipedia.org/wiki/Test',
     articleTitle: 'Test',
+    revisionId: 1234567,
     citationNumber: '12',
     sourceUrl: 'https://example.com/s',
     provider: 'claude',
@@ -107,6 +109,7 @@ test('buildLogPayload maps camelCase fields onto the snake_case columns', () => 
     kind: 'source',
     article_url: 'https://en.wikipedia.org/wiki/Test',
     article_title: 'Test',
+    revision_id: 1234567,
     citation_number: '12',
     source_url: 'https://example.com/s',
     provider: 'claude',
@@ -117,6 +120,26 @@ test('buildLogPayload maps camelCase fields onto the snake_case columns', () => 
     claim_text: 'The sky is blue.',
     llm_comments: 'Source never mentions the sky.',
   });
+});
+
+test('normalizeRevisionId accepts a revision id as a number or a string', () => {
+  assert.equal(normalizeRevisionId(1234567), 1234567);
+  assert.equal(normalizeRevisionId('1234567'), 1234567);
+  assert.equal(normalizeRevisionId(' 1234567 '), 1234567);
+});
+
+// wgRevisionId is 0 on a page with no revision — a preview, a special page.
+// That is not a revision and must not be logged as one.
+test('normalizeRevisionId rejects anything that is not a positive integer', () => {
+  for (const bad of [0, '0', -1, '-1', 1.5, '1.5', '', '  ', null, undefined, NaN,
+                     'abc', '12 34', '1e6', '{{delete}}', Number.MAX_SAFE_INTEGER + 2]) {
+    assert.equal(normalizeRevisionId(bad), null, `accepted ${JSON.stringify(String(bad))}`);
+  }
+});
+
+test('buildLogPayload records the revision so a logged verdict stays reproducible', () => {
+  assert.equal(buildLogPayload({ revisionId: '1234567' }).revision_id, 1234567);
+  assert.equal(buildLogPayload({}).revision_id, null);
 });
 
 test('buildLogPayload carries claim text and rationale — the fields that make a rating interpretable', () => {
@@ -268,6 +291,47 @@ test('buildTalkSectionBody records article, source, verdict, claim and reasoning
   assert.match(body, /\* '''Tool's verdict:''' NOT SUPPORTED \(Claude, claude-sonnet-4-6\)/);
   assert.match(body, /\* '''Claim checked:''' <nowiki>He was born in Honolulu\.<\/nowiki>/);
   assert.match(body, /\* '''Tool's reasoning:''' <nowiki>The source never mentions Honolulu\.<\/nowiki>/);
+});
+
+// The revision is what makes a report reproducible: the plain article link
+// points at whatever the page says today, so without it a reader arriving at
+// the section later cannot tell whether they are looking at the text the tool
+// read, and two model versions cannot be compared on a fixed page.
+test('buildTalkSectionBody names the revision the check ran against', () => {
+  const body = buildTalkSectionBody({
+    ...CONTEXT,
+    revisionId: 1234567,
+    revisionUrl: 'https://en.wikipedia.org/w/index.php?title=Barack_Obama&oldid=1234567',
+  });
+  assert.match(
+    body,
+    /\* '''Article:''' \[https:\/\/en\.wikipedia\.org\/wiki\/Barack_Obama Barack Obama\], citation \[12\], revision \[https:\/\/en\.wikipedia\.org\/w\/index\.php\?title=Barack_Obama&oldid=1234567 1234567\]/,
+  );
+});
+
+test('buildTalkSectionBody keeps the revision inside the collapsed tool box', () => {
+  const body = buildTalkSectionBody({ ...CONTEXT, revisionId: 1234567 });
+  const boxed = body.slice(body.indexOf('{{hidden begin'), body.indexOf('{{hidden end}}'));
+  assert.ok(boxed.includes('revision 1234567'));
+});
+
+test('buildTalkSectionBody falls back to a bare revision number without a permalink', () => {
+  const body = buildTalkSectionBody({ ...CONTEXT, revisionId: 1234567 });
+  assert.match(body, /, citation \[12\], revision 1234567$/m);
+});
+
+test('buildTalkSectionBody omits the revision when none is known', () => {
+  const body = buildTalkSectionBody(CONTEXT);
+  assert.equal(body.includes('revision'), false);
+});
+
+// The revision reaches the wikitext as a number, so a caller passing something
+// else must not be able to open a link or a template through it.
+test('buildTalkSectionBody ignores a revision id that is not a plain number', () => {
+  for (const bad of ['{{delete}}', '12 34', '1234567e0', '-5', '', 'null']) {
+    const body = buildTalkSectionBody({ ...CONTEXT, revisionId: bad });
+    assert.equal(body.includes('revision'), false, `leaked ${JSON.stringify(bad)}`);
+  }
 });
 
 test('buildTalkSectionBody tells the editor where to write and to sign', () => {
