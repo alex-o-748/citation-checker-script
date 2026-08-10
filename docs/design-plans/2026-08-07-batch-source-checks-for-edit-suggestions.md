@@ -264,17 +264,17 @@ fetches sources directly. Three consequences, all good:
   the batch path fetches directly. Same `{ content, error, status }` contract,
   two implementations.
 
-The worker is still needed **for the userscript**. Worth considering as a
-follow-up: a Toolforge web service could take over that role too, retiring the
-personal Cloudflare account entirely and putting the CORS proxy, the batch job,
-and the findings API in one WMF-hosted, open-source tool.
+**Lift Wing has to be called from inside Toolforge to be usable.** Access from
+outside Wikimedia infrastructure is severely rate-limited; from within Toolforge
+it is not. The current worker works around this with an approved-bot JWT (see
+the comment on `callLiftwingAPI` in `core/providers.js`), which is a workaround
+sitting on a personal Cloudflare account rather than a durable position.
 
-**Lift Wing becomes the obvious inference backend.** `callLiftwingAPI` already
-exists in `core/providers.js`. WMF-hosted inference from WMF-hosted compute
-means no API key in envvars, no billing, no per-call cost accounting, and no
-question about a Wikimedia tool sending content to a commercial vendor. It also
-removes the failure mode that voided 17% of the last benchmark run: 31 of 186
-calls failed on *both* PublicAI models with `HTTP 402: Insufficient wallet
+This is the strongest single argument for Toolforge hosting, and it is stronger
+than the billing argument: it is not that WMF-hosted inference is *tidier*, it
+is that meaningful volume through Lift Wing is only available from inside. It
+also removes the failure mode that voided 17% of the last benchmark run: 31 of
+186 calls failed on *both* PublicAI models with `HTTP 402: Insufficient wallet
 balance` — credits ran out partway through and every subsequent call failed
 identically, unannounced. (If a commercial provider is used anyway, the runner
 must **halt** on 401/402 rather than burn through the queue writing failures.
@@ -284,6 +284,34 @@ loop.)
 Caveat worth checking: the worker clamps Lift Wing `max_tokens` to 4096 and
 strips `<think>` blocks from reasoning models. Calling Lift Wing directly means
 reimplementing the strip, or the verdict parser sees reasoning text.
+
+### "Why isn't everything on Toolforge?"
+
+A question the Foundation is likely to ask, and the honest answer is that the
+worker does **two unrelated jobs** whose answers differ.
+
+| The worker's job | Should it move to Toolforge? |
+| --- | --- |
+| **LLM routing** — PublicAI, HF, and Lift Wing calls on behalf of the userscript | **Yes, and we want it to.** The Lift Wing rate limits above apply to the *userscript* today, since its calls originate from Cloudflare. Moving this is a functional improvement to the live tool, and it involves no third-party fetching, so it raises no policy question at all. |
+| **CORS proxy / source fetching** — retrieving cited pages for the userscript | **Blocked on the same question as the batch job.** Moving it is a *strictly larger* version of the egress ask: today we are proposing to relocate batch traffic into Wikimedia address space; moving the proxy too would relocate every live editor click as well. |
+
+So the answer is not "we didn't get round to it" — it is that we deliberately
+did not presume the answer to the question we are asking. And the motivation
+runs our way: the Cloudflare Worker is on a personal account, which is a
+bus-factor problem we would like to be rid of.
+
+Two pieces stay off Toolforge regardless:
+
+- **The userscript itself.** It is a MediaWiki user script running in the
+  editor's browser, hosted as a wiki page. That is what it is by design.
+- **Source fetching**, if the egress answer is no — in which case the Cloudflare
+  Worker becomes a permanent component rather than a legacy one, and the batch
+  job calls it over HTTP.
+
+A note on quotas if both do move: Toolforge quotas are **per tool**, and a
+browser-facing CORS proxy serving thousands of editors has a very different
+traffic profile from a batch sweep. Those belong in two tool accounts, not one,
+so that a heavy sweep cannot starve the thing the userscript depends on.
 
 ### Constraints that bite
 
@@ -648,8 +676,10 @@ is wasted.
 
 1. **Is unattended crawling of third-party publisher URLs from Toolforge
    acceptable to WMCS?** (§5 — blocking.)
-2. Can Lift Wing serve this volume, and which models? It removes the billing
-   and vendor questions entirely if so.
+2. Can Lift Wing serve this volume, and which models? Toolforge-internal access
+   avoids the severe external rate limits, so this is partly a question about
+   whether the internal allowance extends to the volume we would add — and
+   whether the userscript's LLM routing can move inside too (§5).
 3. Does the Suggestions surface resolve claim text to a wikitext location, or
    must we hand over a wikitext offset? (§2.)
 4. Toolforge is best-effort with no SLA. Can a production Edit Suggestions
