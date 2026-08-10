@@ -1500,6 +1500,24 @@ function buildDatasetSubmissionUrl(
 // silently deleted it, taking loadManualSourceText() with it.
 const MAX_MANUAL_SOURCE_CHARS = 80000;
 
+// Experimental: opt-in override that routes Lift Wing / HuggingFace LLM calls
+// through the tf-llm-router Toolforge tool
+// (https://github.com/alex-o-748/tf-llm-router) instead of the Cloudflare
+// Worker CORS proxy. Off by default for everyone; flip it on for yourself by
+// running `localStorage.setItem('source_verifier_toolforge_llm_router', 'true')`
+// in the browser console. Only overrides the `workerBase` passed to
+// callLiftwingAPI/callHuggingFaceAPI (core/providers.js) — source fetching,
+// /log, and /feedback keep using the Worker, since tf-llm-router doesn't
+// implement those routes.
+const TOOLFORGE_LLM_ROUTER_BASE = 'https://llm-router.toolforge.org';
+function useToolforgeLlmRouter() {
+    try {
+        return localStorage.getItem('source_verifier_toolforge_llm_router') === 'true';
+    } catch {
+        return false;
+    }
+}
+
     // ========================================
     // UI LOCALIZATION (i18n)
     // ========================================
@@ -5470,15 +5488,26 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
             }
         }
 
+        // Toolforge override only applies to providers that route LLM calls
+        // through the Worker's /liftwing and /hf paths — passing workerBase to
+        // any other provider would either be ignored or (publicai) point it at
+        // a route tf-llm-router doesn't implement.
+        llmRouterConfigOverrides() {
+            if (useToolforgeLlmRouter() && (this.currentProvider === 'liftwing' || this.currentProvider === 'huggingface')) {
+                return { workerBase: TOOLFORGE_LLM_ROUTER_BASE };
+            }
+            return {};
+        }
+
         async callProviderAPI(claim, sourceInfo) {
-            return callProviderAPI(this.currentProvider, { apiKey: this.getCurrentApiKey(), model: this.providers[this.currentProvider].model, systemPrompt: this.localizeSystemPrompt(generateSystemPrompt()), userContent: generateUserPrompt(claim, sourceInfo) });
+            return callProviderAPI(this.currentProvider, { apiKey: this.getCurrentApiKey(), model: this.providers[this.currentProvider].model, systemPrompt: this.localizeSystemPrompt(generateSystemPrompt()), userContent: generateUserPrompt(claim, sourceInfo), ...this.llmRouterConfigOverrides() });
         }
 
         // Collective (multi-source) variant of callProviderAPI: same provider
         // routing, but the group system prompt and a pre-assembled multi-source
         // user message. `assembledText` comes from assembleGroupSources().
         async callProviderAPIGroup(claim, assembledText) {
-            return callProviderAPI(this.currentProvider, { apiKey: this.getCurrentApiKey(), model: this.providers[this.currentProvider].model, systemPrompt: this.localizeSystemPrompt(generateGroupSystemPrompt()), userContent: generateGroupUserPrompt(claim, assembledText) });
+            return callProviderAPI(this.currentProvider, { apiKey: this.getCurrentApiKey(), model: this.providers[this.currentProvider].model, systemPrompt: this.localizeSystemPrompt(generateGroupSystemPrompt()), userContent: generateGroupUserPrompt(claim, assembledText), ...this.llmRouterConfigOverrides() });
         }
 
         // Runs the single collective verification for one adjacent-citation
