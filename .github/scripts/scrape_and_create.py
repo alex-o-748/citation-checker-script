@@ -25,6 +25,10 @@ WIKI_TIMESTAMP_RE = re.compile(
     r'\b(\d{1,2}:\d{2}),\s+(\d{1,2}\s+\w+\s+\d{4})\s+\(UTC\)'
 )
 
+# The marker buildTalkSectionBody() leaves at the end of every section the
+# tool's Comment button opens.
+CHECK_MARKER_RE = re.compile(r'<!--\s*source-verifier check:\s*\w+\s*-->')
+
 def parse_wiki_timestamp(time_part: str, date_part: str) -> datetime | None:
     try:
         combined = f"{time_part}, {date_part}"
@@ -100,7 +104,17 @@ def section_is_new(section: dict, since: datetime) -> bool:
         ts = parse_wiki_timestamp(time_part, date_part)
         if ts and ts > since:
             return True
-    return False
+
+    # A section carrying the tool's marker but no timestamp at all is one
+    # nobody signed. The script no longer preloads a signature (four tildes in
+    # preloaded text get expanded by whoever saves the page next, not by the
+    # editor), so dating a section is now entirely up to whether the editor's
+    # own editor signed for them. Rather than drop these silently, let them
+    # through; an unsigned section usually means the editor published without
+    # writing anything, and the extraction prompt returns nothing for those.
+    if matches:
+        return False
+    return bool(CHECK_MARKER_RE.search(section["content"]))
 
 def fetch_new_sections(since_str: str) -> list[dict]:
     since = datetime.fromisoformat(since_str.replace("Z", "+00:00"))
@@ -124,6 +138,13 @@ EXTRACTION_PROMPT = """You are helping maintain a GitHub issue tracker for a Wik
 The tool helps Wikipedia editors verify whether cited sources actually support the claims they're attached to. It uses AI (Claude, GPT-4, Gemini) to check citations and returns confidence scores with verdicts.
 
 Below is content from one section of the Wikipedia Talk page for this userscript. It may contain feature requests, bug reports, questions, or general discussion from Wikipedia editors who use the tool.
+
+Sections opened from the tool's Comment button have a fixed shape: the tool's own
+output sits inside a {{hidden begin|title=Check details}} ... {{hidden end}} box,
+and the editor's own words follow an "Editor's explanation:" label (sometimes
+preceded by "Editor says it should be:"). Treat the collapsed box as context
+only — the actionable request is in what the editor wrote. A section whose
+explanation is still empty carries no request at all.
 
 Your job:
 1. Extract all ACTIONABLE items (feature requests and bug reports only)

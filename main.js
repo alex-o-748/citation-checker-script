@@ -1375,6 +1375,20 @@ function truncateForLog(value, max = MAX_LOGGED_TEXT) {
     return s.length > max ? s.slice(0, max - 1) + '…' : s;
 }
 
+// MediaWiki revision ids are positive integers. Normalising to a number (or
+// null) rather than passing whatever the caller had keeps the log column
+// numeric, and — because every consumer stringifies the result of this — makes
+// the id inert wikitext by construction, with no separate escaping step to
+// forget. `wgRevisionId` is 0 on a page that has no revision (a preview, a
+// special page), which is not a revision and must not be recorded as one.
+function normalizeRevisionId(value) {
+    if (value == null) return null;
+    const s = String(value).trim();
+    if (!/^\d+$/.test(s)) return null;
+    const n = Number(s);
+    return Number.isSafeInteger(n) && n > 0 ? n : null;
+}
+
 // 8 hex characters. `source` is injectable so tests can pin the output;
 // production passes nothing and picks up the ambient Web Crypto.
 function newCheckId(source) {
@@ -1403,6 +1417,12 @@ function buildLogPayload(fields = {}) {
         kind:            fields.kind ?? 'source',
         article_url:     fields.articleUrl ?? null,
         article_title:   fields.articleTitle ?? null,
+        // The article revision the check ran against. Without it a logged
+        // verdict is not reproducible: the page it describes is a moving
+        // target, so a disagreement about the verdict can't be separated from
+        // an edit to the claim, and two model versions can't be compared
+        // because they were never shown the same text.
+        revision_id:     normalizeRevisionId(fields.revisionId),
         citation_number: fields.citationNumber ?? null,
         source_url:      fields.sourceUrl ?? null,
         provider:        fields.provider ?? null,
@@ -1466,54 +1486,113 @@ function buildTalkSectionTitle({ articleTitle, citationNumber, checkId } = {}) {
     return `Feedback: ${title}${num ? ` [${num}]` : ''} (check ${checkId ?? 'unknown'})`;
 }
 
-// The context half of a talk-page section: everything the tool knows, with a
-// gap for the editor to write in. It is preloaded into Wikipedia's own new
-// section form rather than posted by the script, so this text is a starting
-// point the editor sees and can change, not a finished comment.
+// Title of the collapsed box holding the tool's own output, and the label
+// introducing the editor's prose. Exported because they are the seam between
+// this layout and anything reading it back — the talk-page scraper tells
+// machine context from human text by these two strings.
+const CHECK_DETAILS_TITLE = 'Check details';
+const EDITOR_EXPLANATION_LABEL = "Editor's explanation";
+
+// A talk-page section, split by who wrote what: everything the tool produced
+// is collapsed behind {{hidden begin}}, and everything the editor supplies —
+// the corrected verdict and their explanation — stays visible. A reader
+// scanning the talk page sees the human argument; the machine context is one
+// click away when they want to check it.
+//
+// The begin/end template pair is deliberate. {{collapse|...}} would make the
+// bullets a template *parameter*, where a stray | or = in a source URL
+// silently truncates the box; as body text between two templates they are
+// inert. {{cot}}/{{cob}} is also wrong here — it renders "the following
+// discussion is closed", and this was never a discussion.
+//
+// It is preloaded into Wikipedia's own new section form rather than posted by
+// the script, so this text is a starting point the editor sees and can
+// change, not a finished comment.
 //
 // The check id appears twice on purpose: in the heading, where a human reading
 // the talk page can see which check is under discussion, and in a trailing
 // HTML comment, which is what the talk-page scraper can match on without
 // having to parse headings. HTML comments are also how the "write here"
 // guidance is delivered — visible in the edit box, invisible once published.
+//
+// Nothing here emits a signature, and nothing here may. Four tildes are not
+// text: they are an instruction to MediaWiki's pre-save transform, which runs
+// over the *whole page* on every save, so a preloaded signature belongs to
+// whoever saves next rather than to the editor who opened the form. If the
+// tildes survive that first save unexpanded — the new topic tool handles
+// signing itself — they sit in the page as a landmine until some unrelated
+// account saves it and gets its own name and timestamp stamped in. That is
+// exactly what happened to check 4d9d0118, which a passing bot signed.
+// Signing is the editor's, and their editor's, business; we only ask for it.
+//
+// The same trap applies to the guidance below, which is why it spells out
+// "sign" in words. Literal tildes inside an HTML comment are still expanded by
+// the pre-save transform — invisible in the rendered page, and still a
+// landmine in the wikitext.
 function buildTalkSectionBody(fields = {}) {
     const {
         articleUrl, articleTitle, citationNumber, claimText, sourceUrl,
         verdict, comments, providerName, model, correctedVerdict, checkId,
+        revisionId, revisionUrl,
     } = fields;
 
     const clean = v => String(v ?? '').replace(/\s+/g, ' ').trim();
     const label = clean(articleTitle) || clean(articleUrl);
-    const lines = [];
+    const toolLines = [];
 
     if (articleUrl && label) {
         const cite = clean(citationNumber);
-        lines.push(`* '''Article:''' [${encodeURI(String(articleUrl))} ${label}]${cite ? `, citation [${cite}]` : ''}`);
+        // The revision is what makes the report reproducible, and it belongs
+        // on the Article line because it is a property of the article, not of
+        // the check: the plain link goes to whatever the page says today, so
+        // without the permalink a reader arriving at this section a month
+        // later cannot tell whether they are looking at the text the tool
+        // read. Linked when the caller supplied a permalink, bare otherwise —
+        // the number alone still identifies the revision.
+        const rev = normalizeRevisionId(revisionId);
+        const revText = rev === null ? '' : (revisionUrl
+            ? `[${encodeURI(String(revisionUrl))} ${rev}]`
+            : String(rev));
+        toolLines.push(`* '''Article:''' [${encodeURI(String(articleUrl))} ${label}]${cite ? `, citation [${cite}]` : ''}${revText ? `, revision ${revText}` : ''}`);
     }
     if (sourceUrl) {
         // encodeURI neutralises {{ }} (the one wikitext construct a citation
         // URL could plausibly smuggle in) while leaving the link clickable.
-        lines.push(`* '''Source:''' ${encodeURI(String(sourceUrl))}`);
+        toolLines.push(`* '''Source:''' ${encodeURI(String(sourceUrl))}`);
     }
     if (verdict) {
         const by = [clean(providerName), clean(model)].filter(Boolean).join(', ');
-        lines.push(`* '''Tool's verdict:''' ${clean(verdict)}${by ? ` (${by})` : ''}`);
-    }
-    if (correctedVerdict) {
-        lines.push(`* '''Editor says it should be:''' ${clean(correctedVerdict)}`);
+        toolLines.push(`* '''Tool's verdict:''' ${clean(verdict)}${by ? ` (${by})` : ''}`);
     }
     const claim = nowikiWrap(claimText);
-    if (claim) lines.push(`* '''Claim checked:''' ${claim}`);
+    if (claim) toolLines.push(`* '''Claim checked:''' ${claim}`);
     const reasoning = nowikiWrap(comments);
-    if (reasoning) lines.push(`* '''Tool's reasoning:''' ${reasoning}`);
+    if (reasoning) toolLines.push(`* '''Tool's reasoning:''' ${reasoning}`);
 
-    return [
-        lines.join('\n'),
-        '<!-- Write your comment below, then publish. -->',
-        '',
-        '~~~~',
+    const blocks = [];
+
+    if (toolLines.length) {
+        blocks.push([
+            `{{hidden begin|title=${CHECK_DETAILS_TITLE}}}`,
+            ...toolLines,
+            '{{hidden end}}',
+        ].join('\n'));
+    }
+    // The editor's, not the tool's, so it stays outside the box — on a
+    // thumbs-down this line is the disagreement itself, and burying it would
+    // leave the visible section saying nothing.
+    if (correctedVerdict) {
+        blocks.push(`'''Editor says it should be:''' ${clean(correctedVerdict)}`);
+    }
+    // Label and guidance share a line so that writing at the obvious spot —
+    // after the invisible comment — renders as "Editor's explanation: <prose>"
+    // rather than leaving a bold heading dangling above the text.
+    blocks.push(
+        `'''${EDITOR_EXPLANATION_LABEL}:''' <!-- Write your explanation here, then sign and publish. -->`,
         `<!-- source-verifier check: ${checkId ?? 'unknown'} -->`,
-    ].filter(line => line !== undefined).join('\n\n');
+    );
+
+    return blocks.join('\n\n');
 }
 
 // The URL that opens Wikipedia's own "add new section" form with the context
@@ -1636,38 +1715,34 @@ function buildDatasetSubmissionUrl(
 // to stay comfortably under that limit (currently ~100 KB): budget = 100 KB
 // minus the ~6.5 KB system prompt, the claim/user-prompt boilerplate, and
 // JSON-escaping + UTF-8 overhead on the source itself. 80 000 chars leaves room.
-// Browser-only (used by loadManualSourceText()); not shared with core/, so it
-// lives here rather than inside the <core-injected> block, which npm run build
-// regenerates wholesale from core/ and would otherwise silently drop this.
+//
+// Deliberately *below* the </core-injected> marker: it has no counterpart in
+// core/, so while it sat inside the injected region the next `npm run build`
+// silently deleted it, taking loadManualSourceText() with it.
 const MAX_MANUAL_SOURCE_CHARS = 80000;
 
     // ========================================
     // UI LOCALIZATION (i18n)
     // ========================================
-    // The interface is English by default. When the script runs on a French
-    // wiki (wgContentLanguage === 'fr'), user-facing strings are shown in
-    // French. Only the on-screen UI, notifications, dialogs and report output
-    // are localized — the LLM prompts (in core/prompts.js) stay in English by
-    // design, since the few-shot examples are tuned against the benchmark.
+    // The interface is English by default. When the script runs on a wiki whose
+    // language has a message table below (French, Spanish), user-facing strings
+    // are shown in that language. Only the on-screen UI, notifications, dialogs
+    // and report output are localized — the LLM prompts (in core/prompts.js)
+    // stay in English by design, since the few-shot examples are tuned against
+    // the benchmark.
     //
     // Strings are keyed by their English source text: `this.t('Verify Claim')`.
-    // FR_MESSAGES supplies the French override; a missing key falls back to the
-    // English key itself, so untranslated strings degrade gracefully. Use
+    // The per-language table supplies the override; a missing key falls back to
+    // the English key itself, so untranslated strings degrade gracefully. Use
     // `{name}`-style placeholders for interpolation: t('Set {name} API Key', {name}).
-    function detectUiLang() {
-        try {
-            if (typeof mw !== 'undefined') {
-                const lang = mw.config.get('wgContentLanguage')
-                    || mw.config.get('wgUserLanguage') || 'en';
-                if (String(lang).toLowerCase().startsWith('fr')) return 'fr';
-            }
-        } catch (e) { /* non-MediaWiki context: keep English */ }
-        return 'en';
-    }
+    //
+    // Adding a language: write its table, register it in MESSAGES, and add its
+    // name to PROMPT_LANGUAGES so verdict comments come back in that language
+    // too. detectUiLang() picks it up automatically — no other wiring.
+    // `tests/i18n.test.js` fails if a table drifts out of parity with French.
 
     const FR_MESSAGES = {
         // Sidebar structure
-        'Source Verifier': 'Vérificateur de sources',
         'Selected Claim': 'Affirmation sélectionnée',
         'Click on a reference number [1] next to a claim to verify it against its source.':
             'Cliquez sur un numéro de référence [1] à côté d’une affirmation pour la vérifier par rapport à sa source.',
@@ -1692,10 +1767,12 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
         'Stop': 'Arrêter',
         'Back to Report': 'Retour au rapport',
         'Save': 'Enregistrer',
-        'Give feedback': 'Donner un avis',
-
+        'Give feedback': 'Signaler un problème',
+      
         // Feedback controls
         'Was this right?': 'Est-ce correct ?',
+        'Yes': 'Oui',
+        'No': 'Non',
         'This verdict looks right': 'Ce verdict semble correct',
         'This verdict looks wrong': 'Ce verdict semble erroné',
         'What should it have been?': 'Quel aurait dû être le verdict ?',
@@ -1709,7 +1786,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
         // Provider info
         '✓ Using your {name} API key': '✓ Utilisation de votre clé API {name}',
         '✓ Free to use. Optional: ': '✓ Gratuit. Facultatif : ',
-        'add your {name} API key': 'ajouter votre clé API {name}',
+        'add your {name} API key': 'ajoutez votre clé API {name}',
         '✓ Free to use': '✓ Gratuit',
         'API key configured for {name}': 'Clé API configurée pour {name}',
         'API key required for {name}': 'Clé API requise pour {name}',
@@ -1754,19 +1831,22 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
         'Partial': 'Partielle',
         'Not Supported': 'Non confirmée',
         'Unavailable': 'Indisponible',
+        // Reason tag on a 'not supported' verdict
+        'Contradiction': 'Contradiction',
+        'Omission': 'Omission',
 
         // Report progress
         'Checking citation [{num}]': 'Vérification de la citation [{num}]',
         'Fetching source for [{num}]': 'Récupération de la source pour [{num}]',
         'Verifying citation [{num}]': 'Analyse de la citation [{num}]',
         'Rate limited, retrying in {secs}s...':
-            'Limite de débit atteinte, nouvelle tentative dans {secs}s…',
+            'Limite de débit atteinte, nouvelle tentative dans {secs} s…',
         'Checking combined sources {token}': 'Vérification des sources combinées {token}',
         'Completed: {count} citations checked': 'Terminé : {count} citations vérifiées',
         'Completed: {count} citation checked': 'Terminé : {count} citation vérifiée',
         'Cancelled after {done} of {total} citations': 'Annulé après {done} sur {total} citations',
         'Cancelled after {done} of {total} citation': 'Annulé après {done} sur {total} citation',
-        ' · ~{duration} remaining': ' · ~{duration} restant',
+        ' · ~{duration} remaining': ' · ~{duration} restant(e)(s)',
 
         // Report summary
         'supported': 'confirmées',
@@ -1797,7 +1877,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
         'Individual sources': 'Sources individuelles',
         'Combined verdict': 'Verdict combiné',
         'All citations are hidden by the current filters. Click a filter chip above to show them.':
-            'Toutes les citations sont masquées par les filtres actuels. Cliquez sur une puce de filtre ci-dessus pour les afficher.',
+            'Toutes les citations sont masquées par les filtres actuels. Cliquez sur un filtre ci-dessus pour les afficher.',
 
         // Notifications / dialogs
         'Report copied to clipboard!': 'Rapport copié dans le presse-papiers !',
@@ -1824,26 +1904,26 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
         'Could not fetch source content': 'Impossible de récupérer le contenu de la source',
 
         // Exported reports (wikitext + plain text)
-        'Submit': 'Soumettre',
+        'Submit': 'Signaler',
         'Citation verification report': 'Rapport de vérification des citations',
         'This is an experimental check of the article sources by [[User:Alaexis/AI_Source_Verification|Citation Verifier]]. Treat it with caution, be aware of its [[User:Alaexis/AI_Source_Verification#Limitations|limitations]] and feel free to leave feedback at [[User_talk:Alaexis/AI_Source_Verification|the talk page]].':
-            'Ceci est une vérification expérimentale des sources de l’article par [[User:Alaexis/AI_Source_Verification|Citation Verifier]]. À prendre avec précaution : tenez compte de ses [[User:Alaexis/AI_Source_Verification#Limitations|limites]] et n’hésitez pas à laisser un retour sur [[User_talk:Alaexis/AI_Source_Verification|la page de discussion]].',
+            'Ceci est une vérification expérimentale des sources de l’article par [[:en:User:Alaexis/AI_Source_Verification|Citation Verifier]]. Les résultats sont à prendre avec précaution : tenez compte de ses [[:en:User:Alaexis/AI_Source_Verification#Limitations|limites]] et n’hésitez pas à laisser un retour sur [[:en:User_talk:Alaexis/AI_Source_Verification|la page de discussion de l’outil]].',
         'Revision checked: ': 'Révision vérifiée : ',
         '! # !! Verdict !! Source !! Comments !! class="unsortable" | Submit':
-            '! # !! Verdict !! Source !! Commentaires !! class="unsortable" | Soumettre',
+            '! # !! Verdict !! Source !! Commentaires !! class="unsortable" | Signaler',
         '! # !! Verdict !! Source !! Comments':
             '! # !! Verdict !! Source !! Commentaires',
-        '{{tick}} Supported': '{{tick}} Confirmée',
-        '{{bang}} Partially supported': '{{bang}} Partiellement confirmée',
-        '{{cross}} Not supported': '{{cross}} Non confirmée',
-        '{{hmmm}} Source unavailable': '{{hmmm}} Source indisponible',
+        '{{tick}} Supported': '{{Oui-}} Confirmée',
+        '{{bang}} Partially supported': 'Partiellement confirmée',
+        '{{cross}} Not supported': '{{Non-}} Non confirmée',
+        '{{hmmm}} Source unavailable': 'Source indisponible',
         "''(Combined sources are long, only partially checked.)''":
             "''(Sources combinées longues, vérifiées partiellement seulement.)''",
         "''(Source is long, only partially checked.)''":
             "''(Source longue, vérifiée partiellement seulement.)''",
-        '(combined)': '(combiné)',
+        '(combined)': '(combinées)',
         "'''Summary:''' {supported} supported, {partial} partially supported, {notSupported} not supported, {unavailable} source unavailable out of {claims}.":
-            "'''Résumé :''' {supported} confirmées, {partial} partiellement confirmées, {notSupported} non confirmées, {unavailable} source indisponible sur {claims}.",
+            "'''Résumé :''' {supported} confirmées, {partial} partiellement confirmées, {notSupported} non confirmées, {unavailable} sources indisponibles sur {claims}.",
         '{count} citations': '{count} citations',
         '{count} citation': '{count} citation',
         '{claims} claims ({citations} citations)': '{claims} affirmations ({citations} citations)',
@@ -1851,8 +1931,10 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
         'a PublicAI-hosted open-source LLM': 'un LLM open source hébergé par PublicAI',
         'a HuggingFace-hosted open-source LLM ({model})':
             'un LLM open source hébergé par HuggingFace ({model})',
+        'a Wikimedia Lift Wing-hosted open-source LLM ({model})':
+            'un LLM open source hébergé par Wikimedia Lift Wing ({model})',
         'Generated by [[User:Alaexis/AI_Source_Verification|Citation Verifier]] using {model} on ~~~~~.':
-            'Généré par [[User:Alaexis/AI_Source_Verification|Citation Verifier]] avec {model} le ~~~~~.',
+            'Généré par [[:en:User:Alaexis/AI_Source_Verification|Citation Verifier]] avec {model} le ~~~~~.',
         ' Tokens used: {input} input, {output} output.':
             ' Jetons utilisés : {input} en entrée, {output} en sortie.',
         'Citation Verification Report: {title}': 'Rapport de vérification des citations : {title}',
@@ -1861,7 +1943,11 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
         'Claim: {text}': 'Affirmation : {text}',
         'Sources: {urls}': 'Sources : {urls}',
         'Source: {url}': 'Source : {url}',
+        'Quote: "{text}"': 'Citation : « {text} »',
         'Comments: {text}': 'Commentaires : {text}',
+        'From the source': 'Extrait de la source',
+        '⚠ The quote the AI gave was not found in the source text — judge the explanation below with that in mind.':
+            "⚠ La citation donnée par l'IA est introuvable dans le texte de la source — tenez-en compte en lisant l'explication ci-dessous.",
         'Note: Combined sources are long, only partially checked.':
             'Note : Sources combinées longues, vérifiées partiellement seulement.',
         'Note: Source is long, only partially checked.':
@@ -1894,11 +1980,361 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
         'How accurate is this?': 'Quelle est la fiabilité de cet outil ?',
         'Measured against 186 human-labelled citations, a "not supported" flag was confirmed by a reviewer roughly two thirds of the time. Treat every verdict as a reason to read the source, not as a conclusion.':
             'Sur 186 citations annotées par des humains, un signalement « non confirmée » a été validé par un relecteur dans environ deux tiers des cas. Considérez chaque verdict comme une raison de lire la source, et non comme une conclusion.',
+
+        // Status strip
+        'Could not extract claim text': 'Impossible d’extraire le texte de l’affirmation',
+        'No URL found in reference. Please paste the source text below.':
+            'Aucune URL trouvée dans la référence. Veuillez coller le texte de la source ci-dessous.',
+        'Google Books sources cannot be fetched. Please paste the source text below.':
+            'Les sources Google Books ne peuvent pas être récupérées. Veuillez coller le texte de la source ci-dessous.',
+        'Fetching source content...': 'Récupération du contenu de la source…',
+        'Could not fetch source{status}{reason}. Please paste the source text below.':
+            'Impossible de récupérer la source{status}{reason}. Veuillez coller le texte de la source ci-dessous.',
+        'Source fetched. Ready to verify.': 'Source récupérée. Prêt à vérifier.',
+        'Ready to verify claim against source': 'Prêt à vérifier l’affirmation par rapport à la source',
+        'Error: {message}': 'Erreur : {message}',
+        'Please enter some source text': 'Veuillez saisir un texte de source',
+        'Source text loaded (trimmed to {count} characters). Ready to verify.':
+            'Texte de la source chargé (tronqué à {count} caractères). Prêt à vérifier.',
+        'Source text loaded. Ready to verify.': 'Texte de la source chargé. Prêt à vérifier.',
+        'Cancelled': 'Annulé',
+        'Please choose a PDF file.': 'Veuillez choisir un fichier PDF.',
+        'Reading {name}…': 'Lecture de {name}…',
+        'This PDF has no selectable text (it looks scanned). Please paste the relevant passage instead.':
+            'Ce PDF ne contient pas de texte sélectionnable (il semble numérisé). Veuillez plutôt coller le passage concerné.',
+        'Loaded text from {name}. Ready to verify.': 'Texte chargé depuis {name}. Prêt à vérifier.',
+        'Could not read that PDF: {message}. Try pasting the text instead.':
+            'Impossible de lire ce PDF : {message}. Essayez plutôt de coller le texte.',
+        'Switched to {name}': 'Basculé vers {name}',
+        'Paste replacement source text below, then click Load Text.':
+            'Collez le texte de remplacement ci-dessous, puis cliquez sur « Charger le texte ».',
+        'This provider does not require an API key.': 'Ce fournisseur ne nécessite pas de clé API.',
+        'API key set successfully!': 'Clé API enregistrée !',
+        'This provider does not use a stored API key.': 'Ce fournisseur n’utilise pas de clé API enregistrée.',
+        'API key removed successfully!': 'Clé API supprimée !',
+        'Missing API key (for this provider), claim, or source content':
+            'Clé API (pour ce fournisseur), affirmation ou contenu de la source manquant',
+        'Verifying claim against source...': 'Vérification de l’affirmation par rapport à la source…',
+        'Verification complete!': 'Vérification terminée !',
+
+        // Pre-filled wiki edit summary
+        'source does not support claim (checked with [[User:Alaexis/AI_Source_Verification|Source Verifier]])':
+            'la source n’appuie pas l’affirmation (vérifié avec [[:en:User:Alaexis/AI_Source_Verification|Source Verifier]])',
     };
+
+    // Spanish. es.wikipedia's interface deliberately avoids addressing the
+    // reader in any second person, because tú/vos/usted all carry regional
+    // baggage. Two registers do the work, and the split matters: an *action
+    // label* — button, link, menu item, input placeholder — takes a bare
+    // infinitive ("Subir archivo", "Buscar en Wikipedia"), but a *sentence* of
+    // running prose takes impersonal "se" ("Se puede hacer clic en…"), because
+    // a bare infinitive reads as a clipped fragment there. No tuteo, no
+    // possessive "tu", and «angle quotes» over "".
+    const ES_MESSAGES = {
+        // Sidebar structure
+        'Source Verifier': 'Verificador de fuentes',
+        'Selected Claim': 'Afirmación seleccionada',
+        'Click on a reference number [1] next to a claim to verify it against its source.':
+            'Se puede hacer clic en un número de referencia [1] junto a una afirmación para verificarla con su fuente.',
+        'Source Content': 'Contenido de la fuente',
+        'No source loaded yet.': 'Todavía no se ha cargado ninguna fuente.',
+        'Verification Result': 'Resultado de la verificación',
+
+        // Buttons and inputs
+        'Close': 'Cerrar',
+        'Set API Key': 'Configurar la clave API',
+        'Verify Claim': 'Verificar la afirmación',
+        'Verifying...': 'Verificando…',
+        'Change Key': 'Cambiar la clave',
+        'Remove API Key': 'Eliminar la clave API',
+        'Paste the source text here...': 'Pegar aquí el texto de la fuente…',
+        'Load Text': 'Cargar el texto',
+        'Cancel': 'Cancelar',
+        'Paste source text manually': 'Pegar el texto de la fuente manualmente',
+        'Replace the fetched source content with text you paste in (e.g., the full article from The Wikipedia Library)':
+            'Sustituir el contenido obtenido de la fuente por un texto pegado manualmente (por ejemplo, el artículo completo de la Biblioteca de Wikipedia)',
+        'Verify All Citations': 'Verificar todas las citas',
+        'Stop': 'Detener',
+        'Back to Report': 'Volver al informe',
+        'Save': 'Guardar',
+        'Give feedback': 'Enviar comentarios',
+        'Edit Section': 'Editar la sección',
+        'Copy Report (Wikitext)': 'Copiar el informe (wikitexto)',
+        'Copy Report (Plain Text)': 'Copiar el informe (texto plano)',
+
+        // Provider info
+        '✓ Using your {name} API key': '✓ Usando la clave API de {name}',
+        '✓ Free to use. Optional: ': '✓ Uso gratuito. Opcional: ',
+        'add your {name} API key': 'añadir una clave API de {name}',
+        '✓ Free to use': '✓ Uso gratuito',
+        'API key configured for {name}': 'Clave API configurada para {name}',
+        'API key required for {name}': 'Se necesita una clave API para {name}',
+        'Results are logged for research. Your username is not recorded.':
+            'Los resultados se registran con fines de investigación. El nombre de usuario no se registra.',
+
+        // Verifier tab + first-run notification
+        'Verify': 'Verificar',
+        'Verify claims against sources': 'Verificar afirmaciones con sus fuentes',
+        'Citation Verifier': 'Verificador de citas',
+        'Citation Verifier installed — click the ':
+            'Verificador de citas instalado: la pestaña ',
+        ' tab to get started.': ' permite empezar.',
+
+        // Source display
+        '✓ PDF content extracted{pageInfo}': '✓ Contenido del PDF extraído{pageInfo}',
+        ' (page {page} of {total})': ' (página {page} de {total})',
+        ' ({pages} pages)': ' ({pages} páginas)',
+        '✓ Content fetched successfully': '✓ Contenido obtenido correctamente',
+        'Content will be fetched by AI during verification.':
+            'La IA obtendrá el contenido durante la verificación.',
+        '⚠ The source is long and can only be checked partially.':
+            '⚠ La fuente es extensa y solo puede comprobarse parcialmente.',
+        'Source URL:': 'URL de la fuente:',
+        'No URL found. Please paste the source text below:':
+            'No se ha encontrado ninguna URL; el texto de la fuente puede pegarse a continuación:',
+        'Manual Source Text:': 'Texto de la fuente introducido manualmente:',
+        'No source loaded.': 'No hay ninguna fuente cargada.',
+        'Click "Verify Claim" to verify the selected claim against the source.':
+            'Al hacer clic en «Verificar la afirmación» se comprueba la afirmación seleccionada con la fuente.',
+        'Part of a group of {count} citations: {numbers}':
+            'Forma parte de un grupo de {count} citas: {numbers}',
+
+        // Verdicts (full, shown for a single verification)
+        'SUPPORTED': 'RESPALDADA',
+        'PARTIALLY SUPPORTED': 'PARCIALMENTE RESPALDADA',
+        'NOT SUPPORTED': 'NO RESPALDADA',
+        'SOURCE UNAVAILABLE': 'FUENTE NO DISPONIBLE',
+        'ERROR': 'ERROR',
+        // Verdicts (short, shown on report cards/chips)
+        'Supported': 'Respaldada',
+        'Partial': 'Parcial',
+        'Not Supported': 'No respaldada',
+        'Unavailable': 'No disponible',
+        // Reason tag on a 'not supported' verdict
+        'Contradiction': 'Contradicción',
+        'Omission': 'Omisión',
+
+        // Report progress
+        'Checking citation [{num}]': 'Comprobando la cita [{num}]',
+        'Fetching source for [{num}]': 'Obteniendo la fuente de [{num}]',
+        'Verifying citation [{num}]': 'Verificando la cita [{num}]',
+        'Rate limited, retrying in {secs}s...':
+            'Límite de solicitudes alcanzado, reintentando en {secs} s…',
+        'Checking combined sources {token}': 'Comprobando las fuentes combinadas {token}',
+        'Completed: {count} citations checked': 'Completado: {count} citas comprobadas',
+        'Completed: {count} citation checked': 'Completado: {count} cita comprobada',
+        'Cancelled after {done} of {total} citations': 'Cancelado tras {done} de {total} citas',
+        'Cancelled after {done} of {total} citation': 'Cancelado tras {done} de {total} cita',
+        ' · ~{duration} remaining': ' · ~{duration} restante',
+
+        // Report summary
+        'supported': 'respaldadas',
+        'partial': 'parciales',
+        'not supported': 'no respaldadas',
+        'unavailable': 'no disponibles',
+        'errors': 'errores',
+        'Show {label} citations': 'Mostrar las citas «{label}»',
+        'Hide {label} citations': 'Ocultar las citas «{label}»',
+        '{count} citations checked': '{count} citas comprobadas',
+        '{count} citation checked': '{count} cita comprobada',
+        '{citations} citations across {claims} claims':
+            '{citations} citas repartidas en {claims} afirmaciones',
+        '{citations} citations across {claims} claim':
+            '{citations} citas repartidas en {claims} afirmación',
+        ' · {count} hidden by filter': ' · {count} ocultas por el filtro',
+        ' · {input} input + {output} output tokens':
+            ' · {input} tokens de entrada + {output} de salida',
+        'Revision: ': 'Revisión: ',
+
+        // Report cards / groups
+        '⚠ Source is long, only partially checked.':
+            '⚠ La fuente es extensa; solo se ha comprobado parcialmente.',
+        '⚠ Combined sources are long, only partially checked.':
+            '⚠ Las fuentes combinadas son extensas; solo se han comprobado parcialmente.',
+        'Group of {size} · {numbers}': 'Grupo de {size} · {numbers}',
+        'Checking combined sources…': 'Comprobando las fuentes combinadas…',
+        'Individual sources': 'Fuentes individuales',
+        'Combined verdict': 'Veredicto combinado',
+        'All citations are hidden by the current filters. Click a filter chip above to show them.':
+            'Los filtros actuales ocultan todas las citas. Se puede hacer clic en uno de los filtros de arriba para mostrarlas.',
+
+        // Notifications / dialogs
+        'Report copied to clipboard!': '¡Informe copiado al portapapeles!',
+        'No citations found on this page.': 'No se han encontrado citas en esta página.',
+        'Are you sure you want to remove the stored API key?':
+            '¿Eliminar la clave API guardada?',
+        'Enter your {name} API Key...': 'Introducir la clave API de {name}…',
+        'Set {name} API Key': 'Configurar la clave API de {name}',
+        'Enter your {name} API Key to enable source verification:':
+            'Se necesita la clave API de {name} para activar la verificación de fuentes:',
+        'This will verify {citations} citations from {sources} unique sources.{groupNote}\n\nEstimated time: ~{minutes} minutes.\n\nContinue?':
+            'Esto verificará {citations} citas procedentes de {sources} fuentes distintas.{groupNote}\n\nTiempo estimado: ~{minutes} minutos.\n\n¿Continuar?',
+        'This will verify {citations} citations from {sources} unique sources.{groupNote}\n\nEstimated time: ~{minutes} minute.\n\nContinue?':
+            'Esto verificará {citations} citas procedentes de {sources} fuentes distintas.{groupNote}\n\nTiempo estimado: ~{minutes} minuto.\n\n¿Continuar?',
+        '\n\nThis includes {count} combined-source checks for adjacent citation groups.':
+            '\n\nEsto incluye {count} comprobaciones de fuentes combinadas para grupos de citas adyacentes.',
+        '\n\nThis includes {count} combined-source check for adjacent citation groups.':
+            '\n\nEsto incluye {count} comprobación de fuentes combinadas para grupos de citas adyacentes.',
+
+        // Generated result comments
+        'No URL found in reference': 'No se ha encontrado ninguna URL en la referencia',
+        'None of the grouped sources could be retrieved.':
+            'No se ha podido obtener ninguna de las fuentes del grupo.',
+        'Could not fetch source content': 'No se ha podido obtener el contenido de la fuente',
+
+        // Exported reports (wikitext + plain text)
+        'Submit': 'Enviar',
+        'Citation verification report': 'Informe de verificación de citas',
+        'This is an experimental check of the article sources by [[User:Alaexis/AI_Source_Verification|Citation Verifier]]. Treat it with caution, be aware of its [[User:Alaexis/AI_Source_Verification#Limitations|limitations]] and feel free to leave feedback at [[User_talk:Alaexis/AI_Source_Verification|the talk page]].':
+            'Esta es una comprobación experimental de las fuentes del artículo hecha por [[:en:User:Alaexis/AI_Source_Verification|Citation Verifier]]. Conviene tomarla con cautela y tener en cuenta sus [[:en:User:Alaexis/AI_Source_Verification#Limitations|limitaciones]]; los comentarios son bienvenidos en [[:en:User_talk:Alaexis/AI_Source_Verification|la página de discusión]].',
+        'Revision checked: ': 'Revisión comprobada: ',
+        '! # !! Verdict !! Source !! Comments !! class="unsortable" | Submit':
+            '! # !! Veredicto !! Fuente !! Comentarios !! class="unsortable" | Enviar',
+        '! # !! Verdict !! Source !! Comments':
+            '! # !! Veredicto !! Fuente !! Comentarios',
+        '{{tick}} Supported': '{{tick}} Respaldada',
+        '{{bang}} Partially supported': '{{bang}} Parcialmente respaldada',
+        '{{cross}} Not supported': '{{cross}} No respaldada',
+        '{{hmmm}} Source unavailable': '{{hmmm}} Fuente no disponible',
+        "''(Combined sources are long, only partially checked.)''":
+            "''(Las fuentes combinadas son extensas; solo se han comprobado parcialmente.)''",
+        "''(Source is long, only partially checked.)''":
+            "''(La fuente es extensa; solo se ha comprobado parcialmente.)''",
+        '(combined)': '(combinada)',
+        // Link text for the source column of the wikitext table: [url source]
+        'source': 'fuente',
+        "'''Summary:''' {supported} supported, {partial} partially supported, {notSupported} not supported, {unavailable} source unavailable out of {claims}.":
+            "'''Resumen:''' {supported} respaldadas, {partial} parcialmente respaldadas, {notSupported} no respaldadas, {unavailable} con la fuente no disponible, de un total de {claims}.",
+        '{count} citations': '{count} citas',
+        '{count} citation': '{count} cita',
+        '{claims} claims ({citations} citations)': '{claims} afirmaciones ({citations} citas)',
+        '{claims} claim ({citations} citations)': '{claims} afirmación ({citations} citas)',
+        'a PublicAI-hosted open-source LLM': 'un LLM de código abierto alojado por PublicAI',
+        'a HuggingFace-hosted open-source LLM ({model})':
+            'un LLM de código abierto alojado por HuggingFace ({model})',
+        'Generated by [[User:Alaexis/AI_Source_Verification|Citation Verifier]] using {model} on ~~~~~.':
+            'Generado por [[:en:User:Alaexis/AI_Source_Verification|Citation Verifier]] con {model} el ~~~~~.',
+        ' Tokens used: {input} input, {output} output.':
+            ' Tokens utilizados: {input} de entrada, {output} de salida.',
+        'Citation Verification Report: {title}': 'Informe de verificación de citas: {title}',
+        'Provider: {name}': 'Proveedor: {name}',
+        'Revision: {rev}': 'Revisión: {rev}',
+        'Claim: {text}': 'Afirmación: {text}',
+        'Sources: {urls}': 'Fuentes: {urls}',
+        'Source: {url}': 'Fuente: {url}',
+        'Quote: "{text}"': 'Cita: «{text}»',
+        'Comments: {text}': 'Comentarios: {text}',
+        'From the source': 'Extracto de la fuente',
+        '⚠ The quote the AI gave was not found in the source text — judge the explanation below with that in mind.':
+            '⚠ La cita indicada por la IA no aparece en el texto de la fuente; conviene tenerlo en cuenta al leer la explicación siguiente.',
+        'Note: Combined sources are long, only partially checked.':
+            'Nota: Las fuentes combinadas son extensas; solo se han comprobado parcialmente.',
+        'Note: Source is long, only partially checked.':
+            'Nota: La fuente es extensa; solo se ha comprobado parcialmente.',
+        'Tokens used: {input} input, {output} output':
+            'Tokens utilizados: {input} de entrada, {output} de salida',
+        // Sidebar chrome and the state-driven panel
+        'Settings': 'Configuración',
+        'Done': 'Hecho',
+        'Open settings': 'Abrir la configuración',
+        'Upload PDF': 'Subir un PDF',
+        'or paste the text below': 'o pegar el texto a continuación',
+        'Click any citation number in the article to check whether its source actually supports the claim.':
+            'Se puede hacer clic en cualquier número de cita del artículo para comprobar si su fuente respalda realmente la afirmación.',
+        'Ready · free, no setup needed': 'Listo · gratuito, sin configuración',
+        'Ready · using your API key': 'Listo · con la clave API configurada',
+        'Add an API key in settings to start':
+            'Añadir una clave API en la configuración para empezar',
+        'Checking citations…': 'Comprobando las citas…',
+        'Model: {model}': 'Modelo: {model}',
+        // Verdict framing: the assessment is attributed, and each verdict says
+        // what the editor should do next.
+        'AI assessment': 'Evaluación de la IA',
+        'Read the source before changing the article — this is a machine reading, not a fact.':
+            'Conviene leer la fuente antes de modificar el artículo: es una lectura automática, no un hecho.',
+        'Spot-check the source yourself — this is a machine reading, not a fact.':
+            'Conviene comprobar la fuente personalmente: es una lectura automática, no un hecho.',
+        'The tool could not read this source. Try pasting the text or uploading a PDF.':
+            'La herramienta no ha podido leer esta fuente. Se puede pegar el texto o subir un PDF.',
+        'How accurate is this?': '¿Qué fiabilidad tiene?',
+        'Measured against 186 human-labelled citations, a "not supported" flag was confirmed by a reviewer roughly two thirds of the time. Treat every verdict as a reason to read the source, not as a conclusion.':
+            'Sobre 186 citas etiquetadas por personas, un aviso de «no respaldada» fue confirmado por un revisor en aproximadamente dos tercios de los casos. Conviene considerar cada veredicto como un motivo para leer la fuente, no como una conclusión.',
+
+        // Status strip
+        'Could not extract claim text': 'No se ha podido extraer el texto de la afirmación',
+        'No URL found in reference. Please paste the source text below.':
+            'No se ha encontrado ninguna URL en la referencia; el texto de la fuente puede pegarse a continuación.',
+        'Google Books sources cannot be fetched. Please paste the source text below.':
+            'Las fuentes de Google Books no se pueden obtener; el texto de la fuente puede pegarse a continuación.',
+        'Fetching source content...': 'Obteniendo el contenido de la fuente…',
+        'Could not fetch source{status}{reason}. Please paste the source text below.':
+            'No se ha podido obtener la fuente{status}{reason}; el texto de la fuente puede pegarse a continuación.',
+        'Source fetched. Ready to verify.': 'Fuente obtenida. Todo listo para verificar.',
+        'Ready to verify claim against source': 'Todo listo para verificar la afirmación con la fuente',
+        'Error: {message}': 'Error: {message}',
+        'Please enter some source text': 'Hace falta introducir el texto de la fuente',
+        'Source text loaded (trimmed to {count} characters). Ready to verify.':
+            'Texto de la fuente cargado (recortado a {count} caracteres). Todo listo para verificar.',
+        'Source text loaded. Ready to verify.': 'Texto de la fuente cargado. Todo listo para verificar.',
+        'Cancelled': 'Cancelado',
+        'Please choose a PDF file.': 'Hace falta elegir un archivo PDF.',
+        'Reading {name}…': 'Leyendo {name}…',
+        'This PDF has no selectable text (it looks scanned). Please paste the relevant passage instead.':
+            'Este PDF no tiene texto seleccionable (parece escaneado); conviene pegar el fragmento correspondiente.',
+        'Loaded text from {name}. Ready to verify.': 'Texto cargado desde {name}. Todo listo para verificar.',
+        'Could not read that PDF: {message}. Try pasting the text instead.':
+            'No se ha podido leer el PDF: {message}. Se puede pegar el texto en su lugar.',
+        'Switched to {name}': 'Se ha cambiado a {name}',
+        'Paste replacement source text below, then click Load Text.':
+            'El texto de sustitución puede pegarse a continuación y cargarse con «Cargar el texto».',
+        'This provider does not require an API key.': 'Este proveedor no necesita una clave API.',
+        'API key set successfully!': '¡Clave API guardada!',
+        'This provider does not use a stored API key.': 'Este proveedor no usa ninguna clave API guardada.',
+        'API key removed successfully!': '¡Clave API eliminada!',
+        'Missing API key (for this provider), claim, or source content':
+            'Falta la clave API (para este proveedor), la afirmación o el contenido de la fuente',
+        'Verifying claim against source...': 'Verificando la afirmación con la fuente…',
+        'Verification complete!': '¡Verificación completada!',
+
+        // Pre-filled wiki edit summary
+        'source does not support claim (checked with [[User:Alaexis/AI_Source_Verification|Source Verifier]])':
+            'la fuente no respalda la afirmación (comprobado con [[:en:User:Alaexis/AI_Source_Verification|Source Verifier]])',
+    };
+
+    // Registered UI languages, keyed by the MediaWiki language-code prefix that
+    // selects them. English is the absence of a table, not an entry here.
+    const MESSAGES = {
+        fr: FR_MESSAGES,
+        es: ES_MESSAGES
+    };
+
+    // How each localized language is named to the LLM when asking it to write
+    // its free-text "comments" in that language. Keys must match MESSAGES.
+    const PROMPT_LANGUAGES = {
+        fr: 'French (français)',
+        es: 'Spanish (español)'
+    };
+
+    // Pick the UI language from the wiki's content language, falling back to the
+    // user's interface language. Matching is by prefix, so regional variants
+    // (es-419, fr-ca) resolve to their base table.
+    function detectUiLang() {
+        try {
+            if (typeof mw !== 'undefined') {
+                const lang = String(mw.config.get('wgContentLanguage')
+                    || mw.config.get('wgUserLanguage') || 'en').toLowerCase();
+                for (const code of Object.keys(MESSAGES)) {
+                    if (lang === code || lang.startsWith(code + '-')) return code;
+                }
+            }
+        } catch (e) { /* non-MediaWiki context: keep English */ }
+        return 'en';
+    }
 
     class WikipediaSourceVerifier {
         constructor() {
-            // UI language: 'fr' on French wikis, 'en' everywhere else.
+            // UI language: a key of MESSAGES on wikis in that language,
+            // 'en' everywhere else.
             this.lang = detectUiLang();
 
             this.providers = {
@@ -2044,10 +2480,11 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
         }
         
         // Translate an English source string to the active UI language.
-        // Missing French keys fall back to the English text. Supports
+        // Missing keys fall back to the English text. Supports
         // `{placeholder}` interpolation from an optional params object.
         t(en, params) {
-            let s = (this.lang === 'fr' && FR_MESSAGES[en] != null) ? FR_MESSAGES[en] : en;
+            const table = MESSAGES[this.lang];
+            let s = (table && table[en] != null) ? table[en] : en;
             if (params) {
                 for (const key of Object.keys(params)) {
                     s = s.split('{' + key + '}').join(String(params[key]));
@@ -2070,7 +2507,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
             sidebar.innerHTML = `
                 <div id="verifier-sidebar-header">
                     ${this.logoMarkSvg()}
-                    <h3><a href="https://en.wikipedia.org/wiki/User:Alaexis/AI_Source_Verification" target="_blank" id="verifier-title-link">${this.t('Source Verifier')}</a></h3>
+                    <h3><a href="https://en.wikipedia.org/wiki/User:Alaexis/AI_Source_Verification" target="_blank" id="verifier-title-link">${this.t('Citation Verifier')}</a></h3>
                     <div id="verifier-sidebar-controls">
                         <div id="verifier-settings-btn-container"></div>
                         <div id="verifier-close-btn-container"></div>
@@ -2922,7 +3359,14 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                 #verifier-action-container {
                     margin-top: 10px;
                 }
-                #verifier-action-container .oo-ui-buttonElement {
+                /* Direct children only. "Edit Section" is the panel's primary
+                   call to action and is appended straight to this container, so
+                   it spans the full width. The feedback controls live in a
+                   .verifier-feedback wrapper inside the same container, and an
+                   unscoped rule stretched every one of their buttons too —
+                   which is what made Yes/No/Comment and the correction chips
+                   shrink to unrelated widths instead of sitting as a row. */
+                #verifier-action-container > .oo-ui-buttonElement {
                     width: 100%;
                 }
                 #verifier-title-link {
@@ -2932,7 +3376,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                 #verifier-title-link:hover {
                     text-decoration: underline;
                 }
-                #verifier-action-container .oo-ui-buttonElement-button {
+                #verifier-action-container > .oo-ui-buttonElement > .oo-ui-buttonElement-button {
                     width: 100%;
                     justify-content: center;
                 }
@@ -3207,31 +3651,75 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                     display: flex;
                     align-items: center;
                     flex-wrap: wrap;
-                    gap: 4px;
+                    gap: 6px;
+                }
+                /* [hidden] has to be restated: the display:flex above outranks
+                   the user-agent's [hidden] rule, so without this the
+                   corrected-verdict chips show under every verdict — including
+                   the thumbs-up they are meant to stay out of. */
+                .verifier-feedback-correction[hidden] {
+                    display: none;
                 }
                 .verifier-feedback-correction {
-                    margin-top: 4px;
+                    margin-top: 6px;
                 }
                 .verifier-feedback-prompt {
                     color: var(--sv-ink-subtle);
                     font-size: 11px;
                 }
+                /* The four verdicts are long enough to wrap in a 400px sidebar.
+                   Giving the question its own line lets them wrap as one block
+                   instead of one chip trailing the label and the rest below. */
+                .verifier-feedback-correction .verifier-feedback-prompt {
+                    flex-basis: 100%;
+                }
                 .verifier-feedback .oo-ui-buttonElement {
                     margin: 0;
                 }
+                /* OOUI gives a button min-height: 32px but leaves its line box
+                   at the natural height of the text, and an inline-block puts
+                   the leftover space entirely below — so the label sits high in
+                   the box. Icons don't: they are absolutely positioned at
+                   top: 50%, which is why this only reads as broken on the
+                   correction chips, the one button here with no icon beside the
+                   text. inline-flex centres the content vertically without
+                   taking the button out of the inline flow; horizontal
+                   placement is left alone, since the icon is out of flow and
+                   centring the label would slide it under the icon. */
                 .verifier-feedback .oo-ui-buttonElement-button {
-                    font-size: 11px;
-                    padding: 2px 6px;
+                    display: inline-flex;
+                    align-items: center;
                 }
+                /* Yes / No / Comment are the same widget — a frameless OOUI
+                   button with an icon and a label — and deliberately carry no
+                   styling of our own. Anything we add here is a way for the
+                   three to stop matching, which is how the row ended up with
+                   two emoji next to an icon-and-label button. */
+                /* The ring marks the recorded answer. Both buttons are disabled
+                   after the first click and OOUI dims them identically, so
+                   without it the row forgets which way the editor voted. It is
+                   an inset shadow rather than a border so nothing reflows. */
                 .verifier-feedback .is-chosen .oo-ui-buttonElement-button {
-                    background: var(--sv-bg-chip-hover);
+                    box-shadow: inset 0 0 0 1px var(--sv-accent-fg);
                     border-radius: 2px;
+                    background: var(--sv-bg-chip-hover);
+                    color: var(--sv-ink-chip);
+                    opacity: 1;
+                }
+                .verifier-feedback .is-chosen .oo-ui-labelElement-label {
+                    color: var(--sv-ink-chip);
+                    opacity: 1;
+                }
+                .verifier-feedback .is-dimmed {
+                    opacity: 0.35;
                 }
                 .verifier-feedback-chip .oo-ui-buttonElement-button {
                     border: 1px solid var(--sv-border-chip);
                     border-radius: 10px;
                     background: var(--sv-bg-chip-off);
                     color: var(--sv-ink-chip-off);
+                    font-size: 11px;
+                    padding: 2px 8px;
                 }
                 .verifier-feedback-chip .oo-ui-buttonElement-button:hover {
                     border-color: var(--sv-border-chip-hover);
@@ -3244,6 +3732,22 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                 }
                 .verifier-feedback-status:empty {
                     display: none;
+                }
+                /* The chips' own confirmation is a flex item, so it needs a full
+                   row of its own to land under them rather than beside them. */
+                .verifier-feedback-correction .verifier-feedback-status {
+                    flex-basis: 100%;
+                    margin-top: 2px;
+                }
+                /* The confirmation sits directly under whatever was clicked, so
+                   it has to carry its own weight rather than blend into the
+                   surrounding grey captions. */
+                .verifier-feedback-status.is-done {
+                    color: var(--sv-ok-fg);
+                    font-weight: 600;
+                }
+                .verifier-feedback-status.is-done::before {
+                    content: '✓ ';
                 }
                 .verifier-feedback-status.is-error {
                     color: var(--sv-error-fg);
@@ -3366,7 +3870,12 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                     font-weight: bold;
                     color: var(--sv-accent-fg);
                 }
-                #source-verifier-sidebar .oo-ui-iconElement-icon + .oo-ui-labelElement-label {
+                /* OOUI renders the icon span on every button, icon or not, so
+                   the sibling selector alone puts this gap on labels with
+                   nothing beside them — it was pushing the text in each
+                   correction chip 4px right of centre. The widget root only
+                   carries .oo-ui-iconElement when an icon was really set. */
+                #source-verifier-sidebar .oo-ui-iconElement .oo-ui-iconElement-icon + .oo-ui-labelElement-label {
                     margin-left: 4px;
                 }
                 #verifier-report-actions {
@@ -3750,7 +4259,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                 
                 const claim = this.extractClaimText(refElement);
                 if (!claim) {
-                    this.updateStatus('Could not extract claim text', true);
+                    this.updateStatus(this.t('Could not extract claim text'), true);
                     return;
                 }
                 
@@ -3772,20 +4281,20 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                 
                 if (!refUrl) {
                     this.showSourceTextInput();
-                    this.updateStatus('No URL found in reference. Please paste the source text below.');
+                    this.updateStatus(this.t('No URL found in reference. Please paste the source text below.'));
                     return;
                 }
 
                 if (this.isGoogleBooksUrl(refUrl)) {
                     this.showSourceTextInput();
-                    this.updateStatus('Google Books sources cannot be fetched. Please paste the source text below.');
+                    this.updateStatus(this.t('Google Books sources cannot be fetched. Please paste the source text below.'));
                     return;
                 }
 
                 this.hideSourceTextInput();
                 this.activeSource = null;
                 this.updateButtonVisibility();
-                this.updateStatus('Fetching source content...');
+                this.updateStatus(this.t('Fetching source content...'));
                 const fetchId = ++this.currentFetchId;
                 const pageNum = this.extractPageNumber(refElement);
                 const fetchResult = await this.fetchSourceContent(refUrl, pageNum);
@@ -3798,7 +4307,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                     this.showSourceTextInput();
                     const status = fetchResult.status != null ? ` (HTTP ${fetchResult.status})` : '';
                     const reason = fetchResult.error ? `: ${fetchResult.error}` : '';
-                    this.updateStatus(`Could not fetch source${status}${reason}. Please paste the source text below.`, true);
+                    this.updateStatus(this.t('Could not fetch source{status}{reason}. Please paste the source text below.', { status, reason }), true);
                     return;
                 }
 
@@ -3839,11 +4348,11 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
 
                 this.updateButtonVisibility();
                 this.refreshOverrideButton();
-                this.updateStatus(contentFetched ? 'Source fetched. Ready to verify.' : 'Ready to verify claim against source');
+                this.updateStatus(this.t(contentFetched ? 'Source fetched. Ready to verify.' : 'Ready to verify claim against source'));
                 
             } catch (error) {
                 console.error('Error handling reference click:', error);
-                this.updateStatus(`Error: ${error.message}`, true);
+                this.updateStatus(this.t('Error: {message}', { message: error.message }), true);
             }
         }
         
@@ -3886,7 +4395,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
         loadManualSourceText() {
             let text = this.sourceTextInput.getValue().trim();
             if (!text) {
-                this.updateStatus('Please enter some source text', true);
+                this.updateStatus(this.t('Please enter some source text'), true);
                 return;
             }
 
@@ -3916,15 +4425,15 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
             this.activeSource = `Manual source text:\n\n${text}`;
             const preview = `${text.substring(0, 200)}${text.length > 200 ? '...' : ''}`;
             const truncationHtml = wasTrimmed
-                ? '<div class="verifier-truncation-warning">⚠ The source is long and can only be checked partially.</div>'
+                ? `<div class="verifier-truncation-warning">${this.t('⚠ The source is long and can only be checked partially.')}</div>`
                 : '';
-            document.getElementById('verifier-source-text').innerHTML = `<strong>Manual Source Text:</strong><br><em>${preview}</em>${truncationHtml}`;
+            document.getElementById('verifier-source-text').innerHTML = `<strong>${this.t('Manual Source Text:')}</strong><br><em>${preview}</em>${truncationHtml}`;
             this.sourceInputForOverride = false;
             this.hideSourceTextInput();
             this.updateButtonVisibility();
             this.updateStatus(wasTrimmed
-                ? `Source text loaded (trimmed to ${MAX_MANUAL_SOURCE_CHARS.toLocaleString()} characters). Ready to verify.`
-                : 'Source text loaded. Ready to verify.');
+                ? this.t('Source text loaded (trimmed to {count} characters). Ready to verify.', { count: MAX_MANUAL_SOURCE_CHARS.toLocaleString() })
+                : this.t('Source text loaded. Ready to verify.'));
         }
 
         cancelManualSourceText() {
@@ -3937,7 +4446,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                 document.getElementById('verifier-source-text').textContent = this.t('No source loaded.');
             }
             this.updateButtonVisibility();
-            this.updateStatus('Cancelled');
+            this.updateStatus(this.t('Cancelled'));
         }
 
         // Lazily load PDF.js the first time a user picks a PDF, and cache the
@@ -3990,22 +4499,22 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
             if (!file) return;
             const looksPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
             if (!looksPdf) {
-                this.updateStatus('Please choose a PDF file.', true);
+                this.updateStatus(this.t('Please choose a PDF file.'), true);
                 return;
             }
-            this.updateStatus(`Reading ${file.name}…`);
+            this.updateStatus(this.t('Reading {name}…', { name: file.name }));
             try {
                 const text = await this.extractPdfText(file);
                 if (!text) {
-                    this.updateStatus('This PDF has no selectable text (it looks scanned). Please paste the relevant passage instead.', true);
+                    this.updateStatus(this.t('This PDF has no selectable text (it looks scanned). Please paste the relevant passage instead.'), true);
                     return;
                 }
                 this.sourceTextInput.setValue(text);
                 this.loadManualSourceText();
-                this.updateStatus(`Loaded text from ${file.name}. Ready to verify.`);
+                this.updateStatus(this.t('Loaded text from {name}. Ready to verify.', { name: file.name }));
             } catch (error) {
                 console.error('PDF extraction failed:', error);
-                this.updateStatus(`Could not read that PDF: ${error.message}. Try pasting the text instead.`, true);
+                this.updateStatus(this.t('Could not read that PDF: {message}. Try pasting the text instead.', { message: error.message }), true);
             }
         }
 
@@ -4155,7 +4664,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                 localStorage.setItem('source_verifier_provider', this.currentProvider);
                 this.updateButtonVisibility();
                 this.updateTheme();
-                this.updateStatus(`Switched to ${this.providers[this.currentProvider].name}`);
+                this.updateStatus(this.t('Switched to {name}', { name: this.providers[this.currentProvider].name }));
             });
             
             this.buttons.setKey.on('click', () => {
@@ -4204,7 +4713,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
 
             this.buttons.overrideText.on('click', () => {
                 this.showSourceTextInput(true);
-                this.updateStatus('Paste replacement source text below, then click Load Text.');
+                this.updateStatus(this.t('Paste replacement source text below, then click Load Text.'));
             });
 
             this.buttons.verifyAll.on('click', () => {
@@ -4237,7 +4746,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
             const provider = this.providers[this.currentProvider];
 
             if (!provider.requiresKey && !provider.optionalKey) {
-                this.updateStatus('This provider does not require an API key.');
+                this.updateStatus(this.t('This provider does not require an API key.'));
                 return;
             }
             
@@ -4281,7 +4790,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                     if (key) {
                         this.setCurrentApiKey(key);
                         this.updateButtonVisibility();
-                        this.updateStatus('API key set successfully!');
+                        this.updateStatus(this.t('API key set successfully!'));
                         
                         if (this.activeClaim && this.activeSource) {
                             this.updateButtonVisibility();
@@ -4295,7 +4804,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
         removeApiKey() {
             const provider = this.providers[this.currentProvider];
             if (!provider.requiresKey && !provider.optionalKey) {
-                this.updateStatus('This provider does not use a stored API key.');
+                this.updateStatus(this.t('This provider does not use a stored API key.'));
                 return;
             }
             
@@ -4303,7 +4812,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                 if (confirmed) {
                     this.removeCurrentApiKey();
                     this.updateButtonVisibility();
-                    this.updateStatus('API key removed successfully!');
+                    this.updateStatus(this.t('API key removed successfully!'));
                 }
             });
         }
@@ -4332,18 +4841,19 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
             return generateUserPrompt(claim, sourceInfo);
         }
 
-        // When the UI is French, ask the model to write its free-text
-        // explanation in French so the "comments" shown next to each verdict
-        // match the rest of the interface. The verdict and reason_type values
-        // are parsed programmatically, so they must stay in the English enum;
-        // the directive is appended (not spliced) to leave the benchmark-tuned
-        // few-shot prompt in core/prompts.js untouched. English wikis get the
-        // prompt verbatim.
+        // When the UI is localized, ask the model to write its free-text
+        // explanation in that language so the "comments" shown next to each
+        // verdict match the rest of the interface. The verdict and reason_type
+        // values are parsed programmatically, so they must stay in the English
+        // enum; the directive is appended (not spliced) to leave the
+        // benchmark-tuned few-shot prompt in core/prompts.js untouched. English
+        // wikis get the prompt verbatim.
         localizeSystemPrompt(prompt) {
-            if (this.lang !== 'fr') return prompt;
-            return prompt + '\n\nLANGUAGE: Write the "comments" field in French (français). '
-                + 'The "source_quote" field is an exception: it must stay in the source\'s own language, copied verbatim. Never translate it. '
-                + 'You may quote the source verbatim in its original language, but write your own explanation in French. '
+            const language = PROMPT_LANGUAGES[this.lang];
+            if (!language) return prompt;
+            return prompt + `\n\nLANGUAGE: Write the "comments" field in ${language}. `
+                + 'The "source_quote" field is an exception: it must stay in the source\'s own language, copied verbatim. Never translate it — it is checked against the source text character for character. '
+                + `You may quote the source verbatim in its original language, but write your own explanation in ${language}. `
                 + 'Keep the "verdict" and "reason_type" values exactly as specified above, in English '
                 + '(SUPPORTED, PARTIALLY SUPPORTED, NOT SUPPORTED, SOURCE UNAVAILABLE, contradiction, omission).';
         }
@@ -4375,6 +4885,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                 kind: context.kind,
                 articleUrl: window.location.href,
                 articleTitle: typeof mw !== 'undefined' ? mw.config.get('wgTitle') : document.title,
+                revisionId: this.getArticleRevisionId(),
                 citationNumber: fromContext('citationNumber', this.activeCitationNumber),
                 sourceUrl: fromContext('sourceUrl', this.activeSourceUrl),
                 provider: this.currentProvider,
@@ -4396,7 +4907,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
             
             // Only require a browser key for providers that need it
             if ((requiresKey && !hasKey) || !this.activeClaim || !this.activeSource) {
-                this.updateStatus('Missing API key (for this provider), claim, or source content', true);
+                this.updateStatus(this.t('Missing API key (for this provider), claim, or source content'), true);
                 return;
             }
             
@@ -4405,7 +4916,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                 this.buttons.verify.setDisabled(true);
                 this.buttons.verify.setLabel(this.t('Verifying...'));
                 this.buttons.verify.setIcon('clock');
-                this.updateStatus('Verifying claim against source...');
+                this.updateStatus(this.t('Verifying claim against source...'));
 
                 const apiResult = await this.callProviderAPI(this.activeClaim, this.activeSource);
                 const result = apiResult.text;
@@ -4414,7 +4925,8 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                     return;
                 }
 
-                this.updateStatus('Verification complete!');
+                this.updateStatus(this.t('Verification complete!'));
+                this.displayResult(result);
 
                 // Fire-and-forget logging. Runs before displayResult() rather
                 // than after it: the feedback controls displayResult() renders
@@ -4435,7 +4947,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                     return;
                 }
                 console.error('Verification error:', error);
-                this.updateStatus(`Error: ${error.message}`, true);
+                this.updateStatus(this.t('Error: {message}', { message: error.message }), true);
                 document.getElementById('verifier-verdict').textContent = this.t('ERROR');
                 document.getElementById('verifier-verdict').className = 'source-unavailable';
                 document.getElementById('verifier-comments').textContent = error.message;
@@ -4563,7 +5075,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
 	        const tag = document.createElement('span');
 	        tag.id = 'verifier-reason-type';
 	        tag.className = `reason-type-tag reason-type-${result.reason_type}`;
-	        tag.textContent = result.reason_type === 'contradiction' ? 'Contradiction' : 'Omission';
+	        tag.textContent = this.reasonTypeLabel(result.reason_type);
 	        verdictEl.after(tag);
 	    }
 
@@ -4700,6 +5212,11 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
 
         formatDuration(ms) {
             const s = Math.round(ms / 1000);
+            if (this.lang === 'fr') {
+                if (s < 60) return `${s} s`;
+                const m = Math.floor(s / 60);
+                return `${m} min ${s % 60} s`;
+            }
             if (s < 60) return `${s}s`;
             const m = Math.floor(s / 60);
             return `${m}m ${s % 60}s`;
@@ -4746,13 +5263,37 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
             // Group blocks are filtered by their COLLECTIVE verdict (the one
             // shown in the filter pills), not by the individual per-source
             // rows. Inside a visible group every row stays visible regardless
-            // of its verdict — the rows are debug detail. A group whose
-            // collective check hasn't finished yet (no data-collective-verdict)
-            // stays visible.
+            // of its verdict — the rows are debug detail.
+            //
+            // Two group states have no collective verdict to filter on, and
+            // they are not the same:
+            //
+            //  - Pending: the collective check hasn't run yet. getReportUnits()
+            //    contributes nothing for the group, so the pills don't count it
+            //    either. Stays visible; resolves when the check completes.
+            //  - Skipped: verifyGroupCollective() bailed because at most one
+            //    source was retrievable, so a combined verdict would just
+            //    restate the single per-source one. getReportUnits() then falls
+            //    back to counting each MEMBER as its own unit — so the pills do
+            //    count these, and the block has to honour the filters the same
+            //    way, or the summary claims citations are hidden while they are
+            //    still on screen. Hide it once every member's verdict is
+            //    filtered off.
             const groups = resultsEl.querySelectorAll('.verifier-report-group');
             groups.forEach(groupEl => {
                 const collectiveVerdict = groupEl.dataset.collectiveVerdict;
-                const hidden = collectiveVerdict ? !!this.reportFilters[collectiveVerdict] : false;
+                let hidden;
+                if (collectiveVerdict) {
+                    hidden = !!this.reportFilters[collectiveVerdict];
+                } else if (groupEl.dataset.collectiveSkipped === 'true') {
+                    const rows = groupEl.querySelectorAll('.verifier-report-group-row');
+                    hidden = rows.length > 0 && Array.from(rows).every(row => {
+                        const cls = classes.find(c => row.classList.contains(`verdict-${c}`));
+                        return cls && !!this.reportFilters[cls];
+                    });
+                } else {
+                    hidden = false;
+                }
                 groupEl.style.display = hidden ? 'none' : '';
             });
 
@@ -4856,6 +5397,13 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
             });
         }
 
+        // The reason_type enum itself stays English — it is parsed
+        // programmatically and round-trips to the dataset — but the tag shown
+        // next to a "not supported" verdict is UI text, so it gets translated.
+        reasonTypeLabel(reasonType) {
+            return reasonType === 'contradiction' ? this.t('Contradiction') : this.t('Omission');
+        }
+
         verdictClassFor(verdict) {
             switch (verdict) {
                 case 'SUPPORTED': return { cls: 'supported', label: this.t('Supported') };
@@ -4908,7 +5456,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                 ? `<div class="report-card-truncated">${this.t('⚠ Source is long, only partially checked.')}</div>`
                 : '';
             const reasonTypeHtml = (result.verdict === 'NOT SUPPORTED' && result.reason_type)
-                ? `<span class="reason-type-tag reason-type-${result.reason_type}">${result.reason_type === 'contradiction' ? 'Contradiction' : 'Omission'}</span>`
+                ? `<span class="reason-type-tag reason-type-${result.reason_type}">${this.reasonTypeLabel(result.reason_type)}</span>`
                 : '';
             card.innerHTML = `
                 <div class="report-card-header">
@@ -5002,7 +5550,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
             if (!slot) return;
 
             const reasonTypeHtml = (result.verdict === 'NOT SUPPORTED' && result.reason_type)
-                ? `<span class="reason-type-tag reason-type-${result.reason_type}">${result.reason_type === 'contradiction' ? 'Contradiction' : 'Omission'}</span>`
+                ? `<span class="reason-type-tag reason-type-${result.reason_type}">${this.reasonTypeLabel(result.reason_type)}</span>`
                 : '';
             const truncationHtml = (result.truncated && result.verdict !== 'SUPPORTED')
                 ? `<div class="report-card-truncated">${this.t('⚠ Combined sources are long, only partially checked.')}</div>`
@@ -5021,11 +5569,15 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
             if (feedback) slot.appendChild(feedback);
         }
 
+        // Called when the collective check is skipped for want of a second
+        // retrievable source. Marks the block so applyReportFilters() knows to
+        // filter it by its members rather than leaving it permanently visible.
         hideGroupCollectiveSlot(groupId) {
             const resultsEl = document.getElementById('verifier-report-results');
             if (!resultsEl) return;
             const groupEl = resultsEl.querySelector(`.verifier-report-group[data-group-id="${CSS.escape(groupId)}"]`);
             if (!groupEl) return;
+            groupEl.dataset.collectiveSkipped = 'true';
             const slot = groupEl.querySelector('.verifier-report-group-collective');
             if (slot) slot.style.display = 'none';
         }
@@ -5038,7 +5590,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                 ? `<div class="report-card-truncated">${this.t('⚠ Source is long, only partially checked.')}</div>`
                 : '';
             const reasonTypeHtml = (result.verdict === 'NOT SUPPORTED' && result.reason_type)
-                ? `<span class="reason-type-tag reason-type-${result.reason_type}">${result.reason_type === 'contradiction' ? 'Contradiction' : 'Omission'}</span>`
+                ? `<span class="reason-type-tag reason-type-${result.reason_type}">${this.reasonTypeLabel(result.reason_type)}</span>`
                 : '';
             row.innerHTML = `
                 <div class="verifier-report-group-row-header">
@@ -5096,6 +5648,22 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
             });
             copyTextBtn.on('click', () => this.copyReportToClipboard('plaintext'));
             actionsEl.appendChild(copyTextBtn.$element[0]);
+        }
+
+        // The revision the check ran against, recorded so a logged verdict or
+        // a talk-page report stays reproducible after the article moves on.
+        // `wgRevisionId` is the revision actually on screen and so the one that
+        // was read; it differs from `wgCurRevisionId` only when an old revision
+        // is being viewed, which is exactly the case where naming the current
+        // revision would be a lie.
+        getArticleRevisionId() {
+            if (typeof mw === 'undefined') return null;
+            try {
+                return normalizeRevisionId(mw.config.get('wgRevisionId'))
+                    ?? normalizeRevisionId(mw.config.get('wgCurRevisionId'));
+            } catch (e) {
+                return null;
+            }
         }
 
         getRevisionPermalinkUrl(revId) {
@@ -5207,9 +5775,9 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
             if (this.currentProvider === 'publicai') {
                 modelDesc = this.t('a PublicAI-hosted open-source LLM');
             } else if (this.currentProvider === 'huggingface') {
-                modelDesc = `a HuggingFace-hosted open-source LLM (${provider.model})`;
+                modelDesc = this.t('a HuggingFace-hosted open-source LLM ({model})', { model: provider.model });
             } else if (this.currentProvider === 'liftwing') {
-                modelDesc = `a Wikimedia Lift Wing-hosted open-source LLM (${provider.model})`;
+                modelDesc = this.t('a Wikimedia Lift Wing-hosted open-source LLM ({model})', { model: provider.model });
             } else {
                 modelDesc = provider.model;
             }
@@ -5338,6 +5906,13 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
             if (availableCount <= 1) {
                 this.reportGroupResults.set(groupId, { skipped: true, groupId });
                 this.hideGroupCollectiveSlot(groupId);
+                // Marking the group skipped changes what getReportUnits()
+                // returns for it (members instead of nothing), so the pills and
+                // the filter state both have to be recomputed — the success
+                // path below does the same. Without this a group skipped as the
+                // last step of a run keeps stale counts until the next toggle.
+                this.renderReportSummary();
+                this.applyReportFilters();
                 return;
             }
 
@@ -5375,7 +5950,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                                 if (willRetry) {
                                     this.updateReportProgress(
                                         progressCurrent, progressTotal,
-                                        `Rate limited, retrying in ${Math.round(backoff / 1000)}s...`,
+                                        this.t('Rate limited, retrying in {secs}s...', { secs: Math.round(backoff / 1000) }),
                                         startTime
                                     );
                                 }
@@ -5508,7 +6083,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
             this.sourceCache = new Map();
             this.reportTokenUsage = { input: 0, output: 0 };
             this.hasReport = true;
-            this.reportRevisionId = mw.config.get('wgCurRevisionId') || null;
+            this.reportRevisionId = this.getArticleRevisionId();
 
             this.showReportView();
             document.getElementById('verifier-report-results').innerHTML = '';
@@ -5746,7 +6321,12 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
         buildEditUrl(refElement) {
             const title = mw.config.get('wgPageName');
             const section = this.findSectionNumber(refElement);
-            const summary = 'source does not support claim (checked with [[User:Alaexis/AI_Source_Verification|Source Verifier]])';
+            // Goes into the wiki's edit-summary box, so it follows the UI
+            // language like the rest of the interface. The link target stays
+            // pointing at the English user page — that is where the script
+            // lives — and the tool's name is left untranslated, matching how
+            // the exported report credits it.
+            const summary = this.t('source does not support claim (checked with [[User:Alaexis/AI_Source_Verification|Source Verifier]])');
 
             const params = { action: 'edit', summary: summary };
             if (section > 0) {
@@ -5856,12 +6436,15 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
         // from either a report result object or the sidebar's active state.
         feedbackContextFor(result) {
             const provider = this.providers[this.currentProvider] || {};
+            const revisionId = this.getArticleRevisionId();
             return {
                 checkId: result?.checkId ?? null,
                 articleUrl: (typeof window !== 'undefined' && window.location)
                     ? `${window.location.origin}${window.location.pathname}`
                     : '',
                 articleTitle: typeof mw !== 'undefined' ? mw.config.get('wgTitle') : document.title,
+                revisionId,
+                revisionUrl: this.getRevisionPermalinkUrl(revisionId),
                 citationNumber: result?.citationNumber ?? '',
                 claimText: result?.claimText ?? '',
                 sourceUrl: result?.url ?? '',
@@ -5872,7 +6455,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
             };
         }
 
-        // The 👍 / 👎 / comment row. Returns null when the check has no id —
+        // The Yes / No / Comment row. Returns null when the check has no id —
         // an unparseable or errored verdict has nothing to attach feedback to,
         // and offering controls that silently go nowhere would be worse than
         // offering none.
@@ -5883,13 +6466,24 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
             const wrap = document.createElement('div');
             wrap.className = 'verifier-feedback';
 
-            const status = document.createElement('div');
-            status.className = 'verifier-feedback-status';
-            status.setAttribute('role', 'status');
-            const setStatus = (msg, isError = false) => {
-                status.textContent = msg;
-                status.classList.toggle('is-error', isError);
+            // Two status lines, not one: a confirmation the editor never sees
+            // is the same as no confirmation, so each sits immediately below
+            // the control that produced it — the rating under the thumbs, the
+            // correction under the chips.
+            const makeStatus = () => {
+                const el = document.createElement('div');
+                el.className = 'verifier-feedback-status';
+                el.setAttribute('role', 'status');
+                return el;
             };
+            const setStatusOn = (el) => (msg, isError = false) => {
+                el.textContent = msg;
+                el.classList.toggle('is-error', isError);
+                el.classList.toggle('is-done', !isError && !!msg);
+            };
+
+            const status = makeStatus();
+            const setStatus = setStatusOn(status);
 
             const row = document.createElement('div');
             row.className = 'verifier-feedback-row';
@@ -5901,18 +6495,41 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
             const correction = document.createElement('div');
             correction.className = 'verifier-feedback-correction';
             correction.hidden = true;
+            const correctionStatus = makeStatus();
+            const setCorrectionStatus = setStatusOn(correctionStatus);
             let correctedVerdict = null;
 
-            const up = new OO.ui.ButtonWidget({ label: '👍', title: this.t('This verdict looks right'), framed: false });
-            const down = new OO.ui.ButtonWidget({ label: '👎', title: this.t('This verdict looks wrong'), framed: false });
+            // Icon + label frameless buttons, exactly like Comment below. Two
+            // bare emoji beside an icon-and-label button read as decoration
+            // rather than as part of the same set; `check` and `close` come
+            // from oojs-ui.styles.icons-interactions, which is already loaded,
+            // and inherit the dark-mode icon inversion every other icon gets.
+            const up = new OO.ui.ButtonWidget({
+                label: this.t('Yes'),
+                icon: 'check',
+                title: this.t('This verdict looks right'),
+                framed: false,
+            });
+            const down = new OO.ui.ButtonWidget({
+                label: this.t('No'),
+                icon: 'close',
+                title: this.t('This verdict looks wrong'),
+                framed: false,
+            });
+            up.$element.addClass('verifier-feedback-thumb');
+            down.$element.addClass('verifier-feedback-thumb');
             const rate = (rating, button) => {
                 up.setDisabled(true);
                 down.setDisabled(true);
                 button.$element.addClass('is-chosen');
+                (button === up ? down : up).$element.addClass('is-dimmed');
                 setStatus(this.t('Thanks — recorded.'));
                 this.sendFeedback({ checkId: context.checkId, rating })
                     .catch(() => setStatus(this.t('Could not record that, sorry.'), true));
-                if (rating < 0) correction.hidden = false;
+                // The corrected-verdict chips are only worth asking for when the
+                // editor has said the verdict is wrong; after a thumbs-up there
+                // is nothing to correct.
+                correction.hidden = rating >= 0;
             };
             up.on('click', () => rate(1, up));
             down.on('click', () => rate(-1, down));
@@ -5945,22 +6562,26 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                 chip.$element.addClass('verifier-feedback-chip');
                 chip.on('click', () => {
                     correctedVerdict = verdict;
-                    chips.forEach(c => c.setDisabled(true));
+                    chips.forEach(c => {
+                        c.setDisabled(true);
+                        if (c !== chip) c.$element.addClass('is-dimmed');
+                    });
                     chip.$element.addClass('is-chosen');
-                    setStatus(this.t('Thanks — recorded.'));
+                    setCorrectionStatus(this.t('Thanks — recorded.'));
                     commentBtn.setHref(buildCommentUrl({ ...context, correctedVerdict }));
                     // rating is omitted here: the thumbs-down already counted,
                     // and a second row carrying it would double-count.
                     this.sendFeedback({ checkId: context.checkId, correctedVerdict: verdict })
-                        .catch(() => setStatus(this.t('Could not record that, sorry.'), true));
+                        .catch(() => setCorrectionStatus(this.t('Could not record that, sorry.'), true));
                 });
                 correction.appendChild(chip.$element[0]);
                 return chip;
             });
+            correction.appendChild(correctionStatus);
 
             wrap.appendChild(row);
-            wrap.appendChild(correction);
             wrap.appendChild(status);
+            wrap.appendChild(correction);
             return wrap;
         }
 
