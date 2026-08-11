@@ -1,6 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { verifyQuote, normalizeForMatch, quoteExpectedFor } from '../core/quote.js';
+import {
+    verifyQuote,
+    normalizeForMatch,
+    quoteExpectedFor,
+    QUOTE_STATUSES,
+    QUOTE_STATUS_LIST,
+    VERIFIED_STATUSES,
+} from '../core/quote.js';
 
 const SOURCE = [
     'City Tribune - Local News',
@@ -196,4 +203,65 @@ test('a forgiven short fragment is never offered for display', () => {
     const out = verifyQuote(SOURCE, 'Construction faced multiple delays due to funding shortages. ... zz99');
     assert.equal(out.verified, true);
     assert.ok(!out.verifiedText.includes('zz99'));
+});
+
+// --- the status vocabulary ----------------------------------------------
+//
+// quote_status leaves the client and is validated against a hardcoded copy of
+// this list in the Cloudflare Worker (alex-o-748/public-ai-proxy,
+// src/index.js), which stores NULL for anything it does not recognize. The
+// copy cannot be imported across repos, so these tests exist to make a change
+// here impossible to make silently.
+
+test('QUOTE_STATUS_LIST is exactly this set — changing it is a two-repo change', () => {
+    // If this fails you have added or renamed a status. Update
+    // QUOTE_STATUS_VALUES in the Worker's src/index.js in the same breath, or
+    // the new value will be written to the database as NULL.
+    assert.deepEqual([...QUOTE_STATUS_LIST].sort(), [
+        'empty', 'exact', 'no-source', 'normalized', 'not-found', 'partial', 'too-short',
+    ]);
+});
+
+test('every status verifyQuote can return is in QUOTE_STATUS_LIST', () => {
+    const cases = [
+        [SOURCE, ''],                                                        // empty
+        ['',     'a quote with no source to check'],                         // no-source
+        [SOURCE, '1994'],                                                    // too-short
+        [SOURCE, 'Construction faced multiple delays due to funding shortages.'], // exact
+        [SOURCE, 'The bridge was finally opened to traffic in August 2002'],  // normalized
+        [SOURCE, 'broke ground in 1994 ... nothing like this appears here'],  // partial
+        [SOURCE, 'An entirely invented sentence about nothing.'],             // not-found
+    ];
+    const seen = new Set();
+    for (const [source, quote] of cases) {
+        const { status } = verifyQuote(source, quote);
+        assert.ok(QUOTE_STATUS_LIST.includes(status), `undeclared status: ${status}`);
+        seen.add(status);
+    }
+    // Both directions: no undeclared status escapes, and no declared status is
+    // dead weight that the Worker is validating against for nothing.
+    assert.deepEqual([...seen].sort(), [...QUOTE_STATUS_LIST].sort(),
+        'every declared status should be reachable');
+});
+
+test('verified is true exactly for the VERIFIED_STATUSES', () => {
+    const cases = [
+        [SOURCE, 'Construction faced multiple delays due to funding shortages.'],
+        [SOURCE, 'The bridge was finally opened to traffic in August 2002'],
+        [SOURCE, 'An entirely invented sentence about nothing.'],
+        [SOURCE, 'broke ground in 1994 ... nothing like this appears here'],
+        [SOURCE, '1994'],
+        [SOURCE, ''],
+        ['',     'a quote with no source to check'],
+    ];
+    for (const [source, quote] of cases) {
+        const { verified, status } = verifyQuote(source, quote);
+        assert.equal(verified, VERIFIED_STATUSES.includes(status),
+            `verified/${status} disagree`);
+    }
+});
+
+test('the status constants are frozen', () => {
+    assert.throws(() => { QUOTE_STATUSES.EXACT = 'nope'; }, TypeError);
+    assert.throws(() => { QUOTE_STATUS_LIST.push('nope'); }, TypeError);
 });

@@ -164,6 +164,13 @@ part actually located, so every character on screen came from the source.
 | `empty` | No quote offered — correct for omission and SOURCE UNAVAILABLE | Nothing rendered |
 | `no-source` | No source text available to check against | No — caution line |
 
+`QUOTE_STATUSES` / `QUOTE_STATUS_LIST` in `core/quote.js` are the source of
+truth for that vocabulary. It is **not** client-only: `quote_status` is written
+to Neon, and the Worker (`alex-o-748/public-ai-proxy`, `src/index.js`)
+validates it against a hardcoded copy, storing `NULL` for anything unrecognized.
+Adding a status is therefore a two-repo change; `tests/quote.test.js` pins the
+list so it can't be done by accident.
+
 Matching is normalized but **not** fuzzy: no edit distance, no token overlap.
 The design accepts missing some genuine quotes in exchange for never showing a
 fabricated one. If you loosen this, you are trading away the property the

@@ -21,7 +21,7 @@ CREATE TABLE verification_logs (
   claim_text TEXT,             -- truncated to 2000 chars client-side
   llm_comments TEXT,           -- ditto
   source_quote TEXT,           -- ditto; '' when the model offered no quote
-  quote_status TEXT            -- exact | normalized | partial | not-found | too-short | empty | no-source
+  quote_status TEXT            -- see QUOTE_STATUS_LIST in core/quote.js
 );
 ```
 
@@ -46,6 +46,21 @@ The client sends `revision_id`, `source_quote` and `quote_status` whether or
 not the columns exist — the INSERT statement in the Worker names its columns
 explicitly, so an unmigrated table simply drops them rather than erroring. Add
 the columns to the INSERT once they exist.
+
+### The quote_status vocabulary is shared with the client
+
+`exact`, `normalized`, `partial`, `not-found`, `too-short`, `empty`,
+`no-source` — defined by `QUOTE_STATUSES` / `QUOTE_STATUS_LIST` in
+`core/quote.js`, and duplicated as `QUOTE_STATUS_VALUES` in the Worker
+(`alex-o-748/public-ai-proxy`, `src/index.js`), which stores `NULL` for a value
+it does not recognize.
+
+The duplication is unavoidable across two repositories, so it is pinned from
+the client side: `tests/quote.test.js` asserts the exact list, and asserts that
+every declared status is reachable and every reachable status is declared.
+A new status makes that test fail, which is the reminder to update the Worker.
+Without the pin, adding one would write `NULL` to the column indefinitely and
+nothing would say so.
 
 ### Why unverified quotes are logged
 

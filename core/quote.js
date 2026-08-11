@@ -16,6 +16,35 @@
 // Non-contiguous quotes joined by an ellipsis ("A ... B") are supported: each
 // segment must occur, in order.
 
+// The complete set of values verifyQuote can put in `status`. Mirrors the
+// VERDICTS / VERDICT_LIST pattern in core/verdicts.js.
+//
+// These strings leave the client: they are written to the `quote_status`
+// column via POST /log, and the Cloudflare Worker
+// (alex-o-748/public-ai-proxy, src/index.js) validates the incoming value
+// against its own hardcoded copy of this list, storing NULL for anything it
+// does not recognize. Cross-repo, that copy cannot be imported — so adding a
+// status here is a two-repo change, and skipping the second half loses the new
+// status silently. tests/quote.test.js pins the list to make that deliberate.
+export const QUOTE_STATUSES = Object.freeze({
+    EXACT:      'exact',
+    NORMALIZED: 'normalized',
+    PARTIAL:    'partial',
+    NOT_FOUND:  'not-found',
+    TOO_SHORT:  'too-short',
+    EMPTY:      'empty',
+    NO_SOURCE:  'no-source',
+});
+
+export const QUOTE_STATUS_LIST = Object.freeze(Object.values(QUOTE_STATUSES));
+
+// The two statuses that mean "found in the source". `verified` is exactly
+// membership of this set.
+export const VERIFIED_STATUSES = Object.freeze([
+    QUOTE_STATUSES.EXACT,
+    QUOTE_STATUSES.NORMALIZED,
+]);
+
 // A quote shorter than this (after normalization) is not evidence — "1985" or
 // "the bridge" would match almost any source by accident.
 const MIN_QUOTE_CHARS = 12;
@@ -98,7 +127,7 @@ function unwrap(quote) {
  *   not. `found` counts toward the verdict, `located` records whether the
  *   fragment was really seen (they differ only for fragments too short to
  *   judge, which are forgiven but never shown).
- *   status is one of:
+ *   status is one of QUOTE_STATUS_LIST:
  *     'empty'      - no quote was offered (expected for omission / unavailable)
  *     'no-source'  - we have no source text to check against (e.g. cached
  *                    result restored without its source); quote is unproven
@@ -107,24 +136,24 @@ function unwrap(quote) {
  *     'normalized' - occurs after whitespace/punctuation/case normalization
  *     'partial'    - some ellipsis-joined segments found, others not
  *     'not-found'  - does not occur in the source
- *   `verified` is true only for 'exact' and 'normalized'.
+ *   `verified` is true exactly for the VERIFIED_STATUSES ('exact', 'normalized').
  */
 export function verifyQuote(sourceText, quote) {
     const raw = quote == null ? '' : String(quote).trim();
-    if (!raw) return { verified: false, status: 'empty', verifiedText: '', segments: [] };
+    if (!raw) return { verified: false, status: QUOTE_STATUSES.EMPTY, verifiedText: '', segments: [] };
 
     const cleaned = unwrap(raw);
     const source = sourceText == null ? '' : String(sourceText);
-    if (!source.trim()) return { verified: false, status: 'no-source', verifiedText: '', segments: [] };
+    if (!source.trim()) return { verified: false, status: QUOTE_STATUSES.NO_SOURCE, verifiedText: '', segments: [] };
 
     if (normalizeForMatch(cleaned).length < MIN_QUOTE_CHARS) {
-        return { verified: false, status: 'too-short', verifiedText: '', segments: [] };
+        return { verified: false, status: QUOTE_STATUSES.TOO_SHORT, verifiedText: '', segments: [] };
     }
 
     if (source.includes(cleaned)) {
         return {
             verified: true,
-            status: 'exact',
+            status: QUOTE_STATUSES.EXACT,
             verifiedText: cleaned,
             segments: [{ text: cleaned, found: true, located: true }],
         };
@@ -161,12 +190,12 @@ export function verifyQuote(sourceText, quote) {
     const verifiedText = segments.filter(s => s.located).map(s => s.text).join(' … ');
     const foundCount = segments.filter(s => s.found).length;
     if (foundCount === segments.length && segments.length > 0) {
-        return { verified: true, status: 'normalized', verifiedText, segments };
+        return { verified: true, status: QUOTE_STATUSES.NORMALIZED, verifiedText, segments };
     }
     if (foundCount > 0) {
-        return { verified: false, status: 'partial', verifiedText, segments };
+        return { verified: false, status: QUOTE_STATUSES.PARTIAL, verifiedText, segments };
     }
-    return { verified: false, status: 'not-found', verifiedText: '', segments };
+    return { verified: false, status: QUOTE_STATUSES.NOT_FOUND, verifiedText: '', segments };
 }
 
 // Verdicts for which a supporting/contradicting passage should exist in the
