@@ -26,7 +26,15 @@ export function parseVerificationResult(response) {
             verdict: result.verdict || 'UNKNOWN',
             confidence: result.confidence ?? null,
             comments: result.comments || '',
-            reason_type: result.reason_type || null
+            reason_type: result.reason_type || null,
+            // Field-name aliases: models occasionally camelCase the key or
+            // shorten it to "quote". Always a string — an absent quote is ''
+            // (expected for omission/unavailable), never null, so callers can
+            // treat it uniformly. Whether the quote is real is decided by
+            // core/quote.js, not here.
+            source_quote: typeof (result.source_quote ?? result.sourceQuote ?? result.quote) === 'string'
+                ? (result.source_quote ?? result.sourceQuote ?? result.quote).trim()
+                : ''
         };
     } catch (e) {
         // fall through to the markdown-emphasis recovery
@@ -39,13 +47,14 @@ export function parseVerificationResult(response) {
     if (match) {
         const verdict = canonicalizeVerdict(match[1]);
         if (verdict) {
-            return { verdict, confidence: null, comments: '<extracted from non-JSON response>' };
+            return { verdict, confidence: null, comments: '<extracted from non-JSON response>', source_quote: '' };
         }
     }
 
     return {
         verdict: 'PARSE_ERROR',
         confidence: null,
-        comments: `Failed to parse AI response: ${response.substring(0, 200)}`
+        comments: `Failed to parse AI response: ${response.substring(0, 200)}`,
+        source_quote: ''
     };
 }

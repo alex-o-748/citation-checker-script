@@ -98,6 +98,15 @@ export function buildLogPayload(fields = {}) {
         // check was wrong but not what it claimed or why it decided that.
         claim_text:      truncateForLog(fields.claimText),
         llm_comments:    truncateForLog(fields.comments),
+        // The passage the model quoted from the source, and the result of
+        // checking it against that source (see core/quote.js). Logged
+        // together and unconditionally: an unverified quote is exactly the
+        // row worth inspecting later, so unlike the UI — which hides it — the
+        // log keeps it and lets quote_status say what it is. '' means no
+        // quote was offered, which is the correct answer for an omission or
+        // an unavailable source.
+        source_quote:    truncateForLog(fields.sourceQuote),
+        quote_status:    fields.quoteStatus ?? null,
     };
 }
 

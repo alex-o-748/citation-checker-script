@@ -38,15 +38,31 @@ export const DATASET_SUBMISSION_ENTRY_IDS = {
     fetchStatus:    'entry.375255643',
     editorHandle:   'entry.362287943',
     notes:          'entry.133790832',
+    // The verbatim passage the model quoted from the source, and whether it
+    // was found in that source (see core/quote.js). Optional — see
+    // DATASET_SUBMISSION_OPTIONAL_KEYS: until a matching Form question exists
+    // these stay on PLACEHOLDER and are simply left out of the prefilled URL,
+    // rather than disabling the whole submission button.
+    llmQuote:         'entry.PLACEHOLDER_QUOTE',
+    llmQuoteVerified: 'entry.PLACEHOLDER_QUOTE_VERIFIED',
 };
+
+// Keys that isDatasetSubmissionConfigured() does not require. Add a Form
+// question for these, paste in the real entry ids, and they start flowing;
+// leave them and everything else keeps working.
+export const DATASET_SUBMISSION_OPTIONAL_KEYS = Object.freeze([
+    'llmQuote',
+    'llmQuoteVerified',
+]);
 
 export function isDatasetSubmissionConfigured(
     formUrl = DATASET_SUBMISSION_FORM_URL,
     entryIds = DATASET_SUBMISSION_ENTRY_IDS,
 ) {
     if (!formUrl || formUrl.includes(DATASET_SUBMISSION_PLACEHOLDER)) return false;
-    return Object.values(entryIds).every(
-        id => typeof id === 'string' && id && !id.includes(DATASET_SUBMISSION_PLACEHOLDER)
+    return Object.entries(entryIds).every(
+        ([key, id]) => DATASET_SUBMISSION_OPTIONAL_KEYS.includes(key)
+            || (typeof id === 'string' && id && !id.includes(DATASET_SUBMISSION_PLACEHOLDER))
     );
 }
 
@@ -58,9 +74,13 @@ export function buildDatasetSubmissionUrl(
     const params = new URLSearchParams();
     params.set('usp', 'pp_url');
     for (const key of Object.keys(entryIds)) {
+        const entryId = entryIds[key];
+        // Skip fields whose Form question hasn't been created yet; sending
+        // 'entry.PLACEHOLDER_*' would just add a junk query parameter.
+        if (typeof entryId !== 'string' || !entryId || entryId.includes(DATASET_SUBMISSION_PLACEHOLDER)) continue;
         const value = fields == null ? undefined : fields[key];
         if (value === undefined || value === null || value === '') continue;
-        params.set(entryIds[key], String(value));
+        params.set(entryId, String(value));
     }
     return `${formUrl}?${params.toString()}`;
 }

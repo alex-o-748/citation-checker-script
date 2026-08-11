@@ -119,7 +119,37 @@ test('buildLogPayload maps camelCase fields onto the snake_case columns', () => 
     reason_type: 'omission',
     claim_text: 'The sky is blue.',
     llm_comments: 'Source never mentions the sky.',
+    source_quote: null,
+    quote_status: null,
   });
+});
+
+test('buildLogPayload carries the source quote and its verification status', () => {
+  const payload = buildLogPayload({
+    checkId: 'a7f3k2q9',
+    verdict: 'SUPPORTED',
+    sourceQuote: 'Acme Corp was established in 1985.',
+    quoteStatus: 'exact',
+  });
+  assert.equal(payload.source_quote, 'Acme Corp was established in 1985.');
+  assert.equal(payload.quote_status, 'exact');
+});
+
+test('buildLogPayload logs an unverified quote rather than dropping it', () => {
+  // The UI hides these; the log keeps them, because a quote that was not
+  // found in the source is exactly the row worth inspecting later.
+  const payload = buildLogPayload({
+    sourceQuote: 'a passage the source never contained',
+    quoteStatus: 'not-found',
+  });
+  assert.equal(payload.source_quote, 'a passage the source never contained');
+  assert.equal(payload.quote_status, 'not-found');
+});
+
+test('buildLogPayload truncates an over-long quote like the other free text', () => {
+  const payload = buildLogPayload({ sourceQuote: 'q'.repeat(MAX_LOGGED_TEXT + 500) });
+  assert.equal(payload.source_quote.length, MAX_LOGGED_TEXT);
+  assert.ok(payload.source_quote.endsWith('…'));
 });
 
 test('normalizeRevisionId accepts a revision id as a number or a string', () => {

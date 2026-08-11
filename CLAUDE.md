@@ -14,7 +14,7 @@ Wikipedia citation verification user script. An AI-powered sidebar tool that let
 main.js                          # Main Wikipedia user script (~2,700 lines, single class)
 package.json                     # Top-level deps + `npm test` / `npm run build` scripts
 core/                            # Shared pure logic, imported by both benchmark/ and main.js (via sync)
-  claim.js, feedback.js, parsing.js, prompts.js, providers.js, submission.js, urls.js, worker.js
+  claim.js, feedback.js, parsing.js, prompts.js, providers.js, quote.js, submission.js, urls.js, worker.js
 cli/verify.js                    # Node CLI front-end (verify a single citation from the command line)
 bin/ccs                          # Executable shim for the CLI
 scripts/sync-main.js             # Inlines core/ modules into main.js for the userscript build
@@ -72,13 +72,15 @@ docs/                            # Reference docs + design plans (see docs/READM
 | `fetchSourceContent()` | Fetch source via CORS proxy |
 | `ensurePdfJs()` / `extractPdfText()` / `handlePdfFileSelected()` | PDF upload for offline sources: lazily load PDF.js (pinned UMD build from cdnjs), pull the text layer, and feed it into the manual-source-text pipeline (empty text ⇒ "looks scanned, paste instead") |
 | `generateSystemPrompt()` / `generateUserPrompt()` | Build LLM prompts |
+| `buildQuoteView()` / `quoteHtml()` | Verify the model's `source_quote` against the source text and render it as an evidence block (see "Source quotes" below) |
 | `verifyClaim()` | Single citation verification flow |
 | `callProviderAPI()` / `callProviderAPIGroup()` | Route to provider-specific API (single source / collective multi-source) |
 | `verifyAllCitations()` | Batch verify all article citations |
 | `verifyGroupCollective()` | Collective verdict for an adjacent-citation group (combines the group's sources into one LLM call; see `docs/design-plans/2026-06-23-collective-group-verification.md`) |
 | `getReportUnits()` | Merge per-source results + collective group verdicts into one entry per claim (drives summary pills + exports) |
 | `generateWikitextReport()` | Generate wiki markup for failed citations |
-| `logVerification()` | Mint a `check_id`, log the verdict + claim + rationale to the worker, return the id |
+| `buildQuoteView()` / `quoteHtml()` | Verify the model's `source_quote` against the source text and render it as an evidence block (see "Source quotes" below) |
+| `logVerification()` | Mint a `check_id`, log the verdict + claim + rationale + source quote to the worker, return the id |
 | `buildFeedbackControls()` | Yes/No/Comment row under a result; ratings go to Neon, comments to the talk page (see `docs/worker-logging-reference.md`) |
 
 ## Benchmark Suite
@@ -131,7 +133,7 @@ npm run compare               # Compare two results.json runs (delegates to `ccs
 - All external fetches must go through the CORS proxy
 - OOUI components must be loaded via `mw.loader.using()` before use
 - API keys are stored in `localStorage`, never hardcoded
-- The system prompt contains 9 carefully tuned few-shot examples — changes affect benchmark accuracy
+- The system prompt contains carefully tuned few-shot examples — changes affect benchmark accuracy
 - Claim extraction uses "between citations" logic by design (not full sentences) for precision
 
 ### Benchmark row_id fragility (read before reordering the CSV)
@@ -144,6 +146,46 @@ npm run compare               # Compare two results.json runs (delegates to `ccs
 When you regenerate `dataset.json` after a CSV reorder, you must also walk `results.json` and update each entry's `entry_id` to the new value. The 2026-05-01 `a4973d7` regenerate caught the v3 +33 shift but missed a parallel −1 shift on the v1 rows around the v2 insertion boundary — the resulting misalignment was found two weeks later (rows 75/76/77 in `results.json` had content from what is now rows 74/75/76 in `dataset.json`). A content-based audit (match the entry's `comments` against current `claim_text` candidates) is reliable for catching this.
 
 A stable-id refactor (content hash, or a CSV-supplied id column independent of line number) would eliminate the class of bug entirely.
+
+### Source quotes are verified before they are shown (read before touching quote display)
+
+The model returns a `source_quote` field alongside its verdict — the passage
+from the source that supports or contradicts the claim. **It is not trusted.**
+`core/quote.js` looks the quote up in the source text the model was shown, and
+only a quote that is actually found there is displayed as evidence or exported
+to a wikitext report.
+
+| Status | Meaning | Shown? |
+| --- | --- | --- |
+| `exact` / `normalized` | Found in the source (the second after folding case, quote style, dashes, whitespace) | Yes, as a quote |
+| `partial` | Some ellipsis-joined segments found, others not | No — caution line |
+| `not-found` | Not in the source: paraphrased or invented | No — caution line |
+| `too-short` | Below the evidence threshold (12 normalized chars) | No — caution line |
+| `empty` | No quote offered — correct for omission and SOURCE UNAVAILABLE | Nothing rendered |
+| `no-source` | No source text available to check against | No — caution line |
+
+Matching is normalized but **not** fuzzy: no edit distance, no token overlap.
+The design accepts missing some genuine quotes in exchange for never showing a
+fabricated one. If you loosen this, you are trading away the property the
+feature exists for.
+
+`quoteExpectedFor(verdict, reasonType)` decides whether a missing or
+unverifiable quote is worth flagging: omission and SOURCE UNAVAILABLE verdicts
+have nothing to quote, so a stray quote there is ignored rather than warned
+about.
+
+The **verification log is the exception**: `logVerification()` records
+`source_quote` and `quote_status` on every row regardless of outcome. The UI
+hides an unverified quote because showing it would mislead an editor; the log
+keeps it because a `not-found` row is precisely the one worth inspecting later.
+Don't "tidy" this into dropping unverified quotes at the log boundary — that
+would delete the signal the column exists to carry.
+
+Quoted source text is arbitrary web prose. It goes through `escapeHtml()` into
+the panel and `escapeWikitableCell()` (pipes, braces, newlines) into a
+wikitable — never raw.
+
+Rationale and the outstanding benchmark re-run: `docs/design-plans/2026-08-04-source-quote-extraction.md`.
 
 ### UI localization — every user-facing string goes through `this.t()`
 
@@ -196,7 +238,7 @@ Provider-tinted values use the `--sv-accent` token, which tracks `getCurrentColo
 
 **Adding a new LLM provider:** Add provider config to `this.providers` in the constructor, implement a `callXxxAPI()` method, and add routing in `callProviderAPI()`.
 
-**Updating the benchmark:** Edit `dataset.json` or re-extract with `npm run extract`, then run `npm run benchmark` and `npm run analyze`.
+**Updating the benchmark:** Edit `dataset.json` or re-extract with `npm run extract`, then run `npm run benchmark` and `npm run analyze`. Results carry `source_quote` / `quote_status` / `quote_verified` per row; `npm run analyze` reports per-provider quote offer rate and fidelity (share of offered quotes actually found in the source).
 
 **Comparing two benchmark runs:** `npx ccs compare <control.json> <treatment.json> --dataset <dataset.json>` (or `npm run compare -- ...` from `benchmark/`). Emits JSON / Markdown / HTML with per-provider accuracy deltas and flip counts; supports subset filters and a `--noise-floor` threshold. See `docs/comparing-benchmark-runs.md`.
 

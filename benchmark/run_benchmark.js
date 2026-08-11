@@ -19,7 +19,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
-import { generateSystemPrompt as coreGenerateSystemPrompt, generateUserPrompt } from '../core/prompts.js';
+import { generateSystemPrompt as coreGenerateSystemPrompt, generateUserPrompt, extractSourceText } from '../core/prompts.js';
 import {
     callOpenAICompatibleChat,
     callClaudeAPI,
@@ -28,6 +28,7 @@ import {
     callHuggingFaceAPI,
 } from '../core/providers.js';
 import { parseVerificationResult } from '../core/parsing.js';
+import { verifyQuote } from '../core/quote.js';
 import { canonicalizeVerdict, toTitleCase } from '../core/verdicts.js';
 import { withRetry } from '../core/retry.js';
 import { loadRows, loadMetadata, todayIso } from './io.js';
@@ -263,6 +264,7 @@ export async function callProvider(provider, systemPrompt, userPrompt) {
             verdict: 'ERROR',
             confidence: 0,
             comments: error.message,
+            source_quote: '',
             latency: Date.now() - startTime,
             error: error.message
         };
@@ -285,6 +287,7 @@ export function shapeResult({ text, usage }) {
         verdict: normalizeVerdict(parsed.verdict),
         confidence: parsed.confidence ?? 0,
         comments: parsed.comments,
+        source_quote: parsed.source_quote ?? '',
         raw_response: text,
         usage,
     };
@@ -590,6 +593,7 @@ async function main() {
                 const userPrompt = generateUserPrompt(entry.claim_text, entry.source_text);
 
                 const result = await callProvider(provider, systemPrompt, userPrompt);
+                const quoteCheck = verifyQuote(extractSourceText(entry.source_text), result.source_quote);
 
                 results.push({
                     entry_id: entry.id,
@@ -599,6 +603,13 @@ async function main() {
                     predicted_verdict: result.verdict,
                     confidence: result.confidence,
                     comments: result.comments,
+                    // The quote as returned, plus whether it was located in
+                    // the source text this entry was scored against. Storing
+                    // both means a later analysis can measure quote fidelity
+                    // per provider without re-running anything.
+                    source_quote: result.source_quote ?? '',
+                    quote_status: quoteCheck.status,
+                    quote_verified: quoteCheck.verified,
                     latency_ms: result.latency,
                     error: result.error,
                     correct: compareVerdicts(result.verdict, entry.ground_truth),
