@@ -1999,12 +1999,6 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
         'Quote: "{text}"': 'Citation : « {text} »',
         'Comments: {text}': 'Commentaires : {text}',
         'From the source': 'Extrait de la source',
-        "Part of the AI's quote was not found in the source and has been left out.":
-            "Une partie de la citation de l'IA est introuvable dans la source et a été omise.",
-        "(part of the AI's quote was not found in the source)":
-            "(une partie de la citation de l'IA est introuvable dans la source)",
-        '⚠ The quote the AI gave was not found in the source text — judge the explanation below with that in mind.':
-            "⚠ La citation donnée par l'IA est introuvable dans le texte de la source — tenez-en compte en lisant l'explication ci-dessous.",
         'Note: Combined sources are long, only partially checked.':
             'Note : Sources combinées longues, vérifiées partiellement seulement.',
         'Note: Source is long, only partially checked.':
@@ -2282,12 +2276,6 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
         'Quote: "{text}"': 'Cita: «{text}»',
         'Comments: {text}': 'Comentarios: {text}',
         'From the source': 'Extracto de la fuente',
-        "Part of the AI's quote was not found in the source and has been left out.":
-            'Parte de la cita de la IA no se encuentra en la fuente y se ha omitido.',
-        "(part of the AI's quote was not found in the source)":
-            '(parte de la cita de la IA no se encuentra en la fuente)',
-        '⚠ The quote the AI gave was not found in the source text — judge the explanation below with that in mind.':
-            '⚠ La cita indicada por la IA no aparece en el texto de la fuente; conviene tenerlo en cuenta al leer la explicación siguiente.',
         'Note: Combined sources are long, only partially checked.':
             'Nota: Las fuentes combinadas son extensas; solo se han comprobado parcialmente.',
         'Note: Source is long, only partially checked.':
@@ -3402,23 +3390,6 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                     color: var(--sv-ink-2);
                     max-height: 200px;
                     overflow-y: auto;
-                }
-                /* Sits under a partly-verified quote: the shown text is
-                   genuine, but something the model included was dropped. */
-                .sv-quote-note {
-                    margin-top: 5px;
-                    font-size: 11px;
-                    line-height: 1.35;
-                    color: var(--sv-ink-subtle);
-                }
-                /* Shown instead of the quote when the model returned a passage
-                   we could not find in the source — a caution about the
-                   rationale, not a quote to read. */
-                .sv-quote-missing {
-                    margin-bottom: 8px;
-                    font-size: 12px;
-                    line-height: 1.4;
-                    color: var(--sv-warn-fg);
                 }
                 .verifier-report-card .sv-quote,
                 .verifier-report-group-row .sv-quote,
@@ -5081,11 +5052,6 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                 display: check.verifiedText,
                 verified: check.verified,
                 status: check.status,
-                // Whether this verdict is one a quote should exist for. Drives
-                // whether an unverifiable quote is worth warning about: on an
-                // omission or an unavailable source there is nothing to quote,
-                // so a stray quote is just noise, not a red flag.
-                expected: quoteExpectedFor(parsed && parsed.verdict, parsed && parsed.reason_type),
             };
         }
 
@@ -5098,37 +5064,29 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                 display: result.quoteDisplay || '',
                 verified: !!result.quoteVerified,
                 status: result.quoteStatus,
-                expected: !!result.quoteExpected,
             };
         }
 
-        // Renders the evidence block. A quote is displayed only when it was
-        // located in the source: an unlocated quote is replaced by a caution
-        // line rather than shown, because a passage the source may not contain
-        // is worse than no quote at all. Returns '' when there is nothing to
-        // say (no quote offered, which is expected for omission and
-        // source-unavailable verdicts).
+        // Renders the evidence block: the part of the model's quote that was
+        // located in the source, or nothing.
+        //
+        // Nothing is deliberate. An unlocatable quote used to draw a warning
+        // here, but that warning implied the verdict was less trustworthy — a
+        // claim there is no evidence for. A model that paraphrases instead of
+        // copying may still be judging correctly, and steering an editor away
+        // from a correct verdict is a real cost paid against a speculative
+        // benefit. quote_status is still logged on every row, so "does an
+        // unverified quote predict a worse verdict?" stays answerable; if the
+        // benchmark answers yes, the warning will have earned its place.
         quoteHtml(view) {
-            if (!view || !view.quote) return '';
-            // An unverifiable quote is only worth flagging where a quote was
-            // supposed to exist; elsewhere, stay quiet.
-            if (!view.verified && !view.display && !view.expected) return '';
-            if (view.display) {
-                // A partly-verified quote still shows: every character of
-                // `display` was found in the source, so the block keeps its
-                // guarantee. The dropped fragment is called out rather than
-                // silently trimmed, because what was cut could be the half
-                // that mattered.
-                const partial = !view.verified
-                    ? `<div class="sv-quote-note">${this.escapeHtml(this.t('Part of the AI\'s quote was not found in the source and has been left out.'))}</div>`
-                    : '';
-                return `<div class="sv-quote">`
-                    + `<span class="sv-quote-label">${this.escapeHtml(this.t('From the source'))}</span>`
-                    + `<div class="sv-quote-text">“${this.escapeHtml(view.display)}”</div>`
-                    + partial
-                    + `</div>`;
-            }
-            return `<div class="sv-quote-missing">${this.escapeHtml(this.t('⚠ The quote the AI gave was not found in the source text — judge the explanation below with that in mind.'))}</div>`;
+            if (!view || !view.display) return '';
+            // Every character of `display` was found in the source. A partial
+            // match shows its surviving fragments ellipsis-joined, which reads
+            // as the ordinary elision it is.
+            return `<div class="sv-quote">`
+                + `<span class="sv-quote-label">${this.escapeHtml(this.t('From the source'))}</span>`
+                + `<div class="sv-quote-text">“${this.escapeHtml(view.display)}”</div>`
+                + `</div>`;
         }
 
 	displayResult(response) {
@@ -5807,14 +5765,9 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                 // left out of the on-wiki report entirely.
                 // Quote the located text, not the model's raw quote: on a
                 // partial match the two differ, and only the former is
-                // guaranteed to be in the source. Flag the trimming so an
-                // editor reading the report knows the quote is not the whole
-                // of what the model offered.
+                // guaranteed to be in the source.
                 if (r.quoteDisplay) {
-                    const trimmedNote = r.quoteVerified
-                        ? ''
-                        : ` <small>''${this.t("(part of the AI's quote was not found in the source)")}''</small>`;
-                    commentsClean = `''"${this.escapeWikitableCell(r.quoteDisplay)}"''${trimmedNote}<br />`
+                    commentsClean = `''"${this.escapeWikitableCell(r.quoteDisplay)}"''<br />`
                         + this.escapeWikitableCell(commentsClean);
                 } else {
                     commentsClean = this.escapeWikitableCell(commentsClean);
@@ -5900,14 +5853,14 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                     text += `  ${this.t('Claim: {text}', { text: claimExcerpt })}\n`;
                     const urls = (r.members || []).filter(m => m.url).map(m => `[${m.citationNumber}] ${m.url}`);
                     if (urls.length) text += `  ${this.t('Sources: {urls}', { urls: urls.join(' | ') })}\n`;
-                    if (r.quoteDisplay) text += `  ${this.t('Quote: "{text}"', { text: r.quoteDisplay })}${r.quoteVerified ? '' : ` ${this.t("(part of the AI's quote was not found in the source)")}`}\n`;
+                    if (r.quoteDisplay) text += `  ${this.t('Quote: "{text}"', { text: r.quoteDisplay })}\n`;
                     if (r.comments) text += `  ${this.t('Comments: {text}', { text: r.comments })}\n`;
                     if (r.truncated && r.verdict !== 'SUPPORTED') text += `  ${this.t('Note: Combined sources are long, only partially checked.')}\n`;
                 } else {
                     text += `[${r.citationNumber}] ${this.t(r.verdict)}\n`;
                     text += `  ${this.t('Claim: {text}', { text: claimExcerpt })}\n`;
                     if (r.url) text += `  ${this.t('Source: {url}', { url: r.url })}\n`;
-                    if (r.quoteDisplay) text += `  ${this.t('Quote: "{text}"', { text: r.quoteDisplay })}${r.quoteVerified ? '' : ` ${this.t("(part of the AI's quote was not found in the source)")}`}\n`;
+                    if (r.quoteDisplay) text += `  ${this.t('Quote: "{text}"', { text: r.quoteDisplay })}\n`;
                     if (r.comments) text += `  ${this.t('Comments: {text}', { text: r.comments })}\n`;
                     if (r.truncated && r.verdict !== 'SUPPORTED') text += `  ${this.t('Note: Source is long, only partially checked.')}\n`;
                 }
@@ -6065,7 +6018,6 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                         quoteDisplay: quoteView.display,
                         quoteVerified: quoteView.verified,
                         quoteStatus: quoteView.status,
-                        quoteExpected: quoteView.expected,
                     };
                 } catch (e) {
                     result = { ...base, verdict: 'ERROR', confidence: null, comments: e.message };
@@ -6311,7 +6263,6 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                                 quoteDisplay: quoteView.display,
                                 quoteVerified: quoteView.verified,
                                 quoteStatus: quoteView.status,
-                                quoteExpected: quoteView.expected,
                                 truncated: sourceTruncated
                             };
 

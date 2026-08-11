@@ -75,9 +75,10 @@ some true quotes is acceptable; presenting a fabricated one as evidence is not.
 
 ### 3. An unverified quote is never displayed
 
-> **Amended 2026-08-11 after a real failure.** The rule below is unchanged —
-> unlocated text is still never shown — but "the quote didn't verify" turned
-> out to be too blunt a unit. See "The PDF hyphenation case" at the end.
+> **Amended twice, 2026-08-11.** Unlocated text is still never shown. But the
+> *unit* was too blunt — see "The PDF hyphenation case" — and the caution line
+> described below has since been removed entirely; see "Withdrawing the
+> caution line". Both amendments are at the end of this document.
 
 
 If the quote doesn't check out, the UI shows a one-line caution — *the quote
@@ -181,6 +182,35 @@ third didn't match, which served the guarantee's letter and not its purpose.
 Worth noting for the benchmark re-run: PDF-derived sources are common in the
 dataset, so the pre-fix quote fidelity numbers would have understated every
 provider.
+
+## Withdrawing the caution line (2026-08-11)
+
+The original design paired a hidden quote with a visible warning: *the quote
+the AI gave was not found in the source text — judge the explanation below with
+that in mind.* The maintainer's objection, on seeing it in the panel, was that
+it is debugging output wearing a user-facing coat — **unless we know the
+verdict is actually less accurate when the quote doesn't verify.**
+
+That is right, and the warning is worse than merely unhelpful. It makes an
+implicit claim — *trust this verdict less* — that nothing has established. A
+model that paraphrases rather than copies may be judging perfectly well; quote
+fidelity and verdict accuracy are separate properties and have not been shown
+to correlate. Steering an editor away from a correct verdict is a definite cost
+paid for a speculative benefit.
+
+So the panel now shows the located text or nothing, and a partial match is
+presented identically to a full one. The block makes one promise — *this text
+is in the source* — and it holds in both cases. Anything beyond that was
+commentary on the model, not evidence about the claim.
+
+Nothing is lost for research: `quote_status` is still logged on every row. And
+the question is now measurable rather than rhetorical — `npm run analyze`
+reports verdict accuracy split by whether the quote verified, plus the gap
+between them. A large gap earns the warning its place back. A gap near zero
+settles it.
+
+The general rule this leaves behind: **the panel reports what the source says,
+not how the model behaved.** The log is where model behaviour belongs.
 
 ## Open item: benchmark re-run
 

@@ -158,11 +158,23 @@ part actually located, so every character on screen came from the source.
 | Status | Meaning | Shown? |
 | --- | --- | --- |
 | `exact` / `normalized` | Found in the source (the second after folding case, quote style, dashes, hyphenation, whitespace) | Yes, whole |
-| `partial` | Some ellipsis-joined fragments found, others not | Yes, the found fragments, plus a "part was left out" note |
-| `not-found` | Not in the source: paraphrased or invented | No — caution line |
-| `too-short` | Below the evidence threshold (12 normalized chars) | No — caution line |
+| `partial` | Some ellipsis-joined fragments found, others not | Yes — the found fragments, ellipsis-joined |
+| `not-found` | Not in the source: paraphrased or invented | Nothing rendered |
+| `too-short` | Below the evidence threshold (12 normalized chars) | Nothing rendered |
 | `empty` | No quote offered — correct for omission and SOURCE UNAVAILABLE | Nothing rendered |
-| `no-source` | No source text available to check against | No — caution line |
+| `no-source` | No source text available to check against | Nothing rendered |
+
+**The panel never warns about a quote it could not locate — it just says
+nothing.** A warning there would imply the verdict is less trustworthy, and
+that is a claim no one has measured: a model that paraphrases instead of
+copying may be judging perfectly well, and steering an editor away from a
+correct verdict is a real cost paid for a speculative benefit. A partial match
+is presented identically to a full one, because the block makes exactly one
+promise — *this text is in the source* — and it holds either way.
+
+`npm run analyze` reports verdict accuracy split by whether the quote verified,
+with the gap between them. If that gap turns out to be large, the warning has
+earned its place and can come back; until then it stays out.
 
 `QUOTE_STATUSES` / `QUOTE_STATUS_LIST` in `core/quote.js` are the source of
 truth for that vocabulary. It is **not** client-only: `quote_status` is written

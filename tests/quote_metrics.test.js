@@ -64,3 +64,44 @@ test('quote metrics are zero, not NaN, on legacy results with no quote fields', 
   assert.equal(m.quotes.offerRate, 0);
   assert.equal(m.quotes.fidelity, 0);
 });
+
+// --- accuracy split by quote status -------------------------------------
+//
+// The evidence for whether an unverifiable quote should warn the editor. The
+// UI currently says nothing, on the grounds that no gap has been measured.
+
+test('accuracy is reported separately for verified and unverified quotes', () => {
+  const m = calculateMetrics([
+    // Quote checked out, verdict right.
+    row({ source_quote: 'q', quote_verified: true, predicted_verdict: 'Supported', ground_truth: 'Supported' }),
+    row({ source_quote: 'q', quote_verified: true, predicted_verdict: 'Supported', ground_truth: 'Supported' }),
+    // Quote did not check out, verdict still right.
+    row({ source_quote: 'q', quote_verified: false, predicted_verdict: 'Supported', ground_truth: 'Supported' }),
+    // Quote did not check out, verdict wrong.
+    row({ source_quote: 'q', quote_verified: false, predicted_verdict: 'Supported', ground_truth: 'Not supported' }),
+  ]);
+
+  assert.equal(m.quotes.accuracyWhenQuoteVerified, 1);
+  assert.equal(m.quotes.accuracyWhenQuoteUnverified, 0.5);
+  assert.equal(m.quotes.verifiedRows, 2);
+  assert.equal(m.quotes.unverifiedRows, 2);
+  assert.equal(m.quotes.gap, 0.5);
+});
+
+test('a zero gap is reported as zero, not as missing data', () => {
+  // The outcome that keeps the warning out of the UI.
+  const m = calculateMetrics([
+    row({ source_quote: 'q', quote_verified: true, ground_truth: 'Supported' }),
+    row({ source_quote: 'q', quote_verified: false, ground_truth: 'Supported' }),
+  ]);
+  assert.equal(m.quotes.gap, 0);
+});
+
+test('the split degrades to zero rather than NaN when one side is empty', () => {
+  const m = calculateMetrics([
+    row({ source_quote: 'q', quote_verified: true, ground_truth: 'Supported' }),
+  ]);
+  assert.equal(m.quotes.unverifiedRows, 0);
+  assert.equal(m.quotes.accuracyWhenQuoteUnverified, 0);
+  assert.ok(Number.isFinite(m.quotes.gap));
+});

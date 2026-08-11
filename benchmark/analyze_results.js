@@ -158,6 +158,19 @@ export function calculateMetrics(results) {
     const quoteOffered = quoteEligible.filter(r => r.source_quote);
     const quoteVerified = quoteOffered.filter(r => r.quote_verified);
 
+    // Accuracy split by whether the model's quote checked out. This is the
+    // evidence for a product question the UI currently answers "no": should an
+    // unverifiable quote warn the editor that the verdict is less reliable?
+    // A warning that says "trust this less" needs a measured gap behind it —
+    // a model that paraphrases instead of copying may be judging perfectly
+    // well, and scaring an editor off a correct verdict has a real cost. If
+    // these two accuracies come out level, the warning stays out.
+    const accuracyOf = rows => (rows.length > 0
+        ? rows.filter(r => normalizeVerdict(r.predicted_verdict) === normalizeVerdict(r.ground_truth)).length / rows.length
+        : 0);
+    const quoteVerifiedRows = quoteOffered.filter(r => r.quote_verified);
+    const quoteUnverifiedRows = quoteOffered.filter(r => !r.quote_verified);
+
     return {
         total,
         valid: validTotal,
@@ -171,6 +184,14 @@ export function calculateMetrics(results) {
             // Share of offered quotes that were found in the source verbatim.
             // A low rate here means the model is paraphrasing or inventing.
             fidelity: quoteOffered.length > 0 ? quoteVerified.length / quoteOffered.length : 0,
+            // Does an unverifiable quote predict a worse verdict? Compare
+            // these two. `gap` > 0 means quotes that checked out came with
+            // more accurate verdicts.
+            accuracyWhenQuoteVerified: accuracyOf(quoteVerifiedRows),
+            accuracyWhenQuoteUnverified: accuracyOf(quoteUnverifiedRows),
+            verifiedRows: quoteVerifiedRows.length,
+            unverifiedRows: quoteUnverifiedRows.length,
+            gap: accuracyOf(quoteVerifiedRows) - accuracyOf(quoteUnverifiedRows),
         },
         exactMatches,
         partialMatches,
@@ -239,6 +260,11 @@ function generateMarkdownReport(analysis) {
         if (m.quotes && m.quotes.eligible > 0) {
             md += `- Quote supplied: ${m.quotes.offered}/${m.quotes.eligible} (${(m.quotes.offerRate * 100).toFixed(1)}% of verdicts that should have one)\n`;
             md += `- Quote found in source: ${m.quotes.verified}/${m.quotes.offered} (${(m.quotes.fidelity * 100).toFixed(1)}%)\n`;
+            if (m.quotes.verifiedRows > 0 && m.quotes.unverifiedRows > 0) {
+                md += `- Verdict accuracy when the quote checked out: ${(m.quotes.accuracyWhenQuoteVerified * 100).toFixed(1)}% (n=${m.quotes.verifiedRows})\n`;
+                md += `- Verdict accuracy when it did not: ${(m.quotes.accuracyWhenQuoteUnverified * 100).toFixed(1)}% (n=${m.quotes.unverifiedRows})\n`;
+                md += `  - Gap: ${(m.quotes.gap * 100).toFixed(1)} points. A gap near zero means an unverifiable quote says nothing about the verdict, and the UI is right not to warn about one.\n`;
+            }
         }
         md += `- Errors: ${m.errors}\n\n`;
 
