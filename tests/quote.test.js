@@ -130,3 +130,70 @@ test('quoteExpectedFor: contradiction expects a quote, omission does not', () =>
 test('quoteExpectedFor: source unavailable never expects a quote', () => {
     assert.equal(quoteExpectedFor('SOURCE UNAVAILABLE', null), false);
 });
+
+// --- PDF / OCR line-break hyphenation -----------------------------------
+//
+// Regression for a real First Baptist Church (Las Vegas, NM) check against an
+// NRHP nomination PDF. The text layer breaks words across lines and leaves the
+// hyphen behind; the model copied one such artifact verbatim ("two- story")
+// and silently repaired another ("school-like"), so the quote came back
+// 'partial' and the panel showed nothing.
+
+const PDF_SOURCE = [
+    'Three-story rectangular shape with symmetrical two-',
+    'story wings; brick construction with stone trim.',
+    '',
+    'This utilitarian, school-',
+    'like building reflected the practical values and emphasis on education',
+    'of this congregation.',
+].join('\n');
+
+test('a quote matches whether the model kept or repaired a line-break hyphen', () => {
+    // Kept as the source has it.
+    assert.equal(verifyQuote(PDF_SOURCE, 'symmetrical two- story wings').verified, true);
+    // Repaired into the ordinary spelling.
+    assert.equal(verifyQuote(PDF_SOURCE, 'symmetrical two-story wings').verified, true);
+    assert.equal(verifyQuote(PDF_SOURCE, 'This utilitarian, school-like building').verified, true);
+});
+
+test('a multi-fragment quote over hyphenated PDF text verifies whole', () => {
+    const out = verifyQuote(PDF_SOURCE,
+        'Three-story rectangular shape with symmetrical two- story wings;'
+        + ' ... This utilitarian, school-like building reflected the practical values');
+    assert.equal(out.verified, true);
+    assert.equal(out.status, 'normalized');
+});
+
+test('hyphen folding does not make an unrelated passage match', () => {
+    assert.equal(verifyQuote(PDF_SOURCE, 'a four-story steel and glass tower').verified, false);
+});
+
+// --- verifiedText: what a renderer is allowed to show --------------------
+
+test('verifiedText is the whole quote when it verifies', () => {
+    const out = verifyQuote(SOURCE, 'Construction faced multiple delays due to funding shortages.');
+    assert.equal(out.verifiedText, 'Construction faced multiple delays due to funding shortages.');
+});
+
+test('verifiedText drops the fragments that were not located', () => {
+    const out = verifyQuote(SOURCE,
+        'broke ground in 1994 ... a passage that never appears anywhere ... four years behind schedule');
+    assert.equal(out.status, 'partial');
+    assert.ok(out.verifiedText.includes('broke ground in 1994'));
+    assert.ok(out.verifiedText.includes('four years behind schedule'));
+    assert.ok(!out.verifiedText.includes('never appears'), 'must not offer unlocated text for display');
+});
+
+test('verifiedText is empty when nothing was located', () => {
+    assert.equal(verifyQuote(SOURCE, 'An entirely invented sentence about nothing.').verifiedText, '');
+    assert.equal(verifyQuote(SOURCE, '').verifiedText, '');
+    assert.equal(verifyQuote('', 'some long quoted passage').verifiedText, '');
+});
+
+test('a forgiven short fragment is never offered for display', () => {
+    // "in 1994" is below the evidence threshold, so it does not fail the
+    // quote — but it was not located either, and must not be shown.
+    const out = verifyQuote(SOURCE, 'Construction faced multiple delays due to funding shortages. ... zz99');
+    assert.equal(out.verified, true);
+    assert.ok(!out.verifiedText.includes('zz99'));
+});

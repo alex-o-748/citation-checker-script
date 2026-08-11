@@ -151,14 +151,14 @@ A stable-id refactor (content hash, or a CSV-supplied id column independent of l
 
 The model returns a `source_quote` field alongside its verdict — the passage
 from the source that supports or contradicts the claim. **It is not trusted.**
-`core/quote.js` looks the quote up in the source text the model was shown, and
-only a quote that is actually found there is displayed as evidence or exported
-to a wikitext report.
+`core/quote.js` looks the quote up in the source text the model was shown.
+**Renderers display `verifiedText`, never `quote`** — the former is only the
+part actually located, so every character on screen came from the source.
 
 | Status | Meaning | Shown? |
 | --- | --- | --- |
-| `exact` / `normalized` | Found in the source (the second after folding case, quote style, dashes, whitespace) | Yes, as a quote |
-| `partial` | Some ellipsis-joined segments found, others not | No — caution line |
+| `exact` / `normalized` | Found in the source (the second after folding case, quote style, dashes, hyphenation, whitespace) | Yes, whole |
+| `partial` | Some ellipsis-joined fragments found, others not | Yes, the found fragments, plus a "part was left out" note |
 | `not-found` | Not in the source: paraphrased or invented | No — caution line |
 | `too-short` | Below the evidence threshold (12 normalized chars) | No — caution line |
 | `empty` | No quote offered — correct for omission and SOURCE UNAVAILABLE | Nothing rendered |
@@ -168,6 +168,17 @@ Matching is normalized but **not** fuzzy: no edit distance, no token overlap.
 The design accepts missing some genuine quotes in exchange for never showing a
 fabricated one. If you loosen this, you are trading away the property the
 feature exists for.
+
+Normalization folds a hyphen followed by whitespace (`-\s+` → `-`). PDF and OCR
+text layers break words across lines and leave the hyphen behind
+(`school-\nlike`), and a model copying such a passage repairs some of them and
+not others *within one quote* — which is what made a real NRHP-sourced check
+come back `partial` with nothing displayed. The fold is symmetric, so it can
+only make a genuine quote match.
+
+Two fields differ in a way that matters: `found` decides the verdict, `located`
+records whether a fragment was really seen. They diverge only for fragments too
+short to judge, which are forgiven but must never reach `verifiedText`.
 
 `quoteExpectedFor(verdict, reasonType)` decides whether a missing or
 unverifiable quote is worth flagging: omission and SOURCE UNAVAILABLE verdicts

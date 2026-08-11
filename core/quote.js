@@ -52,6 +52,14 @@ export function normalizeForMatch(text) {
     for (const [pattern, replacement] of CHAR_FOLD) {
         out = out.replace(pattern, replacement);
     }
+    // Close up a hyphen followed by whitespace. PDF and OCR text layers break
+    // words across lines and leave the hyphen behind ("school-\nlike"), and a
+    // model copying that passage repairs some of them and not others — within
+    // a single quote. Folding both sides to "school-like" makes the two agree
+    // however the model chose to render it. Applied symmetrically, so the only
+    // thing it can do is make a real quote match; a spaced dash used as
+    // punctuation ("1994 - 1998") folds the same way on both sides.
+    out = out.replace(/-\s+/g, '-');
     return out.replace(/\s+/g, ' ').trim().toLowerCase();
 }
 
@@ -81,7 +89,15 @@ function unwrap(quote) {
  * @param {string} sourceText - The source body the model was shown (already
  *   unwrapped from its "Source Content:" framing by extractSourceText).
  * @param {string} quote - The model's `source_quote` field.
- * @returns {{verified: boolean, status: string, segments: Array<{text: string, found: boolean}>}}
+ * @returns {{verified: boolean, status: string, verifiedText: string,
+ *   segments: Array<{text: string, found: boolean, located: boolean}>}}
+ *   `verifiedText` is the part of the quote actually located in the source,
+ *   ellipsis-joined — the whole quote when verified, the surviving fragments
+ *   when partial, '' when nothing was found. Every character of it came from
+ *   the source, so it is safe to display; `quote` as returned by the model is
+ *   not. `found` counts toward the verdict, `located` records whether the
+ *   fragment was really seen (they differ only for fragments too short to
+ *   judge, which are forgiven but never shown).
  *   status is one of:
  *     'empty'      - no quote was offered (expected for omission / unavailable)
  *     'no-source'  - we have no source text to check against (e.g. cached
@@ -95,18 +111,23 @@ function unwrap(quote) {
  */
 export function verifyQuote(sourceText, quote) {
     const raw = quote == null ? '' : String(quote).trim();
-    if (!raw) return { verified: false, status: 'empty', segments: [] };
+    if (!raw) return { verified: false, status: 'empty', verifiedText: '', segments: [] };
 
     const cleaned = unwrap(raw);
     const source = sourceText == null ? '' : String(sourceText);
-    if (!source.trim()) return { verified: false, status: 'no-source', segments: [] };
+    if (!source.trim()) return { verified: false, status: 'no-source', verifiedText: '', segments: [] };
 
     if (normalizeForMatch(cleaned).length < MIN_QUOTE_CHARS) {
-        return { verified: false, status: 'too-short', segments: [] };
+        return { verified: false, status: 'too-short', verifiedText: '', segments: [] };
     }
 
     if (source.includes(cleaned)) {
-        return { verified: true, status: 'exact', segments: [{ text: cleaned, found: true }] };
+        return {
+            verified: true,
+            status: 'exact',
+            verifiedText: cleaned,
+            segments: [{ text: cleaned, found: true, located: true }],
+        };
     }
 
     const haystack = normalizeForMatch(source);
@@ -120,29 +141,32 @@ export function verifyQuote(sourceText, quote) {
     const segments = [];
     for (const segment of rawSegments) {
         const needle = normalizeForMatch(segment);
-        // Ignore fragments too short to carry meaning (a dangling "in 1985"
-        // after an ellipsis); they neither confirm nor refute the match.
+        const at = needle ? haystack.indexOf(needle, cursor) : -1;
+        // Fragments too short to carry meaning (a dangling "in 1985" after an
+        // ellipsis) neither confirm nor refute the match, so they are forgiven
+        // rather than failed — but they never advance the cursor, and they are
+        // only shown if they really were located.
         if (needle.length < MIN_QUOTE_CHARS && rawSegments.length > 1) {
-            segments.push({ text: segment, found: true });
+            segments.push({ text: segment, found: true, located: at !== -1 });
             continue;
         }
-        const at = needle ? haystack.indexOf(needle, cursor) : -1;
         if (at === -1) {
-            segments.push({ text: segment, found: false });
+            segments.push({ text: segment, found: false, located: false });
         } else {
-            segments.push({ text: segment, found: true });
+            segments.push({ text: segment, found: true, located: true });
             cursor = at + needle.length;
         }
     }
 
+    const verifiedText = segments.filter(s => s.located).map(s => s.text).join(' … ');
     const foundCount = segments.filter(s => s.found).length;
     if (foundCount === segments.length && segments.length > 0) {
-        return { verified: true, status: 'normalized', segments };
+        return { verified: true, status: 'normalized', verifiedText, segments };
     }
     if (foundCount > 0) {
-        return { verified: false, status: 'partial', segments };
+        return { verified: false, status: 'partial', verifiedText, segments };
     }
-    return { verified: false, status: 'not-found', segments };
+    return { verified: false, status: 'not-found', verifiedText: '', segments };
 }
 
 // Verdicts for which a supporting/contradicting passage should exist in the

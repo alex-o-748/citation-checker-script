@@ -75,6 +75,11 @@ some true quotes is acceptable; presenting a fabricated one as evidence is not.
 
 ### 3. An unverified quote is never displayed
 
+> **Amended 2026-08-11 after a real failure.** The rule below is unchanged —
+> unlocated text is still never shown — but "the quote didn't verify" turned
+> out to be too blunt a unit. See "The PDF hyphenation case" at the end.
+
+
 If the quote doesn't check out, the UI shows a one-line caution — *the quote
 the AI gave was not found in the source text* — and the rationale, but **not
 the quote text**. Showing it would put a possibly-invented sentence in front of
@@ -142,6 +147,40 @@ with the button it hung off.
 
 The merge required a schema addition; see `docs/worker-logging-reference.md`
 for the migration and the reason unverified quotes are stored.
+
+## The PDF hyphenation case (2026-08-11)
+
+A live check on *First Baptist Church (Las Vegas, New Mexico)* against an NRHP
+nomination PDF logged `quote_status: "partial"`, so the panel showed a caution
+line instead of a quote — on a SUPPORTED verdict at confidence 95, where the
+model's quote was in fact entirely genuine.
+
+The cause was in the source, not the model. A PDF text layer breaks words
+across lines and leaves the hyphen behind, so the document contains
+`two-\nstory` and `school-\nlike`. The model copied the first artifact
+verbatim (`two- story` — the giveaway, visible in the logged quote) and
+silently repaired the second to `school-like`. One fragment of three therefore
+missed, and the whole quote was suppressed.
+
+Two changes, and the second is the more important one:
+
+1. **Fold `-\s+` to `-` in normalization.** Symmetric, so a genuine quote
+   matches whether the model kept the artifact or repaired it. This alone
+   makes the reported case verify whole.
+2. **Show the fragments that did verify.** `verifyQuote` now returns
+   `verifiedText` — the located fragments, ellipsis-joined — and every renderer
+   displays that rather than the model's raw quote. A `partial` result shows
+   its genuine fragments with a note that something was dropped, instead of
+   showing nothing.
+
+The guarantee is untouched: every character displayed was found in the source.
+What changed is the granularity at which it is enforced — per fragment rather
+than per quote. The original design threw away two verified sentences because a
+third didn't match, which served the guarantee's letter and not its purpose.
+
+Worth noting for the benchmark re-run: PDF-derived sources are common in the
+dataset, so the pre-fix quote fidelity numbers would have understated every
+provider.
 
 ## Open item: benchmark re-run
 

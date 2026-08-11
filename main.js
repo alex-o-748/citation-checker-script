@@ -459,6 +459,14 @@ function normalizeForMatch(text) {
     for (const [pattern, replacement] of CHAR_FOLD) {
         out = out.replace(pattern, replacement);
     }
+    // Close up a hyphen followed by whitespace. PDF and OCR text layers break
+    // words across lines and leave the hyphen behind ("school-\nlike"), and a
+    // model copying that passage repairs some of them and not others — within
+    // a single quote. Folding both sides to "school-like" makes the two agree
+    // however the model chose to render it. Applied symmetrically, so the only
+    // thing it can do is make a real quote match; a spaced dash used as
+    // punctuation ("1994 - 1998") folds the same way on both sides.
+    out = out.replace(/-\s+/g, '-');
     return out.replace(/\s+/g, ' ').trim().toLowerCase();
 }
 
@@ -488,7 +496,15 @@ function unwrap(quote) {
  * @param {string} sourceText - The source body the model was shown (already
  *   unwrapped from its "Source Content:" framing by extractSourceText).
  * @param {string} quote - The model's `source_quote` field.
- * @returns {{verified: boolean, status: string, segments: Array<{text: string, found: boolean}>}}
+ * @returns {{verified: boolean, status: string, verifiedText: string,
+ *   segments: Array<{text: string, found: boolean, located: boolean}>}}
+ *   `verifiedText` is the part of the quote actually located in the source,
+ *   ellipsis-joined — the whole quote when verified, the surviving fragments
+ *   when partial, '' when nothing was found. Every character of it came from
+ *   the source, so it is safe to display; `quote` as returned by the model is
+ *   not. `found` counts toward the verdict, `located` records whether the
+ *   fragment was really seen (they differ only for fragments too short to
+ *   judge, which are forgiven but never shown).
  *   status is one of:
  *     'empty'      - no quote was offered (expected for omission / unavailable)
  *     'no-source'  - we have no source text to check against (e.g. cached
@@ -502,18 +518,23 @@ function unwrap(quote) {
  */
 function verifyQuote(sourceText, quote) {
     const raw = quote == null ? '' : String(quote).trim();
-    if (!raw) return { verified: false, status: 'empty', segments: [] };
+    if (!raw) return { verified: false, status: 'empty', verifiedText: '', segments: [] };
 
     const cleaned = unwrap(raw);
     const source = sourceText == null ? '' : String(sourceText);
-    if (!source.trim()) return { verified: false, status: 'no-source', segments: [] };
+    if (!source.trim()) return { verified: false, status: 'no-source', verifiedText: '', segments: [] };
 
     if (normalizeForMatch(cleaned).length < MIN_QUOTE_CHARS) {
-        return { verified: false, status: 'too-short', segments: [] };
+        return { verified: false, status: 'too-short', verifiedText: '', segments: [] };
     }
 
     if (source.includes(cleaned)) {
-        return { verified: true, status: 'exact', segments: [{ text: cleaned, found: true }] };
+        return {
+            verified: true,
+            status: 'exact',
+            verifiedText: cleaned,
+            segments: [{ text: cleaned, found: true, located: true }],
+        };
     }
 
     const haystack = normalizeForMatch(source);
@@ -527,29 +548,32 @@ function verifyQuote(sourceText, quote) {
     const segments = [];
     for (const segment of rawSegments) {
         const needle = normalizeForMatch(segment);
-        // Ignore fragments too short to carry meaning (a dangling "in 1985"
-        // after an ellipsis); they neither confirm nor refute the match.
+        const at = needle ? haystack.indexOf(needle, cursor) : -1;
+        // Fragments too short to carry meaning (a dangling "in 1985" after an
+        // ellipsis) neither confirm nor refute the match, so they are forgiven
+        // rather than failed — but they never advance the cursor, and they are
+        // only shown if they really were located.
         if (needle.length < MIN_QUOTE_CHARS && rawSegments.length > 1) {
-            segments.push({ text: segment, found: true });
+            segments.push({ text: segment, found: true, located: at !== -1 });
             continue;
         }
-        const at = needle ? haystack.indexOf(needle, cursor) : -1;
         if (at === -1) {
-            segments.push({ text: segment, found: false });
+            segments.push({ text: segment, found: false, located: false });
         } else {
-            segments.push({ text: segment, found: true });
+            segments.push({ text: segment, found: true, located: true });
             cursor = at + needle.length;
         }
     }
 
+    const verifiedText = segments.filter(s => s.located).map(s => s.text).join(' … ');
     const foundCount = segments.filter(s => s.found).length;
     if (foundCount === segments.length && segments.length > 0) {
-        return { verified: true, status: 'normalized', segments };
+        return { verified: true, status: 'normalized', verifiedText, segments };
     }
     if (foundCount > 0) {
-        return { verified: false, status: 'partial', segments };
+        return { verified: false, status: 'partial', verifiedText, segments };
     }
-    return { verified: false, status: 'not-found', segments };
+    return { verified: false, status: 'not-found', verifiedText: '', segments };
 }
 
 // Verdicts for which a supporting/contradicting passage should exist in the
@@ -1946,6 +1970,10 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
         'Quote: "{text}"': 'Citation : « {text} »',
         'Comments: {text}': 'Commentaires : {text}',
         'From the source': 'Extrait de la source',
+        "Part of the AI's quote was not found in the source and has been left out.":
+            "Une partie de la citation de l'IA est introuvable dans la source et a été omise.",
+        "(part of the AI's quote was not found in the source)":
+            "(une partie de la citation de l'IA est introuvable dans la source)",
         '⚠ The quote the AI gave was not found in the source text — judge the explanation below with that in mind.':
             "⚠ La citation donnée par l'IA est introuvable dans le texte de la source — tenez-en compte en lisant l'explication ci-dessous.",
         'Note: Combined sources are long, only partially checked.':
@@ -2225,6 +2253,10 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
         'Quote: "{text}"': 'Cita: «{text}»',
         'Comments: {text}': 'Comentarios: {text}',
         'From the source': 'Extracto de la fuente',
+        "Part of the AI's quote was not found in the source and has been left out.":
+            'Parte de la cita de la IA no se encuentra en la fuente y se ha omitido.',
+        "(part of the AI's quote was not found in the source)":
+            '(parte de la cita de la IA no se encuentra en la fuente)',
         '⚠ The quote the AI gave was not found in the source text — judge the explanation below with that in mind.':
             '⚠ La cita indicada por la IA no aparece en el texto de la fuente; conviene tenerlo en cuenta al leer la explicación siguiente.',
         'Note: Combined sources are long, only partially checked.':
@@ -3341,6 +3373,14 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                     color: var(--sv-ink-2);
                     max-height: 200px;
                     overflow-y: auto;
+                }
+                /* Sits under a partly-verified quote: the shown text is
+                   genuine, but something the model included was dropped. */
+                .sv-quote-note {
+                    margin-top: 5px;
+                    font-size: 11px;
+                    line-height: 1.35;
+                    color: var(--sv-ink-subtle);
                 }
                 /* Shown instead of the quote when the model returned a passage
                    we could not find in the source — a caution about the
@@ -5005,7 +5045,11 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
             const sourceText = sourceInfo ? extractSourceText(sourceInfo) : '';
             const check = verifyQuote(sourceText, quote);
             return {
+                // `quote` is what the model said, kept for the log. `display`
+                // is the part of it actually found in the source — the only
+                // text a renderer may show.
                 quote,
+                display: check.verifiedText,
                 verified: check.verified,
                 status: check.status,
                 // Whether this verdict is one a quote should exist for. Drives
@@ -5022,6 +5066,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
             if (!result || !result.sourceQuote) return null;
             return {
                 quote: result.sourceQuote,
+                display: result.quoteDisplay || '',
                 verified: !!result.quoteVerified,
                 status: result.quoteStatus,
                 expected: !!result.quoteExpected,
@@ -5038,11 +5083,20 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
             if (!view || !view.quote) return '';
             // An unverifiable quote is only worth flagging where a quote was
             // supposed to exist; elsewhere, stay quiet.
-            if (!view.verified && !view.expected) return '';
-            if (view.verified) {
+            if (!view.verified && !view.display && !view.expected) return '';
+            if (view.display) {
+                // A partly-verified quote still shows: every character of
+                // `display` was found in the source, so the block keeps its
+                // guarantee. The dropped fragment is called out rather than
+                // silently trimmed, because what was cut could be the half
+                // that mattered.
+                const partial = !view.verified
+                    ? `<div class="sv-quote-note">${this.escapeHtml(this.t('Part of the AI\'s quote was not found in the source and has been left out.'))}</div>`
+                    : '';
                 return `<div class="sv-quote">`
                     + `<span class="sv-quote-label">${this.escapeHtml(this.t('From the source'))}</span>`
-                    + `<div class="sv-quote-text">“${this.escapeHtml(view.quote)}”</div>`
+                    + `<div class="sv-quote-text">“${this.escapeHtml(view.display)}”</div>`
+                    + partial
                     + `</div>`;
             }
             return `<div class="sv-quote-missing">${this.escapeHtml(this.t('⚠ The quote the AI gave was not found in the source text — judge the explanation below with that in mind.'))}</div>`;
@@ -5722,8 +5776,16 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                 // Verified quote first, as the evidence the reader can check;
                 // the model's explanation follows it. Unverified quotes are
                 // left out of the on-wiki report entirely.
-                if (r.sourceQuote && r.quoteVerified) {
-                    commentsClean = `''"${this.escapeWikitableCell(r.sourceQuote)}"''<br />`
+                // Quote the located text, not the model's raw quote: on a
+                // partial match the two differ, and only the former is
+                // guaranteed to be in the source. Flag the trimming so an
+                // editor reading the report knows the quote is not the whole
+                // of what the model offered.
+                if (r.quoteDisplay) {
+                    const trimmedNote = r.quoteVerified
+                        ? ''
+                        : ` <small>''${this.t("(part of the AI's quote was not found in the source)")}''</small>`;
+                    commentsClean = `''"${this.escapeWikitableCell(r.quoteDisplay)}"''${trimmedNote}<br />`
                         + this.escapeWikitableCell(commentsClean);
                 } else {
                     commentsClean = this.escapeWikitableCell(commentsClean);
@@ -5809,14 +5871,14 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                     text += `  ${this.t('Claim: {text}', { text: claimExcerpt })}\n`;
                     const urls = (r.members || []).filter(m => m.url).map(m => `[${m.citationNumber}] ${m.url}`);
                     if (urls.length) text += `  ${this.t('Sources: {urls}', { urls: urls.join(' | ') })}\n`;
-                    if (r.sourceQuote && r.quoteVerified) text += `  ${this.t('Quote: "{text}"', { text: r.sourceQuote })}\n`;
+                    if (r.quoteDisplay) text += `  ${this.t('Quote: "{text}"', { text: r.quoteDisplay })}${r.quoteVerified ? '' : ` ${this.t("(part of the AI's quote was not found in the source)")}`}\n`;
                     if (r.comments) text += `  ${this.t('Comments: {text}', { text: r.comments })}\n`;
                     if (r.truncated && r.verdict !== 'SUPPORTED') text += `  ${this.t('Note: Combined sources are long, only partially checked.')}\n`;
                 } else {
                     text += `[${r.citationNumber}] ${this.t(r.verdict)}\n`;
                     text += `  ${this.t('Claim: {text}', { text: claimExcerpt })}\n`;
                     if (r.url) text += `  ${this.t('Source: {url}', { url: r.url })}\n`;
-                    if (r.sourceQuote && r.quoteVerified) text += `  ${this.t('Quote: "{text}"', { text: r.sourceQuote })}\n`;
+                    if (r.quoteDisplay) text += `  ${this.t('Quote: "{text}"', { text: r.quoteDisplay })}${r.quoteVerified ? '' : ` ${this.t("(part of the AI's quote was not found in the source)")}`}\n`;
                     if (r.comments) text += `  ${this.t('Comments: {text}', { text: r.comments })}\n`;
                     if (r.truncated && r.verdict !== 'SUPPORTED') text += `  ${this.t('Note: Source is long, only partially checked.')}\n`;
                 }
@@ -5971,6 +6033,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                         comments: parsed.comments,
                         reason_type: parsed.reason_type,
                         sourceQuote: quoteView.quote,
+                        quoteDisplay: quoteView.display,
                         quoteVerified: quoteView.verified,
                         quoteStatus: quoteView.status,
                         quoteExpected: quoteView.expected,
@@ -6216,6 +6279,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                                 comments: parsed.comments,
                                 reason_type: parsed.reason_type,
                                 sourceQuote: quoteView.quote,
+                                quoteDisplay: quoteView.display,
                                 quoteVerified: quoteView.verified,
                                 quoteStatus: quoteView.status,
                                 quoteExpected: quoteView.expected,
@@ -6383,7 +6447,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                 llmRationale: result?.comments ?? '',
                 // Only submit a quote we located in the source; an unverified
                 // one would pollute the dataset with possible fabrications.
-                llmQuote: result?.quoteVerified ? (result?.sourceQuote ?? '') : '',
+                llmQuote: result?.quoteDisplay ?? '',
                 llmQuoteVerified: result?.quoteStatus ?? '',
                 llmProvider: result?.providerName ?? provider.name ?? '',
                 llmModel: result?.model ?? provider.model ?? '',
