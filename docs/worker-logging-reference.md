@@ -128,9 +128,14 @@ if (request.method === 'POST' && url.pathname === '/log') {
 
   ctx.waitUntil(
     sql`INSERT INTO verification_logs
-        (article_url, article_title, citation_number, source_url, provider, verdict, confidence)
-        VALUES (${body.article_url}, ${body.article_title}, ${body.citation_number},
-                ${body.source_url}, ${body.provider}, ${body.verdict}, ${body.confidence})`
+        (check_id, kind, article_url, article_title, revision_id, citation_number,
+         source_url, provider, model, verdict, confidence, reason_type,
+         claim_text, llm_comments, source_quote, quote_status)
+        VALUES (${body.check_id}, ${body.kind}, ${body.article_url}, ${body.article_title},
+                ${body.revision_id}, ${body.citation_number}, ${body.source_url},
+                ${body.provider}, ${body.model}, ${body.verdict}, ${body.confidence},
+                ${body.reason_type}, ${body.claim_text}, ${body.llm_comments},
+                ${body.source_quote}, ${body.quote_status})`
       .catch(err => console.error('Log write failed:', err))
   );
 
@@ -152,6 +157,14 @@ if (request.method === 'OPTIONS' && url.pathname === '/log') {
 ```
 
 ### Key points
+
+**This column list is the thing that goes stale.** The client adds fields to the
+payload freely — `buildLogPayload()` in `core/feedback.js` is the source of
+truth for what is sent — but a field only lands in the table if it is named
+here *and* the column exists. Neither omission produces an error: the INSERT
+succeeds writing the columns it does name, and the rest are dropped in silence.
+When a new field appears to be "not populated," check this list before
+suspecting the client.
 
 - `ctx.waitUntil()` lets the response return immediately while the DB write happens in the background
 - `neon()` from `@neondatabase/serverless` uses HTTP queries (no TCP), which works in Cloudflare Workers
