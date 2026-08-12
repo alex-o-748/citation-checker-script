@@ -75,6 +75,12 @@ some true quotes is acceptable; presenting a fabricated one as evidence is not.
 
 ### 3. An unverified quote is never displayed
 
+> **Amended twice, 2026-08-11.** Unlocated text is still never shown. But the
+> *unit* was too blunt — see "The PDF hyphenation case" — and the caution line
+> described below has since been removed entirely; see "Withdrawing the
+> caution line". Both amendments are at the end of this document.
+
+
 If the quote doesn't check out, the UI shows a one-line caution — *the quote
 the AI gave was not found in the source text* — and the rationale, but **not
 the quote text**. Showing it would put a possibly-invented sentence in front of
@@ -142,6 +148,135 @@ with the button it hung off.
 
 The merge required a schema addition; see `docs/worker-logging-reference.md`
 for the migration and the reason unverified quotes are stored.
+
+## The PDF hyphenation case (2026-08-11)
+
+A live check on *First Baptist Church (Las Vegas, New Mexico)* against an NRHP
+nomination PDF logged `quote_status: "partial"`, so the panel showed a caution
+line instead of a quote — on a SUPPORTED verdict at confidence 95, where the
+model's quote was in fact entirely genuine.
+
+The cause was in the source, not the model. A PDF text layer breaks words
+across lines and leaves the hyphen behind, so the document contains
+`two-\nstory` and `school-\nlike`. The model copied the first artifact
+verbatim (`two- story` — the giveaway, visible in the logged quote) and
+silently repaired the second to `school-like`. One fragment of three therefore
+missed, and the whole quote was suppressed.
+
+Two changes, and the second is the more important one:
+
+1. **Fold `-\s+` to `-` in normalization.** Symmetric, so a genuine quote
+   matches whether the model kept the artifact or repaired it. This alone
+   makes the reported case verify whole.
+2. **Show the fragments that did verify.** `verifyQuote` now returns
+   `verifiedText` — the located fragments, ellipsis-joined — and every renderer
+   displays that rather than the model's raw quote. A `partial` result shows
+   its genuine fragments with a note that something was dropped, instead of
+   showing nothing.
+
+The guarantee is untouched: every character displayed was found in the source.
+What changed is the granularity at which it is enforced — per fragment rather
+than per quote. The original design threw away two verified sentences because a
+third didn't match, which served the guarantee's letter and not its purpose.
+
+Worth noting for the benchmark re-run: PDF-derived sources are common in the
+dataset, so the pre-fix quote fidelity numbers would have understated every
+provider.
+
+## Withdrawing the caution line (2026-08-11)
+
+The original design paired a hidden quote with a visible warning: *the quote
+the AI gave was not found in the source text — judge the explanation below with
+that in mind.* The maintainer's objection, on seeing it in the panel, was that
+it is debugging output wearing a user-facing coat — **unless we know the
+verdict is actually less accurate when the quote doesn't verify.**
+
+That is right, and the warning is worse than merely unhelpful. It makes an
+implicit claim — *trust this verdict less* — that nothing has established. A
+model that paraphrases rather than copies may be judging perfectly well; quote
+fidelity and verdict accuracy are separate properties and have not been shown
+to correlate. Steering an editor away from a correct verdict is a definite cost
+paid for a speculative benefit.
+
+So the panel now shows the located text or nothing, and a partial match is
+presented identically to a full one. The block makes one promise — *this text
+is in the source* — and it holds in both cases. Anything beyond that was
+commentary on the model, not evidence about the claim.
+
+Nothing is lost for research: `quote_status` is still logged on every row. And
+the question is now measurable rather than rhetorical — `npm run analyze`
+reports verdict accuracy split by whether the quote verified, plus the gap
+between them. A large gap earns the warning its place back. A gap near zero
+settles it.
+
+The general rule this leaves behind: **the panel reports what the source says,
+not how the model behaved.** The log is where model behaviour belongs.
+
+## The HTML entity case (2026-08-11)
+
+A Harmon Killebrew check against twincities.com produced a quote that was
+correct word for word and still came back `not-found`.
+
+The CORS proxy's `extractText()` (`alex-o-748/public-ai-proxy`,
+`src/index.js:605`) decodes exactly four entities — `&nbsp; &amp; &lt; &gt;`.
+twincities.com is WordPress, whose `wptexturize` emits curly apostrophes as
+`&#8217;`, so the source text handed to the model reads *the mall&#8217;s
+amusement park*. The model understood the entity, and quoted it back as *the
+mall's*. Verification then compared a literal `&#8217;` against `'`.
+
+This is the same class as the PDF hyphenation case above — an encoding
+difference between what the source literally contains and what the model
+sensibly wrote — and it takes the same shape of fix: `normalizeForMatch` now
+decodes numeric, hex and common named entities before the character folds.
+Symmetric, so it can only make a genuine quote match.
+
+The deeper fix belongs upstream: **the model should not be reading raw entities
+either.** Every `&#8217;` in a source is a token spent on nothing and a small
+comprehension hazard, and the extractor is where it should be resolved. That is
+a Worker change; the client-side decode is what makes verification correct
+regardless of who did the extracting, including manual paste and PDF paths the
+Worker never touches.
+
+Both cases point the same way: a mismatch between quote and source is far more
+often an artifact of how the source was extracted than a sign the model made
+something up. Worth remembering before reading `not-found` as fabrication.
+
+## The artifact sweep (2026-08-11)
+
+Two false negatives in a row, both encoding artifacts, was enough to stop
+fixing them one at a time. A probe ran fifteen realistic manglings — the
+Worker's `extractText` applied to real HTML shapes, PDF text-layer quirks, and
+the ways a model reformats when it copies — against quotes that were genuinely
+correct. **Six of the fifteen failed.**
+
+Fixed, because in each the entity and the character are the same thing:
+
+| Artifact | Example | Fix |
+| --- | --- | --- |
+| Latin-1 letter entities | `Jos&eacute;` vs `José` | Table generated from U+00C0..U+00FF |
+| Modifier-letter apostrophe | `Hawaiʻi` vs `Hawai'i` | Added U+02BC/U+02BC to the quote fold |
+| Model-added full stop | source ends `…2002`, quote ends `…2002.` | Retry without trailing `[.,;:]`, and display the *trimmed* form so the shown text is still exactly the source's |
+
+The first is the one that matters: the entity fix shipped an hour earlier
+covered punctuation only, so every accented name in an older CMS was still
+failing. A partial fix to a whole-class bug reads as a fix and isn't one.
+
+**Deliberately still rejected**, with tests pinning them so nobody "fixes" them
+later:
+
+- **Letter-spaced headings** (`A N N U A L  R E P O R T`). Matching these needs
+  space-insensitive comparison, under which almost any text matches almost any
+  other.
+- **A word split by an inline tag** (`Kille<em>brew</em>` → `Kille brew`). Same
+  space-insensitivity problem, and the real fix is upstream: `extractText`
+  replaces every tag with a space, including tags that sit inside a word.
+- **Bracketed insertions** (`[sic]`) mid-quote. Removing bracketed content
+  could remove real source text.
+
+The pattern worth carrying forward: **`not-found` has so far always meant the
+extractor mangled the text, never that the model invented it.** Treat a report
+of a wrong `not-found` as an extraction bug until proven otherwise, and probe
+the whole class rather than the instance.
 
 ## Open item: benchmark re-run
 

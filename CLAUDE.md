@@ -151,23 +151,72 @@ A stable-id refactor (content hash, or a CSV-supplied id column independent of l
 
 The model returns a `source_quote` field alongside its verdict — the passage
 from the source that supports or contradicts the claim. **It is not trusted.**
-`core/quote.js` looks the quote up in the source text the model was shown, and
-only a quote that is actually found there is displayed as evidence or exported
-to a wikitext report.
+`core/quote.js` looks the quote up in the source text the model was shown.
+**Renderers display `verifiedText`, never `quote`** — the former is only the
+part actually located, so every character on screen came from the source.
 
 | Status | Meaning | Shown? |
 | --- | --- | --- |
-| `exact` / `normalized` | Found in the source (the second after folding case, quote style, dashes, whitespace) | Yes, as a quote |
-| `partial` | Some ellipsis-joined segments found, others not | No — caution line |
-| `not-found` | Not in the source: paraphrased or invented | No — caution line |
-| `too-short` | Below the evidence threshold (12 normalized chars) | No — caution line |
+| `exact` / `normalized` | Found in the source (the second after folding case, quote style, dashes, hyphenation, whitespace) | Yes, whole |
+| `partial` | Some ellipsis-joined fragments found, others not | Yes — the found fragments, ellipsis-joined |
+| `not-found` | Not in the source: paraphrased or invented | Nothing rendered |
+| `too-short` | Below the evidence threshold (12 normalized chars) | Nothing rendered |
 | `empty` | No quote offered — correct for omission and SOURCE UNAVAILABLE | Nothing rendered |
-| `no-source` | No source text available to check against | No — caution line |
+| `no-source` | No source text available to check against | Nothing rendered |
+
+**The panel never warns about a quote it could not locate — it just says
+nothing.** A warning there would imply the verdict is less trustworthy, and
+that is a claim no one has measured: a model that paraphrases instead of
+copying may be judging perfectly well, and steering an editor away from a
+correct verdict is a real cost paid for a speculative benefit. A partial match
+is presented identically to a full one, because the block makes exactly one
+promise — *this text is in the source* — and it holds either way.
+
+`npm run analyze` reports verdict accuracy split by whether the quote verified,
+with the gap between them. If that gap turns out to be large, the warning has
+earned its place and can come back; until then it stays out.
+
+`QUOTE_STATUSES` / `QUOTE_STATUS_LIST` in `core/quote.js` are the source of
+truth for that vocabulary. It is **not** client-only: `quote_status` is written
+to Neon, and the Worker (`alex-o-748/public-ai-proxy`, `src/index.js`)
+validates it against a hardcoded copy, storing `NULL` for anything unrecognized.
+Adding a status is therefore a two-repo change; `tests/quote.test.js` pins the
+list so it can't be done by accident.
+
+Normalization also folds PDF ligatures (via NFKC), the modifier-letter
+apostrophe, and a trailing `[.,;:]` the model added when closing a quotation —
+in the last case `verifiedText` carries the *trimmed* form, so what is shown is
+still exactly what the source contains. Three artifacts stay deliberately
+unmatched, with tests pinning them: letter-spaced headings, words split by an
+inline tag (`Kille<em>brew</em>` → `Kille brew` — fix that in the proxy, not
+here), and bracketed insertions like `[sic]`. All three would need
+space-insensitive or content-removing matching, under which unrelated passages
+start matching.
 
 Matching is normalized but **not** fuzzy: no edit distance, no token overlap.
 The design accepts missing some genuine quotes in exchange for never showing a
 fabricated one. If you loosen this, you are trading away the property the
 feature exists for.
+
+Normalization decodes HTML entities before folding characters. The CORS
+proxy's `extractText()` decodes only `&nbsp; &amp; &lt; &gt;`, so a WordPress
+source reaches the model as `the mall&#8217;s` — and the model, reading that as
+an apostrophe, quotes it back decoded. Comparing the raw entity against the
+character it denotes is a false mismatch, so both sides are decoded first.
+(The proxy is the better place to fix this, since the model shouldn't be
+reading entities either; the client-side decode is what makes verification
+correct regardless of who extracted the text.)
+
+Normalization also folds a hyphen followed by whitespace (`-\s+` → `-`). PDF and OCR
+text layers break words across lines and leave the hyphen behind
+(`school-\nlike`), and a model copying such a passage repairs some of them and
+not others *within one quote* — which is what made a real NRHP-sourced check
+come back `partial` with nothing displayed. The fold is symmetric, so it can
+only make a genuine quote match.
+
+Two fields differ in a way that matters: `found` decides the verdict, `located`
+records whether a fragment was really seen. They diverge only for fragments too
+short to judge, which are forgiven but must never reach `verifiedText`.
 
 `quoteExpectedFor(verdict, reasonType)` decides whether a missing or
 unverifiable quote is worth flagging: omission and SOURCE UNAVAILABLE verdicts

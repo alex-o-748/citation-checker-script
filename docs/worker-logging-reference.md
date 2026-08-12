@@ -21,7 +21,7 @@ CREATE TABLE verification_logs (
   claim_text TEXT,             -- truncated to 2000 chars client-side
   llm_comments TEXT,           -- ditto
   source_quote TEXT,           -- ditto; '' when the model offered no quote
-  quote_status TEXT            -- exact | normalized | partial | not-found | too-short | empty | no-source
+  quote_status TEXT            -- see QUOTE_STATUS_LIST in core/quote.js
 );
 ```
 
@@ -46,6 +46,21 @@ The client sends `revision_id`, `source_quote` and `quote_status` whether or
 not the columns exist — the INSERT statement in the Worker names its columns
 explicitly, so an unmigrated table simply drops them rather than erroring. Add
 the columns to the INSERT once they exist.
+
+### The quote_status vocabulary is shared with the client
+
+`exact`, `normalized`, `partial`, `not-found`, `too-short`, `empty`,
+`no-source` — defined by `QUOTE_STATUSES` / `QUOTE_STATUS_LIST` in
+`core/quote.js`, and duplicated as `QUOTE_STATUS_VALUES` in the Worker
+(`alex-o-748/public-ai-proxy`, `src/index.js`), which stores `NULL` for a value
+it does not recognize.
+
+The duplication is unavoidable across two repositories, so it is pinned from
+the client side: `tests/quote.test.js` asserts the exact list, and asserts that
+every declared status is reachable and every reachable status is declared.
+A new status makes that test fail, which is the reminder to update the Worker.
+Without the pin, adding one would write `NULL` to the column indefinitely and
+nothing would say so.
 
 ### Why unverified quotes are logged
 
@@ -128,9 +143,14 @@ if (request.method === 'POST' && url.pathname === '/log') {
 
   ctx.waitUntil(
     sql`INSERT INTO verification_logs
-        (article_url, article_title, citation_number, source_url, provider, verdict, confidence)
-        VALUES (${body.article_url}, ${body.article_title}, ${body.citation_number},
-                ${body.source_url}, ${body.provider}, ${body.verdict}, ${body.confidence})`
+        (check_id, kind, article_url, article_title, revision_id, citation_number,
+         source_url, provider, model, verdict, confidence, reason_type,
+         claim_text, llm_comments, source_quote, quote_status)
+        VALUES (${body.check_id}, ${body.kind}, ${body.article_url}, ${body.article_title},
+                ${body.revision_id}, ${body.citation_number}, ${body.source_url},
+                ${body.provider}, ${body.model}, ${body.verdict}, ${body.confidence},
+                ${body.reason_type}, ${body.claim_text}, ${body.llm_comments},
+                ${body.source_quote}, ${body.quote_status})`
       .catch(err => console.error('Log write failed:', err))
   );
 
@@ -152,6 +172,14 @@ if (request.method === 'OPTIONS' && url.pathname === '/log') {
 ```
 
 ### Key points
+
+**This column list is the thing that goes stale.** The client adds fields to the
+payload freely — `buildLogPayload()` in `core/feedback.js` is the source of
+truth for what is sent — but a field only lands in the table if it is named
+here *and* the column exists. Neither omission produces an error: the INSERT
+succeeds writing the columns it does name, and the rest are dropped in silence.
+When a new field appears to be "not populated," check this list before
+suspecting the client.
 
 - `ctx.waitUntil()` lets the response return immediately while the DB write happens in the background
 - `neon()` from `@neondatabase/serverless` uses HTTP queries (no TCP), which works in Cloudflare Workers

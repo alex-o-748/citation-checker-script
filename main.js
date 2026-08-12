@@ -423,6 +423,35 @@ function parseVerificationResult(response) {
 // Non-contiguous quotes joined by an ellipsis ("A ... B") are supported: each
 // segment must occur, in order.
 
+// The complete set of values verifyQuote can put in `status`. Mirrors the
+// VERDICTS / VERDICT_LIST pattern in core/verdicts.js.
+//
+// These strings leave the client: they are written to the `quote_status`
+// column via POST /log, and the Cloudflare Worker
+// (alex-o-748/public-ai-proxy, src/index.js) validates the incoming value
+// against its own hardcoded copy of this list, storing NULL for anything it
+// does not recognize. Cross-repo, that copy cannot be imported — so adding a
+// status here is a two-repo change, and skipping the second half loses the new
+// status silently. tests/quote.test.js pins the list to make that deliberate.
+const QUOTE_STATUSES = Object.freeze({
+    EXACT:      'exact',
+    NORMALIZED: 'normalized',
+    PARTIAL:    'partial',
+    NOT_FOUND:  'not-found',
+    TOO_SHORT:  'too-short',
+    EMPTY:      'empty',
+    NO_SOURCE:  'no-source',
+});
+
+const QUOTE_STATUS_LIST = Object.freeze(Object.values(QUOTE_STATUSES));
+
+// The two statuses that mean "found in the source". `verified` is exactly
+// membership of this set.
+const VERIFIED_STATUSES = Object.freeze([
+    QUOTE_STATUSES.EXACT,
+    QUOTE_STATUSES.NORMALIZED,
+]);
+
 // A quote shorter than this (after normalization) is not evidence — "1985" or
 // "the bridge" would match almost any source by accident.
 const MIN_QUOTE_CHARS = 12;
@@ -430,10 +459,61 @@ const MIN_QUOTE_CHARS = 12;
 // Ellipsis forms models use to join non-contiguous fragments.
 const ELLIPSIS_SPLIT = /\s*(?:\[\s*(?:\.\.\.|…)\s*\]|\.\.\.\.?|…)\s*/g;
 
+// Punctuation entities that survive upstream extraction. The Worker's
+// extractText() decodes only &nbsp; &amp; &lt; &gt;, so a WordPress source
+// reaches the model as "the mall&#8217;s amusement park" — and the model,
+// reading that as an apostrophe, quotes it back decoded. Comparing the raw
+// entity against the character it denotes is a false mismatch: they are the
+// same character, differently encoded, exactly like the NFKC and curly-quote
+// folds below. Numeric forms cover everything else a page is likely to emit.
+const NAMED_ENTITIES = {
+    quot: '"', apos: "'", amp: '&', lt: '<', gt: '>', nbsp: ' ',
+    lsquo: '‘', rsquo: '’', sbquo: '‚', ldquo: '“', rdquo: '”', bdquo: '„',
+    ndash: '–', mdash: '—', minus: '−', shy: '­', hellip: '…',
+    prime: '′', Prime: '″', laquo: '«', raquo: '»',
+    ensp: ' ', emsp: ' ', thinsp: ' ', middot: '·', bull: '•', deg: '°',
+};
+
+// The Latin-1 letter entities, which older CMSes emit for any accented name —
+// &eacute; for José, &uuml; for Müller. U+00C0..U+00FF is exactly this
+// sequence, so the table is generated from it rather than typed out, which is
+// both shorter and impossible to get subtly wrong.
+(
+    'Agrave Aacute Acirc Atilde Auml Aring AElig Ccedil Egrave Eacute Ecirc Euml '
+    + 'Igrave Iacute Icirc Iuml ETH Ntilde Ograve Oacute Ocirc Otilde Ouml times '
+    + 'Oslash Ugrave Uacute Ucirc Uuml Yacute THORN szlig agrave aacute acirc '
+    + 'atilde auml aring aelig ccedil egrave eacute ecirc euml igrave iacute '
+    + 'icirc iuml eth ntilde ograve oacute ocirc otilde ouml divide oslash '
+    + 'ugrave uacute ucirc uuml yacute thorn yuml'
+).split(' ').forEach((name, i) => {
+    NAMED_ENTITIES[name] = String.fromCharCode(0xc0 + i);
+});
+
+function decodeEntities(text) {
+    return text.replace(/&(#[0-9]+|#[xX][0-9a-fA-F]+|[a-zA-Z][a-zA-Z0-9]{1,10});/g, (whole, body) => {
+        if (body[0] === '#') {
+            const code = body[1] === 'x' || body[1] === 'X'
+                ? parseInt(body.slice(2), 16)
+                : parseInt(body.slice(1), 10);
+            // Surrogates and out-of-range values would throw; leave them be.
+            if (!Number.isFinite(code) || code < 0 || code > 0x10ffff) return whole;
+            if (code >= 0xd800 && code <= 0xdfff) return whole;
+            try {
+                return String.fromCodePoint(code);
+            } catch (e) {
+                return whole;
+            }
+        }
+        return Object.prototype.hasOwnProperty.call(NAMED_ENTITIES, body)
+            ? NAMED_ENTITIES[body]
+            : whole;
+    });
+}
+
 const CHAR_FOLD = [
     // All quotation marks fold to one character: models routinely swap ' for "
     // when copying, and the distinction carries no evidentiary weight here.
-    [/[‘’‚‛′´`'“”„‟″«»"]/g, '"'],
+    [/[‘’‚‛′´`'ʻʼ“”„‟″«»"]/g, '"'],
     [/[‐-―−]/g, '-'],                      // hyphens, dashes, minus
     [/­/g, ''],                                      // soft hyphen
     [/[  -   　]/g, ' '],    // exotic spaces
@@ -456,9 +536,21 @@ function normalizeForMatch(text) {
         // Environments without full Unicode data: normalization is an
         // optimization here, not a requirement.
     }
+    // Before the character folds, so &#8217; becomes ’ and then folds with
+    // every other apostrophe. Applied to both sides, so it can only make a
+    // genuine quote match.
+    out = decodeEntities(out);
     for (const [pattern, replacement] of CHAR_FOLD) {
         out = out.replace(pattern, replacement);
     }
+    // Close up a hyphen followed by whitespace. PDF and OCR text layers break
+    // words across lines and leave the hyphen behind ("school-\nlike"), and a
+    // model copying that passage repairs some of them and not others — within
+    // a single quote. Folding both sides to "school-like" makes the two agree
+    // however the model chose to render it. Applied symmetrically, so the only
+    // thing it can do is make a real quote match; a spaced dash used as
+    // punctuation ("1994 - 1998") folds the same way on both sides.
+    out = out.replace(/-\s+/g, '-');
     return out.replace(/\s+/g, ' ').trim().toLowerCase();
 }
 
@@ -488,8 +580,16 @@ function unwrap(quote) {
  * @param {string} sourceText - The source body the model was shown (already
  *   unwrapped from its "Source Content:" framing by extractSourceText).
  * @param {string} quote - The model's `source_quote` field.
- * @returns {{verified: boolean, status: string, segments: Array<{text: string, found: boolean}>}}
- *   status is one of:
+ * @returns {{verified: boolean, status: string, verifiedText: string,
+ *   segments: Array<{text: string, found: boolean, located: boolean}>}}
+ *   `verifiedText` is the part of the quote actually located in the source,
+ *   ellipsis-joined — the whole quote when verified, the surviving fragments
+ *   when partial, '' when nothing was found. Every character of it came from
+ *   the source, so it is safe to display; `quote` as returned by the model is
+ *   not. `found` counts toward the verdict, `located` records whether the
+ *   fragment was really seen (they differ only for fragments too short to
+ *   judge, which are forgiven but never shown).
+ *   status is one of QUOTE_STATUS_LIST:
  *     'empty'      - no quote was offered (expected for omission / unavailable)
  *     'no-source'  - we have no source text to check against (e.g. cached
  *                    result restored without its source); quote is unproven
@@ -498,22 +598,27 @@ function unwrap(quote) {
  *     'normalized' - occurs after whitespace/punctuation/case normalization
  *     'partial'    - some ellipsis-joined segments found, others not
  *     'not-found'  - does not occur in the source
- *   `verified` is true only for 'exact' and 'normalized'.
+ *   `verified` is true exactly for the VERIFIED_STATUSES ('exact', 'normalized').
  */
 function verifyQuote(sourceText, quote) {
     const raw = quote == null ? '' : String(quote).trim();
-    if (!raw) return { verified: false, status: 'empty', segments: [] };
+    if (!raw) return { verified: false, status: QUOTE_STATUSES.EMPTY, verifiedText: '', segments: [] };
 
     const cleaned = unwrap(raw);
     const source = sourceText == null ? '' : String(sourceText);
-    if (!source.trim()) return { verified: false, status: 'no-source', segments: [] };
+    if (!source.trim()) return { verified: false, status: QUOTE_STATUSES.NO_SOURCE, verifiedText: '', segments: [] };
 
     if (normalizeForMatch(cleaned).length < MIN_QUOTE_CHARS) {
-        return { verified: false, status: 'too-short', segments: [] };
+        return { verified: false, status: QUOTE_STATUSES.TOO_SHORT, verifiedText: '', segments: [] };
     }
 
     if (source.includes(cleaned)) {
-        return { verified: true, status: 'exact', segments: [{ text: cleaned, found: true }] };
+        return {
+            verified: true,
+            status: QUOTE_STATUSES.EXACT,
+            verifiedText: cleaned,
+            segments: [{ text: cleaned, found: true, located: true }],
+        };
     }
 
     const haystack = normalizeForMatch(source);
@@ -527,29 +632,46 @@ function verifyQuote(sourceText, quote) {
     const segments = [];
     for (const segment of rawSegments) {
         const needle = normalizeForMatch(segment);
-        // Ignore fragments too short to carry meaning (a dangling "in 1985"
-        // after an ellipsis); they neither confirm nor refute the match.
+        const at = needle ? haystack.indexOf(needle, cursor) : -1;
+        // Fragments too short to carry meaning (a dangling "in 1985" after an
+        // ellipsis) neither confirm nor refute the match, so they are forgiven
+        // rather than failed — but they never advance the cursor, and they are
+        // only shown if they really were located.
         if (needle.length < MIN_QUOTE_CHARS && rawSegments.length > 1) {
-            segments.push({ text: segment, found: true });
+            segments.push({ text: segment, found: true, located: at !== -1 });
             continue;
         }
-        const at = needle ? haystack.indexOf(needle, cursor) : -1;
-        if (at === -1) {
-            segments.push({ text: segment, found: false });
-        } else {
-            segments.push({ text: segment, found: true });
+        if (at !== -1) {
+            segments.push({ text: segment, found: true, located: true });
             cursor = at + needle.length;
+            continue;
+        }
+        // Models routinely close a quotation with a full stop the source does
+        // not have. Retry without it — and if that is what matched, display
+        // the trimmed form, so every character shown is still one the source
+        // contains.
+        const trimmed = segment.replace(/[.,;:]+$/, '');
+        const trimmedNeedle = normalizeForMatch(trimmed);
+        const trimmedAt = trimmedNeedle && trimmedNeedle !== needle
+            ? haystack.indexOf(trimmedNeedle, cursor)
+            : -1;
+        if (trimmedAt !== -1) {
+            segments.push({ text: trimmed, found: true, located: true });
+            cursor = trimmedAt + trimmedNeedle.length;
+        } else {
+            segments.push({ text: segment, found: false, located: false });
         }
     }
 
+    const verifiedText = segments.filter(s => s.located).map(s => s.text).join(' … ');
     const foundCount = segments.filter(s => s.found).length;
     if (foundCount === segments.length && segments.length > 0) {
-        return { verified: true, status: 'normalized', segments };
+        return { verified: true, status: QUOTE_STATUSES.NORMALIZED, verifiedText, segments };
     }
     if (foundCount > 0) {
-        return { verified: false, status: 'partial', segments };
+        return { verified: false, status: QUOTE_STATUSES.PARTIAL, verifiedText, segments };
     }
-    return { verified: false, status: 'not-found', segments };
+    return { verified: false, status: QUOTE_STATUSES.NOT_FOUND, verifiedText: '', segments };
 }
 
 // Verdicts for which a supporting/contradicting passage should exist in the
@@ -1946,8 +2068,6 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
         'Quote: "{text}"': 'Citation : « {text} »',
         'Comments: {text}': 'Commentaires : {text}',
         'From the source': 'Extrait de la source',
-        '⚠ The quote the AI gave was not found in the source text — judge the explanation below with that in mind.':
-            "⚠ La citation donnée par l'IA est introuvable dans le texte de la source — tenez-en compte en lisant l'explication ci-dessous.",
         'Note: Combined sources are long, only partially checked.':
             'Note : Sources combinées longues, vérifiées partiellement seulement.',
         'Note: Source is long, only partially checked.':
@@ -2225,8 +2345,6 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
         'Quote: "{text}"': 'Cita: «{text}»',
         'Comments: {text}': 'Comentarios: {text}',
         'From the source': 'Extracto de la fuente',
-        '⚠ The quote the AI gave was not found in the source text — judge the explanation below with that in mind.':
-            '⚠ La cita indicada por la IA no aparece en el texto de la fuente; conviene tenerlo en cuenta al leer la explicación siguiente.',
         'Note: Combined sources are long, only partially checked.':
             'Nota: Las fuentes combinadas son extensas; solo se han comprobado parcialmente.',
         'Note: Source is long, only partially checked.':
@@ -3341,15 +3459,6 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                     color: var(--sv-ink-2);
                     max-height: 200px;
                     overflow-y: auto;
-                }
-                /* Shown instead of the quote when the model returned a passage
-                   we could not find in the source — a caution about the
-                   rationale, not a quote to read. */
-                .sv-quote-missing {
-                    margin-bottom: 8px;
-                    font-size: 12px;
-                    line-height: 1.4;
-                    color: var(--sv-warn-fg);
                 }
                 .verifier-report-card .sv-quote,
                 .verifier-report-group-row .sv-quote,
@@ -5005,14 +5114,13 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
             const sourceText = sourceInfo ? extractSourceText(sourceInfo) : '';
             const check = verifyQuote(sourceText, quote);
             return {
+                // `quote` is what the model said, kept for the log. `display`
+                // is the part of it actually found in the source — the only
+                // text a renderer may show.
                 quote,
+                display: check.verifiedText,
                 verified: check.verified,
                 status: check.status,
-                // Whether this verdict is one a quote should exist for. Drives
-                // whether an unverifiable quote is worth warning about: on an
-                // omission or an unavailable source there is nothing to quote,
-                // so a stray quote is just noise, not a red flag.
-                expected: quoteExpectedFor(parsed && parsed.verdict, parsed && parsed.reason_type),
             };
         }
 
@@ -5022,30 +5130,32 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
             if (!result || !result.sourceQuote) return null;
             return {
                 quote: result.sourceQuote,
+                display: result.quoteDisplay || '',
                 verified: !!result.quoteVerified,
                 status: result.quoteStatus,
-                expected: !!result.quoteExpected,
             };
         }
 
-        // Renders the evidence block. A quote is displayed only when it was
-        // located in the source: an unlocated quote is replaced by a caution
-        // line rather than shown, because a passage the source may not contain
-        // is worse than no quote at all. Returns '' when there is nothing to
-        // say (no quote offered, which is expected for omission and
-        // source-unavailable verdicts).
+        // Renders the evidence block: the part of the model's quote that was
+        // located in the source, or nothing.
+        //
+        // Nothing is deliberate. An unlocatable quote used to draw a warning
+        // here, but that warning implied the verdict was less trustworthy — a
+        // claim there is no evidence for. A model that paraphrases instead of
+        // copying may still be judging correctly, and steering an editor away
+        // from a correct verdict is a real cost paid against a speculative
+        // benefit. quote_status is still logged on every row, so "does an
+        // unverified quote predict a worse verdict?" stays answerable; if the
+        // benchmark answers yes, the warning will have earned its place.
         quoteHtml(view) {
-            if (!view || !view.quote) return '';
-            // An unverifiable quote is only worth flagging where a quote was
-            // supposed to exist; elsewhere, stay quiet.
-            if (!view.verified && !view.expected) return '';
-            if (view.verified) {
-                return `<div class="sv-quote">`
-                    + `<span class="sv-quote-label">${this.escapeHtml(this.t('From the source'))}</span>`
-                    + `<div class="sv-quote-text">“${this.escapeHtml(view.quote)}”</div>`
-                    + `</div>`;
-            }
-            return `<div class="sv-quote-missing">${this.escapeHtml(this.t('⚠ The quote the AI gave was not found in the source text — judge the explanation below with that in mind.'))}</div>`;
+            if (!view || !view.display) return '';
+            // Every character of `display` was found in the source. A partial
+            // match shows its surviving fragments ellipsis-joined, which reads
+            // as the ordinary elision it is.
+            return `<div class="sv-quote">`
+                + `<span class="sv-quote-label">${this.escapeHtml(this.t('From the source'))}</span>`
+                + `<div class="sv-quote-text">“${this.escapeHtml(view.display)}”</div>`
+                + `</div>`;
         }
 
 	displayResult(response) {
@@ -5722,8 +5832,11 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                 // Verified quote first, as the evidence the reader can check;
                 // the model's explanation follows it. Unverified quotes are
                 // left out of the on-wiki report entirely.
-                if (r.sourceQuote && r.quoteVerified) {
-                    commentsClean = `''"${this.escapeWikitableCell(r.sourceQuote)}"''<br />`
+                // Quote the located text, not the model's raw quote: on a
+                // partial match the two differ, and only the former is
+                // guaranteed to be in the source.
+                if (r.quoteDisplay) {
+                    commentsClean = `''"${this.escapeWikitableCell(r.quoteDisplay)}"''<br />`
                         + this.escapeWikitableCell(commentsClean);
                 } else {
                     commentsClean = this.escapeWikitableCell(commentsClean);
@@ -5809,14 +5922,14 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                     text += `  ${this.t('Claim: {text}', { text: claimExcerpt })}\n`;
                     const urls = (r.members || []).filter(m => m.url).map(m => `[${m.citationNumber}] ${m.url}`);
                     if (urls.length) text += `  ${this.t('Sources: {urls}', { urls: urls.join(' | ') })}\n`;
-                    if (r.sourceQuote && r.quoteVerified) text += `  ${this.t('Quote: "{text}"', { text: r.sourceQuote })}\n`;
+                    if (r.quoteDisplay) text += `  ${this.t('Quote: "{text}"', { text: r.quoteDisplay })}\n`;
                     if (r.comments) text += `  ${this.t('Comments: {text}', { text: r.comments })}\n`;
                     if (r.truncated && r.verdict !== 'SUPPORTED') text += `  ${this.t('Note: Combined sources are long, only partially checked.')}\n`;
                 } else {
                     text += `[${r.citationNumber}] ${this.t(r.verdict)}\n`;
                     text += `  ${this.t('Claim: {text}', { text: claimExcerpt })}\n`;
                     if (r.url) text += `  ${this.t('Source: {url}', { url: r.url })}\n`;
-                    if (r.sourceQuote && r.quoteVerified) text += `  ${this.t('Quote: "{text}"', { text: r.sourceQuote })}\n`;
+                    if (r.quoteDisplay) text += `  ${this.t('Quote: "{text}"', { text: r.quoteDisplay })}\n`;
                     if (r.comments) text += `  ${this.t('Comments: {text}', { text: r.comments })}\n`;
                     if (r.truncated && r.verdict !== 'SUPPORTED') text += `  ${this.t('Note: Source is long, only partially checked.')}\n`;
                 }
@@ -5971,9 +6084,9 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                         comments: parsed.comments,
                         reason_type: parsed.reason_type,
                         sourceQuote: quoteView.quote,
+                        quoteDisplay: quoteView.display,
                         quoteVerified: quoteView.verified,
                         quoteStatus: quoteView.status,
-                        quoteExpected: quoteView.expected,
                     };
                 } catch (e) {
                     result = { ...base, verdict: 'ERROR', confidence: null, comments: e.message };
@@ -6216,9 +6329,9 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                                 comments: parsed.comments,
                                 reason_type: parsed.reason_type,
                                 sourceQuote: quoteView.quote,
+                                quoteDisplay: quoteView.display,
                                 quoteVerified: quoteView.verified,
                                 quoteStatus: quoteView.status,
-                                quoteExpected: quoteView.expected,
                                 truncated: sourceTruncated
                             };
 
@@ -6383,7 +6496,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                 llmRationale: result?.comments ?? '',
                 // Only submit a quote we located in the source; an unverified
                 // one would pollute the dataset with possible fabrications.
-                llmQuote: result?.quoteVerified ? (result?.sourceQuote ?? '') : '',
+                llmQuote: result?.quoteDisplay ?? '',
                 llmQuoteVerified: result?.quoteStatus ?? '',
                 llmProvider: result?.providerName ?? provider.name ?? '',
                 llmModel: result?.model ?? provider.model ?? '',

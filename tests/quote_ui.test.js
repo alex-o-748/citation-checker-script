@@ -71,7 +71,11 @@ test('buildQuoteView handles a missing quote and a missing source', () => {
 });
 
 test('quoteHtml renders a verified quote as an evidence block', () => {
-  const html = harness().quoteHtml({ quote: 'opened to traffic in August 2002', verified: true });
+  const html = harness().quoteHtml({
+    quote: 'opened to traffic in August 2002',
+    display: 'opened to traffic in August 2002',
+    verified: true,
+  });
   assert.match(html, /class="sv-quote"/);
   assert.match(html, /opened to traffic in August 2002/);
 });
@@ -79,12 +83,11 @@ test('quoteHtml renders a verified quote as an evidence block', () => {
 test('quoteHtml never prints the text of an unverified quote', () => {
   const html = harness().quoteHtml({
     quote: 'A sentence the source never contained',
+    display: '',
     verified: false,
     status: 'not-found',
-    expected: true,
   });
-  assert.doesNotMatch(html, /A sentence the source never contained/);
-  assert.match(html, /class="sv-quote-missing"/);
+  assert.equal(html, '');
 });
 
 test('quoteHtml renders nothing when no quote was offered', () => {
@@ -93,7 +96,11 @@ test('quoteHtml renders nothing when no quote was offered', () => {
 });
 
 test('quoteHtml escapes HTML in the quoted passage', () => {
-  const html = harness().quoteHtml({ quote: '<img src=x onerror=alert(1)>', verified: true });
+  const html = harness().quoteHtml({
+    quote: '<img src=x onerror=alert(1)>',
+    display: '<img src=x onerror=alert(1)>',
+    verified: true,
+  });
   assert.doesNotMatch(html, /<img/);
   assert.match(html, /&lt;img/);
 });
@@ -101,8 +108,11 @@ test('quoteHtml escapes HTML in the quoted passage', () => {
 test('quoteViewOf reuses the verification stored on a report result', () => {
   const h = harness();
   assert.deepEqual(
-    h.quoteViewOf({ sourceQuote: 'a passage', quoteVerified: true, quoteStatus: 'exact', quoteExpected: true }),
-    { quote: 'a passage', verified: true, status: 'exact', expected: true }
+    h.quoteViewOf({
+      sourceQuote: 'a passage', quoteDisplay: 'a passage',
+      quoteVerified: true, quoteStatus: 'exact',
+    }),
+    { quote: 'a passage', display: 'a passage', verified: true, status: 'exact' }
   );
   assert.equal(h.quoteViewOf({ sourceQuote: '' }), null);
   assert.equal(h.quoteViewOf(null), null);
@@ -113,33 +123,78 @@ test('escapeWikitableCell neutralizes pipes, braces and newlines', () => {
   assert.equal(out, 'a &#124; b &#123;&#123;tl&#125;&#125; c d');
 });
 
-test('buildQuoteView marks a quote as expected only where one should exist', () => {
+// The panel says nothing about a quote it could not locate, on any verdict.
+// The warning that used to appear here implied the verdict was less accurate,
+// which is a claim the benchmark has not been asked yet — see quoteHtml.
+test('an unlocatable quote is silent regardless of verdict', () => {
   const h = harness();
-  const withVerdict = (verdict, reason_type) =>
-    h.buildQuoteView({ source_quote: 'x', verdict, reason_type }, SOURCE_INFO).expected;
-
-  assert.equal(withVerdict('SUPPORTED', null), true);
-  assert.equal(withVerdict('PARTIALLY SUPPORTED', null), true);
-  assert.equal(withVerdict('NOT SUPPORTED', 'contradiction'), true);
-  assert.equal(withVerdict('NOT SUPPORTED', 'omission'), false);
-  assert.equal(withVerdict('SOURCE UNAVAILABLE', null), false);
-});
-
-test('an unverified quote stays silent where no quote was expected', () => {
-  const view = {
-    quote: 'a stray fabricated passage',
-    verified: false,
-    status: 'not-found',
-    expected: false,
-  };
-  assert.equal(harness().quoteHtml(view), '');
+  for (const [verdict, reason_type] of [
+    ['SUPPORTED', null],
+    ['PARTIALLY SUPPORTED', null],
+    ['NOT SUPPORTED', 'contradiction'],
+    ['NOT SUPPORTED', 'omission'],
+    ['SOURCE UNAVAILABLE', null],
+  ]) {
+    const view = h.buildQuoteView(
+      { source_quote: 'a passage the source never contained at all', verdict, reason_type },
+      SOURCE_INFO
+    );
+    assert.equal(view.status, 'not-found');
+    assert.equal(h.quoteHtml(view), '', `${verdict}/${reason_type} should render nothing`);
+  }
 });
 
 test('a verified quote is shown even on a verdict that did not require one', () => {
   const html = harness().quoteHtml({
     quote: 'opened to traffic in August 2002',
+    display: 'opened to traffic in August 2002',
     verified: true,
     expected: false,
   });
   assert.match(html, /class="sv-quote"/);
+});
+
+// --- partially verified quotes (the PDF line-break case) ---
+
+test('buildQuoteView exposes only the located fragments as display text', () => {
+  const source = 'Source Content:\nAlpha the first located fragment here. '
+    + 'Gamma the third located fragment here.';
+  const view = harness().buildQuoteView(
+    { source_quote: 'Alpha the first located fragment here. ... a fragment that is not present at all ... Gamma the third located fragment here.',
+      verdict: 'SUPPORTED' },
+    source
+  );
+  assert.equal(view.status, 'partial');
+  assert.equal(view.verified, false);
+  assert.match(view.display, /Alpha the first located fragment here/);
+  assert.match(view.display, /Gamma the third located fragment here/);
+  assert.doesNotMatch(view.display, /not present at all/);
+});
+
+test('quoteHtml shows the located fragments of a partial match', () => {
+  const html = harness().quoteHtml({
+    quote: 'real fragment ... invented fragment',
+    display: 'real fragment',
+    verified: false,
+    status: 'partial',
+  });
+  assert.match(html, /class="sv-quote"/);
+  assert.match(html, /real fragment/);
+  assert.doesNotMatch(html, /invented fragment/);
+});
+
+test('a partial match is presented no differently from a full one', () => {
+  // The block makes one promise — this text is in the source — and it holds
+  // identically either way. Anything extra would be commentary on the model.
+  const h = harness();
+  const full = h.quoteHtml({ quote: 'a located passage', display: 'a located passage', verified: true });
+  const part = h.quoteHtml({ quote: 'a located passage ... dropped', display: 'a located passage', verified: false, status: 'partial' });
+  assert.equal(full, part);
+});
+
+test('a quote with nothing located renders nothing at all', () => {
+  const html = harness().quoteHtml({
+    quote: 'entirely invented', display: '', verified: false, status: 'not-found',
+  });
+  assert.equal(html, '');
 });
