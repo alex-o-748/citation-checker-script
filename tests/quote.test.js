@@ -320,3 +320,91 @@ test('a malformed or unknown entity is left alone rather than mangled', () => {
 test('entity decoding does not make an unrelated passage match', () => {
     assert.equal(verifyQuote(ENTITY_SOURCE, 'a completely different sentence about hockey').verified, false);
 });
+
+// --- the rest of the extraction-artifact sweep ---------------------------
+//
+// Found by probing the known text manglers (worker extractText, PDF text
+// layers, model reformatting) against quotes that are genuinely correct.
+
+test('Latin-1 letter entities decode, so accented names match', () => {
+    const source = 'Jos&eacute; Mart&iacute;nez and Hans M&uuml;ller signed in Stra&szlig;e';
+    assert.equal(verifyQuote(source, 'José Martínez and Hans Müller signed in Straße').verified, true);
+});
+
+test('the Latin-1 entity table covers the whole U+00C0..U+00FF block', () => {
+    for (let code = 0xc0; code <= 0xff; code++) {
+        const char = String.fromCharCode(code);
+        // Round-trip through the table by finding the entity that yields it.
+        assert.equal(
+            normalizeForMatch(`padding text ${char} padding text`).includes(normalizeForMatch(char)),
+            true,
+            `U+${code.toString(16)} should survive normalization`
+        );
+    }
+});
+
+test('PDF ligatures match their spelled-out form', () => {
+    assert.equal(
+        verifyQuote('the oﬃce conﬁrmed the ﬁnal ﬂight had been delayed',
+                    'the office confirmed the final flight had been delayed').verified,
+        true
+    );
+});
+
+test('the modifier-letter apostrophe folds with the ordinary one', () => {
+    assert.equal(
+        verifyQuote('the Hawaiʻi delegation arrived early that morning',
+                    "the Hawai'i delegation arrived early that morning").verified,
+        true
+    );
+});
+
+test('decomposed and composed accents compare equal', () => {
+    const composed = 'Jose\u0301 Marti\u0301nez signed the agreement';
+    const nfd = 'Jos\u00e9 Mart\u00ednez signed the agreement';
+    assert.equal(verifyQuote(composed, nfd).verified, true);
+});
+
+test('a trailing full stop the model added does not sink the match', () => {
+    const out = verifyQuote(SOURCE, 'The bridge was finally opened to traffic in August 2002.');
+    assert.equal(out.verified, true);
+});
+
+test('a trailing-punctuation match displays the trimmed form, not the model text', () => {
+    // The promise is that every character shown is in the source, so the
+    // added full stop must not survive into verifiedText.
+    const out = verifyQuote('the bridge opened to traffic in August 2002 after delays',
+                            'the bridge opened to traffic in August 2002 after delays.');
+    assert.equal(out.verified, true);
+    assert.ok(!out.verifiedText.endsWith('.'), `verifiedText kept the added stop: ${out.verifiedText}`);
+});
+
+// --- deliberately still rejected ----------------------------------------
+//
+// Each of these would need space-insensitive or content-removing matching,
+// which would let unrelated passages match. Rejecting a real quote is the
+// cheaper error.
+
+test('letter-spaced source text does not match its normal spelling', () => {
+    assert.equal(
+        verifyQuote('A N N U A L  R E P O R T of the commission for the year',
+                    'ANNUAL REPORT of the commission for the year').verified,
+        false
+    );
+});
+
+test('a word split by an inline tag does not match — fix belongs in the extractor', () => {
+    assert.equal(
+        verifyQuote('Harmon Kille brew hit the longest home run',
+                    'Harmon Killebrew hit the longest home run').verified,
+        false
+    );
+});
+
+test('a bracketed insertion mid-quote does not match', () => {
+    assert.equal(
+        verifyQuote('the committee published its findings in 1932 to acclaim',
+                    'the committee published its findings in 1932 [sic] to acclaim').verified,
+        false
+    );
+});

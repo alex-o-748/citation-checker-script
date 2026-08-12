@@ -241,6 +241,43 @@ Both cases point the same way: a mismatch between quote and source is far more
 often an artifact of how the source was extracted than a sign the model made
 something up. Worth remembering before reading `not-found` as fabrication.
 
+## The artifact sweep (2026-08-11)
+
+Two false negatives in a row, both encoding artifacts, was enough to stop
+fixing them one at a time. A probe ran fifteen realistic manglings — the
+Worker's `extractText` applied to real HTML shapes, PDF text-layer quirks, and
+the ways a model reformats when it copies — against quotes that were genuinely
+correct. **Six of the fifteen failed.**
+
+Fixed, because in each the entity and the character are the same thing:
+
+| Artifact | Example | Fix |
+| --- | --- | --- |
+| Latin-1 letter entities | `Jos&eacute;` vs `José` | Table generated from U+00C0..U+00FF |
+| Modifier-letter apostrophe | `Hawaiʻi` vs `Hawai'i` | Added U+02BC/U+02BC to the quote fold |
+| Model-added full stop | source ends `…2002`, quote ends `…2002.` | Retry without trailing `[.,;:]`, and display the *trimmed* form so the shown text is still exactly the source's |
+
+The first is the one that matters: the entity fix shipped an hour earlier
+covered punctuation only, so every accented name in an older CMS was still
+failing. A partial fix to a whole-class bug reads as a fix and isn't one.
+
+**Deliberately still rejected**, with tests pinning them so nobody "fixes" them
+later:
+
+- **Letter-spaced headings** (`A N N U A L  R E P O R T`). Matching these needs
+  space-insensitive comparison, under which almost any text matches almost any
+  other.
+- **A word split by an inline tag** (`Kille<em>brew</em>` → `Kille brew`). Same
+  space-insensitivity problem, and the real fix is upstream: `extractText`
+  replaces every tag with a space, including tags that sit inside a word.
+- **Bracketed insertions** (`[sic]`) mid-quote. Removing bracketed content
+  could remove real source text.
+
+The pattern worth carrying forward: **`not-found` has so far always meant the
+extractor mangled the text, never that the model invented it.** Treat a report
+of a wrong `not-found` as an extraction bug until proven otherwise, and probe
+the whole class rather than the instance.
+
 ## Open item: benchmark re-run
 
 The prompt changed, so the accuracy numbers in `benchmark/analysis.json` are no

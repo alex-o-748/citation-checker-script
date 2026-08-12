@@ -183,6 +183,16 @@ validates it against a hardcoded copy, storing `NULL` for anything unrecognized.
 Adding a status is therefore a two-repo change; `tests/quote.test.js` pins the
 list so it can't be done by accident.
 
+Normalization also folds PDF ligatures (via NFKC), the modifier-letter
+apostrophe, and a trailing `[.,;:]` the model added when closing a quotation —
+in the last case `verifiedText` carries the *trimmed* form, so what is shown is
+still exactly what the source contains. Three artifacts stay deliberately
+unmatched, with tests pinning them: letter-spaced headings, words split by an
+inline tag (`Kille<em>brew</em>` → `Kille brew` — fix that in the proxy, not
+here), and bracketed insertions like `[sic]`. All three would need
+space-insensitive or content-removing matching, under which unrelated passages
+start matching.
+
 Matching is normalized but **not** fuzzy: no edit distance, no token overlap.
 The design accepts missing some genuine quotes in exchange for never showing a
 fabricated one. If you loosen this, you are trading away the property the

@@ -67,6 +67,21 @@ const NAMED_ENTITIES = {
     ensp: ' ', emsp: ' ', thinsp: ' ', middot: '·', bull: '•', deg: '°',
 };
 
+// The Latin-1 letter entities, which older CMSes emit for any accented name —
+// &eacute; for José, &uuml; for Müller. U+00C0..U+00FF is exactly this
+// sequence, so the table is generated from it rather than typed out, which is
+// both shorter and impossible to get subtly wrong.
+(
+    'Agrave Aacute Acirc Atilde Auml Aring AElig Ccedil Egrave Eacute Ecirc Euml '
+    + 'Igrave Iacute Icirc Iuml ETH Ntilde Ograve Oacute Ocirc Otilde Ouml times '
+    + 'Oslash Ugrave Uacute Ucirc Uuml Yacute THORN szlig agrave aacute acirc '
+    + 'atilde auml aring aelig ccedil egrave eacute ecirc euml igrave iacute '
+    + 'icirc iuml eth ntilde ograve oacute ocirc otilde ouml divide oslash '
+    + 'ugrave uacute ucirc uuml yacute thorn yuml'
+).split(' ').forEach((name, i) => {
+    NAMED_ENTITIES[name] = String.fromCharCode(0xc0 + i);
+});
+
 function decodeEntities(text) {
     return text.replace(/&(#[0-9]+|#[xX][0-9a-fA-F]+|[a-zA-Z][a-zA-Z0-9]{1,10});/g, (whole, body) => {
         if (body[0] === '#') {
@@ -91,7 +106,7 @@ function decodeEntities(text) {
 const CHAR_FOLD = [
     // All quotation marks fold to one character: models routinely swap ' for "
     // when copying, and the distinction carries no evidentiary weight here.
-    [/[‘’‚‛′´`'“”„‟″«»"]/g, '"'],
+    [/[‘’‚‛′´`'ʻʼ“”„‟″«»"]/g, '"'],
     [/[‐-―−]/g, '-'],                      // hyphens, dashes, minus
     [/­/g, ''],                                      // soft hyphen
     [/[  -   　]/g, ' '],    // exotic spaces
@@ -219,11 +234,25 @@ export function verifyQuote(sourceText, quote) {
             segments.push({ text: segment, found: true, located: at !== -1 });
             continue;
         }
-        if (at === -1) {
-            segments.push({ text: segment, found: false, located: false });
-        } else {
+        if (at !== -1) {
             segments.push({ text: segment, found: true, located: true });
             cursor = at + needle.length;
+            continue;
+        }
+        // Models routinely close a quotation with a full stop the source does
+        // not have. Retry without it — and if that is what matched, display
+        // the trimmed form, so every character shown is still one the source
+        // contains.
+        const trimmed = segment.replace(/[.,;:]+$/, '');
+        const trimmedNeedle = normalizeForMatch(trimmed);
+        const trimmedAt = trimmedNeedle && trimmedNeedle !== needle
+            ? haystack.indexOf(trimmedNeedle, cursor)
+            : -1;
+        if (trimmedAt !== -1) {
+            segments.push({ text: trimmed, found: true, located: true });
+            cursor = trimmedAt + trimmedNeedle.length;
+        } else {
+            segments.push({ text: segment, found: false, located: false });
         }
     }
 
