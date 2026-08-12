@@ -265,3 +265,58 @@ test('the status constants are frozen', () => {
     assert.throws(() => { QUOTE_STATUSES.EXACT = 'nope'; }, TypeError);
     assert.throws(() => { QUOTE_STATUS_LIST.push('nope'); }, TypeError);
 });
+
+// --- HTML entities surviving upstream extraction -------------------------
+//
+// Regression for a real Harmon Killebrew check against twincities.com. The
+// Worker's extractText() decodes only &nbsp; &amp; &lt; &gt;, so a WordPress
+// page reaches the model as "the mall&#8217;s amusement park". The model reads
+// that as an apostrophe and quotes it back decoded, and the raw entity then
+// failed to match the character it denotes.
+
+const ENTITY_SOURCE = 'Only one is honored at the Mall of America, where a stadium seat '
+    + 'mounted in the mall&#8217;s amusement park marks the spot where his long homer '
+    + 'landed in the upper deck.';
+
+test('a quote matches source text that still carries a numeric entity', () => {
+    const out = verifyQuote(ENTITY_SOURCE,
+        "Only one is honored at the Mall of America, where a stadium seat mounted in "
+        + "the mall's amusement park marks the spot where his long homer landed in the upper deck.");
+    assert.equal(out.verified, true);
+    assert.equal(out.status, QUOTE_STATUSES.NORMALIZED);
+});
+
+test('numeric, hex and named entity forms all fold to the same character', () => {
+    const quote = "the mall's amusement park marks the spot";
+    for (const form of ['&#8217;', '&#x2019;', '&#X2019;', '&rsquo;', '’', "'"]) {
+        const source = `the mall${form}s amusement park marks the spot`;
+        assert.equal(verifyQuote(source, quote).verified, true, `form ${form} should match`);
+    }
+});
+
+test('entity decoding runs in the other direction too', () => {
+    // A model that copies the entity verbatim from the source must also match
+    // against a source that has the real character.
+    assert.equal(
+        verifyQuote('the mall’s amusement park marks the spot',
+                    'the mall&#8217;s amusement park marks the spot').verified,
+        true
+    );
+});
+
+test('common punctuation entities are decoded', () => {
+    const source = 'He said &ldquo;yes&rdquo; &mdash; then left&hellip; and never came back';
+    assert.equal(verifyQuote(source, 'He said "yes" — then left… and never came back').verified, true);
+});
+
+test('a malformed or unknown entity is left alone rather than mangled', () => {
+    // &notareal; is not an entity; it must not silently vanish or throw.
+    assert.equal(normalizeForMatch('a &notareal; b'), 'a &notareal; b');
+    assert.equal(normalizeForMatch('a &#99999999999; b'), 'a &#99999999999; b');
+    assert.equal(normalizeForMatch('a &#xD800; b'), 'a &#xd800; b');
+    assert.equal(normalizeForMatch('50% off & more'), '50% off & more');
+});
+
+test('entity decoding does not make an unrelated passage match', () => {
+    assert.equal(verifyQuote(ENTITY_SOURCE, 'a completely different sentence about hockey').verified, false);
+});

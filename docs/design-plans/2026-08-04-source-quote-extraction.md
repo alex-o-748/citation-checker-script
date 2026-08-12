@@ -212,6 +212,35 @@ settles it.
 The general rule this leaves behind: **the panel reports what the source says,
 not how the model behaved.** The log is where model behaviour belongs.
 
+## The HTML entity case (2026-08-11)
+
+A Harmon Killebrew check against twincities.com produced a quote that was
+correct word for word and still came back `not-found`.
+
+The CORS proxy's `extractText()` (`alex-o-748/public-ai-proxy`,
+`src/index.js:605`) decodes exactly four entities — `&nbsp; &amp; &lt; &gt;`.
+twincities.com is WordPress, whose `wptexturize` emits curly apostrophes as
+`&#8217;`, so the source text handed to the model reads *the mall&#8217;s
+amusement park*. The model understood the entity, and quoted it back as *the
+mall's*. Verification then compared a literal `&#8217;` against `'`.
+
+This is the same class as the PDF hyphenation case above — an encoding
+difference between what the source literally contains and what the model
+sensibly wrote — and it takes the same shape of fix: `normalizeForMatch` now
+decodes numeric, hex and common named entities before the character folds.
+Symmetric, so it can only make a genuine quote match.
+
+The deeper fix belongs upstream: **the model should not be reading raw entities
+either.** Every `&#8217;` in a source is a token spent on nothing and a small
+comprehension hazard, and the extractor is where it should be resolved. That is
+a Worker change; the client-side decode is what makes verification correct
+regardless of who did the extracting, including manual paste and PDF paths the
+Worker never touches.
+
+Both cases point the same way: a mismatch between quote and source is far more
+often an artifact of how the source was extracted than a sign the model made
+something up. Worth remembering before reading `not-found` as fabrication.
+
 ## Open item: benchmark re-run
 
 The prompt changed, so the accuracy numbers in `benchmark/analysis.json` are no

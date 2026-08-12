@@ -188,7 +188,16 @@ The design accepts missing some genuine quotes in exchange for never showing a
 fabricated one. If you loosen this, you are trading away the property the
 feature exists for.
 
-Normalization folds a hyphen followed by whitespace (`-\s+` → `-`). PDF and OCR
+Normalization decodes HTML entities before folding characters. The CORS
+proxy's `extractText()` decodes only `&nbsp; &amp; &lt; &gt;`, so a WordPress
+source reaches the model as `the mall&#8217;s` — and the model, reading that as
+an apostrophe, quotes it back decoded. Comparing the raw entity against the
+character it denotes is a false mismatch, so both sides are decoded first.
+(The proxy is the better place to fix this, since the model shouldn't be
+reading entities either; the client-side decode is what makes verification
+correct regardless of who extracted the text.)
+
+Normalization also folds a hyphen followed by whitespace (`-\s+` → `-`). PDF and OCR
 text layers break words across lines and leave the hyphen behind
 (`school-\nlike`), and a model copying such a passage repairs some of them and
 not others *within one quote* — which is what made a real NRHP-sourced check

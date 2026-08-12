@@ -459,6 +459,42 @@ const MIN_QUOTE_CHARS = 12;
 // Ellipsis forms models use to join non-contiguous fragments.
 const ELLIPSIS_SPLIT = /\s*(?:\[\s*(?:\.\.\.|…)\s*\]|\.\.\.\.?|…)\s*/g;
 
+// Punctuation entities that survive upstream extraction. The Worker's
+// extractText() decodes only &nbsp; &amp; &lt; &gt;, so a WordPress source
+// reaches the model as "the mall&#8217;s amusement park" — and the model,
+// reading that as an apostrophe, quotes it back decoded. Comparing the raw
+// entity against the character it denotes is a false mismatch: they are the
+// same character, differently encoded, exactly like the NFKC and curly-quote
+// folds below. Numeric forms cover everything else a page is likely to emit.
+const NAMED_ENTITIES = {
+    quot: '"', apos: "'", amp: '&', lt: '<', gt: '>', nbsp: ' ',
+    lsquo: '‘', rsquo: '’', sbquo: '‚', ldquo: '“', rdquo: '”', bdquo: '„',
+    ndash: '–', mdash: '—', minus: '−', shy: '­', hellip: '…',
+    prime: '′', Prime: '″', laquo: '«', raquo: '»',
+    ensp: ' ', emsp: ' ', thinsp: ' ', middot: '·', bull: '•', deg: '°',
+};
+
+function decodeEntities(text) {
+    return text.replace(/&(#[0-9]+|#[xX][0-9a-fA-F]+|[a-zA-Z][a-zA-Z0-9]{1,10});/g, (whole, body) => {
+        if (body[0] === '#') {
+            const code = body[1] === 'x' || body[1] === 'X'
+                ? parseInt(body.slice(2), 16)
+                : parseInt(body.slice(1), 10);
+            // Surrogates and out-of-range values would throw; leave them be.
+            if (!Number.isFinite(code) || code < 0 || code > 0x10ffff) return whole;
+            if (code >= 0xd800 && code <= 0xdfff) return whole;
+            try {
+                return String.fromCodePoint(code);
+            } catch (e) {
+                return whole;
+            }
+        }
+        return Object.prototype.hasOwnProperty.call(NAMED_ENTITIES, body)
+            ? NAMED_ENTITIES[body]
+            : whole;
+    });
+}
+
 const CHAR_FOLD = [
     // All quotation marks fold to one character: models routinely swap ' for "
     // when copying, and the distinction carries no evidentiary weight here.
@@ -485,6 +521,10 @@ function normalizeForMatch(text) {
         // Environments without full Unicode data: normalization is an
         // optimization here, not a requirement.
     }
+    // Before the character folds, so &#8217; becomes ’ and then folds with
+    // every other apostrophe. Applied to both sides, so it can only make a
+    // genuine quote match.
+    out = decodeEntities(out);
     for (const [pattern, replacement] of CHAR_FOLD) {
         out = out.replace(pattern, replacement);
     }
