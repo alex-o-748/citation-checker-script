@@ -100,3 +100,42 @@ test('reason_type defaults to null when not present', () => {
   const out = parseVerificationResult(raw);
   assert.equal(out.reason_type, null);
 });
+
+// --- source_quote (structured evidence field) ---
+
+test('parses source_quote from the JSON response', () => {
+  const raw = JSON.stringify({
+    verdict: 'SUPPORTED',
+    confidence: 90,
+    source_quote: 'Acme Corp was established in 1985.',
+    comments: 'Definitive match.',
+  });
+  assert.equal(parseVerificationResult(raw).source_quote, 'Acme Corp was established in 1985.');
+});
+
+test('source_quote accepts camelCase and bare "quote" aliases', () => {
+  for (const key of ['sourceQuote', 'quote']) {
+    const raw = JSON.stringify({ verdict: 'SUPPORTED', [key]: 'the passage', comments: '' });
+    assert.equal(parseVerificationResult(raw).source_quote, 'the passage', `alias ${key}`);
+  }
+});
+
+test('source_quote defaults to empty string when absent or non-string', () => {
+  for (const raw of [
+    JSON.stringify({ verdict: 'SUPPORTED', comments: 'c' }),
+    JSON.stringify({ verdict: 'SUPPORTED', source_quote: null, comments: 'c' }),
+    JSON.stringify({ verdict: 'SUPPORTED', source_quote: 42, comments: 'c' }),
+  ]) {
+    assert.equal(parseVerificationResult(raw).source_quote, '');
+  }
+});
+
+test('source_quote is trimmed', () => {
+  const raw = JSON.stringify({ verdict: 'SUPPORTED', source_quote: '  padded quote text  ', comments: '' });
+  assert.equal(parseVerificationResult(raw).source_quote, 'padded quote text');
+});
+
+test('non-JSON and unparseable responses still expose an empty source_quote', () => {
+  assert.equal(parseVerificationResult('**Verdict:** SUPPORTED').source_quote, '');
+  assert.equal(parseVerificationResult('total gibberish').source_quote, '');
+});

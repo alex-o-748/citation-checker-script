@@ -121,3 +121,55 @@ test('assembleGroupSources treats whitespace-only content as unavailable', () =>
   assert.equal(anyAvailable, false);
   assert.ok(text.includes('could not be retrieved'));
 });
+
+// --- source_quote field contract ---
+
+test('both system prompts specify the source_quote field', () => {
+  for (const prompt of [generateSystemPrompt(), generateGroupSystemPrompt()]) {
+    assert.ok(prompt.includes('"source_quote"'), 'schema should declare source_quote');
+    assert.ok(/copy the passage exactly/i.test(prompt), 'should demand a verbatim copy');
+    assert.ok(prompt.includes(' ... '), 'should document the ellipsis joiner');
+  }
+});
+
+test('every few-shot example in both prompts includes a source_quote key', () => {
+  for (const prompt of [generateSystemPrompt(), generateGroupSystemPrompt()]) {
+    const examples = prompt.match(/^\{"confidence[^\n]*\}$/gm) || [];
+    assert.ok(examples.length >= 3, 'examples should be discoverable');
+    for (const example of examples) {
+      const parsed = JSON.parse(example);
+      assert.ok('source_quote' in parsed, `example missing source_quote: ${example.slice(0, 60)}`);
+      assert.equal(typeof parsed.source_quote, 'string');
+    }
+  }
+});
+
+test('few-shot quotes are copied verbatim from their own example source text', () => {
+  // The examples teach verbatim copying, so they must themselves be verbatim:
+  // a paraphrased quote in an example trains the behaviour we then reject.
+  for (const prompt of [generateSystemPrompt(), generateGroupSystemPrompt()]) {
+    const blocks = prompt.split('<example>').slice(1).map(b => b.split('</example>')[0]);
+    for (const block of blocks) {
+      const jsonLine = (block.match(/^\{"confidence[^\n]*\}$/m) || [])[0];
+      if (!jsonLine) continue;
+      const quote = JSON.parse(jsonLine).source_quote;
+      if (!quote) continue;
+      const sourceLines = block.split('\n').filter(l => /^Source( \[|\stext:)/.test(l)).join(' ');
+      for (const segment of quote.split(' ... ')) {
+        assert.ok(
+          sourceLines.includes(segment),
+          `example quote not verbatim in its source: ${segment.slice(0, 60)}`
+        );
+      }
+    }
+  }
+});
+
+test('omission and source-unavailable examples carry an empty source_quote', () => {
+  const prompt = generateSystemPrompt();
+  const examples = (prompt.match(/^\{"confidence[^\n]*\}$/gm) || []).map(e => JSON.parse(e));
+  const omission = examples.find(e => e.reason_type === 'omission');
+  const unavailable = examples.find(e => e.verdict === 'SOURCE UNAVAILABLE');
+  assert.equal(omission.source_quote, '');
+  assert.equal(unavailable.source_quote, '');
+});

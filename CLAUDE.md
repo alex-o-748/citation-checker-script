@@ -14,7 +14,7 @@ Wikipedia citation verification user script. An AI-powered sidebar tool that let
 main.js                          # Main Wikipedia user script (~2,700 lines, single class)
 package.json                     # Top-level deps + `npm test` / `npm run build` scripts
 core/                            # Shared pure logic, imported by both benchmark/ and main.js (via sync)
-  claim.js, parsing.js, prompts.js, providers.js, submission.js, urls.js, worker.js
+  claim.js, feedback.js, parsing.js, prompts.js, providers.js, quote.js, submission.js, urls.js, worker.js
 cli/verify.js                    # Node CLI front-end (verify a single citation from the command line)
 bin/ccs                          # Executable shim for the CLI
 scripts/sync-main.js             # Inlines core/ modules into main.js for the userscript build
@@ -72,12 +72,16 @@ docs/                            # Reference docs + design plans (see docs/READM
 | `fetchSourceContent()` | Fetch source via CORS proxy |
 | `ensurePdfJs()` / `extractPdfText()` / `handlePdfFileSelected()` | PDF upload for offline sources: lazily load PDF.js (pinned UMD build from cdnjs), pull the text layer, and feed it into the manual-source-text pipeline (empty text ⇒ "looks scanned, paste instead") |
 | `generateSystemPrompt()` / `generateUserPrompt()` | Build LLM prompts |
+| `buildQuoteView()` / `quoteHtml()` | Verify the model's `source_quote` against the source text and render it as an evidence block (see "Source quotes" below) |
 | `verifyClaim()` | Single citation verification flow |
 | `callProviderAPI()` / `callProviderAPIGroup()` | Route to provider-specific API (single source / collective multi-source) |
 | `verifyAllCitations()` | Batch verify all article citations |
 | `verifyGroupCollective()` | Collective verdict for an adjacent-citation group (combines the group's sources into one LLM call; see `docs/design-plans/2026-06-23-collective-group-verification.md`) |
 | `getReportUnits()` | Merge per-source results + collective group verdicts into one entry per claim (drives summary pills + exports) |
 | `generateWikitextReport()` | Generate wiki markup for failed citations |
+| `buildQuoteView()` / `quoteHtml()` | Verify the model's `source_quote` against the source text and render it as an evidence block (see "Source quotes" below) |
+| `logVerification()` | Mint a `check_id`, log the verdict + claim + rationale + source quote to the worker, return the id |
+| `buildFeedbackControls()` | Yes/No/Comment row under a result; ratings go to Neon, comments to the talk page (see `docs/worker-logging-reference.md`) |
 
 ## Benchmark Suite
 
@@ -129,7 +133,7 @@ npm run compare               # Compare two results.json runs (delegates to `ccs
 - All external fetches must go through the CORS proxy
 - OOUI components must be loaded via `mw.loader.using()` before use
 - API keys are stored in `localStorage`, never hardcoded
-- The system prompt contains 9 carefully tuned few-shot examples — changes affect benchmark accuracy
+- The system prompt contains carefully tuned few-shot examples — changes affect benchmark accuracy
 - Claim extraction uses "between citations" logic by design (not full sentences) for precision
 
 ### Benchmark row_id fragility (read before reordering the CSV)
@@ -142,6 +146,95 @@ npm run compare               # Compare two results.json runs (delegates to `ccs
 When you regenerate `dataset.json` after a CSV reorder, you must also walk `results.json` and update each entry's `entry_id` to the new value. The 2026-05-01 `a4973d7` regenerate caught the v3 +33 shift but missed a parallel −1 shift on the v1 rows around the v2 insertion boundary — the resulting misalignment was found two weeks later (rows 75/76/77 in `results.json` had content from what is now rows 74/75/76 in `dataset.json`). A content-based audit (match the entry's `comments` against current `claim_text` candidates) is reliable for catching this.
 
 A stable-id refactor (content hash, or a CSV-supplied id column independent of line number) would eliminate the class of bug entirely.
+
+### Source quotes are verified before they are shown (read before touching quote display)
+
+The model returns a `source_quote` field alongside its verdict — the passage
+from the source that supports or contradicts the claim. **It is not trusted.**
+`core/quote.js` looks the quote up in the source text the model was shown.
+**Renderers display `verifiedText`, never `quote`** — the former is only the
+part actually located, so every character on screen came from the source.
+
+| Status | Meaning | Shown? |
+| --- | --- | --- |
+| `exact` / `normalized` | Found in the source (the second after folding case, quote style, dashes, hyphenation, whitespace) | Yes, whole |
+| `partial` | Some ellipsis-joined fragments found, others not | Yes — the found fragments, ellipsis-joined |
+| `not-found` | Not in the source: paraphrased or invented | Nothing rendered |
+| `too-short` | Below the evidence threshold (12 normalized chars) | Nothing rendered |
+| `empty` | No quote offered — correct for omission and SOURCE UNAVAILABLE | Nothing rendered |
+| `no-source` | No source text available to check against | Nothing rendered |
+
+**The panel never warns about a quote it could not locate — it just says
+nothing.** A warning there would imply the verdict is less trustworthy, and
+that is a claim no one has measured: a model that paraphrases instead of
+copying may be judging perfectly well, and steering an editor away from a
+correct verdict is a real cost paid for a speculative benefit. A partial match
+is presented identically to a full one, because the block makes exactly one
+promise — *this text is in the source* — and it holds either way.
+
+`npm run analyze` reports verdict accuracy split by whether the quote verified,
+with the gap between them. If that gap turns out to be large, the warning has
+earned its place and can come back; until then it stays out.
+
+`QUOTE_STATUSES` / `QUOTE_STATUS_LIST` in `core/quote.js` are the source of
+truth for that vocabulary. It is **not** client-only: `quote_status` is written
+to Neon, and the Worker (`alex-o-748/public-ai-proxy`, `src/index.js`)
+validates it against a hardcoded copy, storing `NULL` for anything unrecognized.
+Adding a status is therefore a two-repo change; `tests/quote.test.js` pins the
+list so it can't be done by accident.
+
+Normalization also folds PDF ligatures (via NFKC), the modifier-letter
+apostrophe, and a trailing `[.,;:]` the model added when closing a quotation —
+in the last case `verifiedText` carries the *trimmed* form, so what is shown is
+still exactly what the source contains. Three artifacts stay deliberately
+unmatched, with tests pinning them: letter-spaced headings, words split by an
+inline tag (`Kille<em>brew</em>` → `Kille brew` — fix that in the proxy, not
+here), and bracketed insertions like `[sic]`. All three would need
+space-insensitive or content-removing matching, under which unrelated passages
+start matching.
+
+Matching is normalized but **not** fuzzy: no edit distance, no token overlap.
+The design accepts missing some genuine quotes in exchange for never showing a
+fabricated one. If you loosen this, you are trading away the property the
+feature exists for.
+
+Normalization decodes HTML entities before folding characters. The CORS
+proxy's `extractText()` decodes only `&nbsp; &amp; &lt; &gt;`, so a WordPress
+source reaches the model as `the mall&#8217;s` — and the model, reading that as
+an apostrophe, quotes it back decoded. Comparing the raw entity against the
+character it denotes is a false mismatch, so both sides are decoded first.
+(The proxy is the better place to fix this, since the model shouldn't be
+reading entities either; the client-side decode is what makes verification
+correct regardless of who extracted the text.)
+
+Normalization also folds a hyphen followed by whitespace (`-\s+` → `-`). PDF and OCR
+text layers break words across lines and leave the hyphen behind
+(`school-\nlike`), and a model copying such a passage repairs some of them and
+not others *within one quote* — which is what made a real NRHP-sourced check
+come back `partial` with nothing displayed. The fold is symmetric, so it can
+only make a genuine quote match.
+
+Two fields differ in a way that matters: `found` decides the verdict, `located`
+records whether a fragment was really seen. They diverge only for fragments too
+short to judge, which are forgiven but must never reach `verifiedText`.
+
+`quoteExpectedFor(verdict, reasonType)` decides whether a missing or
+unverifiable quote is worth flagging: omission and SOURCE UNAVAILABLE verdicts
+have nothing to quote, so a stray quote there is ignored rather than warned
+about.
+
+The **verification log is the exception**: `logVerification()` records
+`source_quote` and `quote_status` on every row regardless of outcome. The UI
+hides an unverified quote because showing it would mislead an editor; the log
+keeps it because a `not-found` row is precisely the one worth inspecting later.
+Don't "tidy" this into dropping unverified quotes at the log boundary — that
+would delete the signal the column exists to carry.
+
+Quoted source text is arbitrary web prose. It goes through `escapeHtml()` into
+the panel and `escapeWikitableCell()` (pipes, braces, newlines) into a
+wikitable — never raw.
+
+Rationale and the outstanding benchmark re-run: `docs/design-plans/2026-08-04-source-quote-extraction.md`.
 
 ### UI localization — every user-facing string goes through `this.t()`
 
@@ -194,7 +287,7 @@ Provider-tinted values use the `--sv-accent` token, which tracks `getCurrentColo
 
 **Adding a new LLM provider:** Add provider config to `this.providers` in the constructor, implement a `callXxxAPI()` method, and add routing in `callProviderAPI()`.
 
-**Updating the benchmark:** Edit `dataset.json` or re-extract with `npm run extract`, then run `npm run benchmark` and `npm run analyze`.
+**Updating the benchmark:** Edit `dataset.json` or re-extract with `npm run extract`, then run `npm run benchmark` and `npm run analyze`. Results carry `source_quote` / `quote_status` / `quote_verified` per row; `npm run analyze` reports per-provider quote offer rate and fidelity (share of offered quotes actually found in the source).
 
 **Comparing two benchmark runs:** `npx ccs compare <control.json> <treatment.json> --dataset <dataset.json>` (or `npm run compare -- ...` from `benchmark/`). Emits JSON / Markdown / HTML with per-provider accuracy deltas and flip counts; supports subset filters and a `--noise-floor` threshold. See `docs/comparing-benchmark-runs.md`.
 

@@ -45,10 +45,19 @@ Respond in JSON format:
   "confidence": <number 0-100>,
   "verdict": "<verdict>",
   "reason_type": "<only for NOT SUPPORTED: 'contradiction' or 'omission'>",
-  "comments": "<relevant quote and brief explanation>"
+  "source_quote": "<the passage from the source text, copied word for word>",
+  "comments": "<brief explanation, without repeating the quote>"
 }
 
 For NOT SUPPORTED verdicts, include a "reason_type" field: use "contradiction" when the source explicitly states something incompatible with the claim, or "omission" when the source simply does not mention or address the claim. If both apply (source contradicts one part and omits another), use "contradiction". Do not include reason_type for other verdicts.
+
+The "source_quote" field:
+- Copy the passage EXACTLY as it appears in the source text, character for character. Do not paraphrase, summarize, correct spelling or punctuation, translate, or fill in ellipses. It is checked automatically against the source, and a quote that does not appear there verbatim is discarded.
+- Quote the passage that decides the verdict: the one that supports the claim (SUPPORTED, PARTIALLY SUPPORTED) or the one that conflicts with it (NOT SUPPORTED with reason_type "contradiction").
+- Keep it short — normally one sentence, at most two, and never more than about 50 words. Do not quote the whole paragraph.
+- To join two non-adjacent passages, separate them with " ... ". Each part must still be copied verbatim, in the order they appear in the source.
+- Use "" (empty string) when there is nothing to quote: SOURCE UNAVAILABLE, and NOT SUPPORTED with reason_type "omission" (the source says nothing about the claim, so no passage can be quoted).
+- Never quote from the claim, and never write a passage the source does not contain. If you cannot find a passage worth quoting, use "".
 
 Confidence guide:
 - 80-100: SUPPORTED
@@ -60,56 +69,56 @@ Confidence guide:
 Claim: "The committee published its findings in 1932."
 Source text: "History of Modern Economics - Economic Research Council - Google Books Sign in Hidden fields Books Try the new Google Books Check out the new look and enjoy easier access to your favorite features Try it now No thanks My library Help Advanced Book Search Download EPUB Download PDF Plain text Read eBook Get this book in print AbeBooks On Demand Books Amazon Find in a library All sellers About this book Terms of Service Plain text PDF EPUB"
 
-{"source_quote": "", "confidence": 0, "verdict": "SOURCE UNAVAILABLE", "comments": "Google Books interface with no actual book content, only navigation and metadata."}
+{"confidence": 0, "verdict": "SOURCE UNAVAILABLE", "source_quote": "", "comments": "Google Books interface with no actual book content, only navigation and metadata."}
 </example>
 
 <example>
 Claim: "The bridge was completed in 1998."
 Source text: "Skip to main content Web Archive toolbar... Capture date: 2015-03-12 ... City Tribune - Local News ... The Morrison Bridge project broke ground in 1994 after years of planning. Construction faced multiple delays due to funding shortages. The bridge was finally opened to traffic in August 2002, four years behind schedule. Mayor Davis called it 'a triumph of persistence.'"
 
-{"confidence": 15, "verdict": "NOT SUPPORTED", "reason_type": "contradiction", "comments": "\"finally opened to traffic in August 2002, four years behind schedule\" - Source says the bridge opened in 2002, not 1998. The article is accessible despite being an Internet Archive capture."}
+{"confidence": 15, "verdict": "NOT SUPPORTED", "reason_type": "contradiction", "source_quote": "The bridge was finally opened to traffic in August 2002, four years behind schedule.", "comments": "Source says the bridge opened in 2002, not 1998. The article is accessible despite being an Internet Archive capture."}
 </example>
 
 <example>
 Claim: "The company was founded in 1985 by John Smith."
 Source text: "Acme Corp was established in 1985. Its founder, John Smith, served as CEO until 2001."
 
-{"confidence": 95, "verdict": "SUPPORTED", "comments": "\"Acme Corp was established in 1985. Its founder, John Smith\" - Definitive match with paraphrasing."}
+{"confidence": 95, "verdict": "SUPPORTED", "source_quote": "Acme Corp was established in 1985. Its founder, John Smith, served as CEO until 2001.", "comments": "Definitive match with paraphrasing."}
 </example>
 
 <example>
 Claim: "The treaty was signed by 45 countries."
 Source text: "The treaty, finalized in March, was signed by over 30 nations, though the exact number remains disputed."
 
-{"confidence": 20, "verdict": "NOT SUPPORTED", "reason_type": "contradiction", "comments": "\"signed by over 30 nations\" - Source says \"over 30,\" not 45."}
+{"confidence": 20, "verdict": "NOT SUPPORTED", "reason_type": "contradiction", "source_quote": "The treaty, finalized in March, was signed by over 30 nations, though the exact number remains disputed.", "comments": "Source says \\"over 30,\\" not 45."}
 </example>
 
 <example>
 Claim: "The treaty was signed in Paris."
 Source text: "It is believed the treaty was signed in Paris, though some historians dispute this."
 
-{"confidence": 60, "verdict": "PARTIALLY SUPPORTED", "comments": "\"It is believed... though some historians dispute this\" - Source hedges this as uncertain; Wikipedia states it as fact."}
+{"confidence": 60, "verdict": "PARTIALLY SUPPORTED", "source_quote": "It is believed the treaty was signed in Paris, though some historians dispute this.", "comments": "Source hedges this as uncertain; Wikipedia states it as fact."}
 </example>
 
 <example>
 Claim: "The population increased by 12% between 2010 and 2020."
 Source text: "Census data shows significant population growth in the region during the 2010s."
 
-{"confidence": 55, "verdict": "PARTIALLY SUPPORTED", "comments": "\"significant population growth\" - Source confirms growth but doesn't specify 12%."}
+{"confidence": 55, "verdict": "PARTIALLY SUPPORTED", "source_quote": "Census data shows significant population growth in the region during the 2010s.", "comments": "Source confirms growth but doesn't specify 12%."}
 </example>
 
 <example>
 Claim: "The president resigned on March 3."
 Source text: "The president remained in office throughout March."
 
-{"confidence": 5, "verdict": "NOT SUPPORTED", "reason_type": "contradiction", "comments": "\"remained in office throughout March\" - Source directly contradicts the claim."}
+{"confidence": 5, "verdict": "NOT SUPPORTED", "reason_type": "contradiction", "source_quote": "The president remained in office throughout March.", "comments": "Source directly contradicts the claim."}
 </example>
 
 <example>
 Claim: "She received the Nobel Prize in Chemistry in 2015."
 Source text: "Professor Martin completed her PhD at Oxford in 1998 and joined the faculty at Cambridge in 2003. Her research focuses on organic synthesis and catalysis. She has published over 200 papers and received several university teaching awards."
 
-{"confidence": 10, "verdict": "NOT SUPPORTED", "reason_type": "omission", "comments": "The source discusses her academic career and publications but makes no mention of a Nobel Prize."}
+{"confidence": 10, "verdict": "NOT SUPPORTED", "reason_type": "omission", "source_quote": "", "comments": "The source discusses her academic career and publications but makes no mention of a Nobel Prize."}
 </example>`;
 }
 
@@ -173,10 +182,19 @@ Respond in JSON format:
   "confidence": <number 0-100>,
   "verdict": "<verdict>",
   "reason_type": "<only for NOT SUPPORTED: 'contradiction' or 'omission'>",
+  "source_quote": "<the passage from one of the sources, copied word for word>",
   "comments": "<note which source(s) support or contradict which part of the claim>"
 }
 
 For NOT SUPPORTED verdicts, include a "reason_type" field: use "contradiction" when a source explicitly states something incompatible with the claim, or "omission" when the sources simply do not mention or address the claim. If both apply, use "contradiction". Do not include reason_type for other verdicts.
+
+The "source_quote" field:
+- Copy the passage EXACTLY as it appears in the source text, character for character. Do not paraphrase, summarize, correct spelling or punctuation, translate, or fill in ellipses. It is checked automatically against the sources, and a quote that does not appear in them verbatim is discarded.
+- Quote the single most decisive passage across all the sources: the one that best supports the claim (SUPPORTED, PARTIALLY SUPPORTED) or the one that conflicts with it (NOT SUPPORTED with reason_type "contradiction"). Name the source it came from in "comments", not inside the quote itself — do not prefix the quote with "[2]" or a URL.
+- Keep it short — normally one sentence, at most two, and never more than about 50 words.
+- To join two non-adjacent passages, separate them with " ... ". Each part must still be copied verbatim.
+- Use "" (empty string) when there is nothing to quote: SOURCE UNAVAILABLE, and NOT SUPPORTED with reason_type "omission".
+- Never quote from the claim, and never write a passage the sources do not contain. If you cannot find a passage worth quoting, use "".
 
 Confidence guide:
 - 80-100: SUPPORTED
@@ -189,7 +207,7 @@ Claim: "The company was founded in 1985 by John Smith, who led it until 2001."
 Source [1] (https://example.com/a): "Acme Corp was established in 1985 in Ohio."
 Source [2] (https://example.com/b): "John Smith founded Acme Corp and served as its chief executive until 2001."
 
-{"confidence": 92, "verdict": "SUPPORTED", "comments": "Source [1] gives the 1985 founding year; source [2] confirms John Smith as founder and his tenure until 2001. Together they support the whole claim."}
+{"confidence": 92, "verdict": "SUPPORTED", "source_quote": "John Smith founded Acme Corp and served as its chief executive until 2001.", "comments": "Source [1] gives the 1985 founding year; source [2] confirms John Smith as founder and his tenure until 2001. Together they support the whole claim."}
 </example>
 
 <example>
@@ -197,7 +215,7 @@ Claim: "The treaty was signed in Paris in 1990."
 Source [1] (https://example.com/a): [This source could not be retrieved: HTTP 403]
 Source [2] (https://example.com/b): "The accord was signed in the French capital in the spring of 1990."
 
-{"confidence": 88, "verdict": "SUPPORTED", "comments": "Source [1] was unavailable, but source [2] states the accord was signed in the French capital (Paris) in 1990, which supports the claim."}
+{"confidence": 88, "verdict": "SUPPORTED", "source_quote": "The accord was signed in the French capital in the spring of 1990.", "comments": "Source [1] was unavailable, but source [2] states the accord was signed in the French capital (Paris) in 1990, which supports the claim."}
 </example>
 
 <example>
@@ -205,7 +223,7 @@ Claim: "The bridge, built in 1998, cost $200 million."
 Source [1] (https://example.com/a): "The bridge opened to traffic in 1998 after four years of construction."
 Source [2] (https://example.com/b): "Funding for the project came from a mix of state and federal grants."
 
-{"confidence": 55, "verdict": "PARTIALLY SUPPORTED", "comments": "Source [1] supports the 1998 date. Neither source states the $200 million cost, so that part is unverified."}
+{"confidence": 55, "verdict": "PARTIALLY SUPPORTED", "source_quote": "The bridge opened to traffic in 1998 after four years of construction.", "comments": "Source [1] supports the 1998 date. Neither source states the $200 million cost, so that part is unverified."}
 </example>`;
 }
 
@@ -353,7 +371,15 @@ function parseVerificationResult(response) {
             verdict: result.verdict || 'UNKNOWN',
             confidence: result.confidence ?? null,
             comments: result.comments || '',
-            reason_type: result.reason_type || null
+            reason_type: result.reason_type || null,
+            // Field-name aliases: models occasionally camelCase the key or
+            // shorten it to "quote". Always a string — an absent quote is ''
+            // (expected for omission/unavailable), never null, so callers can
+            // treat it uniformly. Whether the quote is real is decided by
+            // core/quote.js, not here.
+            source_quote: typeof (result.source_quote ?? result.sourceQuote ?? result.quote) === 'string'
+                ? (result.source_quote ?? result.sourceQuote ?? result.quote).trim()
+                : ''
         };
     } catch (e) {
         // fall through to the markdown-emphasis recovery
@@ -366,15 +392,303 @@ function parseVerificationResult(response) {
     if (match) {
         const verdict = canonicalizeVerdict(match[1]);
         if (verdict) {
-            return { verdict, confidence: null, comments: '<extracted from non-JSON response>' };
+            return { verdict, confidence: null, comments: '<extracted from non-JSON response>', source_quote: '' };
         }
     }
 
     return {
         verdict: 'PARSE_ERROR',
         confidence: null,
-        comments: `Failed to parse AI response: ${response.substring(0, 200)}`
+        comments: `Failed to parse AI response: ${response.substring(0, 200)}`,
+        source_quote: ''
     };
+}
+
+// --- core/quote.js ---
+// Verifies that a model-supplied `source_quote` actually occurs in the source
+// text, so the UI can present it as evidence rather than as more model prose.
+//
+// The LLM is asked to copy a passage verbatim, but models paraphrase, "fix"
+// punctuation, or occasionally invent a plausible-sounding sentence. Rather
+// than trusting the field, we look it up. A quote we cannot locate is never
+// shown as a confirmed quote — the design is deliberately conservative: it is
+// better to fall back to the plain rationale than to display a passage the
+// source may not contain.
+//
+// Matching is normalized (case, curly quotes, dashes, whitespace, ligature-ish
+// unicode) because near-universal reformatting would otherwise sink almost
+// every real quote. It is NOT fuzzy: no edit distance, no token overlap. A
+// passage either occurs in the source under normalization or it doesn't.
+//
+// Non-contiguous quotes joined by an ellipsis ("A ... B") are supported: each
+// segment must occur, in order.
+
+// The complete set of values verifyQuote can put in `status`. Mirrors the
+// VERDICTS / VERDICT_LIST pattern in core/verdicts.js.
+//
+// These strings leave the client: they are written to the `quote_status`
+// column via POST /log, and the Cloudflare Worker
+// (alex-o-748/public-ai-proxy, src/index.js) validates the incoming value
+// against its own hardcoded copy of this list, storing NULL for anything it
+// does not recognize. Cross-repo, that copy cannot be imported — so adding a
+// status here is a two-repo change, and skipping the second half loses the new
+// status silently. tests/quote.test.js pins the list to make that deliberate.
+const QUOTE_STATUSES = Object.freeze({
+    EXACT:      'exact',
+    NORMALIZED: 'normalized',
+    PARTIAL:    'partial',
+    NOT_FOUND:  'not-found',
+    TOO_SHORT:  'too-short',
+    EMPTY:      'empty',
+    NO_SOURCE:  'no-source',
+});
+
+const QUOTE_STATUS_LIST = Object.freeze(Object.values(QUOTE_STATUSES));
+
+// The two statuses that mean "found in the source". `verified` is exactly
+// membership of this set.
+const VERIFIED_STATUSES = Object.freeze([
+    QUOTE_STATUSES.EXACT,
+    QUOTE_STATUSES.NORMALIZED,
+]);
+
+// A quote shorter than this (after normalization) is not evidence — "1985" or
+// "the bridge" would match almost any source by accident.
+const MIN_QUOTE_CHARS = 12;
+
+// Ellipsis forms models use to join non-contiguous fragments.
+const ELLIPSIS_SPLIT = /\s*(?:\[\s*(?:\.\.\.|…)\s*\]|\.\.\.\.?|…)\s*/g;
+
+// Punctuation entities that survive upstream extraction. The Worker's
+// extractText() decodes only &nbsp; &amp; &lt; &gt;, so a WordPress source
+// reaches the model as "the mall&#8217;s amusement park" — and the model,
+// reading that as an apostrophe, quotes it back decoded. Comparing the raw
+// entity against the character it denotes is a false mismatch: they are the
+// same character, differently encoded, exactly like the NFKC and curly-quote
+// folds below. Numeric forms cover everything else a page is likely to emit.
+const NAMED_ENTITIES = {
+    quot: '"', apos: "'", amp: '&', lt: '<', gt: '>', nbsp: ' ',
+    lsquo: '‘', rsquo: '’', sbquo: '‚', ldquo: '“', rdquo: '”', bdquo: '„',
+    ndash: '–', mdash: '—', minus: '−', shy: '­', hellip: '…',
+    prime: '′', Prime: '″', laquo: '«', raquo: '»',
+    ensp: ' ', emsp: ' ', thinsp: ' ', middot: '·', bull: '•', deg: '°',
+};
+
+// The Latin-1 letter entities, which older CMSes emit for any accented name —
+// &eacute; for José, &uuml; for Müller. U+00C0..U+00FF is exactly this
+// sequence, so the table is generated from it rather than typed out, which is
+// both shorter and impossible to get subtly wrong.
+(
+    'Agrave Aacute Acirc Atilde Auml Aring AElig Ccedil Egrave Eacute Ecirc Euml '
+    + 'Igrave Iacute Icirc Iuml ETH Ntilde Ograve Oacute Ocirc Otilde Ouml times '
+    + 'Oslash Ugrave Uacute Ucirc Uuml Yacute THORN szlig agrave aacute acirc '
+    + 'atilde auml aring aelig ccedil egrave eacute ecirc euml igrave iacute '
+    + 'icirc iuml eth ntilde ograve oacute ocirc otilde ouml divide oslash '
+    + 'ugrave uacute ucirc uuml yacute thorn yuml'
+).split(' ').forEach((name, i) => {
+    NAMED_ENTITIES[name] = String.fromCharCode(0xc0 + i);
+});
+
+function decodeEntities(text) {
+    return text.replace(/&(#[0-9]+|#[xX][0-9a-fA-F]+|[a-zA-Z][a-zA-Z0-9]{1,10});/g, (whole, body) => {
+        if (body[0] === '#') {
+            const code = body[1] === 'x' || body[1] === 'X'
+                ? parseInt(body.slice(2), 16)
+                : parseInt(body.slice(1), 10);
+            // Surrogates and out-of-range values would throw; leave them be.
+            if (!Number.isFinite(code) || code < 0 || code > 0x10ffff) return whole;
+            if (code >= 0xd800 && code <= 0xdfff) return whole;
+            try {
+                return String.fromCodePoint(code);
+            } catch (e) {
+                return whole;
+            }
+        }
+        return Object.prototype.hasOwnProperty.call(NAMED_ENTITIES, body)
+            ? NAMED_ENTITIES[body]
+            : whole;
+    });
+}
+
+const CHAR_FOLD = [
+    // All quotation marks fold to one character: models routinely swap ' for "
+    // when copying, and the distinction carries no evidentiary weight here.
+    [/[‘’‚‛′´`'ʻʼ“”„‟″«»"]/g, '"'],
+    [/[‐-―−]/g, '-'],                      // hyphens, dashes, minus
+    [/­/g, ''],                                      // soft hyphen
+    [/[  -   　]/g, ' '],    // exotic spaces
+    [/[​-‍﻿]/g, ''],                       // zero-width junk
+];
+
+/**
+ * Canonical form used for substring comparison. Lossy by design — it throws
+ * away exactly the differences (case, quote style, dash style, whitespace
+ * runs, line breaks) that a model routinely introduces when copying.
+ * @param {string} text
+ * @returns {string}
+ */
+function normalizeForMatch(text) {
+    if (text == null) return '';
+    let out = String(text);
+    try {
+        out = out.normalize('NFKC');
+    } catch (e) {
+        // Environments without full Unicode data: normalization is an
+        // optimization here, not a requirement.
+    }
+    // Before the character folds, so &#8217; becomes ’ and then folds with
+    // every other apostrophe. Applied to both sides, so it can only make a
+    // genuine quote match.
+    out = decodeEntities(out);
+    for (const [pattern, replacement] of CHAR_FOLD) {
+        out = out.replace(pattern, replacement);
+    }
+    // Close up a hyphen followed by whitespace. PDF and OCR text layers break
+    // words across lines and leave the hyphen behind ("school-\nlike"), and a
+    // model copying that passage repairs some of them and not others — within
+    // a single quote. Folding both sides to "school-like" makes the two agree
+    // however the model chose to render it. Applied symmetrically, so the only
+    // thing it can do is make a real quote match; a spaced dash used as
+    // punctuation ("1994 - 1998") folds the same way on both sides.
+    out = out.replace(/-\s+/g, '-');
+    return out.replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+// Models often wrap the quote in quotation marks even when told not to, and
+// sometimes trail a citation marker or a stray period. Strip the wrapper only
+// when it is balanced, so a quote that legitimately opens with a quoted phrase
+// survives intact.
+function unwrap(quote) {
+    let q = String(quote).trim();
+    const pairs = [['"', '"'], ["'", "'"], ['“', '”'], ['‘', '’'], ['«', '»']];
+    let changed = true;
+    while (changed) {
+        changed = false;
+        for (const [open, close] of pairs) {
+            if (q.length > 2 && q.startsWith(open) && q.endsWith(close)) {
+                q = q.slice(open.length, q.length - close.length).trim();
+                changed = true;
+            }
+        }
+    }
+    return q;
+}
+
+/**
+ * Checks whether `quote` occurs in `sourceText`.
+ *
+ * @param {string} sourceText - The source body the model was shown (already
+ *   unwrapped from its "Source Content:" framing by extractSourceText).
+ * @param {string} quote - The model's `source_quote` field.
+ * @returns {{verified: boolean, status: string, verifiedText: string,
+ *   segments: Array<{text: string, found: boolean, located: boolean}>}}
+ *   `verifiedText` is the part of the quote actually located in the source,
+ *   ellipsis-joined — the whole quote when verified, the surviving fragments
+ *   when partial, '' when nothing was found. Every character of it came from
+ *   the source, so it is safe to display; `quote` as returned by the model is
+ *   not. `found` counts toward the verdict, `located` records whether the
+ *   fragment was really seen (they differ only for fragments too short to
+ *   judge, which are forgiven but never shown).
+ *   status is one of QUOTE_STATUS_LIST:
+ *     'empty'      - no quote was offered (expected for omission / unavailable)
+ *     'no-source'  - we have no source text to check against (e.g. cached
+ *                    result restored without its source); quote is unproven
+ *     'too-short'  - quote too short to be meaningful evidence
+ *     'exact'      - occurs verbatim, byte for byte
+ *     'normalized' - occurs after whitespace/punctuation/case normalization
+ *     'partial'    - some ellipsis-joined segments found, others not
+ *     'not-found'  - does not occur in the source
+ *   `verified` is true exactly for the VERIFIED_STATUSES ('exact', 'normalized').
+ */
+function verifyQuote(sourceText, quote) {
+    const raw = quote == null ? '' : String(quote).trim();
+    if (!raw) return { verified: false, status: QUOTE_STATUSES.EMPTY, verifiedText: '', segments: [] };
+
+    const cleaned = unwrap(raw);
+    const source = sourceText == null ? '' : String(sourceText);
+    if (!source.trim()) return { verified: false, status: QUOTE_STATUSES.NO_SOURCE, verifiedText: '', segments: [] };
+
+    if (normalizeForMatch(cleaned).length < MIN_QUOTE_CHARS) {
+        return { verified: false, status: QUOTE_STATUSES.TOO_SHORT, verifiedText: '', segments: [] };
+    }
+
+    if (source.includes(cleaned)) {
+        return {
+            verified: true,
+            status: QUOTE_STATUSES.EXACT,
+            verifiedText: cleaned,
+            segments: [{ text: cleaned, found: true, located: true }],
+        };
+    }
+
+    const haystack = normalizeForMatch(source);
+    // String.split with a /g regex is safe (split resets lastIndex), but the
+    // regex is recreated per call anyway to avoid any shared-state surprise.
+    const rawSegments = cleaned.split(new RegExp(ELLIPSIS_SPLIT.source, 'g'))
+        .map(s => s.trim())
+        .filter(Boolean);
+
+    let cursor = 0;
+    const segments = [];
+    for (const segment of rawSegments) {
+        const needle = normalizeForMatch(segment);
+        const at = needle ? haystack.indexOf(needle, cursor) : -1;
+        // Fragments too short to carry meaning (a dangling "in 1985" after an
+        // ellipsis) neither confirm nor refute the match, so they are forgiven
+        // rather than failed — but they never advance the cursor, and they are
+        // only shown if they really were located.
+        if (needle.length < MIN_QUOTE_CHARS && rawSegments.length > 1) {
+            segments.push({ text: segment, found: true, located: at !== -1 });
+            continue;
+        }
+        if (at !== -1) {
+            segments.push({ text: segment, found: true, located: true });
+            cursor = at + needle.length;
+            continue;
+        }
+        // Models routinely close a quotation with a full stop the source does
+        // not have. Retry without it — and if that is what matched, display
+        // the trimmed form, so every character shown is still one the source
+        // contains.
+        const trimmed = segment.replace(/[.,;:]+$/, '');
+        const trimmedNeedle = normalizeForMatch(trimmed);
+        const trimmedAt = trimmedNeedle && trimmedNeedle !== needle
+            ? haystack.indexOf(trimmedNeedle, cursor)
+            : -1;
+        if (trimmedAt !== -1) {
+            segments.push({ text: trimmed, found: true, located: true });
+            cursor = trimmedAt + trimmedNeedle.length;
+        } else {
+            segments.push({ text: segment, found: false, located: false });
+        }
+    }
+
+    const verifiedText = segments.filter(s => s.located).map(s => s.text).join(' … ');
+    const foundCount = segments.filter(s => s.found).length;
+    if (foundCount === segments.length && segments.length > 0) {
+        return { verified: true, status: QUOTE_STATUSES.NORMALIZED, verifiedText, segments };
+    }
+    if (foundCount > 0) {
+        return { verified: false, status: QUOTE_STATUSES.PARTIAL, verifiedText, segments };
+    }
+    return { verified: false, status: QUOTE_STATUSES.NOT_FOUND, verifiedText: '', segments };
+}
+
+// Verdicts for which a supporting/contradicting passage should exist in the
+// source. Omission and unavailable verdicts have nothing to quote by
+// definition, so a missing quote there is correct, not a failure.
+const QUOTE_EXPECTED = new Set(['SUPPORTED', 'PARTIALLY SUPPORTED']);
+
+/**
+ * Whether a quote is expected for this verdict — used to decide if a missing
+ * quote is worth surfacing to the user or is simply not applicable.
+ * @param {string} verdict - Canonical UPPERCASE verdict.
+ * @param {string|null} reasonType - 'contradiction' | 'omission' | null.
+ * @returns {boolean}
+ */
+function quoteExpectedFor(verdict, reasonType) {
+    if (QUOTE_EXPECTED.has(verdict)) return true;
+    return verdict === 'NOT SUPPORTED' && reasonType === 'contradiction';
 }
 
 // --- core/retry.js ---
@@ -1114,9 +1428,8 @@ async function fetchSourceContent(url, pageNum, { workerBase = 'https://publicai
 }
 
 function logVerification(payload, { workerBase = 'https://publicai-proxy.alaexis.workers.dev' } = {}) {
-    // Caller supplies the payload object:
-    //   { article_url, article_title, citation_number, source_url, provider,
-    //     verdict, confidence, reason_type }.
+    // Caller supplies the payload object; build it with buildLogPayload()
+    // from core/feedback.js so the keys line up with the Neon columns.
     try {
         fetch(`${workerBase}/log`, {
             method: 'POST',
@@ -1126,6 +1439,306 @@ function logVerification(payload, { workerBase = 'https://publicai-proxy.alaexis
     } catch (e) {
         // logging should never break the main flow
     }
+}
+
+// Ratings and talk-page pointers. Unlike logVerification this resolves, so the
+// UI can tell the user whether their rating actually landed — a silent no-op
+// on a button the user deliberately pressed would be worse than an error.
+function postFeedback(payload, { workerBase = 'https://publicai-proxy.alaexis.workers.dev' } = {}) {
+    return fetch(`${workerBase}/feedback`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+    }).then(res => {
+        if (!res.ok) throw new Error(`Feedback failed: HTTP ${res.status}`);
+        return true;
+    });
+}
+
+// --- core/feedback.js ---
+// Feedback helpers: the check identifier and the verification-log payload.
+//
+// Every verification mints a short `check_id` client-side, at the moment the
+// verdict is parsed. Client-side rather than server-assigned so that logging
+// stays fire-and-forget — nothing has to await a round trip before the
+// feedback controls attached to a result become usable, and the id still
+// exists if the log write failed outright.
+//
+// The id is what lets a later rating or talk-page comment point back at the
+// exact check it is about. Collision risk is 32 bits against a low-volume,
+// human-paced event stream; a duplicate would mean one rating attaches to the
+// wrong row, which is not worth a longer id in the UI or the section heading.
+//
+// Inlined into main.js between <core-injected> markers, and importable from
+// tests.
+
+// Where comments go. Deliberately the script's main talk page rather than a
+// dedicated feedback subpage: volume is low, it is the address already
+// advertised in the report footer, and concentrating discussion is worth more
+// than tidiness. If it ever gets noisy, archiving is a bot config change
+// rather than a redesign.
+const FEEDBACK_TALK_PAGE = 'User talk:Alaexis/AI_Source_Verification';
+
+// A one-line page whose entire content is `$1`. It exists only because
+// MediaWiki will not accept body text directly in an edit URL; see
+// buildCommentUrl(). Nothing about it needs to change when the section layout
+// does.
+const FEEDBACK_PRELOAD_PAGE = 'User:Alaexis/AI_Source_Verification/feedback-preload';
+
+// Claim text and LLM rationale are unbounded in principle — a pathological
+// source or a runaway model response shouldn't push a multi-megabyte row into
+// the log table. Both are stored for interpretation, not verbatim archival.
+const MAX_LOGGED_TEXT = 2000;
+
+function truncateForLog(value, max = MAX_LOGGED_TEXT) {
+    if (value == null) return null;
+    const s = String(value).trim();
+    if (!s) return null;
+    return s.length > max ? s.slice(0, max - 1) + '…' : s;
+}
+
+// MediaWiki revision ids are positive integers. Normalising to a number (or
+// null) rather than passing whatever the caller had keeps the log column
+// numeric, and — because every consumer stringifies the result of this — makes
+// the id inert wikitext by construction, with no separate escaping step to
+// forget. `wgRevisionId` is 0 on a page that has no revision (a preview, a
+// special page), which is not a revision and must not be recorded as one.
+function normalizeRevisionId(value) {
+    if (value == null) return null;
+    const s = String(value).trim();
+    if (!/^\d+$/.test(s)) return null;
+    const n = Number(s);
+    return Number.isSafeInteger(n) && n > 0 ? n : null;
+}
+
+// 8 hex characters. `source` is injectable so tests can pin the output;
+// production passes nothing and picks up the ambient Web Crypto.
+function newCheckId(source) {
+    const c = source ?? (typeof crypto !== 'undefined' ? crypto : null);
+    if (c && typeof c.randomUUID === 'function') {
+        return c.randomUUID().replace(/-/g, '').slice(0, 8);
+    }
+    if (c && typeof c.getRandomValues === 'function') {
+        const buf = c.getRandomValues(new Uint8Array(4));
+        return Array.from(buf, b => b.toString(16).padStart(2, '0')).join('');
+    }
+    // Neither API available (very old browser, exotic sandbox). Ratings and
+    // comments still work; ids are merely less uniformly distributed.
+    return Math.floor(Math.random() * 0x100000000).toString(16).padStart(8, '0');
+}
+
+// Shapes the POST /log body. Field names are snake_case to match the Neon
+// columns directly, so the worker can insert without a translation layer.
+function buildLogPayload(fields = {}) {
+    return {
+        check_id:        fields.checkId ?? null,
+        // 'source' for a single citation, 'group' for the collective verdict
+        // over an adjacent-citation group. Without it a group row is
+        // indistinguishable from a solo row whose source couldn't be fetched:
+        // both carry a null source_url.
+        kind:            fields.kind ?? 'source',
+        article_url:     fields.articleUrl ?? null,
+        article_title:   fields.articleTitle ?? null,
+        // The article revision the check ran against. Without it a logged
+        // verdict is not reproducible: the page it describes is a moving
+        // target, so a disagreement about the verdict can't be separated from
+        // an edit to the claim, and two model versions can't be compared
+        // because they were never shown the same text.
+        revision_id:     normalizeRevisionId(fields.revisionId),
+        citation_number: fields.citationNumber ?? null,
+        source_url:      fields.sourceUrl ?? null,
+        provider:        fields.provider ?? null,
+        model:           fields.model ?? null,
+        verdict:         fields.verdict ?? null,
+        confidence:      fields.confidence ?? null,
+        reason_type:     fields.reasonType ?? null,
+        // Without these two a thumbs-down is uninterpretable: you know the
+        // check was wrong but not what it claimed or why it decided that.
+        claim_text:      truncateForLog(fields.claimText),
+        llm_comments:    truncateForLog(fields.comments),
+        // The passage the model quoted from the source, and the result of
+        // checking it against that source (see core/quote.js). Logged
+        // together and unconditionally: an unverified quote is exactly the
+        // row worth inspecting later, so unlike the UI — which hides it — the
+        // log keeps it and lets quote_status say what it is. '' means no
+        // quote was offered, which is the correct answer for an omission or
+        // an unavailable source.
+        source_quote:    truncateForLog(fields.sourceQuote),
+        quote_status:    fields.quoteStatus ?? null,
+    };
+}
+
+// Shapes the POST /feedback body. A row may carry a rating, a corrected
+// verdict, a pointer to a talk-page section, or any combination — the comment
+// flow sends a wiki_section with no rating, the thumbs send a rating with no
+// section, and a thumbs-down that then gets commented on sends both.
+//
+// No username: the sidebar promises that results are logged without recording
+// who ran them, and a rating is part of that promise. A talk-page comment is
+// signed, but that signature lives on the wiki, not in this table.
+function buildFeedbackPayload(fields = {}) {
+    return {
+        check_id:          fields.checkId ?? null,
+        rating:            fields.rating ?? null,
+        corrected_verdict: fields.correctedVerdict ?? null,
+        wiki_section:      fields.wikiSection ?? null,
+        // Random per-browser token from localStorage. Dedupes repeat clicks
+        // and gives a rough distinct-user count; it is not derived from
+        // anything about the user.
+        client_id:         fields.clientId ?? null,
+    };
+}
+
+// Wraps machine-inserted text so it can't be read as wikitext. Whitespace is
+// collapsed because these land inline in a bullet list.
+function nowikiWrap(text) {
+    const s = String(text ?? '')
+        .replace(/<\s*\/?\s*nowiki\s*\/?\s*>/gi, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+    return s ? `<nowiki>${s}</nowiki>` : '';
+}
+
+// MediaWiki titles cannot contain = < > [ ] { } | # _, so an article title is
+// already safe to drop into a heading; collapsing whitespace is enough. The
+// citation number comes from DOM text, so it gets filtered.
+function buildTalkSectionTitle({ articleTitle, citationNumber, checkId } = {}) {
+    const title = String(articleTitle ?? '').replace(/\s+/g, ' ').trim() || 'Unknown article';
+    const num = String(citationNumber ?? '').replace(/[^\w.,\s-]/g, '').replace(/\s+/g, ' ').trim();
+    return `Feedback: ${title}${num ? ` [${num}]` : ''} (check ${checkId ?? 'unknown'})`;
+}
+
+// Title of the collapsed box holding the tool's own output, and the label
+// introducing the editor's prose. Exported because they are the seam between
+// this layout and anything reading it back — the talk-page scraper tells
+// machine context from human text by these two strings.
+const CHECK_DETAILS_TITLE = 'Check details';
+const EDITOR_EXPLANATION_LABEL = "Editor's explanation";
+
+// A talk-page section, split by who wrote what: everything the tool produced
+// is collapsed behind {{hidden begin}}, and everything the editor supplies —
+// the corrected verdict and their explanation — stays visible. A reader
+// scanning the talk page sees the human argument; the machine context is one
+// click away when they want to check it.
+//
+// The begin/end template pair is deliberate. {{collapse|...}} would make the
+// bullets a template *parameter*, where a stray | or = in a source URL
+// silently truncates the box; as body text between two templates they are
+// inert. {{cot}}/{{cob}} is also wrong here — it renders "the following
+// discussion is closed", and this was never a discussion.
+//
+// It is preloaded into Wikipedia's own new section form rather than posted by
+// the script, so this text is a starting point the editor sees and can
+// change, not a finished comment.
+//
+// The check id appears twice on purpose: in the heading, where a human reading
+// the talk page can see which check is under discussion, and in a trailing
+// HTML comment, which is what the talk-page scraper can match on without
+// having to parse headings. HTML comments are also how the "write here"
+// guidance is delivered — visible in the edit box, invisible once published.
+//
+// Nothing here emits a signature, and nothing here may. Four tildes are not
+// text: they are an instruction to MediaWiki's pre-save transform, which runs
+// over the *whole page* on every save, so a preloaded signature belongs to
+// whoever saves next rather than to the editor who opened the form. If the
+// tildes survive that first save unexpanded — the new topic tool handles
+// signing itself — they sit in the page as a landmine until some unrelated
+// account saves it and gets its own name and timestamp stamped in. That is
+// exactly what happened to check 4d9d0118, which a passing bot signed.
+// Signing is the editor's, and their editor's, business; we only ask for it.
+//
+// The same trap applies to the guidance below, which is why it spells out
+// "sign" in words. Literal tildes inside an HTML comment are still expanded by
+// the pre-save transform — invisible in the rendered page, and still a
+// landmine in the wikitext.
+function buildTalkSectionBody(fields = {}) {
+    const {
+        articleUrl, articleTitle, citationNumber, claimText, sourceUrl,
+        verdict, comments, providerName, model, correctedVerdict, checkId,
+        revisionId, revisionUrl,
+    } = fields;
+
+    const clean = v => String(v ?? '').replace(/\s+/g, ' ').trim();
+    const label = clean(articleTitle) || clean(articleUrl);
+    const toolLines = [];
+
+    if (articleUrl && label) {
+        const cite = clean(citationNumber);
+        // The revision is what makes the report reproducible, and it belongs
+        // on the Article line because it is a property of the article, not of
+        // the check: the plain link goes to whatever the page says today, so
+        // without the permalink a reader arriving at this section a month
+        // later cannot tell whether they are looking at the text the tool
+        // read. Linked when the caller supplied a permalink, bare otherwise —
+        // the number alone still identifies the revision.
+        const rev = normalizeRevisionId(revisionId);
+        const revText = rev === null ? '' : (revisionUrl
+            ? `[${encodeURI(String(revisionUrl))} ${rev}]`
+            : String(rev));
+        toolLines.push(`* '''Article:''' [${encodeURI(String(articleUrl))} ${label}]${cite ? `, citation [${cite}]` : ''}${revText ? `, revision ${revText}` : ''}`);
+    }
+    if (sourceUrl) {
+        // encodeURI neutralises {{ }} (the one wikitext construct a citation
+        // URL could plausibly smuggle in) while leaving the link clickable.
+        toolLines.push(`* '''Source:''' ${encodeURI(String(sourceUrl))}`);
+    }
+    if (verdict) {
+        const by = [clean(providerName), clean(model)].filter(Boolean).join(', ');
+        toolLines.push(`* '''Tool's verdict:''' ${clean(verdict)}${by ? ` (${by})` : ''}`);
+    }
+    const claim = nowikiWrap(claimText);
+    if (claim) toolLines.push(`* '''Claim checked:''' ${claim}`);
+    const reasoning = nowikiWrap(comments);
+    if (reasoning) toolLines.push(`* '''Tool's reasoning:''' ${reasoning}`);
+
+    const blocks = [];
+
+    if (toolLines.length) {
+        blocks.push([
+            `{{hidden begin|title=${CHECK_DETAILS_TITLE}}}`,
+            ...toolLines,
+            '{{hidden end}}',
+        ].join('\n'));
+    }
+    // The editor's, not the tool's, so it stays outside the box — on a
+    // thumbs-down this line is the disagreement itself, and burying it would
+    // leave the visible section saying nothing.
+    if (correctedVerdict) {
+        blocks.push(`'''Editor says it should be:''' ${clean(correctedVerdict)}`);
+    }
+    // Label and guidance share a line so that writing at the obvious spot —
+    // after the invisible comment — renders as "Editor's explanation: <prose>"
+    // rather than leaving a bold heading dangling above the text.
+    blocks.push(
+        `'''${EDITOR_EXPLANATION_LABEL}:''' <!-- Write your explanation here, then sign and publish. -->`,
+        `<!-- source-verifier check: ${checkId ?? 'unknown'} -->`,
+    );
+
+    return blocks.join('\n\n');
+}
+
+// The URL that opens Wikipedia's own "add new section" form with the context
+// already in the edit box.
+//
+// A URL can name the page and set the heading, but there is no parameter for
+// body text — hence preload, which starts the edit box off with the contents
+// of another page, substituting $1, $2… from preloadparams. FEEDBACK_PRELOAD_PAGE
+// contains nothing but `$1`, so the whole body travels as one parameter and
+// buildTalkSectionBody stays the only place the layout is defined. That page
+// never needs to change.
+function buildCommentUrl(fields = {}, {
+    wikiBase = 'https://en.wikipedia.org/w/index.php',
+    talkPage = FEEDBACK_TALK_PAGE,
+    preloadPage = FEEDBACK_PRELOAD_PAGE,
+} = {}) {
+    const params = new URLSearchParams();
+    params.set('title', talkPage);
+    params.set('action', 'edit');
+    params.set('section', 'new');
+    params.set('preloadtitle', buildTalkSectionTitle(fields));
+    params.set('preload', preloadPage);
+    params.set('preloadparams[]', buildTalkSectionBody(fields));
+    return `${wikiBase}?${params.toString()}`;
 }
 
 // --- core/submission.js ---
@@ -1169,15 +1782,31 @@ const DATASET_SUBMISSION_ENTRY_IDS = {
     fetchStatus:    'entry.375255643',
     editorHandle:   'entry.362287943',
     notes:          'entry.133790832',
+    // The verbatim passage the model quoted from the source, and whether it
+    // was found in that source (see core/quote.js). Optional — see
+    // DATASET_SUBMISSION_OPTIONAL_KEYS: until a matching Form question exists
+    // these stay on PLACEHOLDER and are simply left out of the prefilled URL,
+    // rather than disabling the whole submission button.
+    llmQuote:         'entry.PLACEHOLDER_QUOTE',
+    llmQuoteVerified: 'entry.PLACEHOLDER_QUOTE_VERIFIED',
 };
+
+// Keys that isDatasetSubmissionConfigured() does not require. Add a Form
+// question for these, paste in the real entry ids, and they start flowing;
+// leave them and everything else keeps working.
+const DATASET_SUBMISSION_OPTIONAL_KEYS = Object.freeze([
+    'llmQuote',
+    'llmQuoteVerified',
+]);
 
 function isDatasetSubmissionConfigured(
     formUrl = DATASET_SUBMISSION_FORM_URL,
     entryIds = DATASET_SUBMISSION_ENTRY_IDS,
 ) {
     if (!formUrl || formUrl.includes(DATASET_SUBMISSION_PLACEHOLDER)) return false;
-    return Object.values(entryIds).every(
-        id => typeof id === 'string' && id && !id.includes(DATASET_SUBMISSION_PLACEHOLDER)
+    return Object.entries(entryIds).every(
+        ([key, id]) => DATASET_SUBMISSION_OPTIONAL_KEYS.includes(key)
+            || (typeof id === 'string' && id && !id.includes(DATASET_SUBMISSION_PLACEHOLDER))
     );
 }
 
@@ -1189,9 +1818,13 @@ function buildDatasetSubmissionUrl(
     const params = new URLSearchParams();
     params.set('usp', 'pp_url');
     for (const key of Object.keys(entryIds)) {
+        const entryId = entryIds[key];
+        // Skip fields whose Form question hasn't been created yet; sending
+        // 'entry.PLACEHOLDER_*' would just add a junk query parameter.
+        if (typeof entryId !== 'string' || !entryId || entryId.includes(DATASET_SUBMISSION_PLACEHOLDER)) continue;
         const value = fields == null ? undefined : fields[key];
         if (value === undefined || value === null || value === '') continue;
-        params.set(entryIds[key], String(value));
+        params.set(entryId, String(value));
     }
     return `${formUrl}?${params.toString()}`;
 }
@@ -1204,9 +1837,10 @@ function buildDatasetSubmissionUrl(
 // to stay comfortably under that limit (currently ~100 KB): budget = 100 KB
 // minus the ~6.5 KB system prompt, the claim/user-prompt boilerplate, and
 // JSON-escaping + UTF-8 overhead on the source itself. 80 000 chars leaves room.
-// Browser-only (used by loadManualSourceText()); not shared with core/, so it
-// lives here rather than inside the <core-injected> block, which npm run build
-// regenerates wholesale from core/ and would otherwise silently drop this.
+//
+// Deliberately *below* the </core-injected> marker: it has no counterpart in
+// core/, so while it sat inside the injected region the next `npm run build`
+// silently deleted it, taking loadManualSourceText() with it.
 const MAX_MANUAL_SOURCE_CHARS = 80000;
 
     // ========================================
@@ -1256,6 +1890,17 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
         'Back to Report': 'Retour au rapport',
         'Save': 'Enregistrer',
         'Give feedback': 'Signaler un problème',
+      
+        // Feedback controls
+        'Was this right?': 'Est-ce correct ?',
+        'Yes': 'Oui',
+        'No': 'Non',
+        'This verdict looks right': 'Ce verdict semble correct',
+        'This verdict looks wrong': 'Ce verdict semble erroné',
+        'What should it have been?': 'Quel aurait dû être le verdict ?',
+        'Thanks — recorded.': 'Merci — c’est enregistré.',
+        'Could not record that, sorry.': 'Impossible d’enregistrer, désolé.',
+        'Comment': 'Commenter',
         'Edit Section': 'Modifier la section',
         'Copy Report (Wikitext)': 'Copier le rapport (wikicode)',
         'Copy Report (Plain Text)': 'Copier le rapport (texte brut)',
@@ -1420,7 +2065,9 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
         'Claim: {text}': 'Affirmation : {text}',
         'Sources: {urls}': 'Sources : {urls}',
         'Source: {url}': 'Source : {url}',
+        'Quote: "{text}"': 'Citation : « {text} »',
         'Comments: {text}': 'Commentaires : {text}',
+        'From the source': 'Extrait de la source',
         'Note: Combined sources are long, only partially checked.':
             'Note : Sources combinées longues, vérifiées partiellement seulement.',
         'Note: Source is long, only partially checked.':
@@ -1695,7 +2342,9 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
         'Claim: {text}': 'Afirmación: {text}',
         'Sources: {urls}': 'Fuentes: {urls}',
         'Source: {url}': 'Fuente: {url}',
+        'Quote: "{text}"': 'Cita: «{text}»',
         'Comments: {text}': 'Comentarios: {text}',
+        'From the source': 'Extracto de la fuente',
         'Note: Combined sources are long, only partially checked.':
             'Nota: Las fuentes combinadas son extensas; solo se han comprobado parcialmente.',
         'Note: Source is long, only partially checked.':
@@ -1873,6 +2522,9 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
             this.activeSourceUrl = null;
             this.activeCitationNumber = null;
             this.activeRefElement = null;
+            // Id of the check currently shown in the sidebar; feedback on that
+            // result is keyed on it. Null until a verdict parses successfully.
+            this.activeCheckId = null;
             this.currentFetchId = 0;
             this.currentVerifyId = 0;
 
@@ -2002,6 +2654,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                         <div id="verifier-results">
                             <div id="verifier-verdict-attrib">${this.t('AI assessment')}</div>
                             <div id="verifier-verdict"></div>
+                            <div id="verifier-quote"></div>
                             <div id="verifier-comments"></div>
                             <div id="verifier-verdict-next"></div>
                             <div id="verifier-action-container"></div>
@@ -2778,10 +3431,51 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                     max-height: 300px;
                     overflow-y: auto;
                 }
+
+                /* Evidence block: the passage the model quoted from the source,
+                   shown only once it has been located in that source (see
+                   core/quote.js). Same markup in the sidebar and in report
+                   cards, so one rule set covers both. */
+                .sv-quote {
+                    margin-bottom: 8px;
+                    padding: 8px 10px;
+                    background: var(--sv-bg-inset);
+                    border-left: 3px solid var(--sv-accent);
+                    border-radius: 0 3px 3px 0;
+                }
+                .sv-quote-label {
+                    display: block;
+                    margin-bottom: 3px;
+                    font-size: 10px;
+                    font-weight: 600;
+                    letter-spacing: 0.04em;
+                    text-transform: uppercase;
+                    color: var(--sv-ink-subtle);
+                }
+                .sv-quote-text {
+                    font-size: 13px;
+                    line-height: 1.5;
+                    font-style: italic;
+                    color: var(--sv-ink-2);
+                    max-height: 200px;
+                    overflow-y: auto;
+                }
+                .verifier-report-card .sv-quote,
+                .verifier-report-group-row .sv-quote,
+                .verifier-report-group-collective .sv-quote {
+                    margin-top: 6px;
+                }
                 #verifier-action-container {
                     margin-top: 10px;
                 }
-                #verifier-action-container .oo-ui-buttonElement {
+                /* Direct children only. "Edit Section" is the panel's primary
+                   call to action and is appended straight to this container, so
+                   it spans the full width. The feedback controls live in a
+                   .verifier-feedback wrapper inside the same container, and an
+                   unscoped rule stretched every one of their buttons too —
+                   which is what made Yes/No/Comment and the correction chips
+                   shrink to unrelated widths instead of sitting as a row. */
+                #verifier-action-container > .oo-ui-buttonElement {
                     width: 100%;
                 }
                 #verifier-title-link {
@@ -2791,7 +3485,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                 #verifier-title-link:hover {
                     text-decoration: underline;
                 }
-                #verifier-action-container .oo-ui-buttonElement-button {
+                #verifier-action-container > .oo-ui-buttonElement > .oo-ui-buttonElement-button {
                     width: 100%;
                     justify-content: center;
                 }
@@ -3056,12 +3750,116 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                     font-size: 11px;
                     padding: 2px 4px;
                 }
-                .report-card-action .report-card-feedback-action .oo-ui-buttonElement-button .oo-ui-labelElement-label {
-                    color: var(--sv-quiet-fg);
-                    font-weight: normal;
+                .verifier-feedback {
+                    margin-top: 6px;
+                    padding-top: 6px;
+                    border-top: 1px solid var(--sv-border-2);
                 }
-                .report-card-action .report-card-feedback-action .oo-ui-iconElement-icon {
-                    opacity: 0.4 !important;
+                .verifier-feedback-row,
+                .verifier-feedback-correction {
+                    display: flex;
+                    align-items: center;
+                    flex-wrap: wrap;
+                    gap: 6px;
+                }
+                /* [hidden] has to be restated: the display:flex above outranks
+                   the user-agent's [hidden] rule, so without this the
+                   corrected-verdict chips show under every verdict — including
+                   the thumbs-up they are meant to stay out of. */
+                .verifier-feedback-correction[hidden] {
+                    display: none;
+                }
+                .verifier-feedback-correction {
+                    margin-top: 6px;
+                }
+                .verifier-feedback-prompt {
+                    color: var(--sv-ink-subtle);
+                    font-size: 11px;
+                }
+                /* The four verdicts are long enough to wrap in a 400px sidebar.
+                   Giving the question its own line lets them wrap as one block
+                   instead of one chip trailing the label and the rest below. */
+                .verifier-feedback-correction .verifier-feedback-prompt {
+                    flex-basis: 100%;
+                }
+                .verifier-feedback .oo-ui-buttonElement {
+                    margin: 0;
+                }
+                /* OOUI gives a button min-height: 32px but leaves its line box
+                   at the natural height of the text, and an inline-block puts
+                   the leftover space entirely below — so the label sits high in
+                   the box. Icons don't: they are absolutely positioned at
+                   top: 50%, which is why this only reads as broken on the
+                   correction chips, the one button here with no icon beside the
+                   text. inline-flex centres the content vertically without
+                   taking the button out of the inline flow; horizontal
+                   placement is left alone, since the icon is out of flow and
+                   centring the label would slide it under the icon. */
+                .verifier-feedback .oo-ui-buttonElement-button {
+                    display: inline-flex;
+                    align-items: center;
+                }
+                /* Yes / No / Comment are the same widget — a frameless OOUI
+                   button with an icon and a label — and deliberately carry no
+                   styling of our own. Anything we add here is a way for the
+                   three to stop matching, which is how the row ended up with
+                   two emoji next to an icon-and-label button. */
+                /* The ring marks the recorded answer. Both buttons are disabled
+                   after the first click and OOUI dims them identically, so
+                   without it the row forgets which way the editor voted. It is
+                   an inset shadow rather than a border so nothing reflows. */
+                .verifier-feedback .is-chosen .oo-ui-buttonElement-button {
+                    box-shadow: inset 0 0 0 1px var(--sv-accent-fg);
+                    border-radius: 2px;
+                    background: var(--sv-bg-chip-hover);
+                    color: var(--sv-ink-chip);
+                    opacity: 1;
+                }
+                .verifier-feedback .is-chosen .oo-ui-labelElement-label {
+                    color: var(--sv-ink-chip);
+                    opacity: 1;
+                }
+                .verifier-feedback .is-dimmed {
+                    opacity: 0.35;
+                }
+                .verifier-feedback-chip .oo-ui-buttonElement-button {
+                    border: 1px solid var(--sv-border-chip);
+                    border-radius: 10px;
+                    background: var(--sv-bg-chip-off);
+                    color: var(--sv-ink-chip-off);
+                    font-size: 11px;
+                    padding: 2px 8px;
+                }
+                .verifier-feedback-chip .oo-ui-buttonElement-button:hover {
+                    border-color: var(--sv-border-chip-hover);
+                    background: var(--sv-bg-chip-hover);
+                }
+                .verifier-feedback-status {
+                    color: var(--sv-ink-subtle);
+                    font-size: 11px;
+                    margin-top: 4px;
+                }
+                .verifier-feedback-status:empty {
+                    display: none;
+                }
+                /* The chips' own confirmation is a flex item, so it needs a full
+                   row of its own to land under them rather than beside them. */
+                .verifier-feedback-correction .verifier-feedback-status {
+                    flex-basis: 100%;
+                    margin-top: 2px;
+                }
+                /* The confirmation sits directly under whatever was clicked, so
+                   it has to carry its own weight rather than blend into the
+                   surrounding grey captions. */
+                .verifier-feedback-status.is-done {
+                    color: var(--sv-ok-fg);
+                    font-weight: 600;
+                }
+                .verifier-feedback-status.is-done::before {
+                    content: '✓ ';
+                }
+                .verifier-feedback-status.is-error {
+                    color: var(--sv-error-fg);
                 }
                 .report-card-header-actions {
                     display: flex;
@@ -3181,7 +3979,12 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                     font-weight: bold;
                     color: var(--sv-accent-fg);
                 }
-                #source-verifier-sidebar .oo-ui-iconElement-icon + .oo-ui-labelElement-label {
+                /* OOUI renders the icon span on every button, icon or not, so
+                   the sibling selector alone puts this gap on labels with
+                   nothing beside them — it was pushing the text in each
+                   correction chip 4px right of centre. The widget root only
+                   carries .oo-ui-iconElement when an icon was really set. */
+                #source-verifier-sidebar .oo-ui-iconElement .oo-ui-iconElement-icon + .oo-ui-labelElement-label {
                     margin-left: 4px;
                 }
                 #verifier-report-actions {
@@ -4158,22 +4961,53 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
             const language = PROMPT_LANGUAGES[this.lang];
             if (!language) return prompt;
             return prompt + `\n\nLANGUAGE: Write the "comments" field in ${language}. `
+                + 'The "source_quote" field is an exception: it must stay in the source\'s own language, copied verbatim. Never translate it — it is checked against the source text character for character. '
                 + `You may quote the source verbatim in its original language, but write your own explanation in ${language}. `
                 + 'Keep the "verdict" and "reason_type" values exactly as specified above, in English '
                 + '(SUPPORTED, PARTIALLY SUPPORTED, NOT SUPPORTED, SOURCE UNAVAILABLE, contradiction, omission).';
         }
 
-        logVerification(verdict, confidence, reasonType) {
-            logVerification({
-                article_url: window.location.href,
-                article_title: typeof mw !== 'undefined' ? mw.config.get('wgTitle') : document.title,
-                citation_number: this.activeCitationNumber,
-                source_url: this.activeSourceUrl,
+        // Mints the check id, fires the log, and hands the id back so the
+        // caller can stash it on the result it just built. Every verdict the
+        // user can see gets one — including the ones that never reached an
+        // LLM — so the feedback controls are uniformly available.
+        //
+        // `parsed` is the verdict object ({ verdict, confidence, comments,
+        // reason_type }); `context` overrides the active-citation fields for
+        // the batch paths, which verify citations other than the selected one.
+        //
+        // `context.sourceInfo` is the source text the model was shown. Passing
+        // it lets the log record the quote together with the outcome of
+        // checking it — the pairing is the point, since a quote is only
+        // interpretable next to whether it was found. Omit it where there was
+        // no source at all (a failed fetch), and the row logs an empty quote.
+        logVerification(parsed, context = {}) {
+            const checkId = newCheckId();
+            const provider = this.providers[this.currentProvider] || {};
+            // `in` rather than ??: the collective path passes sourceUrl: null
+            // deliberately (several sources, no single one to name), and that
+            // must not fall back to the sidebar's active citation.
+            const fromContext = (key, fallback) => (key in context ? context[key] : fallback);
+            const quoteView = this.buildQuoteView(parsed, context.sourceInfo);
+            logVerification(buildLogPayload({
+                checkId,
+                kind: context.kind,
+                articleUrl: window.location.href,
+                articleTitle: typeof mw !== 'undefined' ? mw.config.get('wgTitle') : document.title,
+                revisionId: this.getArticleRevisionId(),
+                citationNumber: fromContext('citationNumber', this.activeCitationNumber),
+                sourceUrl: fromContext('sourceUrl', this.activeSourceUrl),
                 provider: this.currentProvider,
-                verdict: verdict,
-                confidence: confidence,
-                reason_type: reasonType ?? null,
-            });
+                model: provider.model || null,
+                verdict: parsed?.verdict,
+                confidence: parsed?.confidence,
+                reasonType: parsed?.reason_type ?? null,
+                claimText: fromContext('claimText', this.activeClaim),
+                comments: parsed?.comments,
+                sourceQuote: quoteView.quote,
+                quoteStatus: quoteView.status,
+            }));
+            return checkId;
         }
 
         async verifyClaim() {
@@ -4203,13 +5037,19 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                 this.updateStatus(this.t('Verification complete!'));
                 this.displayResult(result);
 
-                // Fire-and-forget logging
+                // Fire-and-forget logging. Runs before displayResult() rather
+                // than after it: the feedback controls displayResult() renders
+                // are keyed on the check id minted here, and an unparseable
+                // response yields no id (and so no controls) by design.
+                this.activeCheckId = null;
                 try {
                     const jsonMatch = result.match(/```(?:json)?\s*([\s\S]*?)\s*```/) ||
                                      [null, result.match(/\{[\s\S]*\}/)?.[0]];
                     const parsed = JSON.parse(jsonMatch[1]);
-                    this.logVerification(parsed.verdict, parsed.confidence, parsed.reason_type);
+                    this.activeCheckId = this.logVerification(parsed, { sourceInfo: this.activeSource });
                 } catch (e) {}
+
+                this.displayResult(result);
 
             } catch (error) {
                 if (verifyId !== this.currentVerifyId) {
@@ -4254,11 +5094,77 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
 	    return parseVerificationResult(response);
 	}
 
+        // ========================================
+        // SOURCE QUOTE (evidence) METHODS
+        // ========================================
+
+        // Checks the model's source_quote against the source text it was
+        // actually shown. Returns the shape the renderers and the dataset
+        // submission both read: { quote, verified, status }.
+        //
+        // sourceInfo is the raw "Source URL: ...\n\nSource Content:\n..."
+        // blob (or the assembled multi-source text for a group); it is
+        // unwrapped here so the comparison sees exactly the body the model saw.
+        buildQuoteView(parsed, sourceInfo) {
+            // Accepts both shapes that carry a quote: a freshly parsed LLM
+            // response (`source_quote`) and a stored report result
+            // (`sourceQuote`). The logging path is handed whichever of the two
+            // the call site happens to hold.
+            const quote = (parsed && (parsed.source_quote ?? parsed.sourceQuote)) || '';
+            const sourceText = sourceInfo ? extractSourceText(sourceInfo) : '';
+            const check = verifyQuote(sourceText, quote);
+            return {
+                // `quote` is what the model said, kept for the log. `display`
+                // is the part of it actually found in the source — the only
+                // text a renderer may show.
+                quote,
+                display: check.verifiedText,
+                verified: check.verified,
+                status: check.status,
+            };
+        }
+
+        // Report results carry the already-computed verification, so the
+        // renderers don't re-check (and don't need the source text again).
+        quoteViewOf(result) {
+            if (!result || !result.sourceQuote) return null;
+            return {
+                quote: result.sourceQuote,
+                display: result.quoteDisplay || '',
+                verified: !!result.quoteVerified,
+                status: result.quoteStatus,
+            };
+        }
+
+        // Renders the evidence block: the part of the model's quote that was
+        // located in the source, or nothing.
+        //
+        // Nothing is deliberate. An unlocatable quote used to draw a warning
+        // here, but that warning implied the verdict was less trustworthy — a
+        // claim there is no evidence for. A model that paraphrases instead of
+        // copying may still be judging correctly, and steering an editor away
+        // from a correct verdict is a real cost paid against a speculative
+        // benefit. quote_status is still logged on every row, so "does an
+        // unverified quote predict a worse verdict?" stays answerable; if the
+        // benchmark answers yes, the warning will have earned its place.
+        quoteHtml(view) {
+            if (!view || !view.display) return '';
+            // Every character of `display` was found in the source. A partial
+            // match shows its surviving fragments ellipsis-joined, which reads
+            // as the ordinary elision it is.
+            return `<div class="sv-quote">`
+                + `<span class="sv-quote-label">${this.escapeHtml(this.t('From the source'))}</span>`
+                + `<div class="sv-quote-text">“${this.escapeHtml(view.display)}”</div>`
+                + `</div>`;
+        }
+
 	displayResult(response) {
 	    const verdictEl = document.getElementById('verifier-verdict');
 	    const commentsEl = document.getElementById('verifier-comments');
+	    const quoteEl = document.getElementById('verifier-quote');
 
 	    const result = this.parseVerificationResult(response);
+	    const quoteView = this.buildQuoteView(result, this.activeSource);
 
 	    verdictEl.textContent = this.t(result.verdict);
 	    verdictEl.className = '';
@@ -4281,6 +5187,10 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
 	        tag.className = `reason-type-tag reason-type-${result.reason_type}`;
 	        tag.textContent = this.reasonTypeLabel(result.reason_type);
 	        verdictEl.after(tag);
+	    }
+
+	    if (quoteEl) {
+	        quoteEl.innerHTML = this.quoteHtml(quoteView);
 	    }
 
 	    commentsEl.textContent = result.comments;
@@ -4666,6 +5576,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                     </span>
                 </div>
                 <div class="report-card-claim">${this.escapeHtml(claimExcerpt)}</div>
+                ${this.quoteHtml(this.quoteViewOf(result))}
                 ${result.comments ? `<div class="report-card-comment">${this.escapeHtml(result.comments)}</div>` : ''}
                 ${truncationHtml}
             `;
@@ -4687,15 +5598,12 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                 actionDiv.appendChild(editBtn.$element[0]);
             }
 
-            if (result.verdict && result.verdict !== 'ERROR' && this.isDatasetSubmissionConfigured()) {
-                const submitBtn = this.buildSubmitToDatasetButton(result);
-                submitBtn.$element.addClass('report-card-feedback-action');
-                actionDiv.appendChild(submitBtn.$element[0]);
-            }
-
             if (actionDiv.children.length) {
                 card.appendChild(actionDiv);
             }
+
+            const feedback = this.buildFeedbackControls(result);
+            if (feedback) card.appendChild(feedback);
             return card;
         }
 
@@ -4762,18 +5670,13 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                     <span class="verifier-report-group-collective-label">${this.t('Combined verdict')}</span>
                     <span class="report-card-verdict ${verdictClass}">${verdictLabel}</span>${reasonTypeHtml}
                 </div>
+                ${this.quoteHtml(this.quoteViewOf(result))}
                 ${result.comments ? `<div class="report-card-comment">${this.escapeHtml(result.comments)}</div>` : ''}
                 ${truncationHtml}
             `;
 
-            if (result.verdict && result.verdict !== 'ERROR' && this.isDatasetSubmissionConfigured()) {
-                const actionDiv = document.createElement('div');
-                actionDiv.className = 'report-card-action';
-                const submitBtn = this.buildSubmitToDatasetButton(result);
-                submitBtn.$element.addClass('report-card-feedback-action');
-                actionDiv.appendChild(submitBtn.$element[0]);
-                slot.appendChild(actionDiv);
-            }
+            const feedback = this.buildFeedbackControls(result);
+            if (feedback) slot.appendChild(feedback);
         }
 
         // Called when the collective check is skipped for want of a second
@@ -4806,21 +5709,27 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                         <span class="report-card-verdict ${verdictClass}">${verdictLabel}</span>${reasonTypeHtml}
                     </span>
                 </div>
+                ${this.quoteHtml(this.quoteViewOf(result))}
                 ${result.comments ? `<div class="report-card-comment">${this.escapeHtml(result.comments)}</div>` : ''}
                 ${truncationHtml}
             `;
             this.attachRefScrollHandler(row, result.refElement);
 
-            if (result.verdict && result.verdict !== 'ERROR' && this.isDatasetSubmissionConfigured()) {
-                const actionDiv = document.createElement('div');
-                actionDiv.className = 'report-card-action';
-                const submitBtn = this.buildSubmitToDatasetButton(result);
-                submitBtn.$element.addClass('report-card-feedback-action');
-                actionDiv.appendChild(submitBtn.$element[0]);
-                row.appendChild(actionDiv);
-            }
+            const feedback = this.buildFeedbackControls(result);
+            if (feedback) row.appendChild(feedback);
 
             return row;
+        }
+
+        // Neutralizes the few characters that would break out of a wikitable
+        // cell or start a template. Quoted source text is arbitrary prose from
+        // the open web, so it cannot be trusted to be wikitext-safe.
+        escapeWikitableCell(str) {
+            return String(str == null ? '' : str)
+                .replace(/\n/g, ' ')
+                .replace(/\|/g, '&#124;')
+                .replace(/\{/g, '&#123;')
+                .replace(/\}/g, '&#125;');
         }
 
         escapeHtml(str) {
@@ -4849,6 +5758,22 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
             });
             copyTextBtn.on('click', () => this.copyReportToClipboard('plaintext'));
             actionsEl.appendChild(copyTextBtn.$element[0]);
+        }
+
+        // The revision the check ran against, recorded so a logged verdict or
+        // a talk-page report stays reproducible after the article moves on.
+        // `wgRevisionId` is the revision actually on screen and so the one that
+        // was read; it differs from `wgCurRevisionId` only when an old revision
+        // is being viewed, which is exactly the case where naming the current
+        // revision would be a lie.
+        getArticleRevisionId() {
+            if (typeof mw === 'undefined') return null;
+            try {
+                return normalizeRevisionId(mw.config.get('wgRevisionId'))
+                    ?? normalizeRevisionId(mw.config.get('wgCurRevisionId'));
+            } catch (e) {
+                return null;
+            }
         }
 
         getRevisionPermalinkUrl(revId) {
@@ -4904,6 +5829,18 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                     default: verdictWiki = r.verdict; break;
                 }
                 let commentsClean = (r.comments || '').replace(/\n/g, ' ');
+                // Verified quote first, as the evidence the reader can check;
+                // the model's explanation follows it. Unverified quotes are
+                // left out of the on-wiki report entirely.
+                // Quote the located text, not the model's raw quote: on a
+                // partial match the two differ, and only the former is
+                // guaranteed to be in the source.
+                if (r.quoteDisplay) {
+                    commentsClean = `''"${this.escapeWikitableCell(r.quoteDisplay)}"''<br />`
+                        + this.escapeWikitableCell(commentsClean);
+                } else {
+                    commentsClean = this.escapeWikitableCell(commentsClean);
+                }
                 if (r.truncated && r.verdict !== 'SUPPORTED') {
                     const note = r.isGroup
                         ? this.t("''(Combined sources are long, only partially checked.)''")
@@ -4985,12 +5922,14 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                     text += `  ${this.t('Claim: {text}', { text: claimExcerpt })}\n`;
                     const urls = (r.members || []).filter(m => m.url).map(m => `[${m.citationNumber}] ${m.url}`);
                     if (urls.length) text += `  ${this.t('Sources: {urls}', { urls: urls.join(' | ') })}\n`;
+                    if (r.quoteDisplay) text += `  ${this.t('Quote: "{text}"', { text: r.quoteDisplay })}\n`;
                     if (r.comments) text += `  ${this.t('Comments: {text}', { text: r.comments })}\n`;
                     if (r.truncated && r.verdict !== 'SUPPORTED') text += `  ${this.t('Note: Combined sources are long, only partially checked.')}\n`;
                 } else {
                     text += `[${r.citationNumber}] ${this.t(r.verdict)}\n`;
                     text += `  ${this.t('Claim: {text}', { text: claimExcerpt })}\n`;
                     if (r.url) text += `  ${this.t('Source: {url}', { url: r.url })}\n`;
+                    if (r.quoteDisplay) text += `  ${this.t('Quote: "{text}"', { text: r.quoteDisplay })}\n`;
                     if (r.comments) text += `  ${this.t('Comments: {text}', { text: r.comments })}\n`;
                     if (r.truncated && r.verdict !== 'SUPPORTED') text += `  ${this.t('Note: Source is long, only partially checked.')}\n`;
                 }
@@ -5134,10 +6073,41 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                     const parsed = this.parseVerificationResult(apiResult.text);
                     this.reportTokenUsage.input += apiResult.usage.input;
                     this.reportTokenUsage.output += apiResult.usage.output;
-                    result = { ...base, verdict: parsed.verdict, confidence: parsed.confidence, comments: parsed.comments, reason_type: parsed.reason_type };
+                    // The group quote is checked against the assembled text of
+                    // every source in the group, so a verbatim quote from any
+                    // one of them verifies.
+                    const quoteView = this.buildQuoteView(parsed, assembledText);
+                    result = {
+                        ...base,
+                        verdict: parsed.verdict,
+                        confidence: parsed.confidence,
+                        comments: parsed.comments,
+                        reason_type: parsed.reason_type,
+                        sourceQuote: quoteView.quote,
+                        quoteDisplay: quoteView.display,
+                        quoteVerified: quoteView.verified,
+                        quoteStatus: quoteView.status,
+                    };
                 } catch (e) {
                     result = { ...base, verdict: 'ERROR', confidence: null, comments: e.message };
                 }
+            }
+
+            // Collective verdicts were previously unlogged. They need a check
+            // id for the same reason the per-source rows do — they are a
+            // verdict the user is shown and can disagree with. kind='group'
+            // and the joined citation numbers keep them distinguishable;
+            // source_url stays null because there were several.
+            if (result.verdict !== 'ERROR') {
+                try {
+                    result.checkId = this.logVerification(result, {
+                        kind: 'group',
+                        citationNumber: result.citationNumber,
+                        sourceUrl: null,
+                        claimText,
+                        sourceInfo: assembledText,
+                    });
+                } catch (e) {}
             }
 
             this.reportGroupResults.set(groupId, result);
@@ -5226,7 +6196,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
             this.sourceCache = new Map();
             this.reportTokenUsage = { input: 0, output: 0 };
             this.hasReport = true;
-            this.reportRevisionId = mw.config.get('wgCurRevisionId') || null;
+            this.reportRevisionId = this.getArticleRevisionId();
 
             this.showReportView();
             document.getElementById('verifier-report-results').innerHTML = '';
@@ -5306,6 +6276,15 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                             fetchError: fetchResult.error,
                             truncated: false
                         };
+                        // Logged like any other verdict: the user sees it and
+                        // may well want to tell us the source is actually fine.
+                        try {
+                            result.checkId = this.logVerification(result, {
+                                citationNumber: citation.citationNumber,
+                                sourceUrl: citation.url,
+                                claimText: citation.claimText,
+                            });
+                        } catch (e) {}
                     } else {
                         const sourceTruncated = sourceContent.includes('\nTruncated: true');
                         // Verify via LLM. Retry transient failures (429 + 5xx +
@@ -5339,6 +6318,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                             const parsed = this.parseVerificationResult(apiResult.text);
                             this.reportTokenUsage.input += apiResult.usage.input;
                             this.reportTokenUsage.output += apiResult.usage.output;
+                            const quoteView = this.buildQuoteView(parsed, sourceContent);
                             result = {
                                 citationNumber: citation.citationNumber,
                                 claimText: citation.claimText,
@@ -5348,18 +6328,21 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                                 confidence: parsed.confidence,
                                 comments: parsed.comments,
                                 reason_type: parsed.reason_type,
+                                sourceQuote: quoteView.quote,
+                                quoteDisplay: quoteView.display,
+                                quoteVerified: quoteView.verified,
+                                quoteStatus: quoteView.status,
                                 truncated: sourceTruncated
                             };
 
                             // Fire-and-forget logging
                             try {
-                                const savedCitationNumber = this.activeCitationNumber;
-                                const savedSourceUrl = this.activeSourceUrl;
-                                this.activeCitationNumber = citation.citationNumber;
-                                this.activeSourceUrl = citation.url;
-                                this.logVerification(parsed.verdict, parsed.confidence, parsed.reason_type);
-                                this.activeCitationNumber = savedCitationNumber;
-                                this.activeSourceUrl = savedSourceUrl;
+                                result.checkId = this.logVerification(parsed, {
+                                    citationNumber: citation.citationNumber,
+                                    sourceUrl: citation.url,
+                                    claimText: citation.claimText,
+                                    sourceInfo: sourceContent,
+                                });
                             } catch (e) {}
                         } catch (e) {
                             result = {
@@ -5484,16 +6467,15 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                 container.appendChild(btn.$element[0]);
             }
 
-            if (verdict && verdict !== 'ERROR' && this.isDatasetSubmissionConfigured()) {
-                const submitBtn = this.buildSubmitToDatasetButton({
-                    citationNumber: this.activeCitationNumber,
-                    claimText: this.activeClaim,
-                    url: this.activeSourceUrl,
-                    verdict,
-                    comments,
-                });
-                container.appendChild(submitBtn.$element[0]);
-            }
+            const feedback = this.buildFeedbackControls({
+                checkId: this.activeCheckId,
+                citationNumber: this.activeCitationNumber,
+                claimText: this.activeClaim,
+                url: this.activeSourceUrl,
+                verdict,
+                comments,
+            });
+            if (feedback) container.appendChild(feedback);
         }
 
         isDatasetSubmissionConfigured() {
@@ -5512,21 +6494,210 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                 sourceUrl: result?.url ?? '',
                 llmVerdict: result?.verdict ?? '',
                 llmRationale: result?.comments ?? '',
+                // Only submit a quote we located in the source; an unverified
+                // one would pollute the dataset with possible fabrications.
+                llmQuote: result?.quoteDisplay ?? '',
+                llmQuoteVerified: result?.quoteStatus ?? '',
                 llmProvider: result?.providerName ?? provider.name ?? '',
                 llmModel: result?.model ?? provider.model ?? '',
                 fetchStatus: result?.fetchStatus ?? '',
             });
         }
 
-        buildSubmitToDatasetButton(result, { label = 'Give feedback' } = {}) {
-            return new OO.ui.ButtonWidget({
-                label: this.t(label),
+        // ========================================
+        // FEEDBACK
+        // ========================================
+        //
+        // Two destinations, split by what the feedback actually is. A rating
+        // is a datapoint: high volume, only useful aggregated, so it goes
+        // straight to the worker keyed on the check id. A comment is a
+        // conversation: it needs to be public, and it needs to support
+        // follow-up questions, so it goes on-wiki as a talk-page section. The
+        // check id appears on both sides, which is what lets them be joined.
+        //
+        // The script never writes the comment itself. Clicking Comment opens
+        // Wikipedia's own new-section form with the context preloaded, and the
+        // editor writes and publishes there, in the interface they already
+        // know — with preview, signature, and native handling of blocks,
+        // CAPTCHAs and abuse filters. The cost is that the script never learns
+        // whether they went through with it, so the talk section is joined to
+        // the check row by the scheduled scrape rather than at click time.
+
+        // Random per-browser token, minted once. Lets repeat clicks from one
+        // browser be collapsed without recording anything about the user.
+        getFeedbackClientId() {
+            try {
+                let id = localStorage.getItem('verifier_feedback_client_id');
+                if (!id) {
+                    id = newCheckId() + newCheckId();
+                    localStorage.setItem('verifier_feedback_client_id', id);
+                }
+                return id;
+            } catch (e) {
+                return null;  // private mode, or storage disabled
+            }
+        }
+
+        sendFeedback(fields) {
+            return postFeedback(buildFeedbackPayload({
+                ...fields,
+                clientId: this.getFeedbackClientId(),
+            }));
+        }
+
+        // Everything the feedback controls need about one displayed verdict,
+        // from either a report result object or the sidebar's active state.
+        feedbackContextFor(result) {
+            const provider = this.providers[this.currentProvider] || {};
+            const revisionId = this.getArticleRevisionId();
+            return {
+                checkId: result?.checkId ?? null,
+                articleUrl: (typeof window !== 'undefined' && window.location)
+                    ? `${window.location.origin}${window.location.pathname}`
+                    : '',
+                articleTitle: typeof mw !== 'undefined' ? mw.config.get('wgTitle') : document.title,
+                revisionId,
+                revisionUrl: this.getRevisionPermalinkUrl(revisionId),
+                citationNumber: result?.citationNumber ?? '',
+                claimText: result?.claimText ?? '',
+                sourceUrl: result?.url ?? '',
+                verdict: result?.verdict ?? '',
+                comments: result?.comments ?? '',
+                providerName: result?.providerName || provider.name || '',
+                model: result?.model || provider.model || '',
+            };
+        }
+
+        // The Yes / No / Comment row. Returns null when the check has no id —
+        // an unparseable or errored verdict has nothing to attach feedback to,
+        // and offering controls that silently go nowhere would be worse than
+        // offering none.
+        buildFeedbackControls(result) {
+            const context = this.feedbackContextFor(result);
+            if (!context.checkId) return null;
+
+            const wrap = document.createElement('div');
+            wrap.className = 'verifier-feedback';
+
+            // Two status lines, not one: a confirmation the editor never sees
+            // is the same as no confirmation, so each sits immediately below
+            // the control that produced it — the rating under the thumbs, the
+            // correction under the chips.
+            const makeStatus = () => {
+                const el = document.createElement('div');
+                el.className = 'verifier-feedback-status';
+                el.setAttribute('role', 'status');
+                return el;
+            };
+            const setStatusOn = (el) => (msg, isError = false) => {
+                el.textContent = msg;
+                el.classList.toggle('is-error', isError);
+                el.classList.toggle('is-done', !isError && !!msg);
+            };
+
+            const status = makeStatus();
+            const setStatus = setStatusOn(status);
+
+            const row = document.createElement('div');
+            row.className = 'verifier-feedback-row';
+            const prompt = document.createElement('span');
+            prompt.className = 'verifier-feedback-prompt';
+            prompt.textContent = this.t('Was this right?');
+            row.appendChild(prompt);
+
+            const correction = document.createElement('div');
+            correction.className = 'verifier-feedback-correction';
+            correction.hidden = true;
+            const correctionStatus = makeStatus();
+            const setCorrectionStatus = setStatusOn(correctionStatus);
+            let correctedVerdict = null;
+
+            // Icon + label frameless buttons, exactly like Comment below. Two
+            // bare emoji beside an icon-and-label button read as decoration
+            // rather than as part of the same set; `check` and `close` come
+            // from oojs-ui.styles.icons-interactions, which is already loaded,
+            // and inherit the dark-mode icon inversion every other icon gets.
+            const up = new OO.ui.ButtonWidget({
+                label: this.t('Yes'),
+                icon: 'check',
+                title: this.t('This verdict looks right'),
+                framed: false,
+            });
+            const down = new OO.ui.ButtonWidget({
+                label: this.t('No'),
+                icon: 'close',
+                title: this.t('This verdict looks wrong'),
+                framed: false,
+            });
+            up.$element.addClass('verifier-feedback-thumb');
+            down.$element.addClass('verifier-feedback-thumb');
+            const rate = (rating, button) => {
+                up.setDisabled(true);
+                down.setDisabled(true);
+                button.$element.addClass('is-chosen');
+                (button === up ? down : up).$element.addClass('is-dimmed');
+                setStatus(this.t('Thanks — recorded.'));
+                this.sendFeedback({ checkId: context.checkId, rating })
+                    .catch(() => setStatus(this.t('Could not record that, sorry.'), true));
+                // The corrected-verdict chips are only worth asking for when the
+                // editor has said the verdict is wrong; after a thumbs-up there
+                // is nothing to correct.
+                correction.hidden = rating >= 0;
+            };
+            up.on('click', () => rate(1, up));
+            down.on('click', () => rate(-1, down));
+            row.appendChild(up.$element[0]);
+            row.appendChild(down.$element[0]);
+
+            // Opens Wikipedia's own new-section form with the context already
+            // in the edit box. Kept as a real href rather than a window.open
+            // so middle-click and open-in-new-tab behave normally; the target
+            // is rebuilt if a correction is chosen, so that choice travels
+            // into the comment.
+            const commentBtn = new OO.ui.ButtonWidget({
+                label: this.t('Comment'),
                 icon: 'feedback',
                 framed: false,
-                href: this.buildDatasetSubmissionUrl(result),
+                href: buildCommentUrl(context),
                 target: '_blank',
             });
+            row.appendChild(commentBtn.$element[0]);
+
+            // A thumbs-down plus one more click yields a labelled example —
+            // the same thing the Google Form existed to collect, at a fraction
+            // of the friction.
+            const correctionLabel = document.createElement('span');
+            correctionLabel.className = 'verifier-feedback-prompt';
+            correctionLabel.textContent = this.t('What should it have been?');
+            correction.appendChild(correctionLabel);
+            const chips = VERDICT_LIST.map(verdict => {
+                const chip = new OO.ui.ButtonWidget({ label: this.t(verdict), framed: false });
+                chip.$element.addClass('verifier-feedback-chip');
+                chip.on('click', () => {
+                    correctedVerdict = verdict;
+                    chips.forEach(c => {
+                        c.setDisabled(true);
+                        if (c !== chip) c.$element.addClass('is-dimmed');
+                    });
+                    chip.$element.addClass('is-chosen');
+                    setCorrectionStatus(this.t('Thanks — recorded.'));
+                    commentBtn.setHref(buildCommentUrl({ ...context, correctedVerdict }));
+                    // rating is omitted here: the thumbs-down already counted,
+                    // and a second row carrying it would double-count.
+                    this.sendFeedback({ checkId: context.checkId, correctedVerdict: verdict })
+                        .catch(() => setCorrectionStatus(this.t('Could not record that, sorry.'), true));
+                });
+                correction.appendChild(chip.$element[0]);
+                return chip;
+            });
+            correction.appendChild(correctionStatus);
+
+            wrap.appendChild(row);
+            wrap.appendChild(status);
+            wrap.appendChild(correction);
+            return wrap;
         }
+
 
         clearResult() {
             const verdictEl = document.getElementById('verifier-verdict');
@@ -5539,8 +6710,11 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
             if (commentsEl) {
                 commentsEl.textContent = '';
             }
+            const quoteEl = document.getElementById('verifier-quote');
+            if (quoteEl) quoteEl.innerHTML = '';
             const nextEl = document.getElementById('verifier-verdict-next');
             if (nextEl) nextEl.textContent = '';
+            this.activeCheckId = null;
             this.hasResult = false;
             this.renderUiState();
             const actionContainer = document.getElementById('verifier-action-container');

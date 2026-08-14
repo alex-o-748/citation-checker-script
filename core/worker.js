@@ -96,9 +96,8 @@ export async function fetchSourceContent(url, pageNum, { workerBase = 'https://p
 }
 
 export function logVerification(payload, { workerBase = 'https://publicai-proxy.alaexis.workers.dev' } = {}) {
-    // Caller supplies the payload object:
-    //   { article_url, article_title, citation_number, source_url, provider,
-    //     verdict, confidence, reason_type }.
+    // Caller supplies the payload object; build it with buildLogPayload()
+    // from core/feedback.js so the keys line up with the Neon columns.
     try {
         fetch(`${workerBase}/log`, {
             method: 'POST',
@@ -108,4 +107,18 @@ export function logVerification(payload, { workerBase = 'https://publicai-proxy.
     } catch (e) {
         // logging should never break the main flow
     }
+}
+
+// Ratings and talk-page pointers. Unlike logVerification this resolves, so the
+// UI can tell the user whether their rating actually landed — a silent no-op
+// on a button the user deliberately pressed would be worse than an error.
+export function postFeedback(payload, { workerBase = 'https://publicai-proxy.alaexis.workers.dev' } = {}) {
+    return fetch(`${workerBase}/feedback`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+    }).then(res => {
+        if (!res.ok) throw new Error(`Feedback failed: HTTP ${res.status}`);
+        return true;
+    });
 }
