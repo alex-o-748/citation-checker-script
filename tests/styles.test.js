@@ -228,6 +228,20 @@ test('the corrected-verdict chips stay collapsed while [hidden] is set', () => {
   );
 });
 
+test('individual verdicts within a group stay visually secondary', () => {
+  const css = generateCss();
+  const verdictRule = css.match(/\.verifier-report-group-row \.report-card-verdict\s*\{([^}]*)\}/);
+  assert.ok(verdictRule, 'grouped verdicts need a scoped style distinct from the combined verdict');
+  assert.match(verdictRule[1], /background:\s*transparent/);
+  assert.match(verdictRule[1], /color:\s*var\(--sv-ink-4\)/);
+  assert.match(verdictRule[1], /font-weight:\s*normal/);
+
+  const reasonRule = css.match(/\.verifier-report-group-row \.reason-type-tag\s*\{([^}]*)\}/);
+  assert.ok(reasonRule, 'grouped reason tags should follow the quieter verdict treatment');
+  assert.match(reasonRule[1], /background:\s*transparent/);
+  assert.match(reasonRule[1], /color:\s*var\(--sv-ink-4\)/);
+});
+
 // #verifier-action-container holds two unrelated things: the full-width
 // "Edit Section" call to action, appended straight to it, and the feedback
 // controls, which live in a .verifier-feedback wrapper inside it. An unscoped

@@ -4001,6 +4001,20 @@ function useToolforgeSourceFetcher() {
                 .verifier-report-group-row.verdict-not-supported { border-left-color: var(--sv-seg-not-supported); }
                 .verifier-report-group-row.verdict-unavailable { border-left-color: var(--sv-seg-unavailable); }
                 .verifier-report-group-row.verdict-error { border-left-color: var(--sv-seg-error); }
+                .verifier-report-group-row .report-card-verdict {
+                    background: transparent;
+                    color: var(--sv-ink-4);
+                    font-size: 10px;
+                    font-weight: normal;
+                    padding: 0;
+                }
+                .verifier-report-group-row .reason-type-tag {
+                    background: transparent;
+                    color: var(--sv-ink-4);
+                    font-size: 10px;
+                    padding: 0;
+                    margin-left: 4px;
+                }
                 .verifier-report-group-row-header {
                     display: flex;
                     justify-content: space-between;
