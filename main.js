@@ -5611,6 +5611,7 @@ function useToolforgeSourceFetcher() {
                 <div class="report-card-header">
                     <span class="report-card-citation">[${result.citationNumber}]</span>
                     <span class="report-card-header-actions">
+                        ${result.url ? `<a href="${this.escapeHtml(result.url)}" target="_blank" rel="noopener noreferrer">${this.t('source')}</a>` : ''}
                         <span class="report-card-verdict ${verdictClass}">${verdictLabel}</span>${reasonTypeHtml}
                     </span>
                 </div>
@@ -5745,6 +5746,7 @@ function useToolforgeSourceFetcher() {
                 <div class="verifier-report-group-row-header">
                     <span class="report-card-citation">[${result.citationNumber}]</span>
                     <span class="report-card-header-actions">
+                        ${result.url ? `<a href="${this.escapeHtml(result.url)}" target="_blank" rel="noopener noreferrer">${this.t('source')}</a>` : ''}
                         <span class="report-card-verdict ${verdictClass}">${verdictLabel}</span>${reasonTypeHtml}
                     </span>
                 </div>
