@@ -11,7 +11,13 @@
 // Defaults match the benchmark (1s base, exponential, ≤30s cap, 5
 // attempts) — callers tune via options.
 
-const RETRYABLE_STATUS = /^HTTP (429|500|502|503|504)\b/;
+// Matches both the "HTTP <status>" shape (e.g. main.js's CORS-proxy fetch
+// errors) and the "<label optional>API request failed (<status>): ..." shape
+// thrown by every provider call in core/providers.js. The two families used
+// to diverge silently: this regex only ever matched the former, so 429/5xx
+// from a real LLM call (the actual withRetry-wrapped call path) never
+// retried at all — see the 2026-08-16 keyless-HF-benchmark investigation.
+const RETRYABLE_STATUS = /(?:^HTTP |failed \()(429|500|502|503|504)\b/;
 const RETRYABLE_NETWORK = /timeout|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|socket hang up/i;
 
 function defaultSleep(ms) {
