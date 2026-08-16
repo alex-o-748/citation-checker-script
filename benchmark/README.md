@@ -417,9 +417,13 @@ or when a WMF-funded inference path becomes available through the proxy.
 | `hf-gpt-oss-20b` | `openai/gpt-oss-20b` | Apache 2.0 |
 | `hf-deepseek-v3` | `deepseek-ai/DeepSeek-V3` | MIT |
 
-Set `HF_TOKEN` (Hugging Face access token with serverless-inference
-permissions, plus the relevant backend providers enabled in your account
-settings at https://huggingface.co/settings/inference-providers) and run:
+`HF_TOKEN` is optional. If set (a Hugging Face access token with
+serverless-inference permissions, plus the relevant backend providers
+enabled in your account settings at
+https://huggingface.co/settings/inference-providers), calls go straight to
+`router.huggingface.co` on your own quota. If unset, calls fall back to the
+publicai-proxy worker's keyless `/hf` path, which injects an upstream token
+on your behalf — no account or token needed, but shared quota. Run:
 
 ```bash
 npm run benchmark:hf-panel    # 3-model sweep, ~2-4s per call
@@ -431,6 +435,19 @@ npm run analyze
 Alibaba model, gpt-oss-20b is an OpenAI MoE, DeepSeek-V3 is a DeepSeek
 MLA-attention MoE. The vote benefits from disagreement across training
 stacks rather than redundant signal from same-lineage models.
+
+#### Benchmarking any HF-hosted model
+
+Any model hosted on HF Inference Providers can be benchmarked without
+adding a `PROVIDERS` entry, by passing it inline as `hf:<model-id>`:
+
+```bash
+node run_benchmark.js --providers=hf:meta-llama/Llama-3.3-70B-Instruct --limit 10
+```
+
+This works the same keyless-or-`HF_TOKEN` way as the panel above, and can be
+mixed with predefined provider keys in the same `--providers` list
+(`--providers=claude-sonnet-4-5,hf:mistralai/Mistral-Small-24B-Instruct-2501`).
 
 DeepSeek-V3 (the original December 2024 release) is the panel choice
 rather than the newer V3.1 or V3.2-Exp because both newer variants emit
