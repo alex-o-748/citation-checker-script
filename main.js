@@ -705,7 +705,21 @@ function quoteExpectedFor(verdict, reasonType) {
 // Defaults match the benchmark (1s base, exponential, ≤30s cap, 5
 // attempts) — callers tune via options.
 
-const RETRYABLE_STATUS = /^HTTP (429|500|502|503|504)\b/;
+// Matches both the "HTTP <status>" shape (e.g. main.js's CORS-proxy fetch
+// errors) and the "[<Label> ]API request failed (<status>): ..." shape thrown
+// by every provider call in core/providers.js. The two families used to
+// diverge silently: this regex only ever matched the former, so 429/5xx from
+// a real LLM call (the actual withRetry-wrapped call path) never retried at
+// all — see the 2026-08-16 keyless-HF-benchmark investigation.
+//
+// Both alternatives are anchored, and the optional label is `[^:()]*` rather
+// than `.*` on purpose. The status must come from the message *we* format, not
+// from the upstream response body interpolated after "): " — a permanent 400
+// whose body happens to mention a 5xx ("...failed (400): upstream failed
+// (503)") must stay non-retryable. `[^:()]*` cannot cross the first "(" or
+// ":", so only the real status can satisfy the group. Labels are caller-side
+// constants and may contain spaces ('Lift Wing'), hence not `\S+`.
+const RETRYABLE_STATUS = /^(?:HTTP |[^:()]*API request failed \()(429|500|502|503|504)\b/;
 const RETRYABLE_NETWORK = /timeout|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|socket hang up/i;
 
 function defaultSleep(ms) {

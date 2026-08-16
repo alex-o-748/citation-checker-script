@@ -206,3 +206,52 @@ test('isRetryableError: tolerates null/undefined errors', () => {
     assert.equal(isRetryableError(undefined), false);
     assert.equal(isRetryableError({}), false);
 });
+
+// ---- isRetryableError: the actual shape thrown by core/providers.js --------
+// Regression guard: every real provider call (callOpenAICompatibleChat,
+// callClaudeAPI, callGeminiAPI) throws "[<Label> ]API request failed
+// (<status>): <detail>", never "HTTP <status>". The regex used to only
+// recognize the latter, so withRetry — which wraps every one of these calls
+// in both run_benchmark.js and main.js's batch-verify path — never retried a
+// real 429/5xx; it just failed on the first attempt. Found investigating
+// unretried 429s from the keyless HF benchmark path, 2026-08-16.
+
+test('isRetryableError: true for the labeled "API request failed (<status>)" shape', () => {
+    assert.equal(isRetryableError(new Error('HuggingFace API request failed (429): Too many requests')), true);
+    assert.equal(isRetryableError(new Error('PublicAI API request failed (500): internal error')), true);
+    assert.equal(isRetryableError(new Error('OpenAI API request failed (503): unavailable')), true);
+});
+
+test('isRetryableError: true for the unlabeled "API request failed (<status>)" shape (Claude/Gemini)', () => {
+    assert.equal(isRetryableError(new Error('API request failed (429): rate limited')), true);
+    assert.equal(isRetryableError(new Error('API request failed (502): bad gateway')), true);
+});
+
+test('isRetryableError: false for a non-retryable status in the labeled shape', () => {
+    assert.equal(isRetryableError(new Error('HuggingFace API request failed (400): Model not allowed: deepseek-ai/DeepSeek-V3')), false);
+    assert.equal(isRetryableError(new Error('PublicAI API request failed (402): Insufficient wallet balance')), false);
+});
+
+test('isRetryableError: multi-word labels are recognized (Lift Wing)', () => {
+    // Labels are caller-side constants and can contain spaces, so the optional
+    // label part must not be \S+.
+    assert.equal(isRetryableError(new Error('Lift Wing API request failed (503): unavailable')), true);
+});
+
+// The status must be read from the message *we* format, never from the
+// upstream response body interpolated after "): ". A permanent 4xx whose body
+// happens to quote a 5xx must stay non-retryable — otherwise a hard failure
+// burns the full backoff budget (up to ~35s per citation in main.js's batch
+// path) before surfacing.
+test('isRetryableError: a permanent status is not overridden by a 5xx in the response body', () => {
+    assert.equal(isRetryableError(new Error('HuggingFace API request failed (400): upstream failed (503) while routing')), false);
+    assert.equal(isRetryableError(new Error('OpenRouter API request failed (404): no endpoints; provider returned HTTP 429')), false);
+    assert.equal(isRetryableError(new Error('API request failed (403): denied (500 from origin)')), false);
+});
+
+// Guard against the fix widening retries into unrelated call paths: these
+// shapes did not retry before it and must not start now.
+test('isRetryableError: non-provider error shapes are unchanged by the provider-shape fix', () => {
+    assert.equal(isRetryableError(new Error('Feedback failed: HTTP 429')), false);
+    assert.equal(isRetryableError(new Error('Proxy returned non-JSON response (HTTP 503)')), false);
+});
