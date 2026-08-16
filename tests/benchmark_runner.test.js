@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { runPool, makeSaver, hostForProvider, shapeResult } from '../benchmark/run_benchmark.js';
+import { runPool, makeSaver, hostForProvider, shapeResult, scoreResult } from '../benchmark/run_benchmark.js';
 
 // ---- runPool ----------------------------------------------------------------
 
@@ -195,4 +195,24 @@ test('shapeResult: returns PARSE_ERROR sentinel on unrecoverable prose', () => {
     const out = shapeResult({ text: 'I cannot determine this.', usage: null });
     assert.equal(out.verdict, 'PARSE_ERROR');
     assert.equal(out.confidence, 0);
+});
+
+// ---- scoreResult (error rows must not be double-counted as "wrong") --------
+// Regression guard: a failed call has verdict 'ERROR', and compareVerdicts
+// falls through every branch to 'wrong' for an unrecognized predicted string
+// — printSummary counted such rows in both Wrong and Errors before this fix.
+
+test('scoreResult: returns null for a failed call, not "wrong"', () => {
+    const result = { error: 'API request failed (500)', verdict: 'ERROR' };
+    assert.equal(scoreResult(result, 'Supported'), null);
+});
+
+test('scoreResult: scores normally when the call succeeded', () => {
+    const result = { error: null, verdict: 'Supported' };
+    assert.equal(scoreResult(result, 'Supported'), 'exact');
+});
+
+test('scoreResult: a genuinely wrong (non-error) verdict still scores "wrong"', () => {
+    const result = { error: null, verdict: 'Supported' };
+    assert.equal(scoreResult(result, 'Not Supported'), 'wrong');
 });
