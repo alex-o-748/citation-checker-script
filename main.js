@@ -3746,6 +3746,13 @@ function useToolforgeSourceFetcher() {
                 .report-card-citation {
                     font-weight: bold;
                 }
+                a.report-card-citation-link {
+                    color: var(--sv-accent-fg);
+                    text-decoration: none;
+                }
+                a.report-card-citation-link:hover {
+                    text-decoration: underline;
+                }
                 .report-card-verdict {
                     font-weight: bold;
                     font-size: 11px;
@@ -5580,7 +5587,7 @@ function useToolforgeSourceFetcher() {
         attachRefScrollHandler(el, refElement) {
             if (!refElement) return;
             el.addEventListener('click', (e) => {
-                if (e.target.closest('.report-card-action') || e.target.closest('.report-card-header-actions') || e.target.closest('.verifier-report-group-edit')) return;
+                if (e.target.closest('.report-card-action') || e.target.closest('.report-card-header-actions') || e.target.closest('.verifier-report-group-edit') || e.target.closest('.report-card-citation-link')) return;
                 refElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
                 this.clearHighlights();
                 const parentRef = refElement.closest('.reference');
@@ -5623,9 +5630,10 @@ function useToolforgeSourceFetcher() {
                 : '';
             card.innerHTML = `
                 <div class="report-card-header">
-                    <span class="report-card-citation">[${result.citationNumber}]</span>
+                    ${result.url
+                        ? `<a class="report-card-citation report-card-citation-link" href="${this.escapeHtml(result.url)}" target="_blank" rel="noopener noreferrer">[${result.citationNumber}]</a>`
+                        : `<span class="report-card-citation">[${result.citationNumber}]</span>`}
                     <span class="report-card-header-actions">
-                        ${result.url ? `<a href="${this.escapeHtml(result.url)}" target="_blank" rel="noopener noreferrer">${this.t('source')}</a>` : ''}
                         <span class="report-card-verdict ${verdictClass}">${verdictLabel}</span>${reasonTypeHtml}
                     </span>
                 </div>
@@ -5758,9 +5766,10 @@ function useToolforgeSourceFetcher() {
                 : '';
             row.innerHTML = `
                 <div class="verifier-report-group-row-header">
-                    <span class="report-card-citation">[${result.citationNumber}]</span>
+                    ${result.url
+                        ? `<a class="report-card-citation report-card-citation-link" href="${this.escapeHtml(result.url)}" target="_blank" rel="noopener noreferrer">[${result.citationNumber}]</a>`
+                        : `<span class="report-card-citation">[${result.citationNumber}]</span>`}
                     <span class="report-card-header-actions">
-                        ${result.url ? `<a href="${this.escapeHtml(result.url)}" target="_blank" rel="noopener noreferrer">${this.t('source')}</a>` : ''}
                         <span class="report-card-verdict ${verdictClass}">${verdictLabel}</span>${reasonTypeHtml}
                     </span>
                 </div>
