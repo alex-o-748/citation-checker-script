@@ -231,3 +231,27 @@ test('isRetryableError: false for a non-retryable status in the labeled shape', 
     assert.equal(isRetryableError(new Error('HuggingFace API request failed (400): Model not allowed: deepseek-ai/DeepSeek-V3')), false);
     assert.equal(isRetryableError(new Error('PublicAI API request failed (402): Insufficient wallet balance')), false);
 });
+
+test('isRetryableError: multi-word labels are recognized (Lift Wing)', () => {
+    // Labels are caller-side constants and can contain spaces, so the optional
+    // label part must not be \S+.
+    assert.equal(isRetryableError(new Error('Lift Wing API request failed (503): unavailable')), true);
+});
+
+// The status must be read from the message *we* format, never from the
+// upstream response body interpolated after "): ". A permanent 4xx whose body
+// happens to quote a 5xx must stay non-retryable — otherwise a hard failure
+// burns the full backoff budget (up to ~35s per citation in main.js's batch
+// path) before surfacing.
+test('isRetryableError: a permanent status is not overridden by a 5xx in the response body', () => {
+    assert.equal(isRetryableError(new Error('HuggingFace API request failed (400): upstream failed (503) while routing')), false);
+    assert.equal(isRetryableError(new Error('OpenRouter API request failed (404): no endpoints; provider returned HTTP 429')), false);
+    assert.equal(isRetryableError(new Error('API request failed (403): denied (500 from origin)')), false);
+});
+
+// Guard against the fix widening retries into unrelated call paths: these
+// shapes did not retry before it and must not start now.
+test('isRetryableError: non-provider error shapes are unchanged by the provider-shape fix', () => {
+    assert.equal(isRetryableError(new Error('Feedback failed: HTTP 429')), false);
+    assert.equal(isRetryableError(new Error('Proxy returned non-JSON response (HTTP 503)')), false);
+});
