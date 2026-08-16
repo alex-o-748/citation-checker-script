@@ -1,3 +1,14 @@
 node_modules/
 .worktrees/
 __pycache__/
+
+# WiCE inputs and the corpus converted from them (see docs/wice-benchmark.md).
+# Neither is committed: the cache is ~38 MB of upstream JSONL, and
+# dataset_wice.json is a 7 MB *deterministic* product of it — `npm run
+# wice:convert` rebuilds it byte-identically, and its metadata carries a sha256
+# so a rebuild is verifiable. This is the opposite call from dataset.json, which
+# IS committed because live Wikipedia + source fetches make it unreproducible.
+# Benchmark *outputs* (results_wice.json, analysis_wice*.json) are not ignored —
+# those are findings worth keeping.
+benchmark/.wice-cache/
+benchmark/dataset_wice.json

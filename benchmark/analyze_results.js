@@ -5,6 +5,7 @@
  * Analyzes benchmark results and generates detailed metrics for each LLM provider.
  *
  * Usage: node analyze_results.js [--output report.md] [--version v1|v2|all]
+ *                                [--projection unanimous|mixed|all]
  *                                [--results <path>] [--dataset <path>] [--analysis <path>]
  *
  * Output:
@@ -40,6 +41,10 @@ const REPORT_PATH = flagValue('--output');
 // VERSION_FILTER: 'all' | 'v1' | 'v2' | ... — limit results to entries whose
 // dataset_version matches, so the original 76-row v1 metrics can be re-derived.
 const VERSION_FILTER = flagValue('--version') || 'all';
+// PROJECTION_FILTER: 'all' | 'unanimous' | 'mixed' — WiCE datasets only.
+// Selects rows by how the claim-level label was derived from subclaim
+// annotations; see docs/wice-benchmark.md.
+const PROJECTION_FILTER = flagValue('--projection') || 'all';
 
 // Configuration (paths are overridable so v1 snapshots can be re-analyzed in place)
 const RESULTS_PATH = path.resolve(__dirname, flagValue('--results') || 'results.json');
@@ -346,6 +351,27 @@ function main() {
         const before = results.length;
         results = results.filter(r => (versionById.get(r.entry_id) || 'v1') === VERSION_FILTER);
         console.log(`Filtered to dataset version "${VERSION_FILTER}": ${results.length}/${before} results`);
+    }
+
+    // WiCE-only: restrict to rows by how their claim-level label was derived.
+    // WiCE annotators labeled subclaims; claim labels are projected from them,
+    // and 'mixed' rows are PARTIALLY-SUPPORTED purely because the subclaims
+    // disagreed — a rule that is not our rubric. Scoring the 'unanimous' subset
+    // separates model error from rubric divergence. See docs/wice-benchmark.md.
+    if (PROJECTION_FILTER !== 'all') {
+        if (!fs.existsSync(DATASET_PATH)) {
+            console.error(`--projection filter requires dataset at ${DATASET_PATH}; not found.`);
+            process.exit(1);
+        }
+        const dataset = loadRows(DATASET_PATH);
+        const projectionById = new Map(dataset.map(e => [e.id, e.wice_label_projection]));
+        const before = results.length;
+        results = results.filter(r => projectionById.get(r.entry_id) === PROJECTION_FILTER);
+        console.log(`Filtered to label projection "${PROJECTION_FILTER}": ${results.length}/${before} results`);
+        if (results.length === 0) {
+            console.error('No results left. Is this a WiCE dataset? Only WiCE rows carry wice_label_projection.');
+            process.exit(1);
+        }
     }
 
     // Group by provider
