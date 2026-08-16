@@ -148,6 +148,25 @@ Benchmarking use in this repo is fine under all four; attribution belongs in any
 
 ## Reading a WiCE score
 
-WiCE was built to be hard: the authors filtered out trivially-entailed claims with an NLI model and **retained only 16.3%** of their starting pool. Human performance on the claim-level binary task is 92.0% accuracy; the best off-the-shelf NLI system in the paper managed 75.1%.
+WiCE was built to exclude easy cases, and **retains only 16.3%** of its starting pool. Two filters do the work: claims that decompose to one or more than six subclaims are dropped (19.1% of dev), and then any claim whose subclaims a RoBERTa-Large DocNLI model *all* judged entailed is dropped as trivially supported.
 
-So a WiCE number is not comparable to our own dataset's accuracy and should never be quoted as "the tool's accuracy". It answers a narrower question: *how does the verifier hold up on adversarially-selected hard cases that nobody here curated?* Track it as a trend across prompt changes, and compare it to the paper's baselines — not to our headline metric.
+Note what the second filter is and isn't. The authors deliberately used a comparatively weak model so as to "remove trivially entailed claims but avoid making a dataset that is adversarially difficult for larger models". So WiCE is filtered for non-triviality, **not** adversarially selected against modern LLMs. Still, the population is nothing like a random sample of Wikipedia citations — every plainly-fine citation, which is most of what an editor meets, has been removed by construction. A lower score here than on `dataset.json` is the expected result, not a regression.
+
+### The comparability trap
+
+The paper's headline numbers are a **binary** task: `SUPPORTED` vs not-supported, with `PARTIALLY-SUPPORTED` and `NOT-SUPPORTED` pooled together (paper §3.1 — the NLI models compared were trained on binary or neutral-collapsing corpora).
+
+| Claim-level, binary | Accuracy |
+| --- | --- |
+| Majority-class baseline | 33.0 |
+| Best off-the-shelf system (T5-3B / ANLI, chunk-level MAX) | 75.1 |
+| Human | 92.0 |
+
+Two reasons not to put our numbers next to those directly:
+
+1. **Our `binary` metric splits differently.** `analyze_results.js` pools `Supported` + `Partially supported` as positive against `Not supported` + `Source unavailable`. WiCE's binary is `Supported` against everything else. Those are different questions, and neither our exact-match nor our binary figure lines up with the table above. Comparing to 75.1 requires a Supported-vs-rest metric that we do not currently compute.
+2. **Different inference setup and era.** Those are 2023 NLI models using the "stretching" MAX strategy over document chunks; we pass the whole source in one LLM call. The paper's GPT-3.5/GPT-4 numbers (§3.4) are on the oracle-retrieval subset only, so there's no clean modern-LLM baseline in the table either.
+
+Human accuracy of 92.0 is the more useful anchor: it tells you the task is genuinely ambiguous (Krippendorff's α = 0.62 on dev), so 100% is not the target and a residual error band is the task, not the tool.
+
+So a WiCE number is not comparable to our own dataset's accuracy and should never be quoted as "the tool's accuracy". It answers a narrower question: *how does the verifier hold up on deliberately non-trivial cases that nobody here curated or labeled?* Track it as a trend across prompt changes; treat the paper's baselines as context, not as a scoreboard.
