@@ -1,4 +1,4 @@
-// {{Wikipedia:USync |repo=https://github.com/alex-o-748/citation-checker-script |ref=refs/heads/main|path=main.js}}
+// {{Wikipedia:USync |repo=https://github.com/alex-o-748/citation-checker-script |ref=refs/heads/dev|path=main.js}}
 //Inspired by User:Polygnotus/Scripts/AI_Source_Verification.js
 //Inspired by User:Phlsph7/SourceVerificationAIAssistant.js       
 
@@ -1842,6 +1842,44 @@ function buildDatasetSubmissionUrl(
 // core/, so while it sat inside the injected region the next `npm run build`
 // silently deleted it, taking loadManualSourceText() with it.
 const MAX_MANUAL_SOURCE_CHARS = 80000;
+
+// Experimental: opt-in override that routes Lift Wing / HuggingFace LLM calls
+// through the tf-llm-router Toolforge tool
+// (https://github.com/alex-o-748/tf-llm-router) instead of the Cloudflare
+// Worker CORS proxy. Off by default for everyone; flip it on for yourself by
+// running `localStorage.setItem('source_verifier_toolforge_llm_router', 'true')`
+// in the browser console. Only overrides the `workerBase` passed to
+// callLiftwingAPI/callHuggingFaceAPI (core/providers.js) — source fetching,
+// /log, and /feedback keep using the Worker, since tf-llm-router doesn't
+// implement those routes.
+const TOOLFORGE_LLM_ROUTER_BASE = 'https://llm-router.toolforge.org';
+function useToolforgeLlmRouter() {
+    try {
+        return localStorage.getItem('source_verifier_toolforge_llm_router') === 'true';
+    } catch {
+        return false;
+    }
+}
+
+// Experimental: opt-in override that routes source fetching through the
+// tf-source-fetcher Toolforge tool
+// (https://github.com/alex-o-748/tf-source-fetcher) instead of the Cloudflare
+// Worker CORS proxy. Off by default for everyone — per the tool's README it
+// has not yet been cleared with WMCS for unattended fetching from Wikimedia
+// infrastructure, so live traffic must not be switched over until that
+// approval lands. Flip it on for yourself by running
+// `localStorage.setItem('source_verifier_toolforge_source_fetcher', 'true')`
+// in the browser console. Only overrides the `workerBase` passed to
+// fetchSourceContent (core/worker.js) — /log and /feedback keep using the
+// Worker, since tf-source-fetcher doesn't implement those routes.
+const TOOLFORGE_SOURCE_FETCHER_BASE = 'https://source-fetcher.toolforge.org';
+function useToolforgeSourceFetcher() {
+    try {
+        return localStorage.getItem('source_verifier_toolforge_source_fetcher') === 'true';
+    } catch {
+        return false;
+    }
+}
 
     // ========================================
     // UI LOCALIZATION (i18n)
@@ -3708,6 +3746,13 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                 .report-card-citation {
                     font-weight: bold;
                 }
+                a.report-card-citation-link {
+                    color: var(--sv-accent-fg);
+                    text-decoration: none;
+                }
+                a.report-card-citation-link:hover {
+                    text-decoration: underline;
+                }
                 .report-card-verdict {
                     font-weight: bold;
                     font-size: 11px;
@@ -3963,6 +4008,20 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                 .verifier-report-group-row.verdict-not-supported { border-left-color: var(--sv-seg-not-supported); }
                 .verifier-report-group-row.verdict-unavailable { border-left-color: var(--sv-seg-unavailable); }
                 .verifier-report-group-row.verdict-error { border-left-color: var(--sv-seg-error); }
+                .verifier-report-group-row .report-card-verdict {
+                    background: transparent;
+                    color: var(--sv-ink-4);
+                    font-size: 10px;
+                    font-weight: normal;
+                    padding: 0;
+                }
+                .verifier-report-group-row .reason-type-tag {
+                    background: transparent;
+                    color: var(--sv-ink-4);
+                    font-size: 10px;
+                    padding: 0;
+                    margin-left: 4px;
+                }
                 .verifier-report-group-row-header {
                     display: flex;
                     justify-content: space-between;
@@ -4652,7 +4711,8 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
         }
 
         async fetchSourceContent(url, pageNum) {
-            return fetchSourceContent(url, pageNum);
+            const overrides = useToolforgeSourceFetcher() ? { workerBase: TOOLFORGE_SOURCE_FETCHER_BASE } : {};
+            return fetchSourceContent(url, pageNum, overrides);
         }
         
         highlightClaim(refElement, claim) {
@@ -5527,7 +5587,7 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
         attachRefScrollHandler(el, refElement) {
             if (!refElement) return;
             el.addEventListener('click', (e) => {
-                if (e.target.closest('.report-card-action') || e.target.closest('.report-card-header-actions') || e.target.closest('.verifier-report-group-edit')) return;
+                if (e.target.closest('.report-card-action') || e.target.closest('.report-card-header-actions') || e.target.closest('.verifier-report-group-edit') || e.target.closest('.report-card-citation-link')) return;
                 refElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
                 this.clearHighlights();
                 const parentRef = refElement.closest('.reference');
@@ -5570,7 +5630,9 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                 : '';
             card.innerHTML = `
                 <div class="report-card-header">
-                    <span class="report-card-citation">[${result.citationNumber}]</span>
+                    ${result.url
+                        ? `<a class="report-card-citation report-card-citation-link" href="${this.escapeHtml(result.url)}" target="_blank" rel="noopener noreferrer">[${result.citationNumber}]</a>`
+                        : `<span class="report-card-citation">[${result.citationNumber}]</span>`}
                     <span class="report-card-header-actions">
                         <span class="report-card-verdict ${verdictClass}">${verdictLabel}</span>${reasonTypeHtml}
                     </span>
@@ -5704,7 +5766,9 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
                 : '';
             row.innerHTML = `
                 <div class="verifier-report-group-row-header">
-                    <span class="report-card-citation">[${result.citationNumber}]</span>
+                    ${result.url
+                        ? `<a class="report-card-citation report-card-citation-link" href="${this.escapeHtml(result.url)}" target="_blank" rel="noopener noreferrer">[${result.citationNumber}]</a>`
+                        : `<span class="report-card-citation">[${result.citationNumber}]</span>`}
                     <span class="report-card-header-actions">
                         <span class="report-card-verdict ${verdictClass}">${verdictLabel}</span>${reasonTypeHtml}
                     </span>
@@ -5960,15 +6024,26 @@ const MAX_MANUAL_SOURCE_CHARS = 80000;
             }
         }
 
+        // Toolforge override only applies to providers that route LLM calls
+        // through the Worker's /liftwing and /hf paths — passing workerBase to
+        // any other provider would either be ignored or (publicai) point it at
+        // a route tf-llm-router doesn't implement.
+        llmRouterConfigOverrides() {
+            if (useToolforgeLlmRouter() && (this.currentProvider === 'liftwing' || this.currentProvider === 'huggingface')) {
+                return { workerBase: TOOLFORGE_LLM_ROUTER_BASE };
+            }
+            return {};
+        }
+
         async callProviderAPI(claim, sourceInfo) {
-            return callProviderAPI(this.currentProvider, { apiKey: this.getCurrentApiKey(), model: this.providers[this.currentProvider].model, systemPrompt: this.localizeSystemPrompt(generateSystemPrompt()), userContent: generateUserPrompt(claim, sourceInfo) });
+            return callProviderAPI(this.currentProvider, { apiKey: this.getCurrentApiKey(), model: this.providers[this.currentProvider].model, systemPrompt: this.localizeSystemPrompt(generateSystemPrompt()), userContent: generateUserPrompt(claim, sourceInfo), ...this.llmRouterConfigOverrides() });
         }
 
         // Collective (multi-source) variant of callProviderAPI: same provider
         // routing, but the group system prompt and a pre-assembled multi-source
         // user message. `assembledText` comes from assembleGroupSources().
         async callProviderAPIGroup(claim, assembledText) {
-            return callProviderAPI(this.currentProvider, { apiKey: this.getCurrentApiKey(), model: this.providers[this.currentProvider].model, systemPrompt: this.localizeSystemPrompt(generateGroupSystemPrompt()), userContent: generateGroupUserPrompt(claim, assembledText) });
+            return callProviderAPI(this.currentProvider, { apiKey: this.getCurrentApiKey(), model: this.providers[this.currentProvider].model, systemPrompt: this.localizeSystemPrompt(generateGroupSystemPrompt()), userContent: generateGroupUserPrompt(claim, assembledText), ...this.llmRouterConfigOverrides() });
         }
 
         // Runs the single collective verification for one adjacent-citation
