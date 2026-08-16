@@ -23,7 +23,7 @@ node run_benchmark.js --dataset dataset_wice.json --results results_wice.json \
     --providers=claude,gemini --concurrency 8
 ```
 
-The converter caches its downloads in `benchmark/.wice-cache/` (gitignored, ~38 MB), so re-running costs nothing.
+The converter caches its downloads in `benchmark/.wice-cache/` (gitignored — ~25 MB for dev+test, ~38 MB if you add train), so re-running costs nothing.
 
 ### `dataset_wice.json` is generated, not committed
 
