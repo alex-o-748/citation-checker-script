@@ -651,7 +651,7 @@ async function main() {
                     quote_verified: quoteCheck.verified,
                     latency_ms: result.latency,
                     error: result.error,
-                    correct: compareVerdicts(result.verdict, entry.ground_truth),
+                    correct: scoreResult(result, entry.ground_truth),
                     timestamp: new Date().toISOString()
                 });
 
@@ -672,6 +672,17 @@ async function main() {
 
     // Print quick summary
     printSummary(results, availableProviders);
+}
+
+/**
+ * Score a single result row's `correct` field. A failed call (result.error set,
+ * result.verdict === 'ERROR') has no predicted verdict to compare — scoring it
+ * via compareVerdicts would fall through every branch to 'wrong', double-counting
+ * it in both Wrong and Errors in printSummary. null keeps error rows out of the
+ * correctness tally entirely; analyze_results.js already excludes them separately.
+ */
+export function scoreResult(result, groundTruth) {
+    return result.error ? null : compareVerdicts(result.verdict, groundTruth);
 }
 
 /**
