@@ -2036,7 +2036,7 @@ function useToolforgeSourceFetcher() {
         'Checking combined sources…': 'Vérification des sources combinées…',
         'Individual sources': 'Sources individuelles',
         'Combined verdict': 'Verdict combiné',
-        'All citations are hidden by the current filters. Click a filter chip above to show them.':
+        'All citations are hidden by the current filters. Click a filter above to show them.':
             'Toutes les citations sont masquées par les filtres actuels. Cliquez sur un filtre ci-dessus pour les afficher.',
 
         // Notifications / dialogs
@@ -2313,7 +2313,7 @@ function useToolforgeSourceFetcher() {
         'Checking combined sources…': 'Comprobando las fuentes combinadas…',
         'Individual sources': 'Fuentes individuales',
         'Combined verdict': 'Veredicto combinado',
-        'All citations are hidden by the current filters. Click a filter chip above to show them.':
+        'All citations are hidden by the current filters. Click a filter above to show them.':
             'Los filtros actuales ocultan todas las citas. Se puede hacer clic en uno de los filtros de arriba para mostrarlas.',
 
         // Notifications / dialogs
@@ -5474,7 +5474,7 @@ function useToolforgeSourceFetcher() {
                 if (!emptyEl) {
                     emptyEl = document.createElement('div');
                     emptyEl.className = 'verifier-filter-empty';
-                    emptyEl.textContent = this.t('All citations are hidden by the current filters. Click a filter chip above to show them.');
+                    emptyEl.textContent = this.t('All citations are hidden by the current filters. Click a filter above to show them.');
                     resultsEl.appendChild(emptyEl);
                 }
             } else if (emptyEl) {
