@@ -47,9 +47,19 @@ import { loadRows, loadMetadata, todayIso } from './io.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// Configuration
-const DATASET_PATH = path.join(__dirname, 'dataset.json');
-const RESULTS_PATH = path.join(__dirname, 'results.json');
+// Configuration. Both paths are overridable so an alternate corpus can be run
+// without disturbing dataset.json / results.json — e.g. the converted WiCE
+// dataset (see convert_wice.js and docs/wice-benchmark.md):
+//   node run_benchmark.js --dataset dataset_wice.json --results results_wice.json
+// Flag names and resolution match analyze_results.js, so the same pair of paths
+// carries straight through from the run to the analysis.
+function cliPath(flag, fallback) {
+    const argv = process.argv.slice(2);
+    const i = argv.indexOf(flag);
+    return path.resolve(__dirname, i !== -1 ? argv[i + 1] : fallback);
+}
+const DATASET_PATH = cliPath('--dataset', 'dataset.json');
+const RESULTS_PATH = cliPath('--results', 'results.json');
 
 // Provider configurations
 export const PROVIDERS = {

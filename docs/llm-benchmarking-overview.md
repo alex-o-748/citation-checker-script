@@ -40,9 +40,13 @@ Claims were classified into three categories:
 The following metrics were measured for each model:
 
 - **Exact Accuracy**: Percentage of predictions that exactly match the ground truth
-- **Lenient Accuracy**: Treats "Partially supported" and "Not supported" as equivalent (since both indicate citation problems requiring user action). Counts as correct: exact matches on "Supported", and either "Partially supported" OR "Not supported" when ground truth is one of those two.
+- **"Lenient Accuracy" (this exercise's usage)**: Treats "Partially supported" and "Not supported" as equivalent (since both indicate citation problems requiring user action). Counts as correct: exact matches on "Supported", and either "Partially supported" OR "Not supported" when ground truth is one of those two.
 - **Confidence Calibration**: Difference between average confidence on correct vs. incorrect predictions (higher is better)
 - **Latency**: Average response time in milliseconds
+
+> **Naming note (added retroactively — read before comparing to a fresh `npm run analyze` run):** this section's "Lenient Accuracy" definition and the percentages in the tables below were computed by hand for this one exercise. `benchmark/analyze_results.js`'s `lenientAccuracy` field has never implemented this grouping — it forgives the *opposite* pair, `Supported ↔ Partially supported`, which is what this exercise called "Binary Accuracy" before that metric was folded into "Lenient" here without updating the code. The two definitions have carried the same name in doc vs. code since 2026-01-23 (`969ae9f`) without ever matching.
+>
+> The grouping actually defined in this section now has a real, tested implementation: `equalSupportedVsRest` in `core/verdicts.js`, exposed as the `supportedVsRestAccuracy` field in `analyze_results.js`'s output (and the `Supported-vs-rest` column in its generated report). Use that field, not `lenientAccuracy`, to reproduce or extend the comparison this section describes. See `docs/wice-benchmark.md` for the metric in use against an external benchmark.
 
 **Full Results**: [`benchmark/results.json`](benchmark/results.json) | **Analysis**: [`benchmark/analysis.json`](benchmark/analysis.json)
 

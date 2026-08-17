@@ -27,6 +27,8 @@ benchmark/
   generate_comparison.js         # Generate comparison CSV
   compare_results.js             # Pure-ESM comparison engine for two results.json runs (control vs treatment)
   render_compare.js              # JSON / Markdown / self-contained HTML renderers for ComparisonResult
+  wice.js                        # Pure WiCE -> dataset-row transform (external benchmark; see below)
+  convert_wice.js                # Fetch + convert WiCE into dataset_wice.json (gitignored, regenerate with npm run wice:convert)
   dataset.json                   # Current dataset (189 entries: v1: 76 + v2: 34 + v3: 79; counts drift as rows are added)
   dataset_v1.json                # Frozen v1 snapshot for reproducing original analysis
   dataset_v3.json                # Frozen v3 snapshot (post strict-rubric audit, 2026-04-30)
@@ -105,7 +107,25 @@ npm run analyze:v3            # Analyze results filtered to v3 entries
 npm run analyze:v3-snapshot   # Re-derive analysis from frozen v3 snapshots
 npm run report                # Generate markdown report
 npm run compare               # Compare two results.json runs (delegates to `ccs compare`; see docs/comparing-benchmark-runs.md)
+
+# WiCE — external benchmark (see docs/wice-benchmark.md)
+npm run wice:convert          # Fetch + convert WiCE dev+test -> dataset_wice.json
+npm run wice:benchmark        # Run providers against dataset_wice.json
+npm run wice:analyze          # Metrics for the WiCE run
+npm run wice:analyze:unanimous  # Score only rows whose label isn't a projection artifact
 ```
+
+`run_benchmark.js` and `analyze_results.js` both take `--dataset` / `--results` (and the analyzer `--analysis`), which is what lets an alternate corpus run without touching `dataset.json` / `results.json`.
+
+### WiCE (external benchmark)
+
+`benchmark/dataset_wice.json` is [WiCE](https://github.com/ryokamoi/wice) (Kamoi et al., EMNLP 2023) converted to our row schema — 707 human-labeled Wikipedia claim/source pairs nobody on this project selected or annotated. It is deliberately a **separate file**, never merged into `dataset.json`: merging would disturb the frozen v1/v3 snapshots, and WiCE's label mix is unrepresentative by design, so pooling would silently change what headline accuracy means.
+
+It is **gitignored and regenerated** (`npm run wice:convert`), not committed — 7 MB, and deterministically rebuildable byte-for-byte, with a sha256 in its metadata to prove it. `dataset.json` is committed for the opposite reason: live Wikipedia and live source fetches make it unreproducible.
+
+**Read `docs/wice-benchmark.md` before quoting a WiCE number.** The one thing to know going in: WiCE's annotators labeled *subclaims*, and claim-level labels are projected from them (all-supported → supported, all-not-supported → not-supported, anything mixed → partially-supported). That rule is not our rubric, and it is why ~57% of rows are `Partially supported`. The converter therefore records `wice_label_projection` per row — `unanimous` (subclaims agreed; the label means what ours means) or `mixed` (the label is an artifact of the rule) — and `analyze_results.js --projection unanimous|mixed` scores either subset. A verifier that does well on `unanimous` and badly on `mixed` is likely applying our rubric correctly and being marked wrong by WiCE's projection.
+
+WiCE also has no `Source unavailable` rows and ships frozen 2023 Common Crawl evidence rather than live URLs, so a WiCE run exercises the prompt and model but **not** the CORS-proxy fetch path.
 
 ### Module system and shared logic
 
