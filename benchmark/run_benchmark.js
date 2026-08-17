@@ -344,7 +344,23 @@ export function shapeResult({ text, usage }) {
 // core/providers.js has its own defaults tuned for userscript/CLI use; the
 // runner overrides them here so that benchmark numbers stay comparable to
 // past runs until a deliberate re-baselining experiment changes them.
-const BENCHMARK_MAX_TOKENS = 1000;
+//
+// max_tokens was that deliberate change, on 2026-08-16: it was 1000, while
+// core/providers.js (and therefore the userscript and CLI) uses 16384. The gap
+// meant the benchmark was not measuring what production runs. Reasoning models
+// spend output tokens on hidden reasoning *before* writing the answer — gpt-oss
+// was measured at ~1.5k-4k reasoning tokens on this task — so at 1000 they
+// exhausted the budget mid-reasoning and returned finish_reason "length" with
+// empty content. Those rows scored as errors, not as verdicts: an artifact of
+// the cap, not a property of the model.
+//
+// Raising a ceiling cannot change a response that already fit under it —
+// sampling is identical and the model never sees the limit — so this only
+// affects rows that previously truncated, which were already failures. Past
+// non-truncated rows stay comparable. The cost is real but narrow: reasoning
+// models now generate their full reasoning, so their latency and token spend
+// rise to what production already pays.
+const BENCHMARK_MAX_TOKENS = 16384;
 const BENCHMARK_TEMPERATURE = 0.1;
 // The pre-consolidation runner concatenated `${systemPrompt}\n\n${userPrompt}`
 // into a single Gemini user turn rather than using the proper systemInstruction
