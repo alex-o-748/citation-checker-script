@@ -182,8 +182,17 @@ export async function callClaudeAPI({ apiKey, model, systemPrompt, userContent, 
     }
 
     const data = await response.json();
+    // content[0] is not necessarily the answer: a model with adaptive thinking
+    // on (Sonnet 5, Opus 5/4.7/4.8, Fable 5 — enabled by default when `thinking`
+    // is omitted, unlike Sonnet 4.6/Opus 4.6 which require it explicitly) returns
+    // a `thinking` block first, which has no `.text`. Find the actual text block
+    // instead of indexing blindly.
+    const textBlock = data.content?.find(block => block.type === 'text');
+    if (!textBlock) {
+        throw new Error(`Invalid API response format (Claude: no text block${data.stop_reason ? `, stop_reason "${data.stop_reason}"` : ''})`);
+    }
     return {
-        text: data.content[0].text,
+        text: textBlock.text,
         usage: {
             input: data.usage?.input_tokens || 0,
             output: data.usage?.output_tokens || 0,

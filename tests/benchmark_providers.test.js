@@ -77,7 +77,7 @@ test('callProvider claude returns parsed verdict and usage shape', async () => {
     const mock = withMockFetch(async () => ({
         ok: true, status: 200,
         json: async () => ({
-            content: [{ text: VERDICT_JSON }],
+            content: [{ type: 'text', text: VERDICT_JSON }],
             usage: { input_tokens: 200, output_tokens: 30 },
         }),
     }));
@@ -103,7 +103,7 @@ test('callProvider claude-sonnet-5 sends effort: medium', async () => {
     const mock = withMockFetch(async () => ({
         ok: true, status: 200,
         json: async () => ({
-            content: [{ text: VERDICT_JSON }],
+            content: [{ type: 'text', text: VERDICT_JSON }],
             usage: { input_tokens: 200, output_tokens: 30 },
         }),
     }));

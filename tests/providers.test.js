@@ -28,7 +28,7 @@ test('callClaudeAPI sends Anthropic headers and parses response', async () => {
     ok: true,
     status: 200,
     json: async () => ({
-      content: [{ text: 'OK' }],
+      content: [{ type: 'text', text: 'OK' }],
       usage: { input_tokens: 10, output_tokens: 5 },
     }),
   }));
@@ -332,7 +332,7 @@ test('callProviderAPI dispatches to the named provider', async () => {
   const mock = withMockFetch(async () => ({
     ok: true,
     status: 200,
-    json: async () => ({ content: [{ text: 'via-dispatcher' }], usage: {} }),
+    json: async () => ({ content: [{ type: 'text', text: 'via-dispatcher' }], usage: {} }),
   }));
   try {
     const result = await callProviderAPI('claude', {
@@ -589,7 +589,7 @@ test('callClaudeAPI honors maxTokens parameter', async () => {
     ok: true,
     status: 200,
     json: async () => ({
-      content: [{ text: 'ok' }],
+      content: [{ type: 'text', text: 'ok' }],
       usage: { input_tokens: 0, output_tokens: 0 },
     }),
   }));
@@ -613,7 +613,7 @@ test('callClaudeAPI sets output_config.effort when effort is passed', async () =
     ok: true,
     status: 200,
     json: async () => ({
-      content: [{ text: 'ok' }],
+      content: [{ type: 'text', text: 'ok' }],
       usage: { input_tokens: 0, output_tokens: 0 },
     }),
   }));
@@ -637,7 +637,7 @@ test('callClaudeAPI omits output_config when effort is not passed', async () => 
     ok: true,
     status: 200,
     json: async () => ({
-      content: [{ text: 'ok' }],
+      content: [{ type: 'text', text: 'ok' }],
       usage: { input_tokens: 0, output_tokens: 0 },
     }),
   }));
@@ -838,6 +838,61 @@ test('callClaudeAPI throws on non-ok response', async () => {
     await assert.rejects(
       () => callClaudeAPI({ apiKey: 'bad', model: 'm', systemPrompt: 's', userContent: 'u' }),
       /401/
+    );
+  } finally {
+    mock.restore();
+  }
+});
+
+// Regression guard: a model with adaptive thinking on (Sonnet 5, Opus 5/4.7/4.8,
+// Fable 5 — enabled by default when `thinking` is omitted, which this codebase
+// never sets) returns a `thinking` block before the `text` block. Indexing
+// content[0] blindly grabbed the thinking block, which has no `.text`, and
+// downstream parsing crashed on `undefined.trim()` — surfaced as
+// "Cannot read properties of undefined (reading 'trim')" with no indication
+// this was a Claude response-shape issue. Sonnet 4.6/Opus 4.6 don't hit this
+// (thinking requires opting in there), which is why it wasn't caught earlier.
+
+test('callClaudeAPI finds the text block when a thinking block precedes it', async () => {
+  const mock = withMockFetch(async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      content: [
+        { type: 'thinking', thinking: 'reasoning about the claim...' },
+        { type: 'text', text: 'the actual verdict JSON' },
+      ],
+      usage: { input_tokens: 10, output_tokens: 50 },
+    }),
+  }));
+  try {
+    const result = await callClaudeAPI({
+      apiKey: 'k', model: 'claude-sonnet-5', systemPrompt: 's', userContent: 'u', effort: 'medium',
+    });
+    assert.equal(result.text, 'the actual verdict JSON');
+  } finally {
+    mock.restore();
+  }
+});
+
+test('callClaudeAPI throws a clear error when no text block is present', async () => {
+  const mock = withMockFetch(async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      content: [{ type: 'thinking', thinking: 'only reasoning, no answer' }],
+      usage: { input_tokens: 10, output_tokens: 50 },
+      stop_reason: 'max_tokens',
+    }),
+  }));
+  try {
+    await assert.rejects(
+      () => callClaudeAPI({ apiKey: 'k', model: 'claude-sonnet-5', systemPrompt: 's', userContent: 'u' }),
+      (err) => {
+        assert.match(err.message, /no text block/);
+        assert.match(err.message, /max_tokens/);
+        return true;
+      }
     );
   } finally {
     mock.restore();
