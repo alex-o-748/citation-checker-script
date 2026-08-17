@@ -162,20 +162,19 @@ The paper's headline numbers are a **binary** task: `SUPPORTED` vs not-supported
 | Best off-the-shelf system (T5-3B / ANLI, chunk-level MAX) | 75.1 |
 | Human | 92.0 |
 
-Two reasons not to put our numbers next to those directly:
+One reason our numbers still aren't a clean drop-in next to that table, and one metric that closes most of the gap:
 
-1. **None of our computed metrics use WiCE's split.** WiCE's binary is `Supported` against everything else. What `analyze_results.js` actually computes is:
+1. **Use `supportedVsRestAccuracy`, not `lenientAccuracy`.** `analyze_results.js` computes four accuracy fields:
 
     | Metric | Grouping |
     | --- | --- |
     | `exactAccuracy` | none — four-way exact match |
     | `lenientAccuracy` | `Supported` ↔ `Partially supported` forgiven (`exactMatches + partialMatches`) |
     | `binaryAccuracy` | {`Supported`, `Partially supported`} vs {`Not supported`, `Source unavailable`} |
+    | `supportedVsRestAccuracy` | `Supported` must match exactly; `Partially supported` ↔ `Not supported` forgiven as mutual near-misses |
 
-    `compare_results.js` agrees with both (`verdictsEqualLenient`, `verdictsEqualBinary`).
-
-    Note that **`docs/llm-benchmarking-overview.md` defines "Lenient Accuracy" as the opposite grouping** — `Partially supported` + `Not supported` treated as equivalent, with `Supported` needing an exact match. That definition *is* WiCE's split, and it is the one that would let us sit beside the 75.1 / 92.0 figures. But it is not what the code computes under that name. Until that discrepancy is resolved (see the note in the overview doc), there is no implemented Supported-vs-rest metric to quote.
-2. **Different inference setup and era.** Those are 2023 NLI models using the "stretching" MAX strategy over document chunks; we pass the whole source in one LLM call. The paper's GPT-3.5/GPT-4 numbers (§3.4) are on the oracle-retrieval subset only, so there's no clean modern-LLM baseline in the table either.
+    `supportedVsRestAccuracy` (backed by `equalSupportedVsRest` in `core/verdicts.js`) *is* WiCE's split — `Supported` vs. everything else, since WiCE has no `Source unavailable` class for that field's exact-match requirement to bite on. `npm run wice:analyze` reports it automatically; look for the `Supported-vs-rest` column in the generated report or `supportedVsRestAccuracy` in `analysis_wice.json`, and put that number next to 75.1 / 92.0 — not `lenientAccuracy`, which forgives the opposite pair (`Supported ↔ Partially`) and answers a different question. (The two were confusable under the same "Lenient Accuracy" name in `docs/llm-benchmarking-overview.md` for months; see that doc's naming note.)
+2. **Different inference setup and era still applies.** Those are 2023 NLI models using the "stretching" MAX strategy over document chunks; we pass the whole source in one LLM call. The paper's GPT-3.5/GPT-4 numbers (§3.4) are on the oracle-retrieval subset only, so there's no clean modern-LLM baseline in the table either — `supportedVsRestAccuracy` gets the *grouping* to match, not the setup.
 
 Human accuracy of 92.0 is the more useful anchor: it tells you the task is genuinely ambiguous (Krippendorff's α = 0.62 on dev), so 100% is not the target and a residual error band is the task, not the tool.
 

@@ -6,6 +6,7 @@ import {
     canonicalizeVerdict,
     toTitleCase,
     toShortCode,
+    equalSupportedVsRest,
 } from '../core/verdicts.js';
 
 test('VERDICTS exposes the four canonical UPPERCASE strings', () => {
@@ -85,4 +86,42 @@ test('toShortCode maps canonical to compare_results short codes', () => {
     assert.equal(toShortCode(VERDICTS.PARTIALLY_SUPPORTED), 'partial');
     assert.equal(toShortCode(VERDICTS.NOT_SUPPORTED),       'not');
     assert.equal(toShortCode(VERDICTS.SOURCE_UNAVAILABLE),  'unavailable');
+});
+
+// --- equalSupportedVsRest ---
+// The grouping docs/llm-benchmarking-overview.md's "Lenient Accuracy" section
+// describes: Supported must match exactly; Partially/Not are forgiven as
+// mutual near-misses. Deliberately the opposite pairing from what
+// analyze_results.js's own `lenientAccuracy` field forgives (Supported <->
+// Partially) — see that field's neighboring comment for why both exist.
+
+test('equalSupportedVsRest requires an exact match on Supported', () => {
+    assert.equal(equalSupportedVsRest('Supported', 'Supported'), true);
+    assert.equal(equalSupportedVsRest('Supported', 'Partially supported'), false);
+    assert.equal(equalSupportedVsRest('Partially supported', 'Supported'), false);
+});
+
+test('equalSupportedVsRest forgives Partially supported <-> Not supported in either direction', () => {
+    assert.equal(equalSupportedVsRest('Partially supported', 'Not supported'), true);
+    assert.equal(equalSupportedVsRest('Not supported', 'Partially supported'), true);
+    assert.equal(equalSupportedVsRest('Not supported', 'Not supported'), true);
+    assert.equal(equalSupportedVsRest('Partially supported', 'Partially supported'), true);
+});
+
+test('equalSupportedVsRest requires an exact match on Source unavailable', () => {
+    assert.equal(equalSupportedVsRest('Source unavailable', 'Source unavailable'), true);
+    assert.equal(equalSupportedVsRest('Source unavailable', 'Not supported'), false);
+    assert.equal(equalSupportedVsRest('Not supported', 'Source unavailable'), false);
+    assert.equal(equalSupportedVsRest('Source unavailable', 'Supported'), false);
+});
+
+test('equalSupportedVsRest accepts any input form canonicalizeVerdict accepts', () => {
+    assert.equal(equalSupportedVsRest('not_supported', 'PARTIALLY SUPPORTED'), true);
+    assert.equal(equalSupportedVsRest('not', 'partial'), true); // short codes
+});
+
+test('equalSupportedVsRest returns false, not throws, on unrecognized input', () => {
+    assert.equal(equalSupportedVsRest('PARSE_ERROR', 'Supported'), false);
+    assert.equal(equalSupportedVsRest('Supported', null), false);
+    assert.equal(equalSupportedVsRest(undefined, undefined), false);
 });
