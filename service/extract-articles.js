@@ -132,14 +132,27 @@ async function main(argv) {
     let totalCitations = 0;
     let totalWithUrl = 0;
 
-    for await (const result of runBatch(candidates, {
-        parseHtml,
-        fetchArticle: fetchArticleHtml,
-        fetchSource: stubFetchSource,
-    })) {
-        const { citations, withUrl } = printArticle(result);
-        totalCitations += citations;
-        totalWithUrl += withUrl;
+    // core/urls.js logs one console.log per citation it examines (no-URL,
+    // page-number-extracted, Harvard/sfn resolution) — fine for a human
+    // watching one article in devtools, unusable noise for a batch article
+    // with 80+ citations and nobody reading in real time. That module is
+    // shared with the live userscript and the CLI, where the logging is
+    // legitimate, so it stays as-is there; this suppresses only around the
+    // extraction loop in this script.
+    const realLog = console.log;
+    console.log = () => {};
+    try {
+        for await (const result of runBatch(candidates, {
+            parseHtml,
+            fetchArticle: fetchArticleHtml,
+            fetchSource: stubFetchSource,
+        })) {
+            const { citations, withUrl } = printArticle(result);
+            totalCitations += citations;
+            totalWithUrl += withUrl;
+        }
+    } finally {
+        console.log = realLog;
     }
 
     process.stderr.write(
