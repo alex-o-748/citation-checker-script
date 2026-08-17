@@ -493,21 +493,48 @@ export function hostForProvider(provider, providers = PROVIDERS) {
 }
 
 /**
- * Load prior results for --resume. A row that errored (rate limit, network
- * failure, truncation, ...) has no verdict worth keeping and always needs a
- * fresh attempt, so it's excluded from both the returned `results`
- * accumulator and `completedIds` — otherwise it would either be skipped
- * forever (never retried) or, once retried, sit alongside the new row as a
- * duplicate entry_id/provider pair in results.json.
+ * Load results.json to seed `results` and `completedIds` for this run.
+ *
+ * Rows for providers NOT in `selectedProviders` are always kept, resume or
+ * not — a run for provider A must never destroy data already collected for
+ * provider B in the same file. Before this function existed, a plain run
+ * (no --resume) set `results = []` unconditionally: the moment it completed,
+ * every other provider's rows in results.json were gone. That's exactly what
+ * happened on 2026-08-17 — a 10-row claude-sonnet-5 pilot run silently erased
+ * 364 rows (182 each) of hf-qwen3-32b / hf-gpt-oss-20b results with no
+ * warning, because `--resume` was the only thing standing between "add to
+ * the file" and "replace the file," and it's easy to forget on a quick
+ * one-off command. Loading (and protecting) existing rows is now unconditional;
+ * only what happens to the *selected* providers' own rows depends on `resume`.
+ *
+ * Within `selectedProviders`:
+ *   - resume: true  — keep those rows too, except errored ones (a failed call
+ *                      has no verdict worth keeping and always needs a fresh
+ *                      attempt — dropping it here, not just from completedIds,
+ *                      avoids a duplicate entry_id/provider row once retried).
+ *   - resume: false — drop all of those providers' existing rows; a plain run
+ *                      starts the *selected* providers over, scoped to just
+ *                      them rather than the whole file.
  */
-export function loadResumeState(resultsPath) {
+export function loadInitialResults(resultsPath, selectedProviders, resume) {
     if (!fs.existsSync(resultsPath)) {
         return { results: [], completedIds: new Set(), retrying: 0 };
     }
     const loaded = loadRows(resultsPath);
-    const results = loaded.filter(r => !r.error);
-    const completedIds = new Set(results.map(r => `${r.entry_id}|${r.provider}`));
-    return { results, completedIds, retrying: loaded.length - results.length };
+    const selected = new Set(selectedProviders);
+    const protectedRows = loaded.filter(r => !selected.has(r.provider));
+
+    if (!resume) {
+        return { results: protectedRows, completedIds: new Set(), retrying: 0 };
+    }
+
+    const ownRows = loaded.filter(r => selected.has(r.provider) && !r.error);
+    const retrying = loaded.filter(r => selected.has(r.provider) && r.error).length;
+    return {
+        results: [...protectedRows, ...ownRows],
+        completedIds: new Set(ownRows.map(r => `${r.entry_id}|${r.provider}`)),
+        retrying,
+    };
 }
 
 /**
@@ -619,15 +646,14 @@ async function main() {
 
     console.log(`\nProviders to benchmark: ${availableProviders.join(', ')}`);
 
-    // Load existing results if resuming
-    let results = [];
-    let completedIds = new Set();
-
+    // Load existing results. Rows for providers not in this run are always
+    // kept (see loadInitialResults) — only the selected providers' own rows
+    // depend on --resume.
+    const initialState = loadInitialResults(RESULTS_PATH, availableProviders, RESUME);
+    let results = initialState.results;
+    let completedIds = initialState.completedIds;
     if (RESUME) {
-        const state = loadResumeState(RESULTS_PATH);
-        results = state.results;
-        completedIds = state.completedIds;
-        console.log(`Resuming: ${completedIds.size} results already completed` + (state.retrying ? ` (${state.retrying} errored row(s) will be retried)` : ''));
+        console.log(`Resuming: ${completedIds.size} results already completed` + (initialState.retrying ? ` (${initialState.retrying} errored row(s) will be retried)` : ''));
     }
 
     // Generate prompts

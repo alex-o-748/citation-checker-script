@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { runPool, makeSaver, hostForProvider, shapeResult, scoreResult, loadResumeState } from '../benchmark/run_benchmark.js';
+import { runPool, makeSaver, hostForProvider, shapeResult, scoreResult, loadInitialResults } from '../benchmark/run_benchmark.js';
 
 // ---- runPool ----------------------------------------------------------------
 
@@ -217,13 +217,21 @@ test('scoreResult: a genuinely wrong (non-error) verdict still scores "wrong"', 
     assert.equal(scoreResult(result, 'Not Supported'), 'wrong');
 });
 
-// ---- loadResumeState (--resume must retry errored rows, not skip them) -----
-// Regression guard: `--resume` used to mark a row "completed" as soon as it
+// ---- loadInitialResults ------------------------------------------------------
+// Regression guard #1: `--resume` used to mark a row "completed" as soon as it
 // existed in results.json at all, including rows that errored. That meant a
 // transient failure (rate limit, network blip) was skipped forever on every
 // future --resume — see the 2026-08-16 keyless-HF-benchmark investigation.
+//
+// Regression guard #2 (the more serious one): a plain run with no --resume
+// used to set `results = []` unconditionally, discarding EVERY provider's
+// rows the moment it completed — not just the providers being run. On
+// 2026-08-17 a 10-row `--providers=claude-sonnet-5` pilot with no --resume
+// silently erased 364 rows (182 each) of hf-qwen3-32b / hf-gpt-oss-20b data.
+// Rows for a provider not in the current run must survive regardless of
+// --resume; only the selected providers' own rows depend on it.
 
-test('loadResumeState: an error row is excluded from completedIds so it gets retried', () => {
+test('loadInitialResults: resume=true excludes an error row from completedIds so it gets retried', () => {
     const file = tmpFile('resume-errors');
     fs.writeFileSync(file, JSON.stringify({
         metadata: {},
@@ -233,7 +241,7 @@ test('loadResumeState: an error row is excluded from completedIds so it gets ret
         ],
     }));
     try {
-        const state = loadResumeState(file);
+        const state = loadInitialResults(file, ['hf-qwen3-32b'], true);
         assert.equal(state.completedIds.has('row_1|hf-qwen3-32b'), true);
         assert.equal(state.completedIds.has('row_2|hf-qwen3-32b'), false);
         assert.equal(state.retrying, 1);
@@ -242,26 +250,26 @@ test('loadResumeState: an error row is excluded from completedIds so it gets ret
     }
 });
 
-test('loadResumeState: an error row is dropped from `results` so a retry does not duplicate it', () => {
+test('loadInitialResults: resume=true drops an error row from `results` so a retry does not duplicate it', () => {
     const file = tmpFile('resume-drop');
     fs.writeFileSync(file, JSON.stringify({
         metadata: {},
         rows: [{ entry_id: 'row_2', provider: 'hf-qwen3-32b', predicted_verdict: 'ERROR', error: 'HTTP 429' }],
     }));
     try {
-        const state = loadResumeState(file);
+        const state = loadInitialResults(file, ['hf-qwen3-32b'], true);
         assert.deepEqual(state.results, []);
     } finally {
         fs.rmSync(file, { force: true });
     }
 });
 
-test('loadResumeState: a successful row is kept in `results` and not re-run', () => {
+test('loadInitialResults: resume=true keeps a successful row and does not re-run it', () => {
     const file = tmpFile('resume-keep');
     const row = { entry_id: 'row_1', provider: 'hf-qwen3-32b', predicted_verdict: 'Supported', error: null };
     fs.writeFileSync(file, JSON.stringify({ metadata: {}, rows: [row] }));
     try {
-        const state = loadResumeState(file);
+        const state = loadInitialResults(file, ['hf-qwen3-32b'], true);
         assert.deepEqual(state.results, [row]);
         assert.equal(state.retrying, 0);
     } finally {
@@ -269,9 +277,57 @@ test('loadResumeState: a successful row is kept in `results` and not re-run', ()
     }
 });
 
-test('loadResumeState: a missing results file resumes as empty, not an error', () => {
-    const state = loadResumeState(path.join(os.tmpdir(), 'does-not-exist-' + Math.random().toString(36).slice(2) + '.json'));
-    assert.deepEqual(state.results, []);
-    assert.equal(state.completedIds.size, 0);
-    assert.equal(state.retrying, 0);
+test('loadInitialResults: a missing results file resumes as empty, not an error', () => {
+    const missing = path.join(os.tmpdir(), 'does-not-exist-' + Math.random().toString(36).slice(2) + '.json');
+    for (const resume of [true, false]) {
+        const state = loadInitialResults(missing, ['hf-qwen3-32b'], resume);
+        assert.deepEqual(state.results, []);
+        assert.equal(state.completedIds.size, 0);
+        assert.equal(state.retrying, 0);
+    }
+});
+
+test('loadInitialResults: resume=false still preserves rows for a provider not in this run', () => {
+    const file = tmpFile('protect-other-providers');
+    const hfRow = { entry_id: 'row_1', provider: 'hf-qwen3-32b', predicted_verdict: 'Supported', error: null };
+    fs.writeFileSync(file, JSON.stringify({ metadata: {}, rows: [hfRow] }));
+    try {
+        const state = loadInitialResults(file, ['claude-sonnet-5'], false);
+        assert.deepEqual(state.results, [hfRow]);
+    } finally {
+        fs.rmSync(file, { force: true });
+    }
+});
+
+test('loadInitialResults: resume=false drops existing rows for the providers being run', () => {
+    const file = tmpFile('restart-selected');
+    const staleRow = { entry_id: 'row_1', provider: 'claude-sonnet-5', predicted_verdict: 'Wrong', error: null };
+    fs.writeFileSync(file, JSON.stringify({ metadata: {}, rows: [staleRow] }));
+    try {
+        const state = loadInitialResults(file, ['claude-sonnet-5'], false);
+        assert.deepEqual(state.results, []);
+        assert.equal(state.completedIds.size, 0);
+    } finally {
+        fs.rmSync(file, { force: true });
+    }
+});
+
+test('loadInitialResults: a mixed-provider file survives a run for just one of them, resume or not', () => {
+    const file = tmpFile('mixed-providers');
+    const rows = [
+        { entry_id: 'row_1', provider: 'hf-qwen3-32b', predicted_verdict: 'Supported', error: null },
+        { entry_id: 'row_1', provider: 'hf-gpt-oss-20b', predicted_verdict: 'Supported', error: null },
+        { entry_id: 'row_1', provider: 'claude-sonnet-5', predicted_verdict: 'Supported', error: null },
+    ];
+    fs.writeFileSync(file, JSON.stringify({ metadata: {}, rows }));
+    try {
+        for (const resume of [true, false]) {
+            const state = loadInitialResults(file, ['claude-sonnet-5'], resume);
+            const providers = state.results.map(r => r.provider).sort();
+            assert.ok(providers.includes('hf-qwen3-32b'), `hf-qwen3-32b missing when resume=${resume}`);
+            assert.ok(providers.includes('hf-gpt-oss-20b'), `hf-gpt-oss-20b missing when resume=${resume}`);
+        }
+    } finally {
+        fs.rmSync(file, { force: true });
+    }
 });
