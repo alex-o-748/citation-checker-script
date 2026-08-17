@@ -10,7 +10,7 @@
 // cost_usd: null where the upstream API doesn't expose per-call cost.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { callProvider } from '../benchmark/run_benchmark.js';
+import { callProvider, PROVIDERS, registerAdHocHfProvider, hostForProvider } from '../benchmark/run_benchmark.js';
 
 function withMockFetch(handler) {
     const original = globalThis.fetch;
@@ -122,4 +122,98 @@ test('callProvider returns ERROR shape when env var is missing', async () => {
         assert.match(result.error, /PUBLICAI_API_KEY/);
         assert.equal(typeof result.latency, 'number');
     });
+});
+
+// ---- Hugging Face: keyless mode ---------------------------------------------
+
+test('callProvider hf-* without HF_TOKEN routes through the keyless proxy /hf path', async () => {
+    const mock = withMockFetch(async () => ({
+        ok: true, status: 200,
+        json: async () => ({
+            choices: [{ message: { content: VERDICT_JSON } }],
+            usage: { prompt_tokens: 40, completion_tokens: 8 },
+        }),
+    }));
+    try {
+        await withEnv({ HF_TOKEN: undefined }, async () => {
+            const result = await callProvider('hf-qwen3-32b', 'sys', 'user');
+            assert.equal(result.error, null);
+            assert.equal(result.verdict, 'Supported');
+            assert.equal(mock.calls[0].url, 'https://publicai-proxy.alaexis.workers.dev/hf');
+            assert.equal(mock.calls[0].opts.headers['Authorization'], undefined);
+        });
+    } finally {
+        mock.restore();
+    }
+});
+
+test('callProvider hf-* with HF_TOKEN calls the HF router directly', async () => {
+    const mock = withMockFetch(async () => ({
+        ok: true, status: 200,
+        json: async () => ({
+            choices: [{ message: { content: VERDICT_JSON } }],
+            usage: { prompt_tokens: 40, completion_tokens: 8 },
+        }),
+    }));
+    try {
+        await withEnv({ HF_TOKEN: 'hf_test' }, async () => {
+            const result = await callProvider('hf-qwen3-32b', 'sys', 'user');
+            assert.equal(result.error, null);
+            assert.equal(mock.calls[0].url, 'https://router.huggingface.co/v1/chat/completions');
+            assert.equal(mock.calls[0].opts.headers['Authorization'], 'Bearer hf_test');
+        });
+    } finally {
+        mock.restore();
+    }
+});
+
+// ---- Hugging Face: ad-hoc hf:<model-id> providers ---------------------------
+
+test('registerAdHocHfProvider registers a keyless huggingface provider for the given model', () => {
+    const key = registerAdHocHfProvider('hf:meta-llama/Llama-3.3-70B-Instruct');
+    assert.equal(key, 'hf:meta-llama/Llama-3.3-70B-Instruct');
+    assert.deepEqual(PROVIDERS[key], {
+        name: 'meta-llama/Llama-3.3-70B-Instruct (HF Inference)',
+        model: 'meta-llama/Llama-3.3-70B-Instruct',
+        endpoint: 'https://router.huggingface.co/v1/chat/completions',
+        requiresKey: false,
+        keyEnv: 'HF_TOKEN',
+        type: 'huggingface',
+    });
+    // hostForProvider works the same as any predefined provider.
+    assert.equal(hostForProvider(key), 'router.huggingface.co');
+});
+
+test('registerAdHocHfProvider rejects a spec with no model id', () => {
+    assert.throws(() => registerAdHocHfProvider('hf:'), /expected hf:<model-id>/);
+});
+
+test('registerAdHocHfProvider is idempotent for the same model id', () => {
+    const first = registerAdHocHfProvider('hf:idempotent/test-model');
+    const second = registerAdHocHfProvider('hf:idempotent/test-model');
+    assert.equal(first, second);
+    assert.equal(Object.keys(PROVIDERS).filter(k => k === first).length, 1);
+});
+
+test('callProvider works end-to-end for an ad-hoc hf:<model-id> provider, keyless', async () => {
+    const mock = withMockFetch(async () => ({
+        ok: true, status: 200,
+        json: async () => ({
+            choices: [{ message: { content: VERDICT_JSON } }],
+            usage: { prompt_tokens: 25, completion_tokens: 6 },
+        }),
+    }));
+    try {
+        await withEnv({ HF_TOKEN: undefined }, async () => {
+            const key = registerAdHocHfProvider('hf:mistralai/Mistral-Small-24B-Instruct-2501');
+            const result = await callProvider(key, 'sys', 'user');
+            assert.equal(result.error, null);
+            assert.equal(result.verdict, 'Supported');
+            assert.equal(mock.calls[0].url, 'https://publicai-proxy.alaexis.workers.dev/hf');
+            const sent = JSON.parse(mock.calls[0].opts.body);
+            assert.equal(sent.model, 'mistralai/Mistral-Small-24B-Instruct-2501');
+        });
+    } finally {
+        mock.restore();
+    }
 });

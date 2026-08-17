@@ -11,6 +11,17 @@
  *   OPENAI_API_KEY - OpenAI API key
  *   GEMINI_API_KEY - Google Gemini API key
  *
+ * Hugging Face Inference models (providers of type 'huggingface', including
+ * any hf:<model-id> ad-hoc provider — see below) do not require HF_TOKEN.
+ * Without it, calls route through the publicai-proxy worker's keyless /hf
+ * path, which injects an upstream token on the caller's behalf and shares
+ * that proxy's quota. Set HF_TOKEN to call router.huggingface.co directly
+ * on your own quota instead.
+ *
+ * Any model hosted on HF Inference Providers can be benchmarked without a
+ * predefined PROVIDERS entry by passing it as `hf:<model-id>`, e.g.:
+ *   node run_benchmark.js --providers=hf:meta-llama/Llama-3.3-70B-Instruct
+ *
  * Output:
  *   - results.json: Complete benchmark results
  */
@@ -41,7 +52,7 @@ const DATASET_PATH = path.join(__dirname, 'dataset.json');
 const RESULTS_PATH = path.join(__dirname, 'results.json');
 
 // Provider configurations
-const PROVIDERS = {
+export const PROVIDERS = {
     // Open-source models via PublicAI (direct API)
     'apertus-70b': {
         name: 'Apertus 70B',
@@ -147,7 +158,9 @@ const PROVIDERS = {
         keyEnv: 'OPENROUTER_API_KEY',
         type: 'openrouter'
     },
-    // Hugging Face Inference Providers — routed through router.huggingface.co.
+    // Hugging Face Inference Providers — routed through router.huggingface.co
+    // when HF_TOKEN is set, or through the publicai-proxy worker's keyless
+    // /hf path otherwise (see callHuggingFaceAPI in core/providers.js).
     // Same OpenAI-compatible request shape as OpenRouter; the per-provider
     // backend (Groq, Together, Fireworks, PublicAI, etc.) is auto-selected
     // by HF based on which providers the token has enabled. HF's response
@@ -157,7 +170,7 @@ const PROVIDERS = {
         name: 'Qwen3-32B (HF Inference)',
         model: 'Qwen/Qwen3-32B',
         endpoint: 'https://router.huggingface.co/v1/chat/completions',
-        requiresKey: true,
+        requiresKey: false,
         keyEnv: 'HF_TOKEN',
         type: 'huggingface'
     },
@@ -165,7 +178,7 @@ const PROVIDERS = {
         name: 'gpt-oss-20b (HF Inference)',
         model: 'openai/gpt-oss-20b',
         endpoint: 'https://router.huggingface.co/v1/chat/completions',
-        requiresKey: true,
+        requiresKey: false,
         keyEnv: 'HF_TOKEN',
         type: 'huggingface'
     },
@@ -173,17 +186,41 @@ const PROVIDERS = {
         name: 'DeepSeek-V3 (HF Inference)',
         model: 'deepseek-ai/DeepSeek-V3',
         endpoint: 'https://router.huggingface.co/v1/chat/completions',
-        requiresKey: true,
+        requiresKey: false,
         keyEnv: 'HF_TOKEN',
         type: 'huggingface'
     }
 };
 
+// Ad-hoc HF providers registered at runtime via `--providers=hf:<model-id>`
+// (see registerAdHocHfProvider below), so any model hosted on HF Inference
+// Providers can be benchmarked without adding a PROVIDERS entry for it.
+const HF_ADHOC_PREFIX = 'hf:';
+const HF_ADHOC_ENDPOINT = 'https://router.huggingface.co/v1/chat/completions';
+
+export function registerAdHocHfProvider(spec) {
+    const model = spec.slice(HF_ADHOC_PREFIX.length);
+    if (!model) {
+        throw new Error(`Invalid --providers entry "${spec}": expected hf:<model-id>, e.g. hf:meta-llama/Llama-3.3-70B-Instruct`);
+    }
+    if (!PROVIDERS[spec]) {
+        PROVIDERS[spec] = {
+            name: `${model} (HF Inference)`,
+            model,
+            endpoint: HF_ADHOC_ENDPOINT,
+            requiresKey: false,
+            keyEnv: 'HF_TOKEN',
+            type: 'huggingface'
+        };
+    }
+    return spec;
+}
+
 // Parse command line arguments
 const args = process.argv.slice(2);
 const providerArg = args.find(a => a.startsWith('--providers='));
 const selectedProviders = providerArg
-    ? providerArg.split('=')[1].split(',')
+    ? providerArg.split('=')[1].split(',').map(p => p.startsWith(HF_ADHOC_PREFIX) ? registerAdHocHfProvider(p) : p)
     : Object.keys(PROVIDERS);
 const limitIndex = args.indexOf('--limit');
 const LIMIT = limitIndex !== -1 ? parseInt(args[limitIndex + 1], 10) : null;
@@ -379,8 +416,10 @@ async function callOpenRouter(config, systemPrompt, userPrompt) {
 }
 
 async function callHuggingFace(config, systemPrompt, userPrompt) {
-    const apiKey = process.env[config.keyEnv];
-    if (!apiKey) throw new Error(`Missing ${config.keyEnv}`);
+    // Unlike other provider types, HF_TOKEN is optional: without it,
+    // callHuggingFaceAPI falls back to the publicai-proxy worker's keyless
+    // /hf path instead of throwing (see PROVIDERS' hf-* requiresKey: false).
+    const apiKey = process.env[config.keyEnv] || undefined;
     return shapeResult(await callHuggingFaceAPI({
         apiKey,
         model: config.model,
@@ -612,7 +651,7 @@ async function main() {
                     quote_verified: quoteCheck.verified,
                     latency_ms: result.latency,
                     error: result.error,
-                    correct: compareVerdicts(result.verdict, entry.ground_truth),
+                    correct: scoreResult(result, entry.ground_truth),
                     timestamp: new Date().toISOString()
                 });
 
@@ -633,6 +672,17 @@ async function main() {
 
     // Print quick summary
     printSummary(results, availableProviders);
+}
+
+/**
+ * Score a single result row's `correct` field. A failed call (result.error set,
+ * result.verdict === 'ERROR') has no predicted verdict to compare — scoring it
+ * via compareVerdicts would fall through every branch to 'wrong', double-counting
+ * it in both Wrong and Errors in printSummary. null keeps error rows out of the
+ * correctness tally entirely; analyze_results.js already excludes them separately.
+ */
+export function scoreResult(result, groundTruth) {
+    return result.error ? null : compareVerdicts(result.verdict, groundTruth);
 }
 
 /**
