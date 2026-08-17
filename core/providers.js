@@ -151,13 +151,19 @@ export async function callOpenRouterAPI({ apiKey, model, systemPrompt, userConte
     });
 }
 
-export async function callClaudeAPI({ apiKey, model, systemPrompt, userContent, maxTokens = 3000 }) {
+// `effort` sets output_config.effort ("low"|"medium"|"high"|"xhigh"|"max") — GA,
+// no beta header needed. Only pass it for models that support the effort ladder
+// (Sonnet 5, Opus 5/4.8/4.7, Fable 5, Opus 4.6/Sonnet 4.6); Sonnet 4.5 and Haiku
+// 4.5 don't recognize it and return 400, so it must stay opt-in per caller rather
+// than a blanket default here.
+export async function callClaudeAPI({ apiKey, model, systemPrompt, userContent, maxTokens = 3000, effort }) {
     const requestBody = {
         model: model,
         max_tokens: maxTokens,
         system: systemPrompt,
         messages: [{ role: "user", content: userContent }]
     };
+    if (effort) requestBody.output_config = { effort };
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',

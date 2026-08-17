@@ -608,6 +608,53 @@ test('callClaudeAPI honors maxTokens parameter', async () => {
   }
 });
 
+test('callClaudeAPI sets output_config.effort when effort is passed', async () => {
+  const mock = withMockFetch(async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      content: [{ text: 'ok' }],
+      usage: { input_tokens: 0, output_tokens: 0 },
+    }),
+  }));
+  try {
+    await callClaudeAPI({
+      apiKey: 'k',
+      model: 'claude-sonnet-5',
+      systemPrompt: 's',
+      userContent: 'u',
+      effort: 'medium',
+    });
+    const sent = JSON.parse(mock.calls[0].opts.body);
+    assert.deepEqual(sent.output_config, { effort: 'medium' });
+  } finally {
+    mock.restore();
+  }
+});
+
+test('callClaudeAPI omits output_config when effort is not passed', async () => {
+  const mock = withMockFetch(async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      content: [{ text: 'ok' }],
+      usage: { input_tokens: 0, output_tokens: 0 },
+    }),
+  }));
+  try {
+    await callClaudeAPI({
+      apiKey: 'k',
+      model: 'claude-sonnet-4-5-20250929',
+      systemPrompt: 's',
+      userContent: 'u',
+    });
+    const sent = JSON.parse(mock.calls[0].opts.body);
+    assert.equal(sent.output_config, undefined);
+  } finally {
+    mock.restore();
+  }
+});
+
 test('callGeminiAPI honors maxTokens parameter (maps to maxOutputTokens)', async () => {
   const mock = withMockFetch(async () => ({
     ok: true,

@@ -89,6 +89,31 @@ test('callProvider claude returns parsed verdict and usage shape', async () => {
             assert.equal(result.usage.output, 30);
             assert.equal(result.usage.cost_usd, null);
             assert.equal(result.error, null);
+            // Sonnet 4.5 doesn't support the effort ladder (400s if sent) — the
+            // provider config carries no `effort` field, so none should be sent.
+            const sent = JSON.parse(mock.calls[0].opts.body);
+            assert.equal(sent.output_config, undefined);
+        });
+    } finally {
+        mock.restore();
+    }
+});
+
+test('callProvider claude-sonnet-5 sends effort: medium', async () => {
+    const mock = withMockFetch(async () => ({
+        ok: true, status: 200,
+        json: async () => ({
+            content: [{ text: VERDICT_JSON }],
+            usage: { input_tokens: 200, output_tokens: 30 },
+        }),
+    }));
+    try {
+        await withEnv({ ANTHROPIC_API_KEY: 'test' }, async () => {
+            const result = await callProvider('claude-sonnet-5', 'sys', 'user');
+            assert.equal(result.verdict, 'Supported');
+            assert.equal(result.error, null);
+            const sent = JSON.parse(mock.calls[0].opts.body);
+            assert.deepEqual(sent.output_config, { effort: 'medium' });
         });
     } finally {
         mock.restore();

@@ -103,7 +103,14 @@ export const PROVIDERS = {
         endpoint: 'https://api.anthropic.com/v1/messages',
         requiresKey: true,
         keyEnv: 'ANTHROPIC_API_KEY',
-        type: 'claude'
+        type: 'claude',
+        // Sonnet 5 defaults to effort "high" on the Claude API when unset. Verdict
+        // classification on a fixed claim+source pair is a bounded task, not the
+        // intelligence-sensitive work "high" is meant for — "medium" trims thinking
+        // depth (and cost) as a middle ground against the "low" the skill would
+        // otherwise recommend for a task this simple. Sonnet 4.5 has no `effort`
+        // field: sending it there 400s, so this only applies where set explicitly.
+        effort: 'medium'
     },
     // Gemini
     'gemini-2.5-flash': {
@@ -401,6 +408,7 @@ async function callClaude(config, systemPrompt, userPrompt) {
         systemPrompt,
         userContent: userPrompt,
         maxTokens: BENCHMARK_MAX_TOKENS,
+        effort: config.effort,
         // Claude's body has historically not set temperature; preserved unchanged.
     }));
 }
