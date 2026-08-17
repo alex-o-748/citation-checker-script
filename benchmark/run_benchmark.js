@@ -97,6 +97,14 @@ export const PROVIDERS = {
         keyEnv: 'ANTHROPIC_API_KEY',
         type: 'claude'
     },
+    'claude-sonnet-5': {
+        name: 'Claude Sonnet 5',
+        model: 'claude-sonnet-5',
+        endpoint: 'https://api.anthropic.com/v1/messages',
+        requiresKey: true,
+        keyEnv: 'ANTHROPIC_API_KEY',
+        type: 'claude'
+    },
     // Gemini
     'gemini-2.5-flash': {
         name: 'Gemini 2.5 Flash',
@@ -697,6 +705,15 @@ async function main() {
                     latency_ms: result.latency,
                     error: result.error,
                     correct: scoreResult(result, entry.ground_truth),
+                    // input/output are raw token counts from the upstream response,
+                    // present for every provider. cost_usd is only non-null for
+                    // OpenRouter, which is the one upstream that returns per-call
+                    // cost directly — everywhere else it's null and the $ cost has
+                    // to be computed from input/output against that provider's
+                    // published rate card.
+                    tokens_in: result.usage?.input ?? null,
+                    tokens_out: result.usage?.output ?? null,
+                    cost_usd: result.usage?.cost_usd ?? null,
                     timestamp: new Date().toISOString()
                 });
 
