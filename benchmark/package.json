@@ -29,7 +29,8 @@
     "analyze:v3": "node analyze_results.js --version v3",
     "analyze:v3-snapshot": "node analyze_results.js --results results_v3.json --dataset dataset_v3.json --analysis analysis_v3_recomputed.json",
     "report": "node analyze_results.js --output report.md",
-    "compare": "node ../bin/ccs compare"
+    "compare": "node ../bin/ccs compare",
+    "inspect": "node inspect_results.js"
   },
   "dependencies": {
     "jsdom": "^24.0.0"
