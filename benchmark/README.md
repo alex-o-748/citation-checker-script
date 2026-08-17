@@ -458,6 +458,28 @@ Alibaba model, gpt-oss-20b is an OpenAI MoE, DeepSeek-V3 is a DeepSeek
 MLA-attention MoE. The vote benefits from disagreement across training
 stacks rather than redundant signal from same-lineage models.
 
+#### Frozen snapshot: keyless hf-qwen3-32b / hf-gpt-oss-20b, 2026-08-17
+
+`analysis_hf_keyless_2026-08-17.json` is a manually-recovered `analyze_results.js`
+snapshot from a full 182-row keyless run of `hf-qwen3-32b` and `hf-gpt-oss-20b`
+(0 and 1 errors respectively). The underlying `results.json` — the raw,
+per-row data — was lost to a bug in `run_benchmark.js`: a plain run with no
+`--resume` set `results = []` unconditionally, so a later 10-row
+`claude-sonnet-5` pilot run silently discarded these 364 rows. That bug is
+fixed (`loadInitialResults` now always preserves rows for any provider not
+in the current run, resume or not — see the commit for the full incident
+writeup), so this can't recur, but the raw rows themselves are gone.
+
+This file is **aggregate metrics only** — accuracy percentages, confusion
+matrices, quote fidelity — with no `entry_id`, no per-row predicted verdict,
+no comments, no quotes. It cannot be merged back into `results.json`, fed to
+`inspect_results.js`, or diffed with `npm run compare` (both need row-level
+data). It exists purely so the headline numbers from that run aren't lost
+too: Qwen3-32B 61.5% exact / 75.3% lenient / 77.5% binary; gpt-oss-20b 60.2%
+exact / 69.6% lenient / 69.6% binary. Re-running the panel (keyless, no
+account needed) would reproduce comparable numbers with full row-level
+data, but was not redone for this snapshot.
+
 #### Benchmarking any HF-hosted model
 
 Any model hosted on HF Inference Providers can be benchmarked without

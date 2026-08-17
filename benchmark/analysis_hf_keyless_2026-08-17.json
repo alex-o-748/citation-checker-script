@@ -1,0 +1,142 @@
+{
+  "generated": "2026-08-17T20:47:52.609Z",
+  "overview": {
+    "datasetVersion": "all",
+    "totalEntries": 182,
+    "totalCalls": 364,
+    "providers": [
+      "hf-qwen3-32b",
+      "hf-gpt-oss-20b"
+    ]
+  },
+  "providers": {
+    "hf-qwen3-32b": {
+      "name": "Hf-qwen3-32b",
+      "model": "Qwen/Qwen3-32B",
+      "sampleCount": 182,
+      "metrics": {
+        "total": 182,
+        "valid": 182,
+        "errors": 0,
+        "quotes": {
+          "eligible": 109,
+          "offered": 109,
+          "verified": 86,
+          "offerRate": 1,
+          "fidelity": 0.7889908256880734,
+          "accuracyWhenQuoteVerified": 0.7441860465116279,
+          "accuracyWhenQuoteUnverified": 0.5652173913043478,
+          "verifiedRows": 86,
+          "unverifiedRows": 23,
+          "gap": 0.17896865520728011
+        },
+        "exactMatches": 112,
+        "partialMatches": 25,
+        "exactAccuracy": 0.6153846153846154,
+        "lenientAccuracy": 0.7527472527472527,
+        "binaryAccuracy": 0.7747252747252747,
+        "confusionMatrix": {
+          "Supported": {
+            "Supported": 53,
+            "Partially supported": 15,
+            "Not supported": 11,
+            "Source unavailable": 1
+          },
+          "Partially supported": {
+            "Supported": 10,
+            "Partially supported": 24,
+            "Not supported": 19,
+            "Source unavailable": 3
+          },
+          "Not supported": {
+            "Supported": 3,
+            "Partially supported": 4,
+            "Not supported": 35,
+            "Source unavailable": 4
+          },
+          "Source unavailable": {
+            "Supported": 0,
+            "Partially supported": 0,
+            "Not supported": 0,
+            "Source unavailable": 0
+          }
+        },
+        "latency": {
+          "avg": 10317.895604395604,
+          "min": 5064,
+          "max": 24405
+        },
+        "confidence": {
+          "avg": 56.3448275862069,
+          "avgWhenCorrect": 61.419642857142854,
+          "avgWhenWrong": 41.785714285714285,
+          "calibration": 19.63392857142857
+        }
+      }
+    },
+    "hf-gpt-oss-20b": {
+      "name": "Hf-gpt-oss-20b",
+      "model": "openai/gpt-oss-20b",
+      "sampleCount": 182,
+      "metrics": {
+        "total": 182,
+        "valid": 181,
+        "errors": 1,
+        "quotes": {
+          "eligible": 87,
+          "offered": 87,
+          "verified": 75,
+          "offerRate": 1,
+          "fidelity": 0.8620689655172413,
+          "accuracyWhenQuoteVerified": 0.7866666666666666,
+          "accuracyWhenQuoteUnverified": 0.6666666666666666,
+          "verifiedRows": 75,
+          "unverifiedRows": 12,
+          "gap": 0.12
+        },
+        "exactMatches": 109,
+        "partialMatches": 17,
+        "exactAccuracy": 0.6022099447513812,
+        "lenientAccuracy": 0.6961325966850829,
+        "binaryAccuracy": 0.6961325966850829,
+        "confusionMatrix": {
+          "Supported": {
+            "Supported": 47,
+            "Partially supported": 11,
+            "Not supported": 21,
+            "Source unavailable": 1
+          },
+          "Partially supported": {
+            "Supported": 6,
+            "Partially supported": 20,
+            "Not supported": 28,
+            "Source unavailable": 2
+          },
+          "Not supported": {
+            "Supported": 1,
+            "Partially supported": 2,
+            "Not supported": 42,
+            "Source unavailable": 0
+          },
+          "Source unavailable": {
+            "Supported": 0,
+            "Partially supported": 0,
+            "Not supported": 0,
+            "Source unavailable": 0
+          }
+        },
+        "latency": {
+          "avg": 1785.2747252747254,
+          "min": 694,
+          "max": 18690
+        },
+        "confidence": {
+          "avg": 61.17977528089887,
+          "avgWhenCorrect": 64.1743119266055,
+          "avgWhenWrong": 54.09722222222222,
+          "calibration": 10.077089704383276
+        }
+      }
+    }
+  }
+}
