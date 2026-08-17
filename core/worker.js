@@ -2,6 +2,9 @@
 
 import { isGoogleBooksUrl, parseArchiveOrgUrl } from './urls.js';
 
+/**
+ * Default proxy transport implementation using the Cloudflare Worker
+ */
 async function fetchViaProxy(fetchUrl, pageNum, workerBase, sourceUrl) {
     try {
         let proxyUrl = `${workerBase}/?fetch=${encodeURIComponent(fetchUrl)}`;
@@ -64,35 +67,90 @@ async function findWaybackSnapshot(url) {
     return null;
 }
 
-// Always returns { content, error, status }. `content` is the formatted source
-// text on success and null on any failure; `error` is a short human-readable
-// reason when content is null; `status` is the upstream HTTP status code if the
-// proxy reports one (`data.status`), otherwise the proxy's own response status,
-// or null if we never got a response at all.
-export async function fetchSourceContent(url, pageNum, { workerBase = 'https://publicai-proxy.alaexis.workers.dev' } = {}) {
-    if (isGoogleBooksUrl(url)) {
-        console.log('[CitationVerifier] Skipping Google Books URL:', url);
-        return { content: null, error: 'Google Books URL skipped (no fetchable content)', status: null };
+/**
+ * Proxy transport implementation - extracted from the original fetchSourceContent
+ * to enable injection of different transports
+ */
+export function proxyTransport({ workerBase = 'https://publicai-proxy.alaexis.workers.dev' } = {}) {
+    return async function fetchSource(url, pageNum) {
+        if (isGoogleBooksUrl(url)) {
+            console.log('[CitationVerifier] Skipping Google Books URL:', url);
+            return { content: null, error: 'Google Books URL skipped (no fetchable content)', status: null };
+        }
+
+        const archiveInfo = parseArchiveOrgUrl(url);
+        if (archiveInfo) {
+            const rawUrl = `https://web.archive.org/web/${archiveInfo.timestamp}id_/${archiveInfo.originalUrl}`;
+            console.log('[CitationVerifier] Fetching via Wayback raw endpoint');
+            return fetchViaProxy(rawUrl, pageNum, workerBase, url);
+        }
+
+        const result = await fetchViaProxy(url, pageNum, workerBase, url);
+
+        if (!result.content) {
+            const waybackUrl = await findWaybackSnapshot(url);
+            if (waybackUrl) {
+                console.log('[CitationVerifier] Live fetch failed, trying Wayback snapshot');
+                return fetchViaProxy(waybackUrl, pageNum, workerBase, url);
+            }
+        }
+
+        return result;
+    };
+}
+
+/**
+ * Core source fetching function that uses a transport
+ * Always returns { content, error, status }
+ */
+export async function fetchSourceContent(url, pageNum, { 
+    transport = proxyTransport(), 
+    workerBase = 'https://publicai-proxy.alaexis.workers.dev' 
+} = {}) {
+    // If transport is the older function signature, wrap it
+    if (typeof transport === 'function' && transport.length <= 2) {
+        return transport(url, pageNum);
     }
-
-    const archiveInfo = parseArchiveOrgUrl(url);
-    if (archiveInfo) {
-        const rawUrl = `https://web.archive.org/web/${archiveInfo.timestamp}id_/${archiveInfo.originalUrl}`;
-        console.log('[CitationVerifier] Fetching via Wayback raw endpoint');
-        return fetchViaProxy(rawUrl, pageNum, workerBase, url);
+    
+    // If transport is an object with fetchSource method
+    if (transport && typeof transport.fetchSource === 'function') {
+        return transport.fetchSource(url, pageNum);
     }
+    
+    // Default to proxy transport
+    const proxyFetch = proxyTransport({ workerBase });
+    return proxyFetch(url, pageNum);
+}
 
-    const result = await fetchViaProxy(url, pageNum, workerBase, url);
-
-    if (!result.content) {
-        const waybackUrl = await findWaybackSnapshot(url);
-        if (waybackUrl) {
-            console.log('[CitationVerifier] Live fetch failed, trying Wayback snapshot');
-            return fetchViaProxy(waybackUrl, pageNum, workerBase, url);
+// Helper function to assemble group sources
+export function assembleGroupSources(entries) {
+    const parts = [];
+    let anyAvailable = false;
+    
+    for (const e of entries) {
+        if (e.content) {
+            const text = extractSourceText(e.content);
+            if (text && text.trim()) {
+                anyAvailable = true;
+                const nums = e.citationNumbers.join(', ');
+                parts.push(`== Source [${nums}] ==\n${text}`);
+            }
         }
     }
+    
+    return {
+        text: parts.join('\n\n'),
+        anyAvailable
+    };
+}
 
-    return result;
+// Helper function to extract source text
+export function extractSourceText(content) {
+    if (!content) return '';
+    
+    const marker = '\n\nSource Content:\n';
+    const index = content.indexOf(marker);
+    return index !== -1 ? content.slice(index + marker.length) : content;
 }
 
 export function logVerification(payload, { workerBase = 'https://publicai-proxy.alaexis.workers.dev' } = {}) {

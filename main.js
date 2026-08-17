@@ -5398,11 +5398,14 @@ function useToolforgeSourceFetcher() {
             // Footnote backlinks use .mw-cite-backlink, not .reference, so no
             // dedup is needed. The batch runner passes a Parsoid document as the
             // root instead; see core/citations.js.
-            return collectCitations(document.getElementById('mw-content-text'));
+            const root = document.getElementById('mw-content-text');
+            if (!root) return [];
+            return collectCitations(root);
         }
 
         attachGroupMetadata(citations) {
-            return attachGroupMetadata(citations);
+            if (!citations || citations.length === 0) return;
+            attachGroupMetadata(citations);
         }
 
         showReportView() {
