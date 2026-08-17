@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { runPool, makeSaver, hostForProvider, shapeResult, scoreResult } from '../benchmark/run_benchmark.js';
+import { runPool, makeSaver, hostForProvider, shapeResult, scoreResult, loadResumeState } from '../benchmark/run_benchmark.js';
 
 // ---- runPool ----------------------------------------------------------------
 
@@ -215,4 +215,63 @@ test('scoreResult: scores normally when the call succeeded', () => {
 test('scoreResult: a genuinely wrong (non-error) verdict still scores "wrong"', () => {
     const result = { error: null, verdict: 'Supported' };
     assert.equal(scoreResult(result, 'Not Supported'), 'wrong');
+});
+
+// ---- loadResumeState (--resume must retry errored rows, not skip them) -----
+// Regression guard: `--resume` used to mark a row "completed" as soon as it
+// existed in results.json at all, including rows that errored. That meant a
+// transient failure (rate limit, network blip) was skipped forever on every
+// future --resume — see the 2026-08-16 keyless-HF-benchmark investigation.
+
+test('loadResumeState: an error row is excluded from completedIds so it gets retried', () => {
+    const file = tmpFile('resume-errors');
+    fs.writeFileSync(file, JSON.stringify({
+        metadata: {},
+        rows: [
+            { entry_id: 'row_1', provider: 'hf-qwen3-32b', predicted_verdict: 'Supported', error: null },
+            { entry_id: 'row_2', provider: 'hf-qwen3-32b', predicted_verdict: 'ERROR', error: 'HTTP 429' },
+        ],
+    }));
+    try {
+        const state = loadResumeState(file);
+        assert.equal(state.completedIds.has('row_1|hf-qwen3-32b'), true);
+        assert.equal(state.completedIds.has('row_2|hf-qwen3-32b'), false);
+        assert.equal(state.retrying, 1);
+    } finally {
+        fs.rmSync(file, { force: true });
+    }
+});
+
+test('loadResumeState: an error row is dropped from `results` so a retry does not duplicate it', () => {
+    const file = tmpFile('resume-drop');
+    fs.writeFileSync(file, JSON.stringify({
+        metadata: {},
+        rows: [{ entry_id: 'row_2', provider: 'hf-qwen3-32b', predicted_verdict: 'ERROR', error: 'HTTP 429' }],
+    }));
+    try {
+        const state = loadResumeState(file);
+        assert.deepEqual(state.results, []);
+    } finally {
+        fs.rmSync(file, { force: true });
+    }
+});
+
+test('loadResumeState: a successful row is kept in `results` and not re-run', () => {
+    const file = tmpFile('resume-keep');
+    const row = { entry_id: 'row_1', provider: 'hf-qwen3-32b', predicted_verdict: 'Supported', error: null };
+    fs.writeFileSync(file, JSON.stringify({ metadata: {}, rows: [row] }));
+    try {
+        const state = loadResumeState(file);
+        assert.deepEqual(state.results, [row]);
+        assert.equal(state.retrying, 0);
+    } finally {
+        fs.rmSync(file, { force: true });
+    }
+});
+
+test('loadResumeState: a missing results file resumes as empty, not an error', () => {
+    const state = loadResumeState(path.join(os.tmpdir(), 'does-not-exist-' + Math.random().toString(36).slice(2) + '.json'));
+    assert.deepEqual(state.results, []);
+    assert.equal(state.completedIds.size, 0);
+    assert.equal(state.retrying, 0);
 });

@@ -477,6 +477,24 @@ export function hostForProvider(provider, providers = PROVIDERS) {
 }
 
 /**
+ * Load prior results for --resume. A row that errored (rate limit, network
+ * failure, truncation, ...) has no verdict worth keeping and always needs a
+ * fresh attempt, so it's excluded from both the returned `results`
+ * accumulator and `completedIds` — otherwise it would either be skipped
+ * forever (never retried) or, once retried, sit alongside the new row as a
+ * duplicate entry_id/provider pair in results.json.
+ */
+export function loadResumeState(resultsPath) {
+    if (!fs.existsSync(resultsPath)) {
+        return { results: [], completedIds: new Set(), retrying: 0 };
+    }
+    const loaded = loadRows(resultsPath);
+    const results = loaded.filter(r => !r.error);
+    const completedIds = new Set(results.map(r => `${r.entry_id}|${r.provider}`));
+    return { results, completedIds, retrying: loaded.length - results.length };
+}
+
+/**
  * Run `worker` over `items` with at most `concurrency` in flight at once.
  */
 export async function runPool(items, concurrency, worker) {
@@ -587,12 +605,13 @@ async function main() {
 
     // Load existing results if resuming
     let results = [];
-    const completedIds = new Set();
+    let completedIds = new Set();
 
-    if (RESUME && fs.existsSync(RESULTS_PATH)) {
-        results = loadRows(RESULTS_PATH);
-        results.forEach(r => completedIds.add(`${r.entry_id}|${r.provider}`));
-        console.log(`Resuming: ${completedIds.size} results already completed`);
+    if (RESUME) {
+        const state = loadResumeState(RESULTS_PATH);
+        results = state.results;
+        completedIds = state.completedIds;
+        console.log(`Resuming: ${completedIds.size} results already completed` + (state.retrying ? ` (${state.retrying} errored row(s) will be retried)` : ''));
     }
 
     // Generate prompts
