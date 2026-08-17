@@ -1,5 +1,11 @@
 # Wikipedia Citation Verification - LLM Benchmarking
 
+> For a later round covering Qwen3-32B, gpt-oss-20b (both via keyless HF
+> Inference), and Claude Sonnet 5, see
+> [`docs/hf-keyless-and-sonnet-5-benchmark.md`](hf-keyless-and-sonnet-5-benchmark.md)
+> — that document also explains why its numbers aren't directly comparable to
+> the ones below (different dataset row count, token cap, and prompt version).
+
 ## Overview
 
 This document describes a benchmarking exercise conducted to evaluate the performance of various Large Language Models (LLMs) on the task of verifying Wikipedia citations, that is, determining whether claims in Wikipedia articles are supported by their cited sources.
