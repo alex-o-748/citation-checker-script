@@ -35,6 +35,8 @@
         "exactAccuracy": 0.6153846153846154,
         "lenientAccuracy": 0.7527472527472527,
         "binaryAccuracy": 0.7747252747252747,
+        "supportedVsRestCorrect": 135,
+        "supportedVsRestAccuracy": 0.7417582417582418,
         "confusionMatrix": {
           "Supported": {
             "Supported": 53,
@@ -99,6 +101,8 @@
         "exactAccuracy": 0.6022099447513812,
         "lenientAccuracy": 0.6961325966850829,
         "binaryAccuracy": 0.6961325966850829,
+        "supportedVsRestCorrect": 139,
+        "supportedVsRestAccuracy": 0.7679558011049724,
         "confusionMatrix": {
           "Supported": {
             "Supported": 47,

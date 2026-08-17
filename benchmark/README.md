@@ -475,10 +475,18 @@ matrices, quote fidelity — with no `entry_id`, no per-row predicted verdict,
 no comments, no quotes. It cannot be merged back into `results.json`, fed to
 `inspect_results.js`, or diffed with `npm run compare` (both need row-level
 data). It exists purely so the headline numbers from that run aren't lost
-too: Qwen3-32B 61.5% exact / 75.3% lenient / 77.5% binary; gpt-oss-20b 60.2%
-exact / 69.6% lenient / 69.6% binary. Re-running the panel (keyless, no
-account needed) would reproduce comparable numbers with full row-level
-data, but was not redone for this snapshot.
+too: Qwen3-32B 61.5% exact / 75.3% lenient / 77.5% binary / 74.2% supported-vs-rest;
+gpt-oss-20b 60.2% exact / 69.6% lenient / 69.6% binary / 76.8% supported-vs-rest.
+Re-running the panel (keyless, no account needed) would reproduce comparable
+numbers with full row-level data, but was not redone for this snapshot.
+
+`supportedVsRestAccuracy` was added to `analyze_results.js` (`equalSupportedVsRest`
+in `core/verdicts.js`) after this snapshot was generated, so it isn't in the
+original recovered file's per-provider `metrics` — it was back-filled by
+replaying `equalSupportedVsRest` against each cell of the already-present
+confusion matrix, which is sufficient to derive it exactly (verified: the
+matrix cell totals match the recorded `valid` count for both providers, 182
+and 181). No re-run or row-level data was needed for this one field.
 
 #### Benchmarking any HF-hosted model
 
