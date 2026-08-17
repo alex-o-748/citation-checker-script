@@ -378,7 +378,8 @@ CREATE TABLE citation_findings (
   citation_number  INT,                      -- display only; NOT an identifier
   ref_name         VARBINARY(255),           -- <ref name="..."> when present
   source_url       TEXT,
-  source_hash      BINARY(32),               -- content hash of the fetched text
+  source_url_hash  BINARY(32)     NOT NULL,  -- hash of the normalized cited URL — the dedup key
+  fetched_at       TIMESTAMP      NULL,      -- when this source was actually retrieved
   group_id         VARBINARY(64),            -- adjacent-citation group (core/claim.js)
   is_collective    TINYINT(1)     NOT NULL DEFAULT 0,
   verdict          VARBINARY(32)  NOT NULL,
@@ -395,7 +396,7 @@ CREATE TABLE citation_findings (
   created_at       TIMESTAMP      NOT NULL DEFAULT CURRENT_TIMESTAMP,
   expires_at       TIMESTAMP      NULL,
   published        TINYINT(1)     NOT NULL DEFAULT 0,  -- passed the §1 filter
-  UNIQUE KEY uniq_finding (wiki, page_id, claim_hash, source_hash, provider, prompt_version),
+  UNIQUE KEY uniq_finding (wiki, page_id, claim_hash, source_url_hash, provider, prompt_version),
   KEY idx_lookup (wiki, page_id, published),
   KEY idx_expiry (expires_at)
 );
@@ -414,9 +415,24 @@ Three columns carry more weight than they look like they do:
   claim" with no reasoning is unactionable, and the model's quoted-evidence
   comment is the most useful thing it produces.
 
-Note `source_hash` rather than `source_url` in the unique key: the same source
-reached via a live URL and via a Wayback snapshot should not produce two
-findings. `core/worker.js` already falls back to Wayback transparently.
+Note `source_url_hash` — a hash of the **normalized cited URL** — rather than a
+hash of the fetched content, in the unique key. A hash of extracted text is
+brittle as an identity key: dynamic page elements (rotating ads, "updated N
+minutes ago," view counters), extraction-library version changes, and
+truncation differences all change the hash between two fetches of what is, for
+verification purposes, the same source — which would silently produce
+duplicate findings instead of the intended dedup. The cited URL is the stable
+identity: "citation 14 points at URL X" doesn't change depending on whether a
+particular fetch went live or fell back to Wayback, and `core/worker.js`
+already falls back to Wayback transparently under the same cited URL.
+
+`fetched_at` feeds `expires_at` (fetched_at + TTL) and is otherwise cheap,
+non-brittle metadata — unlike a content hash, a timestamp doesn't carry the
+false-positive-change problem above. A content hash was considered and
+dropped: the only decision it could drive (skip re-verification when a source
+hasn't changed) doesn't save the expensive step — fetching is already required
+to compute the new hash — and the staleness problem it would address is
+already handled by the TTL above.
 
 Adjacent-citation groups are handled by
 `docs/design-plans/2026-06-23-collective-group-verification.md`: for a group,
