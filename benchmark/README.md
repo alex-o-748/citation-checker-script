@@ -180,6 +180,28 @@ The same flags apply for v3 (`extract:v3`, `benchmark:v3`, `analyze:v3`).
 Working with the expanded v1 + v2 + v3 set is the default — just run `npm run
 extract`, `npm run benchmark`, and `npm run analyze` with no flags.
 
+### Re-baselining: max_tokens 1000 → 16384 (2026-08-16)
+
+`BENCHMARK_MAX_TOKENS` was raised from 1000 to 16384 to match
+`core/providers.js`, so the benchmark measures the same output budget the
+userscript and CLI actually run under.
+
+Reasoning models (gpt-oss in particular) spend output tokens on hidden
+reasoning *before* writing the answer — roughly 1.5k–4k on this task. At 1000
+they ran out mid-reasoning and returned `finish_reason: "length"` with empty
+content, which the runner recorded as an error. Those rows were measuring the
+cap, not the model.
+
+**What this does and doesn't affect.** Raising a ceiling cannot change a
+response that already fit under it — sampling is unchanged and the model never
+sees the limit — so results for rows that did not truncate stay comparable
+across the boundary. Only previously-truncated rows change, and those were
+already failures. The real cost is that reasoning models now generate their
+full reasoning, so their latency and token spend rise to production levels.
+
+Runs recorded before this date carry the old cap. `results.json`'s `run_at`
+metadata is the marker.
+
 ## Reproducibility metadata
 
 `dataset.json` and `results.json` (plus any new frozen `*_vN.json` snapshots
@@ -435,6 +457,36 @@ npm run analyze
 Alibaba model, gpt-oss-20b is an OpenAI MoE, DeepSeek-V3 is a DeepSeek
 MLA-attention MoE. The vote benefits from disagreement across training
 stacks rather than redundant signal from same-lineage models.
+
+#### Frozen snapshot: keyless hf-qwen3-32b / hf-gpt-oss-20b, 2026-08-17
+
+`analysis_hf_keyless_2026-08-17.json` is a manually-recovered `analyze_results.js`
+snapshot from a full 182-row keyless run of `hf-qwen3-32b` and `hf-gpt-oss-20b`
+(0 and 1 errors respectively). The underlying `results.json` — the raw,
+per-row data — was lost to a bug in `run_benchmark.js`: a plain run with no
+`--resume` set `results = []` unconditionally, so a later 10-row
+`claude-sonnet-5` pilot run silently discarded these 364 rows. That bug is
+fixed (`loadInitialResults` now always preserves rows for any provider not
+in the current run, resume or not — see the commit for the full incident
+writeup), so this can't recur, but the raw rows themselves are gone.
+
+This file is **aggregate metrics only** — accuracy percentages, confusion
+matrices, quote fidelity — with no `entry_id`, no per-row predicted verdict,
+no comments, no quotes. It cannot be merged back into `results.json`, fed to
+`inspect_results.js`, or diffed with `npm run compare` (both need row-level
+data). It exists purely so the headline numbers from that run aren't lost
+too: Qwen3-32B 61.5% exact / 75.3% lenient / 77.5% binary / 74.2% supported-vs-rest;
+gpt-oss-20b 60.2% exact / 69.6% lenient / 69.6% binary / 76.8% supported-vs-rest.
+Re-running the panel (keyless, no account needed) would reproduce comparable
+numbers with full row-level data, but was not redone for this snapshot.
+
+`supportedVsRestAccuracy` was added to `analyze_results.js` (`equalSupportedVsRest`
+in `core/verdicts.js`) after this snapshot was generated, so it isn't in the
+original recovered file's per-provider `metrics` — it was back-filled by
+replaying `equalSupportedVsRest` against each cell of the already-present
+confusion matrix, which is sufficient to derive it exactly (verified: the
+matrix cell totals match the recorded `valid` count for both providers, 182
+and 181). No re-run or row-level data was needed for this one field.
 
 #### Benchmarking any HF-hosted model
 

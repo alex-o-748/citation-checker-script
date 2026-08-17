@@ -97,6 +97,21 @@ export const PROVIDERS = {
         keyEnv: 'ANTHROPIC_API_KEY',
         type: 'claude'
     },
+    'claude-sonnet-5': {
+        name: 'Claude Sonnet 5',
+        model: 'claude-sonnet-5',
+        endpoint: 'https://api.anthropic.com/v1/messages',
+        requiresKey: true,
+        keyEnv: 'ANTHROPIC_API_KEY',
+        type: 'claude',
+        // Sonnet 5 defaults to effort "high" on the Claude API when unset. Verdict
+        // classification on a fixed claim+source pair is a bounded task, not the
+        // intelligence-sensitive work "high" is meant for — "medium" trims thinking
+        // depth (and cost) as a middle ground against the "low" the skill would
+        // otherwise recommend for a task this simple. Sonnet 4.5 has no `effort`
+        // field: sending it there 400s, so this only applies where set explicitly.
+        effort: 'medium'
+    },
     // Gemini
     'gemini-2.5-flash': {
         name: 'Gemini 2.5 Flash',
@@ -344,7 +359,23 @@ export function shapeResult({ text, usage }) {
 // core/providers.js has its own defaults tuned for userscript/CLI use; the
 // runner overrides them here so that benchmark numbers stay comparable to
 // past runs until a deliberate re-baselining experiment changes them.
-const BENCHMARK_MAX_TOKENS = 1000;
+//
+// max_tokens was that deliberate change, on 2026-08-16: it was 1000, while
+// core/providers.js (and therefore the userscript and CLI) uses 16384. The gap
+// meant the benchmark was not measuring what production runs. Reasoning models
+// spend output tokens on hidden reasoning *before* writing the answer — gpt-oss
+// was measured at ~1.5k-4k reasoning tokens on this task — so at 1000 they
+// exhausted the budget mid-reasoning and returned finish_reason "length" with
+// empty content. Those rows scored as errors, not as verdicts: an artifact of
+// the cap, not a property of the model.
+//
+// Raising a ceiling cannot change a response that already fit under it —
+// sampling is identical and the model never sees the limit — so this only
+// affects rows that previously truncated, which were already failures. Past
+// non-truncated rows stay comparable. The cost is real but narrow: reasoning
+// models now generate their full reasoning, so their latency and token spend
+// rise to what production already pays.
+const BENCHMARK_MAX_TOKENS = 16384;
 const BENCHMARK_TEMPERATURE = 0.1;
 // The pre-consolidation runner concatenated `${systemPrompt}\n\n${userPrompt}`
 // into a single Gemini user turn rather than using the proper systemInstruction
@@ -377,6 +408,7 @@ async function callClaude(config, systemPrompt, userPrompt) {
         systemPrompt,
         userContent: userPrompt,
         maxTokens: BENCHMARK_MAX_TOKENS,
+        effort: config.effort,
         // Claude's body has historically not set temperature; preserved unchanged.
     }));
 }
@@ -458,6 +490,51 @@ function normalizeVerdict(verdict) {
  */
 export function hostForProvider(provider, providers = PROVIDERS) {
     return new URL(providers[provider].endpoint).hostname;
+}
+
+/**
+ * Load results.json to seed `results` and `completedIds` for this run.
+ *
+ * Rows for providers NOT in `selectedProviders` are always kept, resume or
+ * not — a run for provider A must never destroy data already collected for
+ * provider B in the same file. Before this function existed, a plain run
+ * (no --resume) set `results = []` unconditionally: the moment it completed,
+ * every other provider's rows in results.json were gone. That's exactly what
+ * happened on 2026-08-17 — a 10-row claude-sonnet-5 pilot run silently erased
+ * 364 rows (182 each) of hf-qwen3-32b / hf-gpt-oss-20b results with no
+ * warning, because `--resume` was the only thing standing between "add to
+ * the file" and "replace the file," and it's easy to forget on a quick
+ * one-off command. Loading (and protecting) existing rows is now unconditional;
+ * only what happens to the *selected* providers' own rows depends on `resume`.
+ *
+ * Within `selectedProviders`:
+ *   - resume: true  — keep those rows too, except errored ones (a failed call
+ *                      has no verdict worth keeping and always needs a fresh
+ *                      attempt — dropping it here, not just from completedIds,
+ *                      avoids a duplicate entry_id/provider row once retried).
+ *   - resume: false — drop all of those providers' existing rows; a plain run
+ *                      starts the *selected* providers over, scoped to just
+ *                      them rather than the whole file.
+ */
+export function loadInitialResults(resultsPath, selectedProviders, resume) {
+    if (!fs.existsSync(resultsPath)) {
+        return { results: [], completedIds: new Set(), retrying: 0 };
+    }
+    const loaded = loadRows(resultsPath);
+    const selected = new Set(selectedProviders);
+    const protectedRows = loaded.filter(r => !selected.has(r.provider));
+
+    if (!resume) {
+        return { results: protectedRows, completedIds: new Set(), retrying: 0 };
+    }
+
+    const ownRows = loaded.filter(r => selected.has(r.provider) && !r.error);
+    const retrying = loaded.filter(r => selected.has(r.provider) && r.error).length;
+    return {
+        results: [...protectedRows, ...ownRows],
+        completedIds: new Set(ownRows.map(r => `${r.entry_id}|${r.provider}`)),
+        retrying,
+    };
 }
 
 /**
@@ -569,14 +646,14 @@ async function main() {
 
     console.log(`\nProviders to benchmark: ${availableProviders.join(', ')}`);
 
-    // Load existing results if resuming
-    let results = [];
-    const completedIds = new Set();
-
-    if (RESUME && fs.existsSync(RESULTS_PATH)) {
-        results = loadRows(RESULTS_PATH);
-        results.forEach(r => completedIds.add(`${r.entry_id}|${r.provider}`));
-        console.log(`Resuming: ${completedIds.size} results already completed`);
+    // Load existing results. Rows for providers not in this run are always
+    // kept (see loadInitialResults) — only the selected providers' own rows
+    // depend on --resume.
+    const initialState = loadInitialResults(RESULTS_PATH, availableProviders, RESUME);
+    let results = initialState.results;
+    let completedIds = initialState.completedIds;
+    if (RESUME) {
+        console.log(`Resuming: ${completedIds.size} results already completed` + (initialState.retrying ? ` (${initialState.retrying} errored row(s) will be retried)` : ''));
     }
 
     // Generate prompts
@@ -662,6 +739,15 @@ async function main() {
                     latency_ms: result.latency,
                     error: result.error,
                     correct: scoreResult(result, entry.ground_truth),
+                    // input/output are raw token counts from the upstream response,
+                    // present for every provider. cost_usd is only non-null for
+                    // OpenRouter, which is the one upstream that returns per-call
+                    // cost directly — everywhere else it's null and the $ cost has
+                    // to be computed from input/output against that provider's
+                    // published rate card.
+                    tokens_in: result.usage?.input ?? null,
+                    tokens_out: result.usage?.output ?? null,
+                    cost_usd: result.usage?.cost_usd ?? null,
                     timestamp: new Date().toISOString()
                 });
 

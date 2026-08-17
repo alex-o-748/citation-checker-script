@@ -151,13 +151,19 @@ export async function callOpenRouterAPI({ apiKey, model, systemPrompt, userConte
     });
 }
 
-export async function callClaudeAPI({ apiKey, model, systemPrompt, userContent, maxTokens = 3000 }) {
+// `effort` sets output_config.effort ("low"|"medium"|"high"|"xhigh"|"max") — GA,
+// no beta header needed. Only pass it for models that support the effort ladder
+// (Sonnet 5, Opus 5/4.8/4.7, Fable 5, Opus 4.6/Sonnet 4.6); Sonnet 4.5 and Haiku
+// 4.5 don't recognize it and return 400, so it must stay opt-in per caller rather
+// than a blanket default here.
+export async function callClaudeAPI({ apiKey, model, systemPrompt, userContent, maxTokens = 3000, effort }) {
     const requestBody = {
         model: model,
         max_tokens: maxTokens,
         system: systemPrompt,
         messages: [{ role: "user", content: userContent }]
     };
+    if (effort) requestBody.output_config = { effort };
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
@@ -176,8 +182,17 @@ export async function callClaudeAPI({ apiKey, model, systemPrompt, userContent, 
     }
 
     const data = await response.json();
+    // content[0] is not necessarily the answer: a model with adaptive thinking
+    // on (Sonnet 5, Opus 5/4.7/4.8, Fable 5 — enabled by default when `thinking`
+    // is omitted, unlike Sonnet 4.6/Opus 4.6 which require it explicitly) returns
+    // a `thinking` block first, which has no `.text`. Find the actual text block
+    // instead of indexing blindly.
+    const textBlock = data.content?.find(block => block.type === 'text');
+    if (!textBlock) {
+        throw new Error(`Invalid API response format (Claude: no text block${data.stop_reason ? `, stop_reason "${data.stop_reason}"` : ''})`);
+    }
     return {
-        text: data.content[0].text,
+        text: textBlock.text,
         usage: {
             input: data.usage?.input_tokens || 0,
             output: data.usage?.output_tokens || 0,
