@@ -343,6 +343,33 @@ function toShortCode(canonical) {
     return SHORT_CODE[canonical] ?? canonical;
 }
 
+// Supported-vs-rest equivalence: SUPPORTED and SOURCE_UNAVAILABLE must match
+// exactly; PARTIALLY_SUPPORTED and NOT_SUPPORTED are forgiven as mutual
+// near-misses, since both mean "an editor has to go look further." This is
+// the grouping docs/llm-benchmarking-overview.md's "Lenient Accuracy" section
+// describes, and the one WiCE's own claim-level binary task uses (see
+// docs/wice-benchmark.md) — SUPPORTED vs. everything else.
+//
+// Defined here, exported, rather than inline in analyze_results.js (its only
+// current caller): this exact grouping was hand-computed into that doc on
+// 2026-01-23 and never implemented in the benchmark scripts, so for months
+// the doc and the code disagreed under the same metric name ("Lenient
+// Accuracy") without anyone noticing — see analyze_results.js's
+// `lenientAccuracy` field, which forgives the *opposite* pair (SUPPORTED <->
+// PARTIALLY). Keeping the definition here, rather than as a private helper in
+// the script that happens to use it first, means a second caller (e.g.
+// compare_results.js, if it ever wants this grouping) imports the same
+// predicate instead of writing a fresh version that could quietly diverge
+// from either the doc or this one.
+function equalSupportedVsRest(a, b) {
+    const ca = canonicalizeVerdict(a);
+    const cb = canonicalizeVerdict(b);
+    if (ca === null || cb === null) return false;
+    if (ca === cb) return true;
+    const isProblem = v => v === VERDICTS.PARTIALLY_SUPPORTED || v === VERDICTS.NOT_SUPPORTED;
+    return isProblem(ca) && isProblem(cb);
+}
+
 // --- core/parsing.js ---
 // Parses raw LLM response text into a structured verdict object.
 //
