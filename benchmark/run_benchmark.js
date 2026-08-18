@@ -222,22 +222,6 @@ export const PROVIDERS = {
         requiresKey: false,
         keyEnv: 'HF_TOKEN',
         type: 'huggingface'
-    },
-    'hf-glm-4-9b-chat': {
-        name: 'GLM-4-9B-Chat (HF Inference)',
-        model: 'zai-org/glm-4-9b-chat',
-        endpoint: 'https://router.huggingface.co/v1/chat/completions',
-        requiresKey: false,
-        keyEnv: 'HF_TOKEN',
-        type: 'huggingface'
-    },
-    'hf-glm-5.2': {
-        name: 'GLM-5.2 (HF Inference)',
-        model: 'zai-org/GLM-5.2:novita',
-        endpoint: 'https://router.huggingface.co/v1',
-        requiresKey: false,
-        keyEnv: 'HF_TOKEN',
-        type: 'huggingface'
     }
 };
 
