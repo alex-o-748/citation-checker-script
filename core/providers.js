@@ -107,13 +107,14 @@ export async function callPublicAIAPI({ apiKey, model, systemPrompt, userContent
 // injects an upstream key on the user's behalf.
 const HF_DIRECT_URL = 'https://router.huggingface.co/v1/chat/completions';
 
-export async function callHuggingFaceAPI({ apiKey, model, systemPrompt, userContent, workerBase = 'https://publicai-proxy.alaexis.workers.dev', maxTokens, temperature }) {
+export async function callHuggingFaceAPI({ apiKey, model, systemPrompt, userContent, workerBase = 'https://publicai-proxy.alaexis.workers.dev', maxTokens, temperature, extraHeaders }) {
     const direct = Boolean(apiKey);
     return callOpenAICompatibleChat({
         url: direct ? HF_DIRECT_URL : `${workerBase}/hf`,
         apiKey: direct ? apiKey : undefined,
         model, systemPrompt, userContent, maxTokens, temperature,
         label: 'HuggingFace',
+        extraHeaders,
     });
 }
 
