@@ -107,33 +107,42 @@ Accuracy" section describes).
 - Confusion matrix, quote fidelity, confidence calibration, and precision/recall
   not yet captured for this write-up — see the note under Raw data above.
 
-## Precision / recall (Supported vs. requires-action)
+## Precision / recall (needs-review vs. Supported)
 
-A different framing from the four accuracy metrics above: **Supported is the
-only positive class**; {Partially supported, Not supported, Source
-unavailable} are all "negative" — i.e. "an editor needs to look at this."
-This is the same binary split `main.js`'s actual `showActionButton` logic
-uses (only a `SUPPORTED` verdict skips the "Edit Section" prompt) — distinct
-from both `binaryAccuracy` (which groups Partially-supported with Supported)
-and `supported-vs-rest` (which requires Supported and Source-unavailable to
-match exactly but forgives Partially↔Not). Neither of those two groupings
-matches this one; this section exists because it doesn't correspond to any
-field `analyze_results.js` currently computes.
+A different framing from the four accuracy metrics above: **"needs review"
+({Partially supported, Not supported, Source unavailable}) is the positive
+class**; Supported is negative. This is the same binary split `main.js`'s
+actual `showActionButton` logic uses (only a `SUPPORTED` verdict skips the
+"Edit Section" prompt) — distinct from both `binaryAccuracy` (which groups
+Partially-supported with Supported) and `supported-vs-rest` (which requires
+Supported and Source-unavailable to match exactly but forgives
+Partially↔Not). Neither of those two groupings matches this one; this
+section exists because it doesn't correspond to any field
+`analyze_results.js` currently computes.
+
+"Needs review," not "Supported," is the positive class deliberately: in
+precision/recall, positive means the thing you're trying to detect, and this
+tool's whole purpose is *catching* problem citations — the way a spam filter
+treats spam as positive, not "not spam." Under that framing, recall is the
+safety-critical number: of the citations that truly have a problem, how many
+did the model actually flag? A false negative here is the dangerous failure
+mode — a bad citation that reads as "all clear."
 
 | Model | TP | FP | FN | TN | Precision | Recall | F1 |
 |---|---|---|---|---|---|---|---|
-| Qwen3-32B | 53 | 13 | 27 | 89 | 80.3% | 66.3% | 72.6% |
-| gpt-oss-20b | 47 | 7 | 33 | 94 | 87.0% | 58.8% | 70.1% |
+| Qwen3-32B | 89 | 27 | 13 | 53 | 76.7% | 87.3% | 81.7% |
+| gpt-oss-20b | 94 | 33 | 7 | 47 | 74.0% | 93.1% | 82.5% |
 
-Both models are precision-heavy, recall-light: when either predicts
-"Supported," it's right 80–87% of the time, but both miss a substantial share
-of genuinely supported claims (34% for Qwen3-32B, 41% for gpt-oss-20b) —
-predicting one of the "needs review" verdicts on a citation that was actually
-fine. gpt-oss-20b is the more conservative of the two: higher precision,
-lower recall. For an editor-facing tool this is arguably the safer direction
-to err in — a false "needs review" costs an editor a wasted check, while a
-false "Supported" lets a bad citation through — but it does mean a real share
-of good citations get flagged unnecessarily.
+Both models catch most real problems — recall in the high 80s to low 90s —
+at the cost of a meaningful false-positive rate: of the roughly 80 citations
+that were genuinely fine in each model's row set, 27 (33.8%, Qwen3-32B) to 33
+(41.3%, gpt-oss-20b) still got flagged for review they didn't need.
+**gpt-oss-20b has the better recall of the two (93.1% vs. 87.3%) — it misses
+only 7 of 101 real problems (a 6.9% miss rate), against Qwen3-32B's 13 of 102
+(12.7%) — but pays for it with more false alarms on good citations** (41.3%
+vs. 33.8% wrongly flagged). For a tool whose job is not missing bad
+citations, gpt-oss-20b's lower miss rate is the more consequential number
+here, even though it comes with more editor-side noise.
 
 Not yet available for Claude Sonnet 5 — needs its confusion matrix (see the
 note under Raw data above and in the Sonnet 5 section).
