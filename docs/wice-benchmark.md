@@ -1,5 +1,11 @@
 # Benchmarking against WiCE
 
+> For the first full run against this dataset — Qwen3-32B and gpt-oss-20b,
+> 706 rows — see
+> [`docs/wice-hf-run-2026-08-18.md`](wice-hf-run-2026-08-18.md). This document
+> is the methodology; that one is the results, including the unanimous/mixed
+> projection split in practice.
+
 [WiCE](https://github.com/ryokamoi/wice) (Kamoi, Goyal, Rodriguez & Durrett, *"WiCE: Real-World Entailment for Claims in Wikipedia"*, EMNLP 2023) is a human-annotated entailment dataset built from real Wikipedia sentences and the web pages they cite. Its three labels line up with three of our four verdicts, which makes it something our own dataset can't be: an **external** benchmark, labeled by people with no stake in this tool, over claims nobody here selected.
 
 `benchmark/convert_wice.js` converts it into a `dataset.json`-shaped file that the existing runner and analyzer consume unchanged.
