@@ -343,6 +343,33 @@ function toShortCode(canonical) {
     return SHORT_CODE[canonical] ?? canonical;
 }
 
+// Supported-vs-rest equivalence: SUPPORTED and SOURCE_UNAVAILABLE must match
+// exactly; PARTIALLY_SUPPORTED and NOT_SUPPORTED are forgiven as mutual
+// near-misses, since both mean "an editor has to go look further." This is
+// the grouping docs/llm-benchmarking-overview.md's "Lenient Accuracy" section
+// describes, and the one WiCE's own claim-level binary task uses (see
+// docs/wice-benchmark.md) — SUPPORTED vs. everything else.
+//
+// Defined here, exported, rather than inline in analyze_results.js (its only
+// current caller): this exact grouping was hand-computed into that doc on
+// 2026-01-23 and never implemented in the benchmark scripts, so for months
+// the doc and the code disagreed under the same metric name ("Lenient
+// Accuracy") without anyone noticing — see analyze_results.js's
+// `lenientAccuracy` field, which forgives the *opposite* pair (SUPPORTED <->
+// PARTIALLY). Keeping the definition here, rather than as a private helper in
+// the script that happens to use it first, means a second caller (e.g.
+// compare_results.js, if it ever wants this grouping) imports the same
+// predicate instead of writing a fresh version that could quietly diverge
+// from either the doc or this one.
+function equalSupportedVsRest(a, b) {
+    const ca = canonicalizeVerdict(a);
+    const cb = canonicalizeVerdict(b);
+    if (ca === null || cb === null) return false;
+    if (ca === cb) return true;
+    const isProblem = v => v === VERDICTS.PARTIALLY_SUPPORTED || v === VERDICTS.NOT_SUPPORTED;
+    return isProblem(ca) && isProblem(cb);
+}
+
 // --- core/parsing.js ---
 // Parses raw LLM response text into a structured verdict object.
 //
@@ -1299,13 +1326,19 @@ async function callOpenRouterAPI({ apiKey, model, systemPrompt, userContent, max
     });
 }
 
-async function callClaudeAPI({ apiKey, model, systemPrompt, userContent, maxTokens = 3000 }) {
+// `effort` sets output_config.effort ("low"|"medium"|"high"|"xhigh"|"max") — GA,
+// no beta header needed. Only pass it for models that support the effort ladder
+// (Sonnet 5, Opus 5/4.8/4.7, Fable 5, Opus 4.6/Sonnet 4.6); Sonnet 4.5 and Haiku
+// 4.5 don't recognize it and return 400, so it must stay opt-in per caller rather
+// than a blanket default here.
+async function callClaudeAPI({ apiKey, model, systemPrompt, userContent, maxTokens = 3000, effort }) {
     const requestBody = {
         model: model,
         max_tokens: maxTokens,
         system: systemPrompt,
         messages: [{ role: "user", content: userContent }]
     };
+    if (effort) requestBody.output_config = { effort };
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
@@ -1324,8 +1357,17 @@ async function callClaudeAPI({ apiKey, model, systemPrompt, userContent, maxToke
     }
 
     const data = await response.json();
+    // content[0] is not necessarily the answer: a model with adaptive thinking
+    // on (Sonnet 5, Opus 5/4.7/4.8, Fable 5 — enabled by default when `thinking`
+    // is omitted, unlike Sonnet 4.6/Opus 4.6 which require it explicitly) returns
+    // a `thinking` block first, which has no `.text`. Find the actual text block
+    // instead of indexing blindly.
+    const textBlock = data.content?.find(block => block.type === 'text');
+    if (!textBlock) {
+        throw new Error(`Invalid API response format (Claude: no text block${data.stop_reason ? `, stop_reason "${data.stop_reason}"` : ''})`);
+    }
     return {
-        text: data.content[0].text,
+        text: textBlock.text,
         usage: {
             input: data.usage?.input_tokens || 0,
             output: data.usage?.output_tokens || 0,

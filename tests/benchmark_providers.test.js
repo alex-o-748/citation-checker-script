@@ -42,7 +42,7 @@ function withEnv(vars, fn) {
     });
 }
 
-test('callProvider publicai returns parsed verdict and usage shape, max_tokens=1000', async () => {
+test('callProvider publicai returns parsed verdict and usage shape, max_tokens=16384', async () => {
     const mock = withMockFetch(async () => ({
         ok: true, status: 200,
         json: async () => ({
@@ -61,10 +61,12 @@ test('callProvider publicai returns parsed verdict and usage shape, max_tokens=1
             assert.equal(result.usage.cost_usd, null);
             assert.equal(result.error, null);
             assert.equal(typeof result.latency, 'number');
-            // Benchmark holds max_tokens at 1000 across providers (preserves
-            // pre-consolidation runner behavior; see BENCHMARK_MAX_TOKENS).
+            // Benchmark max_tokens matches core/providers.js (16384) so the
+            // benchmark measures what the userscript and CLI actually run.
+            // It was 1000 until 2026-08-16, which truncated reasoning models
+            // mid-reasoning and scored them as errors — see BENCHMARK_MAX_TOKENS.
             const sent = JSON.parse(mock.calls[0].opts.body);
-            assert.equal(sent.max_tokens, 1000);
+            assert.equal(sent.max_tokens, 16384);
         });
     } finally {
         mock.restore();
@@ -75,7 +77,7 @@ test('callProvider claude returns parsed verdict and usage shape', async () => {
     const mock = withMockFetch(async () => ({
         ok: true, status: 200,
         json: async () => ({
-            content: [{ text: VERDICT_JSON }],
+            content: [{ type: 'text', text: VERDICT_JSON }],
             usage: { input_tokens: 200, output_tokens: 30 },
         }),
     }));
@@ -87,6 +89,31 @@ test('callProvider claude returns parsed verdict and usage shape', async () => {
             assert.equal(result.usage.output, 30);
             assert.equal(result.usage.cost_usd, null);
             assert.equal(result.error, null);
+            // Sonnet 4.5 doesn't support the effort ladder (400s if sent) — the
+            // provider config carries no `effort` field, so none should be sent.
+            const sent = JSON.parse(mock.calls[0].opts.body);
+            assert.equal(sent.output_config, undefined);
+        });
+    } finally {
+        mock.restore();
+    }
+});
+
+test('callProvider claude-sonnet-5 sends effort: medium', async () => {
+    const mock = withMockFetch(async () => ({
+        ok: true, status: 200,
+        json: async () => ({
+            content: [{ type: 'text', text: VERDICT_JSON }],
+            usage: { input_tokens: 200, output_tokens: 30 },
+        }),
+    }));
+    try {
+        await withEnv({ ANTHROPIC_API_KEY: 'test' }, async () => {
+            const result = await callProvider('claude-sonnet-5', 'sys', 'user');
+            assert.equal(result.verdict, 'Supported');
+            assert.equal(result.error, null);
+            const sent = JSON.parse(mock.calls[0].opts.body);
+            assert.deepEqual(sent.output_config, { effort: 'medium' });
         });
     } finally {
         mock.restore();

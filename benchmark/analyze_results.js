@@ -5,6 +5,7 @@
  * Analyzes benchmark results and generates detailed metrics for each LLM provider.
  *
  * Usage: node analyze_results.js [--output report.md] [--version v1|v2|all]
+ *                                [--projection unanimous|mixed|all]
  *                                [--results <path>] [--dataset <path>] [--analysis <path>]
  *
  * Output:
@@ -23,7 +24,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import { loadRows } from './io.js';
-import { canonicalizeVerdict, toTitleCase, VERDICT_LIST } from '../core/verdicts.js';
+import { canonicalizeVerdict, toTitleCase, VERDICT_LIST, equalSupportedVsRest } from '../core/verdicts.js';
 import { quoteExpectedFor } from '../core/quote.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -40,6 +41,10 @@ const REPORT_PATH = flagValue('--output');
 // VERSION_FILTER: 'all' | 'v1' | 'v2' | ... — limit results to entries whose
 // dataset_version matches, so the original 76-row v1 metrics can be re-derived.
 const VERSION_FILTER = flagValue('--version') || 'all';
+// PROJECTION_FILTER: 'all' | 'unanimous' | 'mixed' — WiCE datasets only.
+// Selects rows by how the claim-level label was derived from subclaim
+// annotations; see docs/wice-benchmark.md.
+const PROJECTION_FILTER = flagValue('--projection') || 'all';
 
 // Configuration (paths are overridable so v1 snapshots can be re-analyzed in place)
 const RESULTS_PATH = path.resolve(__dirname, flagValue('--results') || 'results.json');
@@ -99,6 +104,18 @@ export function calculateMetrics(results) {
         const truthPositive = truth === 'Supported' || truth === 'Partially supported';
         return predPositive === truthPositive;
     }).length;
+
+    // Supported-vs-rest accuracy: SUPPORTED must match exactly; PARTIALLY and
+    // NOT are forgiven as mutual near-misses. This is a different grouping
+    // than lenientAccuracy below (which forgives SUPPORTED <-> PARTIALLY) —
+    // see equalSupportedVsRest's doc comment in core/verdicts.js for why the
+    // two coexist under different names rather than one being "the" lenient
+    // metric. It's also the grouping WiCE's own claim-level binary task uses,
+    // which is what makes it comparable to the figures in
+    // docs/wice-benchmark.md.
+    const supportedVsRestCorrect = validResults.filter(r =>
+        equalSupportedVsRest(r.predicted_verdict, r.ground_truth)
+    ).length;
 
     // Confusion matrix
     const confusionMatrix = {};
@@ -198,6 +215,8 @@ export function calculateMetrics(results) {
         exactAccuracy: validTotal > 0 ? exactMatches / validTotal : 0,
         lenientAccuracy: validTotal > 0 ? (exactMatches + partialMatches) / validTotal : 0,
         binaryAccuracy: validTotal > 0 ? binaryCorrect / validTotal : 0,
+        supportedVsRestCorrect,
+        supportedVsRestAccuracy: validTotal > 0 ? supportedVsRestCorrect / validTotal : 0,
         confusionMatrix,
         latency: {
             avg: avgLatency,
@@ -228,8 +247,8 @@ function generateMarkdownReport(analysis) {
 
     // Comparison table
     md += '## Provider Comparison\n\n';
-    md += '| Provider | Model | Exact Accuracy | Lenient Accuracy | Binary Accuracy | Avg Latency |\n';
-    md += '|----------|-------|----------------|------------------|-----------------|-------------|\n';
+    md += '| Provider | Model | Exact Accuracy | Lenient Accuracy | Binary Accuracy | Supported-vs-rest | Avg Latency |\n';
+    md += '|----------|-------|----------------|------------------|-----------------|--------------------|-------------|\n';
 
     const providers = Object.keys(analysis.providers).sort((a, b) =>
         analysis.providers[b].metrics.exactAccuracy - analysis.providers[a].metrics.exactAccuracy
@@ -240,7 +259,7 @@ function generateMarkdownReport(analysis) {
         const m = data.metrics;
         md += `| ${data.name} | ${data.model} | ${(m.exactAccuracy * 100).toFixed(1)}% | `;
         md += `${(m.lenientAccuracy * 100).toFixed(1)}% | ${(m.binaryAccuracy * 100).toFixed(1)}% | `;
-        md += `${m.latency.avg.toFixed(0)}ms |\n`;
+        md += `${(m.supportedVsRestAccuracy * 100).toFixed(1)}% | ${m.latency.avg.toFixed(0)}ms |\n`;
     }
     md += '\n';
 
@@ -257,6 +276,7 @@ function generateMarkdownReport(analysis) {
         md += `- Exact match: ${m.exactMatches}/${m.valid} (${(m.exactAccuracy * 100).toFixed(1)}%)\n`;
         md += `- Lenient (includes partial): ${m.exactMatches + m.partialMatches}/${m.valid} (${(m.lenientAccuracy * 100).toFixed(1)}%)\n`;
         md += `- Binary (support vs not): ${(m.binaryAccuracy * 100).toFixed(1)}%\n`;
+        md += `- Supported-vs-rest (Partial/Not forgiven as mutual near-misses, Supported must be exact): ${m.supportedVsRestCorrect}/${m.valid} (${(m.supportedVsRestAccuracy * 100).toFixed(1)}%)\n`;
         if (m.quotes && m.quotes.eligible > 0) {
             md += `- Quote supplied: ${m.quotes.offered}/${m.quotes.eligible} (${(m.quotes.offerRate * 100).toFixed(1)}% of verdicts that should have one)\n`;
             md += `- Quote found in source: ${m.quotes.verified}/${m.quotes.offered} (${(m.quotes.fidelity * 100).toFixed(1)}%)\n`;
@@ -348,6 +368,27 @@ function main() {
         console.log(`Filtered to dataset version "${VERSION_FILTER}": ${results.length}/${before} results`);
     }
 
+    // WiCE-only: restrict to rows by how their claim-level label was derived.
+    // WiCE annotators labeled subclaims; claim labels are projected from them,
+    // and 'mixed' rows are PARTIALLY-SUPPORTED purely because the subclaims
+    // disagreed — a rule that is not our rubric. Scoring the 'unanimous' subset
+    // separates model error from rubric divergence. See docs/wice-benchmark.md.
+    if (PROJECTION_FILTER !== 'all') {
+        if (!fs.existsSync(DATASET_PATH)) {
+            console.error(`--projection filter requires dataset at ${DATASET_PATH}; not found.`);
+            process.exit(1);
+        }
+        const dataset = loadRows(DATASET_PATH);
+        const projectionById = new Map(dataset.map(e => [e.id, e.wice_label_projection]));
+        const before = results.length;
+        results = results.filter(r => projectionById.get(r.entry_id) === PROJECTION_FILTER);
+        console.log(`Filtered to label projection "${PROJECTION_FILTER}": ${results.length}/${before} results`);
+        if (results.length === 0) {
+            console.error('No results left. Is this a WiCE dataset? Only WiCE rows carry wice_label_projection.');
+            process.exit(1);
+        }
+    }
+
     // Group by provider
     const byProvider = {};
     results.forEach(r => {
@@ -391,6 +432,7 @@ function main() {
         console.log(`  Exact accuracy: ${(metrics.exactAccuracy * 100).toFixed(1)}%`);
         console.log(`  Lenient accuracy: ${(metrics.lenientAccuracy * 100).toFixed(1)}%`);
         console.log(`  Binary accuracy: ${(metrics.binaryAccuracy * 100).toFixed(1)}%`);
+        console.log(`  Supported-vs-rest accuracy: ${(metrics.supportedVsRestAccuracy * 100).toFixed(1)}%`);
         console.log(`  Avg latency: ${metrics.latency.avg.toFixed(0)}ms`);
         console.log(`  Errors: ${metrics.errors}/${metrics.total}`);
         console.log('');
