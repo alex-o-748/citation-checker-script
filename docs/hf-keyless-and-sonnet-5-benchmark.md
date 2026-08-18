@@ -53,6 +53,15 @@ Accuracy" section describes).
 - By far the slowest of the three: 10.3s average latency, up to 24.4s on the
   slowest row.
 
+**Confusion matrix** (rows = ground truth, columns = predicted):
+
+| Truth \ Predicted | Supported | Partially supported | Not supported | Source unavailable |
+|---|---|---|---|---|
+| Supported | 53 | 15 | 11 | 1 |
+| Partially supported | 10 | 24 | 19 | 3 |
+| Not supported | 3 | 4 | 35 | 4 |
+| Source unavailable | 0 | 0 | 0 | 0 |
+
 ### gpt-oss-20b (`openai/gpt-oss-20b`, via HF Inference)
 
 - 181/182 valid, 1 error.
@@ -73,6 +82,15 @@ Accuracy" section describes).
   Partially-supported↔Not-supported confusion, which that metric forgives
   and the others don't (or don't as fully).
 
+**Confusion matrix** (rows = ground truth, columns = predicted):
+
+| Truth \ Predicted | Supported | Partially supported | Not supported | Source unavailable |
+|---|---|---|---|---|
+| Supported | 47 | 11 | 21 | 1 |
+| Partially supported | 6 | 20 | 28 | 2 |
+| Not supported | 1 | 2 | 42 | 0 |
+| Source unavailable | 0 | 0 | 0 | 0 |
+
 ### Claude Sonnet 5 (`claude-sonnet-5`, direct API)
 
 - 182/182 valid, 0 errors.
@@ -86,8 +104,39 @@ Accuracy" section describes).
   [Caveats](#caveats-read-before-comparing)): a wider-than-usual gap between
   exact/lenient and binary/supported-vs-rest, suggesting more of its misses
   land as a confident wrong verdict rather than a Partial/Not near-miss.
-- Confusion matrix, quote fidelity, and confidence calibration not yet
-  captured for this write-up — see the note under Raw data above.
+- Confusion matrix, quote fidelity, confidence calibration, and precision/recall
+  not yet captured for this write-up — see the note under Raw data above.
+
+## Precision / recall (Supported vs. requires-action)
+
+A different framing from the four accuracy metrics above: **Supported is the
+only positive class**; {Partially supported, Not supported, Source
+unavailable} are all "negative" — i.e. "an editor needs to look at this."
+This is the same binary split `main.js`'s actual `showActionButton` logic
+uses (only a `SUPPORTED` verdict skips the "Edit Section" prompt) — distinct
+from both `binaryAccuracy` (which groups Partially-supported with Supported)
+and `supported-vs-rest` (which requires Supported and Source-unavailable to
+match exactly but forgives Partially↔Not). Neither of those two groupings
+matches this one; this section exists because it doesn't correspond to any
+field `analyze_results.js` currently computes.
+
+| Model | TP | FP | FN | TN | Precision | Recall | F1 |
+|---|---|---|---|---|---|---|---|
+| Qwen3-32B | 53 | 13 | 27 | 89 | 80.3% | 66.3% | 72.6% |
+| gpt-oss-20b | 47 | 7 | 33 | 94 | 87.0% | 58.8% | 70.1% |
+
+Both models are precision-heavy, recall-light: when either predicts
+"Supported," it's right 80–87% of the time, but both miss a substantial share
+of genuinely supported claims (34% for Qwen3-32B, 41% for gpt-oss-20b) —
+predicting one of the "needs review" verdicts on a citation that was actually
+fine. gpt-oss-20b is the more conservative of the two: higher precision,
+lower recall. For an editor-facing tool this is arguably the safer direction
+to err in — a false "needs review" costs an editor a wasted check, while a
+false "Supported" lets a bad citation through — but it does mean a real share
+of good citations get flagged unnecessarily.
+
+Not yet available for Claude Sonnet 5 — needs its confusion matrix (see the
+note under Raw data above and in the Sonnet 5 section).
 
 ## Caveats (read before comparing)
 
