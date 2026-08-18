@@ -78,6 +78,14 @@ export const PROVIDERS = {
         keyEnv: 'PUBLICAI_API_KEY',
         type: 'publicai'
     },
+    // Wikimedia Lift Wing models
+    'liftwing-qwen3.6-27b': {
+        name: 'Qwen3.6-27B (Lift Wing)',
+        model: 'llm-qwen36-27b',
+        endpoint: 'https://llm-router.toolforge.org/liftwing',
+        requiresKey: false,
+        type: 'liftwing'
+    },
     // Claude
     'claude-sonnet-4-5': {
         name: 'Claude Sonnet 4.5',
@@ -292,6 +300,7 @@ export async function callProvider(provider, systemPrompt, userPrompt) {
                 case 'gemini':      return callGemini(config, systemPrompt, userPrompt);
                 case 'openrouter':  return callOpenRouter(config, systemPrompt, userPrompt);
                 case 'huggingface': return callHuggingFace(config, systemPrompt, userPrompt);
+                case 'liftwing':    return callLiftWing(config, systemPrompt, userPrompt);
                 default: throw new Error(`Unknown provider type: ${config.type}`);
             }
         });
@@ -427,6 +436,19 @@ async function callHuggingFace(config, systemPrompt, userPrompt) {
         userContent: userPrompt,
         maxTokens: BENCHMARK_MAX_TOKENS,
         temperature: BENCHMARK_TEMPERATURE,
+    }));
+}
+
+async function callLiftWing(config, systemPrompt, userPrompt) {
+    // Lift Wing is proxied through the CORS worker, no key needed
+    return shapeResult(await callOpenAICompatibleChat({
+        url: config.endpoint,
+        model: config.model,
+        systemPrompt,
+        userContent: userPrompt,
+        maxTokens: BENCHMARK_MAX_TOKENS,
+        temperature: BENCHMARK_TEMPERATURE,
+        label: 'Lift Wing',
     }));
 }
 
