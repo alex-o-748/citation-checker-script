@@ -488,6 +488,18 @@ confusion matrix, which is sufficient to derive it exactly (verified: the
 matrix cell totals match the recorded `valid` count for both providers, 182
 and 181). No re-run or row-level data was needed for this one field.
 
+#### Companion run: claude-sonnet-5, same day, same dataset
+
+`results_claude_sonnet5_2026-08-17.json` / `analysis_claude_sonnet5_2026-08-17.json`
+are the `claude-sonnet-5` counterpart to the keyless snapshot above — same
+182-row dataset, same day, same system prompt, run directly against the
+Anthropic API rather than lost to the `run_benchmark.js` bug described above.
+Unlike the HF snapshot, this one has full row-level data (`entry_id`,
+predicted verdict, comments, quotes), so `inspect_results.js` and `npm run
+compare` both work against it normally. See
+`docs/hf-keyless-and-sonnet-5-benchmark.md` for the full write-up comparing
+all three models.
+
 #### Benchmarking any HF-hosted model
 
 Any model hosted on HF Inference Providers can be benchmarked without
