@@ -1,6 +1,9 @@
 node_modules/
 .worktrees/
 __pycache__/
+# Benchmark output files
+*.html
+context-*.html
 
 # WiCE inputs and the corpus converted from them (see docs/wice-benchmark.md).
 # Neither is committed: the cache is ~38 MB of upstream JSONL, and

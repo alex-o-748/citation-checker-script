@@ -21,6 +21,7 @@ const CORE_ORDER = [
   'retry.js',
   'urls.js',
   'claim.js',
+  'citations.js',
   'providers.js',
   'worker.js',
   'feedback.js',

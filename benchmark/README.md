@@ -499,6 +499,19 @@ node run_benchmark.js --providers=hf:meta-llama/Llama-3.3-70B-Instruct --limit 1
 
 This works the same keyless-or-`HF_TOKEN` way as the panel above, and can be
 mixed with predefined provider keys in the same `--providers` list
+
+### New Models
+
+One new model has been added for benchmarking:
+
+1. **Qwen3.6-27B on LiftWing** (`liftwing-qwen3.6-27b`) - A Wikimedia Lift Wing hosted model
+
+To benchmark this new model:
+
+```bash
+npm run benchmark:new-models    # Run the new model
+npm run benchmark:liftwing      # Run only Qwen3.6-27B on LiftWing
+```
 (`--providers=claude-sonnet-4-5,hf:mistralai/Mistral-Small-24B-Instruct-2501`).
 
 DeepSeek-V3 (the original December 2024 release) is the panel choice
