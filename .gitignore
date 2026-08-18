@@ -1,3 +1,6 @@
 node_modules/
 .worktrees/
 __pycache__/
+# Benchmark output files
+*.html
+context-*.html
