@@ -15,10 +15,16 @@ below for context, not reproduced here.
 - Qwen3-32B / gpt-oss-20b: [`benchmark/analysis_hf_keyless_2026-08-17.json`](../benchmark/analysis_hf_keyless_2026-08-17.json)
   — aggregate metrics only; the underlying per-row `results.json` was lost to a
   since-fixed bug (see [Caveats](#caveats-read-before-comparing) below).
-- Claude Sonnet 5: local `results.json` only at time of writing — not yet
-  committed. Only the headline metrics below have been captured; a fuller
-  breakdown (confusion matrix, quote fidelity, confidence calibration) can be
-  added later from the same file via `node analyze_results.js`.
+- Claude Sonnet 5: [`benchmark/results_claude_sonnet5_2026-08-17.json`](../benchmark/results_claude_sonnet5_2026-08-17.json)
+  (182 per-row results, all fields intact) and
+  [`benchmark/analysis_claude_sonnet5_2026-08-17.json`](../benchmark/analysis_claude_sonnet5_2026-08-17.json)
+  (full `analyze_results.js` output — confusion matrix, quote fidelity,
+  confidence calibration), both now committed. Entry-id alignment against the
+  current `dataset.json` (which has grown from 182 to 189 rows since this run)
+  was spot-checked by comparing each row's rationale text against the
+  claim at its `entry_id` — all 182 ids resolve and the four headline
+  accuracy numbers below reproduce exactly via
+  `node analyze_results.js --results results_claude_sonnet5_2026-08-17.json`.
 
 ## Headline comparison
 
@@ -104,8 +110,38 @@ Accuracy" section describes).
   [Caveats](#caveats-read-before-comparing)): a wider-than-usual gap between
   exact/lenient and binary/supported-vs-rest, suggesting more of its misses
   land as a confident wrong verdict rather than a Partial/Not near-miss.
-- Confusion matrix, quote fidelity, confidence calibration, and precision/recall
-  not yet captured for this write-up — see the note under Raw data above.
+- Quote fidelity: offered a quote on 93/94 eligible rows (98.9% offer rate) —
+  the highest offer rate of the three, though on the smallest eligible-row
+  count of the three (94, vs. Qwen3-32B's and gpt-oss-20b's larger eligible
+  pools) since Sonnet 5 called more rows Source-unavailable, which has
+  nothing to quote; 86 of those 93 verified in the source (92.5% fidelity) —
+  well above both HF models (78.9% and 86.2%).
+- Accuracy when the quote verified: 76.7% vs. 71.4% unverified — only a
+  5.3-point gap, the smallest of the three models by a wide margin (Qwen3-32B:
+  18-point, gpt-oss-20b: 12-point). An unverified Sonnet 5 quote is barely
+  less trustworthy than a verified one on this run.
+- Confidence: averaged 54.8 overall, 57.9 on correct rows vs. 22.7 on wrong
+  ones — a 35.2-point calibration gap, roughly double either HF model's
+  (19.6 and 10.1 points). Sonnet 5's confidence score is a much stronger
+  correctness signal than either HF model's on this run.
+- Latency: 3,444ms average, 1,705–10,347ms range — faster than Qwen3-32B,
+  slower than gpt-oss-20b.
+
+**Confusion matrix** (rows = ground truth, columns = predicted):
+
+| Truth \ Predicted | Supported | Partially supported | Not supported | Source unavailable |
+|---|---|---|---|---|
+| Supported | 53 | 12 | 11 | 4 |
+| Partially supported | 7 | 19 | 26 | 4 |
+| Not supported | 0 | 3 | 27 | 16 |
+| Source unavailable | 0 | 0 | 0 | 0 |
+
+Notably, Sonnet 5 never predicted Supported for a truly Not-supported claim
+(0 in that cell) and predicted Source-unavailable far more often than either
+HF model (16 correct Not→Source-unavailable "misses" alone) — consistent
+with the confidence numbers above: when Sonnet 5 isn't sure the source backs
+a claim, it tends to hedge toward Source-unavailable/Not-supported rather
+than assert Supported.
 
 ## Precision / recall (needs-review vs. Supported)
 
@@ -132,8 +168,9 @@ mode — a bad citation that reads as "all clear."
 |---|---|---|---|---|---|---|---|
 | Qwen3-32B | 89 | 27 | 13 | 53 | 76.7% | 87.3% | 81.7% |
 | gpt-oss-20b | 94 | 33 | 7 | 47 | 74.0% | 93.1% | 82.5% |
+| Claude Sonnet 5 | 95 | 27 | 7 | 53 | 77.9% | 93.1% | 84.8% |
 
-Both models catch most real problems — recall in the high 80s to low 90s —
+Both HF models catch most real problems — recall in the high 80s to low 90s —
 at the cost of a meaningful false-positive rate: of the roughly 80 citations
 that were genuinely fine in each model's row set, 27 (33.8%, Qwen3-32B) to 33
 (41.3%, gpt-oss-20b) still got flagged for review they didn't need.
@@ -144,8 +181,13 @@ vs. 33.8% wrongly flagged). For a tool whose job is not missing bad
 citations, gpt-oss-20b's lower miss rate is the more consequential number
 here, even though it comes with more editor-side noise.
 
-Not yet available for Claude Sonnet 5 — needs its confusion matrix (see the
-note under Raw data above and in the Sonnet 5 section).
+**Claude Sonnet 5 matches gpt-oss-20b's recall (93.1%, missing 7 of 102 real
+problems) while beating both HF models on precision (77.9%)** — of the 80
+genuinely-fine citations in its row set, only 27 (33.8%, tied with Qwen3-32B)
+were wrongly flagged, against gpt-oss-20b's 41.3%. It has the best F1 of the
+three (84.8%) and, combined with the confidence-calibration numbers above,
+looks like the strongest of the three at this specific job — catch real
+problems without over-flagging good citations — on this run.
 
 ## Caveats (read before comparing)
 
@@ -176,8 +218,9 @@ adjustment**, for several independent reasons:
    in `loadInitialResults`, see `benchmark/run_benchmark.js`). Only the
    aggregate metrics in `analysis_hf_keyless_2026-08-17.json` survive for
    those two; `inspect_results.js`-style row inspection and `npm run compare`
-   diffing are not possible against them. Claude Sonnet 5's raw rows are
-   intact (as of writing, only locally).
+   diffing are not possible against them. Claude Sonnet 5's raw rows survived
+   and are now committed as `benchmark/results_claude_sonnet5_2026-08-17.json`
+   — row inspection and `npm run compare` against it work normally.
 5. **Single run, no repeated trials.** All numbers above are from one pass at
    temperature 0.1 (except Sonnet 5's `effort: medium`, which doesn't map to
    a temperature). No variance/confidence interval has been measured across

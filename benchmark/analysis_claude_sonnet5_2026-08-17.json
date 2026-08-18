@@ -1,0 +1,79 @@
+{
+  "generated": "2026-08-18T22:09:02.121Z",
+  "overview": {
+    "datasetVersion": "all",
+    "totalEntries": 182,
+    "totalCalls": 182,
+    "providers": [
+      "claude-sonnet-5"
+    ]
+  },
+  "providers": {
+    "claude-sonnet-5": {
+      "name": "Claude-sonnet-5",
+      "model": "claude-sonnet-5",
+      "sampleCount": 182,
+      "metrics": {
+        "total": 182,
+        "valid": 182,
+        "errors": 0,
+        "quotes": {
+          "eligible": 94,
+          "offered": 93,
+          "verified": 86,
+          "offerRate": 0.9893617021276596,
+          "fidelity": 0.9247311827956989,
+          "accuracyWhenQuoteVerified": 0.7674418604651163,
+          "accuracyWhenQuoteUnverified": 0.7142857142857143,
+          "verifiedRows": 86,
+          "unverifiedRows": 7,
+          "gap": 0.05315614617940201
+        },
+        "exactMatches": 99,
+        "partialMatches": 19,
+        "exactAccuracy": 0.5439560439560439,
+        "lenientAccuracy": 0.6483516483516484,
+        "binaryAccuracy": 0.7362637362637363,
+        "supportedVsRestCorrect": 128,
+        "supportedVsRestAccuracy": 0.7032967032967034,
+        "confusionMatrix": {
+          "Supported": {
+            "Supported": 53,
+            "Partially supported": 12,
+            "Not supported": 11,
+            "Source unavailable": 4
+          },
+          "Partially supported": {
+            "Supported": 7,
+            "Partially supported": 19,
+            "Not supported": 26,
+            "Source unavailable": 4
+          },
+          "Not supported": {
+            "Supported": 0,
+            "Partially supported": 3,
+            "Not supported": 27,
+            "Source unavailable": 16
+          },
+          "Source unavailable": {
+            "Supported": 0,
+            "Partially supported": 0,
+            "Not supported": 0,
+            "Source unavailable": 0
+          }
+        },
+        "latency": {
+          "avg": 3443.6923076923076,
+          "min": 1705,
+          "max": 10347
+        },
+        "confidence": {
+          "avg": 54.776978417266186,
+          "avgWhenCorrect": 57.86868686868687,
+          "avgWhenWrong": 22.710843373493976,
+          "calibration": 35.15784349519289
+        }
+      }
+    }
+  }
+}
