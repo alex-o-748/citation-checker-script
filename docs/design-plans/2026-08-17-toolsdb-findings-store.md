@@ -1,6 +1,6 @@
 # ToolsDB findings-store write path
 
-> **Status (2026-08-17):** Proposed. Implementation instructions for the storage stage of `2026-08-07-batch-source-checks-for-edit-suggestions.md` (§6) and the identity work in `2026-08-10-track-c-orchestration-extraction.md` (branch 5, now built as `core/anchor.js`). Nothing in `service/` for this piece exists yet.
+> **Status (2026-08-20):** Bootstrapped. `service/findings.js` is implemented and tested; the ToolsDB database (`s57953__source_verifier`) and `citation_findings` table have been created and hand-verified on the bastion (see "Definition of done" below). Original brief was for the storage stage of `2026-08-07-batch-source-checks-for-edit-suggestions.md` (§6) and the identity work in `2026-08-10-track-c-orchestration-extraction.md` (branch 5, now built as `core/anchor.js`).
 
 ## What you're building, and where
 
@@ -272,15 +272,23 @@ analogous test file in this repo, and it works well:
 
 ## Definition of done
 
-1. Database and table created on ToolsDB, confirmed by hand via the
-   `mariadb` CLI (not just "the code ran without erroring").
-2. `buildUpsertQuery` has unit tests covering: a normal finding, a
+1. [x] Database and table created on ToolsDB, confirmed by hand via the
+   `mariadb` CLI (not just "the code ran without erroring"). Done 2026-08-20:
+   `s57953__source_verifier`.`citation_findings`, created from the bastion.
+2. [x] `buildUpsertQuery` has unit tests covering: a normal finding, a
    collective-group finding (`is_collective = 1`), a no-URL/SOURCE UNAVAILABLE
    finding, and re-running the same finding (asserting the SQL is one
    `INSERT ... ON DUPLICATE KEY UPDATE`, not a separate exists-check-then-branch).
-3. A real end-to-end write against the live ToolsDB table, run twice with an
+   See `tests/findings.test.js`.
+3. [x] A real end-to-end write against the live ToolsDB table, run twice with an
    identical finding, confirmed via `SELECT COUNT(*)` to have produced one
-   row, not two.
-4. A real end-to-end write of two findings differing only in `prompt_version`,
-   confirmed to have produced two rows, not an overwrite.
-5. `npm test` still passes with no regressions to the existing suite.
+   row, not two. Confirmed 2026-08-20 on the bastion.
+4. [x] A real end-to-end write of two findings differing only in `prompt_version`,
+   confirmed to have produced two rows, not an overwrite. Confirmed 2026-08-20
+   (`row_count` went from 1 to 2 after the `prompt_version='v2'` insert).
+5. [x] `npm test` still passes with no regressions to the existing suite.
+   `tests/findings.test.js` passes 4/4; the 16 unrelated pre-existing failures
+   elsewhere in the suite are present on this branch with or without this work.
+
+All test rows (`page_id = 999999999`) were deleted after verification —
+the live table holds no fixture data.
