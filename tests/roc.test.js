@@ -5,6 +5,7 @@ import {
     isPositiveGroundTruth,
     computeRocCurve,
     computeRocCurvesByProvider,
+    computeVerdictOperatingPoint,
 } from '../benchmark/roc.js';
 
 test('supportedScore pushes SUPPORTED above 50 and NOT SUPPORTED/SOURCE UNAVAILABLE below it', () => {
@@ -83,6 +84,47 @@ test('computeRocCurve excludes error rows and rows with unrecognized ground trut
     const { positives, negatives } = computeRocCurve(rows);
     assert.equal(positives, 1);
     assert.equal(negatives, 1);
+});
+
+test('computeVerdictOperatingPoint ignores confidence and scores the raw predicted_verdict', () => {
+    const rows = [
+        // Low-confidence SUPPORTED still counts as a predicted positive here,
+        // unlike the threshold-swept curve where it might not clear a high cutoff.
+        { ground_truth: 'Supported', predicted_verdict: 'Supported', confidence: 5 },
+        { ground_truth: 'Not supported', predicted_verdict: 'Supported', confidence: 5 },
+        { ground_truth: 'Supported', predicted_verdict: 'Not supported', confidence: 99 },
+        { ground_truth: 'Not supported', predicted_verdict: 'Not supported', confidence: 99 },
+    ];
+    const point = computeVerdictOperatingPoint(rows);
+    // 1 true positive / 2 actual positives; 1 false positive / 2 actual negatives.
+    assert.deepEqual(point, { fpr: 0.5, tpr: 0.5 });
+});
+
+test('computeVerdictOperatingPoint treats PARTIALLY SUPPORTED as a predicted negative', () => {
+    const rows = [
+        { ground_truth: 'Supported', predicted_verdict: 'Partially supported', confidence: 60 },
+        { ground_truth: 'Not supported', predicted_verdict: 'Not supported', confidence: 60 },
+    ];
+    const point = computeVerdictOperatingPoint(rows);
+    assert.deepEqual(point, { fpr: 0, tpr: 0 });
+});
+
+test('computeVerdictOperatingPoint returns null for single-class rows', () => {
+    const rows = [
+        { ground_truth: 'Supported', predicted_verdict: 'Supported', confidence: 90 },
+    ];
+    assert.equal(computeVerdictOperatingPoint(rows), null);
+});
+
+test('computeRocCurve includes the matching verdictOperatingPoint', () => {
+    const rows = [
+        { ground_truth: 'Supported', predicted_verdict: 'Supported', confidence: 90 },
+        { ground_truth: 'Supported', predicted_verdict: 'Not supported', confidence: 40 },
+        { ground_truth: 'Not supported', predicted_verdict: 'Not supported', confidence: 90 },
+        { ground_truth: 'Not supported', predicted_verdict: 'Not supported', confidence: 80 },
+    ];
+    const { verdictOperatingPoint } = computeRocCurve(rows);
+    assert.deepEqual(verdictOperatingPoint, { fpr: 0, tpr: 0.5 });
 });
 
 test('computeRocCurvesByProvider splits rows by provider', () => {
