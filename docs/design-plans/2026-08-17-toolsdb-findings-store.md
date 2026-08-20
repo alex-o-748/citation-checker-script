@@ -57,8 +57,9 @@ mariadb --defaults-file=~/replica.my.cnf -h tools.db.svc.wikimedia.cloud
 ```
 
 Find your credential user (needed for the database name) — it's the `user =`
-line in `~/replica.my.cnf`. Then, substituting that value for
-`<credentialUser>` below:
+line in `~/replica.my.cnf`. **Confirmed 2026-08-20: `<credentialUser>` is
+`s57953`** — the database is `s57953__source_verifier`. Substituting that
+value for `<credentialUser>` below:
 
 ```sql
 CREATE DATABASE IF NOT EXISTS `<credentialUser>__source_verifier`;
