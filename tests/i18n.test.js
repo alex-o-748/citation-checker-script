@@ -96,7 +96,7 @@ test('translations are non-empty and actually differ from English', () => {
   }
   // A handful of strings are genuinely the same word in Spanish. Anything else
   // matching English means a key was copied over without being translated.
-  const SAME_IN_SPANISH = ['ERROR', 'Error: {message}'];
+  const SAME_IN_SPANISH = ['No', 'ERROR', 'Error: {message}'];
   const untranslated = Object.entries(MESSAGES.es).filter(([en, es]) => en === es);
   assert.deepEqual(untranslated.map(([en]) => en), SAME_IN_SPANISH, 'untranslated Spanish strings');
 });
