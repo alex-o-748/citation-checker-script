@@ -10,6 +10,7 @@
     "extract:v3": "node extract_dataset.js --version v3",
     "benchmark": "node run_benchmark.js",
     "benchmark:publicai": "node run_benchmark.js --providers=publicai",
+    "benchmark:gemini-3.7-flash": "node run_benchmark.js --providers=gemini-3.7-flash",
     "benchmark:liftwing": "node run_benchmark.js --providers=liftwing-qwen3.6-27b",
     "benchmark:v1": "node run_benchmark.js --version v1",
     "benchmark:v3": "node run_benchmark.js --version v3",
