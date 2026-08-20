@@ -121,10 +121,24 @@ export const PROVIDERS = {
         effort: 'medium'
     },
     // Gemini
+    // gemini-2.5-flash is kept (not replaced) for frozen-snapshot reproducibility —
+    // analysis.json / results.json / the v1 and v3 snapshots all reference this
+    // provider key by name. Gemini 2.5 Flash is slated to shut down 2026-10-16.
     'gemini-2.5-flash': {
         name: 'Gemini 2.5 Flash',
         model: 'gemini-2.5-flash',
         endpoint: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent',
+        requiresKey: true,
+        keyEnv: 'GEMINI_API_KEY',
+        type: 'gemini'
+    },
+    // Gemini 3.7 Flash is the current GA/stable Gemini Flash model (verified
+    // 2026-08-20 against ai.google.dev's model docs), pinned to a fixed
+    // dated model id rather than the `gemini-flash-latest` alias main.js uses.
+    'gemini-3.7-flash': {
+        name: 'Gemini 3.7 Flash',
+        model: 'gemini-3.7-flash',
+        endpoint: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.7-flash:generateContent',
         requiresKey: true,
         keyEnv: 'GEMINI_API_KEY',
         type: 'gemini'
