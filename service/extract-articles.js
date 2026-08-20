@@ -16,6 +16,7 @@
 //   node service/extract-articles.js
 //   node service/extract-articles.js --criterion citation-needed --max 5
 //   node service/extract-articles.js --live-source-fetch --max 1
+//   node service/extract-articles.js --live-source-fetch --title "Andre Agassi"
 
 import { JSDOM } from 'jsdom';
 import { parseArgs } from 'node:util';
@@ -37,6 +38,7 @@ function parseCliArgs(argv) {
             criterion:        { type: 'string', default: 'failed-verification' },
             wiki:             { type: 'string', default: 'enwiki' },
             max:              { type: 'string', default: '3' },
+            title:            { type: 'string' },
             'live-source-fetch': { type: 'boolean', default: false },
             help:             { type: 'boolean', short: 'h', default: false },
         },
@@ -48,6 +50,7 @@ function parseCliArgs(argv) {
         criterion: values.criterion,
         wiki: values.wiki,
         max: Number(values.max),
+        title: values.title,
         liveSourceFetch: values['live-source-fetch'],
     };
 }
@@ -66,6 +69,11 @@ Options:
                        (default: failed-verification)
   --wiki <db>          Wiki database name, e.g. enwiki, frwiki (default: enwiki)
   --max <n>            Maximum articles to process (default: 3)
+  --title <name>       Process exactly this one article by title (latest
+                        revision) instead of querying Wiki Replicas for
+                        candidates. Ignores --criterion, --wiki, and --max.
+                        No Wiki Replicas connection is made at all in this
+                        mode, so it also works outside Toolforge.
   --live-source-fetch  Fetch real sources via tf-source-fetcher instead of the
                         stub. Manual smoke-test use only (see above).
   --help, -h           Show this help and exit.
@@ -97,7 +105,9 @@ function describeSource(source) {
 }
 
 function printArticle(result) {
-    process.stdout.write(`## ${result.title} (page ${result.pageId}, rev ${result.revisionId})\n`);
+    const page = result.pageId != null ? `page ${result.pageId}` : 'page unknown';
+    const rev = result.revisionId != null ? `rev ${result.revisionId}` : 'latest revision';
+    process.stdout.write(`## ${result.title} (${page}, ${rev})\n`);
     process.stdout.write(`outcome: ${result.outcome}\n`);
 
     if (result.outcome === ARTICLE_OUTCOMES.FETCH_FAILED) {
@@ -142,27 +152,34 @@ async function main(argv) {
         return 2;
     }
 
-    let connection;
-    try {
-        connection = await openReplicaConnection({ wikiDb: opts.wiki });
-    } catch (error) {
-        process.stderr.write(`error: could not connect to Wiki Replicas: ${error.message}\n`);
-        return 1;
-    }
-
     let candidates;
-    try {
-        candidates = await selectCandidates(makeQueryFn(connection), {
-            criterion: opts.criterion,
-            max: opts.max,
-        });
-    } catch (error) {
-        process.stderr.write(`error: ${error.message}\n`);
-        return 1;
-    } finally {
-        // Done with Replicas before the (slower, external) REST fetches begin
-        // — no reason to hold the DB connection open across them.
-        await connection.end();
+    if (opts.title) {
+        // No pageId/revisionId available without a Replicas lookup — printArticle()
+        // renders those as "page unknown" / "latest revision", and fetchArticleHtml()
+        // treats a missing revisionId as "fetch the current version" (core/wikipedia.js).
+        candidates = [{ pageId: null, title: opts.title, revisionId: null }];
+    } else {
+        let connection;
+        try {
+            connection = await openReplicaConnection({ wikiDb: opts.wiki });
+        } catch (error) {
+            process.stderr.write(`error: could not connect to Wiki Replicas: ${error.message}\n`);
+            return 1;
+        }
+
+        try {
+            candidates = await selectCandidates(makeQueryFn(connection), {
+                criterion: opts.criterion,
+                max: opts.max,
+            });
+        } catch (error) {
+            process.stderr.write(`error: ${error.message}\n`);
+            return 1;
+        } finally {
+            // Done with Replicas before the (slower, external) REST fetches begin
+            // — no reason to hold the DB connection open across them.
+            await connection.end();
+        }
     }
 
     if (opts.liveSourceFetch) {
