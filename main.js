@@ -2234,10 +2234,10 @@ function useToolforgeSourceFetcher() {
             '! # !! Verdict !! Source !! Commentaires !! class="unsortable" | Signaler',
         '! # !! Verdict !! Source !! Comments':
             '! # !! Verdict !! Source !! Commentaires',
-        '{{tick}} Supported': '{{tick}} Confirmée',
-        '{{bang}} Partially supported': '{{bang}} Partiellement confirmée',
-        '{{cross}} Not supported': '{{cross}} Non confirmée',
-        '{{hmmm}} Source unavailable': '{{hmmm}} Source indisponible',
+        '{{tick}} Supported': '{{Oui-}} Confirmée',
+        '{{bang}} Partially supported': 'Partiellement confirmée',
+        '{{cross}} Not supported': '{{Non-}} Non confirmée',
+        '{{hmmm}} Source unavailable': 'Source indisponible',
         "''(Combined sources are long, only partially checked.)''":
             "''(Sources combinées longues, vérifiées partiellement seulement.)''",
         "''(Source is long, only partially checked.)''":
