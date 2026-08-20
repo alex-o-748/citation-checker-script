@@ -34,6 +34,20 @@ export function isPositiveGroundTruth(groundTruth) {
     return canonicalizeVerdict(groundTruth) === VERDICTS.SUPPORTED;
 }
 
+// Excludes error rows (no verdict produced) and rows whose ground truth
+// doesn't canonicalize to one of the four known verdicts. Shared by
+// computeRocCurve and computeVerdictOperatingPoint so both use the same
+// row set and the same positive/negative denominators.
+function scoreRows(rows) {
+    return rows
+        .filter(r => !r.error && canonicalizeVerdict(r.ground_truth) !== null && r.predicted_verdict)
+        .map(r => ({
+            score: supportedScore(r.predicted_verdict, r.confidence),
+            predictedPositive: canonicalizeVerdict(r.predicted_verdict) === VERDICTS.SUPPORTED,
+            positive: isPositiveGroundTruth(r.ground_truth),
+        }));
+}
+
 /**
  * Compute ROC points + AUC for one set of rows (already filtered to a
  * single provider). Rows with `error` set are excluded - they never
@@ -43,17 +57,18 @@ export function isPositiveGroundTruth(groundTruth) {
  * rows are single-class (no meaningful curve to draw).
  */
 export function computeRocCurve(rows) {
-    const scored = rows
-        .filter(r => !r.error && canonicalizeVerdict(r.ground_truth) !== null && r.predicted_verdict)
-        .map(r => ({
-            score: supportedScore(r.predicted_verdict, r.confidence),
-            positive: isPositiveGroundTruth(r.ground_truth),
-        }));
+    const scored = scoreRows(rows);
 
     const positives = scored.filter(r => r.positive).length;
     const negatives = scored.length - positives;
     if (positives === 0 || negatives === 0) {
-        return { points: [{ fpr: 0, tpr: 0 }, { fpr: 1, tpr: 1 }], auc: null, positives, negatives };
+        return {
+            points: [{ fpr: 0, tpr: 0 }, { fpr: 1, tpr: 1 }],
+            auc: null,
+            positives,
+            negatives,
+            verdictOperatingPoint: null,
+        };
     }
 
     // Sweep every distinct score as a threshold (predict positive when
@@ -72,7 +87,30 @@ export function computeRocCurve(rows) {
     points.push({ fpr: 1, tpr: 1 });
 
     const auc = trapezoidalAuc(points);
-    return { points, auc, positives, negatives };
+    const verdictOperatingPoint = computeVerdictOperatingPoint(rows);
+    return { points, auc, positives, negatives, verdictOperatingPoint };
+}
+
+/**
+ * The single (fpr, tpr) point the provider actually operates at today: no
+ * confidence threshold, just "did the raw predicted_verdict say SUPPORTED."
+ * This is what the sidebar's verdict alone gets an editor, as opposed to the
+ * curve's hypothetical "what if we thresholded on confidence instead."
+ *
+ * Returns null when the rows are single-class (fpr/tpr undefined).
+ */
+export function computeVerdictOperatingPoint(rows) {
+    const scored = scoreRows(rows);
+    const positives = scored.filter(r => r.positive).length;
+    const negatives = scored.length - positives;
+    if (positives === 0 || negatives === 0) return null;
+
+    let tp = 0, fp = 0;
+    for (const r of scored) {
+        if (!r.predictedPositive) continue;
+        if (r.positive) tp++; else fp++;
+    }
+    return { fpr: fp / negatives, tpr: tp / positives };
 }
 
 function trapezoidalAuc(points) {

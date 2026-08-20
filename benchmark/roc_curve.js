@@ -38,7 +38,9 @@ function main() {
     console.log('\n=== ROC AUC (SUPPORTED vs. rest) ===\n');
     for (const [provider, curve] of Object.entries(curves)) {
         const aucStr = curve.auc === null ? 'n/a (single-class)' : curve.auc.toFixed(3);
-        console.log(`${provider}: AUC ${aucStr}  (${curve.positives} positive / ${curve.negatives} negative)`);
+        const vop = curve.verdictOperatingPoint;
+        const vopStr = vop ? `  |  raw verdict: FPR ${vop.fpr.toFixed(3)}, TPR ${vop.tpr.toFixed(3)}` : '';
+        console.log(`${provider}: AUC ${aucStr}  (${curve.positives} positive / ${curve.negatives} negative)${vopStr}`);
     }
 
     fs.writeFileSync(OUTPUT_PATH, JSON.stringify(curves, null, 2));

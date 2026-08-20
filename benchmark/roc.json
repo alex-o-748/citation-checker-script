@@ -67,7 +67,11 @@
     ],
     "auc": 0.6413224516988675,
     "positives": 79,
-    "negatives": 76
+    "negatives": 76,
+    "verdictOperatingPoint": {
+      "fpr": 0.3684210526315789,
+      "tpr": 0.6329113924050633
+    }
   },
   "qwen-sealion": {
     "points": [
@@ -117,7 +121,11 @@
     ],
     "auc": 0.7485842771485677,
     "positives": 79,
-    "negatives": 76
+    "negatives": 76,
+    "verdictOperatingPoint": {
+      "fpr": 0.5394736842105263,
+      "tpr": 0.8481012658227848
+    }
   },
   "claude-sonnet-4-5": {
     "points": [
@@ -182,7 +190,11 @@
     ],
     "auc": 0.7839033018867926,
     "positives": 80,
-    "negatives": 106
+    "negatives": 106,
+    "verdictOperatingPoint": {
+      "fpr": 0.330188679245283,
+      "tpr": 0.8375
+    }
   },
   "gemini-2.5-flash": {
     "points": [
@@ -237,7 +249,11 @@
     ],
     "auc": 0.8172759433962264,
     "positives": 80,
-    "negatives": 106
+    "negatives": 106,
+    "verdictOperatingPoint": {
+      "fpr": 0.1509433962264151,
+      "tpr": 0.65
+    }
   },
   "claude-sonnet-5": {
     "points": [
@@ -327,7 +343,11 @@
     ],
     "auc": 0.7896446078431373,
     "positives": 80,
-    "negatives": 102
+    "negatives": 102,
+    "verdictOperatingPoint": {
+      "fpr": 0.06862745098039216,
+      "tpr": 0.6625
+    }
   },
   "gemini-3.7-flash": {
     "points": [
@@ -407,6 +427,10 @@
     ],
     "auc": 0.8663863266413456,
     "positives": 76,
-    "negatives": 97
+    "negatives": 97,
+    "verdictOperatingPoint": {
+      "fpr": 0.030927835051546393,
+      "tpr": 0.631578947368421
+    }
   }
 }
