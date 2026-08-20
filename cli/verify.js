@@ -16,6 +16,19 @@ import { parseCompareArgs, COMPARE_HELP_TEXT, runCompare } from './compare.js';
 
 const KNOWN_PROVIDERS = ['publicai', 'huggingface', 'claude', 'gemini', 'openai'];
 
+// Experimental: opt-in override that routes the huggingface provider's proxy
+// call through the tf-llm-router Toolforge tool
+// (https://github.com/alex-o-748/tf-llm-router) instead of the Cloudflare
+// Worker CORS proxy, mirroring the same override in main.js
+// (useToolforgeLlmRouter). Unlike tf-source-fetcher, tf-llm-router's README
+// carries no WMCS gating caveat — it's opt-in because it's new and its
+// Toolforge rate-limit behavior is still unverified, not because it's
+// policy-blocked. Only applies to huggingface routed via the proxy (no
+// HF_API_KEY set) — with a key the call goes directly to HF's router and
+// workerBase is irrelevant; publicai isn't routed here at all, since
+// tf-llm-router doesn't implement a publicai-shaped route.
+const TOOLFORGE_LLM_ROUTER_BASE = 'https://llm-router.toolforge.org';
+
 export function parseCliArgs(argv) {
     const raw = argv.slice(2);
 
@@ -47,6 +60,7 @@ function parseVerifyArgs(args) {
         options: {
             provider: { type: 'string', default: 'huggingface' },
             'no-log': { type: 'boolean', default: false },
+            'live-llm-router': { type: 'boolean', default: false },
             help:     { type: 'boolean', short: 'h', default: false },
         },
         allowPositionals: true,
@@ -75,6 +89,7 @@ function parseVerifyArgs(args) {
         citationNumber,
         provider,
         noLog: values['no-log'],
+        liveLlmRouter: values['live-llm-router'],
     };
 }
 
@@ -197,6 +212,10 @@ Options:
                        openai      (requires OPENAI_API_KEY)
   --no-log           Do not log the verification to the worker proxy's
                      /log endpoint.
+  --live-llm-router  Route the huggingface provider through tf-llm-router
+                     (https://github.com/alex-o-748/tf-llm-router) instead
+                     of the Cloudflare Worker proxy. Experimental; no effect
+                     unless --provider huggingface and HF_API_KEY is unset.
   --help, -h         Show this help and exit.
 
 Exit codes:
@@ -216,6 +235,7 @@ Examples:
   ccs verify https://en.wikipedia.org/wiki/Great_Migration_(African_American) 14
   ccs verify https://en.wikipedia.org/wiki/Foo 3 --provider claude
   ccs verify https://en.wikipedia.org/wiki/Foo?oldid=1234567 3 --no-log
+  ccs verify https://en.wikipedia.org/wiki/Foo 3 --live-llm-router
 `;
 
 export const TOP_LEVEL_HELP_TEXT = `usage: ccs <subcommand> [...]
@@ -251,7 +271,7 @@ async function fetchWikipediaHtml(restUrl) {
 }
 
 export async function runVerify(opts, { stdout = process.stdout, stderr = process.stderr, env = process.env } = {}) {
-    const { url, citationNumber, provider, noLog } = opts;
+    const { url, citationNumber, provider, noLog, liveLlmRouter } = opts;
 
     // 1. Check API key availability up-front (exit 8).
     const envVar = PROVIDER_ENV_VARS[provider];
@@ -331,14 +351,22 @@ export async function runVerify(opts, { stdout = process.stdout, stderr = proces
     const systemPrompt = generateSystemPrompt();
     const userContent = generateUserPrompt(claim, fetchResult.content);
     const optionalEnvVar = PROVIDER_OPTIONAL_ENV_VARS[provider];
+    const apiKey = envVar
+        ? env[envVar]
+        : (optionalEnvVar ? env[optionalEnvVar] : undefined);
     const providerConfig = {
         model: PROVIDER_MODELS[provider],
         systemPrompt,
         userContent,
-        apiKey: envVar
-            ? env[envVar]
-            : (optionalEnvVar ? env[optionalEnvVar] : undefined),
+        apiKey,
     };
+
+    // See TOOLFORGE_LLM_ROUTER_BASE above: only meaningful for the proxy-routed
+    // huggingface call (no apiKey — a direct HF call ignores workerBase entirely).
+    if (liveLlmRouter && provider === 'huggingface' && !apiKey) {
+        stderr.write(`ccs: routing huggingface via ${TOOLFORGE_LLM_ROUTER_BASE}\n`);
+        providerConfig.workerBase = TOOLFORGE_LLM_ROUTER_BASE;
+    }
 
     let providerResult;
     try {
