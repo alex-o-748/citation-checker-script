@@ -1,17 +1,21 @@
 #!/usr/bin/env node
-// Runnable validation script for pipeline stages 1-2: selects candidate
+// Runnable validation script for pipeline stages 1-3: selects candidate
 // articles from Wiki Replicas, fetches each one's real rendered HTML from the
-// Wikipedia REST API, and extracts its citations and claims.
+// Wikipedia REST API, extracts its citations and claims, and (opt-in only)
+// fetches the cited sources via the tf-source-fetcher Toolforge tool
+// (https://github.com/alex-o-748/tf-source-fetcher).
 //
-// Stage 3 (fetching the cited sources) is deliberately stubbed here — that
-// step is blocked on the source-fetcher Toolforge tool, which does not exist
-// yet. Every citation with a URL will report "source fetching not wired up"
-// until it does. This script exists to validate everything up to that point
-// without depending on it.
+// Stage 3 defaults to a stub. tf-source-fetcher is built and deployable, but
+// per its own README, unattended fetching of third-party publisher URLs from
+// Wikimedia infrastructure has not yet been cleared with WMCS — so no batch
+// job may be pointed at it as a matter of course. Pass --live-source-fetch to
+// opt in for a one-off manual smoke test (e.g. from a Toolforge bastion,
+// after checking WMCS clearance); every other run stays stubbed.
 //
 // Usage (on a Toolforge bastion, inside the tool account):
 //   node service/extract-articles.js
 //   node service/extract-articles.js --criterion citation-needed --max 5
+//   node service/extract-articles.js --live-source-fetch --max 1
 
 import { JSDOM } from 'jsdom';
 import { parseArgs } from 'node:util';
@@ -19,15 +23,22 @@ import { openReplicaConnection, makeQueryFn } from './replicas.js';
 import { selectCandidates, CRITERIA } from './selection.js';
 import { runBatch, ARTICLE_OUTCOMES } from './pipeline.js';
 import { fetchArticleHtml } from '../core/wikipedia.js';
+import { fetchSourceContent } from '../core/worker.js';
+
+// Same contract, same query shape (?fetch=&page=), same Google-Books-skip and
+// Wayback-fallback behavior as the reference Cloudflare Worker proxy — see
+// that repo's README ("Behavior carried over from the reference Worker").
+const TOOLFORGE_SOURCE_FETCHER_BASE = 'https://source-fetcher.toolforge.org';
 
 function parseCliArgs(argv) {
     const { values } = parseArgs({
         args: argv.slice(2),
         options: {
-            criterion: { type: 'string', default: 'failed-verification' },
-            wiki:      { type: 'string', default: 'enwiki' },
-            max:       { type: 'string', default: '3' },
-            help:      { type: 'boolean', short: 'h', default: false },
+            criterion:        { type: 'string', default: 'failed-verification' },
+            wiki:             { type: 'string', default: 'enwiki' },
+            max:              { type: 'string', default: '3' },
+            'live-source-fetch': { type: 'boolean', default: false },
+            help:             { type: 'boolean', short: 'h', default: false },
         },
         strict: true,
     });
@@ -37,6 +48,7 @@ function parseCliArgs(argv) {
         criterion: values.criterion,
         wiki: values.wiki,
         max: Number(values.max),
+        liveSourceFetch: values['live-source-fetch'],
     };
 }
 
@@ -44,13 +56,18 @@ const HELP_TEXT = `usage: node service/extract-articles.js [options]
 
 Selects candidate articles from Wiki Replicas, fetches each one's real
 rendered HTML, and extracts its citations and claims. Source fetching (stage
-3) is stubbed — this validates selection and extraction only.
+3) is stubbed by default — pass --live-source-fetch to fetch real sources via
+tf-source-fetcher for a one-off manual smoke test. Per that service's own
+README, it is not yet cleared by WMCS for unattended production traffic, so
+--live-source-fetch is opt-in only and should not be used in a scheduled job.
 
 Options:
   --criterion <name>  Selection criterion. One of: ${Object.keys(CRITERIA).join(', ')}
                        (default: failed-verification)
   --wiki <db>          Wiki database name, e.g. enwiki, frwiki (default: enwiki)
   --max <n>            Maximum articles to process (default: 3)
+  --live-source-fetch  Fetch real sources via tf-source-fetcher instead of the
+                        stub. Manual smoke-test use only (see above).
   --help, -h           Show this help and exit.
 `;
 
@@ -63,8 +80,20 @@ async function stubFetchSource() {
     return {
         content: null,
         status: null,
-        error: 'source fetching not wired up yet — waiting on the source-fetcher Toolforge tool',
+        error: 'source fetching not wired up — pass --live-source-fetch to fetch via tf-source-fetcher',
     };
+}
+
+async function liveFetchSource(url, pageNum) {
+    return fetchSourceContent(url, pageNum, { workerBase: TOOLFORGE_SOURCE_FETCHER_BASE });
+}
+
+function describeSource(source) {
+    if (source.content) {
+        const cached = source.cached ? ', cached' : '';
+        return `fetched, ${source.content.length} chars (status ${source.status}${cached})`;
+    }
+    return `unavailable (${source.unavailableReason}, status ${source.status}): ${source.error}`;
 }
 
 function printArticle(result) {
@@ -87,6 +116,9 @@ function printArticle(result) {
         const claim = c.claimText.length > 100 ? `${c.claimText.slice(0, 100)}…` : c.claimText;
         process.stdout.write(`  [${c.citationNumber}] ${claim}\n`);
         process.stdout.write(`      url: ${c.url || '(none)'}\n`);
+        if (c.url) {
+            process.stdout.write(`      source: ${describeSource(c.source)}\n`);
+        }
     }
     process.stdout.write('\n');
 
@@ -127,6 +159,13 @@ async function main(argv) {
         await connection.end();
     }
 
+    if (opts.liveSourceFetch) {
+        process.stderr.write(
+            `WARNING: --live-source-fetch is on — fetching real sources via ${TOOLFORGE_SOURCE_FETCHER_BASE}. ` +
+            `Confirm WMCS has cleared unattended fetching before using this outside a manual smoke test.\n`
+        );
+    }
+
     process.stderr.write(`selected ${candidates.length} article(s); fetching and extracting...\n\n`);
 
     let totalCitations = 0;
@@ -145,7 +184,7 @@ async function main(argv) {
         for await (const result of runBatch(candidates, {
             parseHtml,
             fetchArticle: fetchArticleHtml,
-            fetchSource: stubFetchSource,
+            fetchSource: opts.liveSourceFetch ? liveFetchSource : stubFetchSource,
         })) {
             const { citations, withUrl } = printArticle(result);
             totalCitations += citations;
