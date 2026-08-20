@@ -201,7 +201,7 @@ practice. The old row stays queryable (for audit, for detecting what
 changed) while the `published` flag and the read-path's own logic decide
 which prompt version's findings are current.
 
-## One open design question — flag it, don't silently guess
+## Design question, resolved: no-URL findings are stored
 
 Citations with no URL at all (offline sources — books, journals) still
 produce a verdict today: the live userscript's `verifyAllCitations()` (and
@@ -215,15 +215,15 @@ all produce the same deterministic hash (of the empty string), so a no-URL
 citation gets a consistent, non-null value rather than an error. That part
 is settled and tested.
 
-What's *not* settled: does a no-URL finding even belong in this table? The
-design doc says SOURCE UNAVAILABLE findings are stored (operationally
-valuable, §7) but never published — it doesn't explicitly address a finding
-that never reached the LLM at all, where `prompt_version` and `model` have
-no natural value (no prompt was used). Don't invent an answer under time
-pressure — surface this to the maintainer, propose "store it with
-`prompt_version` set to whatever's current and `published = 0`" as the
-default if a quick decision is needed, but flag it as a decision rather than
-presenting it as obviously correct.
+**Decided (maintainer, 2026-08-20): yes, a no-URL finding belongs in this
+table.** Store it the same way as any other unpublished finding — the
+doc's proposed default is now the rule: `prompt_version` set to whatever's
+current at write time (even though no prompt was actually used) and
+`published = 0`. `model` has no natural value for these rows and is left
+`NULL`. This keeps SOURCE UNAVAILABLE findings queryable for the same
+operational reasons §7 gives for storing other unpublished findings,
+without requiring a schema change to accommodate a row that never called
+an LLM.
 
 ## What this module is explicitly not responsible for
 

@@ -100,6 +100,11 @@ test('buildUpsertQuery handles collective group findings', () => {
 });
 
 test('buildUpsertQuery handles no-URL findings with empty-string hash', () => {
+    // Decided 2026-08-20: no-URL / SOURCE UNAVAILABLE findings ARE stored.
+    // Convention for the fields with no natural value since no LLM was
+    // called: model stays null, prompt_version is set to whatever's
+    // current at write time, published stays 0. See "Design question,
+    // resolved" in docs/design-plans/2026-08-17-toolsdb-findings-store.md.
     const finding = {
         wiki: 'enwiki',
         pageId: 12345,
@@ -116,9 +121,9 @@ test('buildUpsertQuery handles no-URL findings with empty-string hash', () => {
         confidence: 0,
         reasonType: 'no_url',
         rationale: 'No URL found in reference',
-        provider: 'publicai',
-        model: 'qwen3-32b',
-        promptVersion: 'v1.0',
+        provider: null,
+        model: null, // no LLM was called
+        promptVersion: 'v1.0', // current prompt version at write time
         fetchStatus: null,
         sourceTruncated: false,
         tokensIn: 0,
@@ -132,6 +137,13 @@ test('buildUpsertQuery handles no-URL findings with empty-string hash', () => {
     // Check that null sourceUrl produces the empty-string hash
     const expectedSourceUrlHash = sourceUrlHash(null);
     assert.deepEqual(params[9], expectedSourceUrlHash);
+
+    // model (index 18) stays null; promptVersion (index 19) is still set
+    assert.equal(params[18], null);
+    assert.equal(params[19], 'v1.0');
+
+    // published stays 0 for an unpublished no-URL finding
+    assert.equal(params[25], 0);
 });
 
 // Fake query function for testing upsertFinding
