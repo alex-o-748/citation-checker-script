@@ -1,6 +1,6 @@
 # ToolsDB findings-store write path
 
-> **Status (2026-08-17):** Proposed. Implementation instructions for the storage stage of `2026-08-07-batch-source-checks-for-edit-suggestions.md` (§6) and the identity work in `2026-08-10-track-c-orchestration-extraction.md` (branch 5, now built as `core/anchor.js`). Nothing in `service/` for this piece exists yet.
+> **Status (2026-08-20):** Bootstrapped. `service/findings.js` is implemented and tested; the ToolsDB database (`s57953__source_verifier`) and `citation_findings` table have been created and hand-verified on the bastion (see "Definition of done" below). Original brief was for the storage stage of `2026-08-07-batch-source-checks-for-edit-suggestions.md` (§6) and the identity work in `2026-08-10-track-c-orchestration-extraction.md` (branch 5, now built as `core/anchor.js`).
 
 ## What you're building, and where
 
@@ -57,8 +57,9 @@ mariadb --defaults-file=~/replica.my.cnf -h tools.db.svc.wikimedia.cloud
 ```
 
 Find your credential user (needed for the database name) — it's the `user =`
-line in `~/replica.my.cnf`. Then, substituting that value for
-`<credentialUser>` below:
+line in `~/replica.my.cnf`. **Confirmed 2026-08-20: `<credentialUser>` is
+`s57953`** — the database is `s57953__source_verifier`. Substituting that
+value for `<credentialUser>` below:
 
 ```sql
 CREATE DATABASE IF NOT EXISTS `<credentialUser>__source_verifier`;
@@ -201,7 +202,7 @@ practice. The old row stays queryable (for audit, for detecting what
 changed) while the `published` flag and the read-path's own logic decide
 which prompt version's findings are current.
 
-## One open design question — flag it, don't silently guess
+## Design question, resolved: no-URL findings are stored
 
 Citations with no URL at all (offline sources — books, journals) still
 produce a verdict today: the live userscript's `verifyAllCitations()` (and
@@ -215,15 +216,15 @@ all produce the same deterministic hash (of the empty string), so a no-URL
 citation gets a consistent, non-null value rather than an error. That part
 is settled and tested.
 
-What's *not* settled: does a no-URL finding even belong in this table? The
-design doc says SOURCE UNAVAILABLE findings are stored (operationally
-valuable, §7) but never published — it doesn't explicitly address a finding
-that never reached the LLM at all, where `prompt_version` and `model` have
-no natural value (no prompt was used). Don't invent an answer under time
-pressure — surface this to the maintainer, propose "store it with
-`prompt_version` set to whatever's current and `published = 0`" as the
-default if a quick decision is needed, but flag it as a decision rather than
-presenting it as obviously correct.
+**Decided (maintainer, 2026-08-20): yes, a no-URL finding belongs in this
+table.** Store it the same way as any other unpublished finding — the
+doc's proposed default is now the rule: `prompt_version` set to whatever's
+current at write time (even though no prompt was actually used) and
+`published = 0`. `model` has no natural value for these rows and is left
+`NULL`. This keeps SOURCE UNAVAILABLE findings queryable for the same
+operational reasons §7 gives for storing other unpublished findings,
+without requiring a schema change to accommodate a row that never called
+an LLM.
 
 ## What this module is explicitly not responsible for
 
@@ -271,15 +272,23 @@ analogous test file in this repo, and it works well:
 
 ## Definition of done
 
-1. Database and table created on ToolsDB, confirmed by hand via the
-   `mariadb` CLI (not just "the code ran without erroring").
-2. `buildUpsertQuery` has unit tests covering: a normal finding, a
+1. [x] Database and table created on ToolsDB, confirmed by hand via the
+   `mariadb` CLI (not just "the code ran without erroring"). Done 2026-08-20:
+   `s57953__source_verifier`.`citation_findings`, created from the bastion.
+2. [x] `buildUpsertQuery` has unit tests covering: a normal finding, a
    collective-group finding (`is_collective = 1`), a no-URL/SOURCE UNAVAILABLE
    finding, and re-running the same finding (asserting the SQL is one
    `INSERT ... ON DUPLICATE KEY UPDATE`, not a separate exists-check-then-branch).
-3. A real end-to-end write against the live ToolsDB table, run twice with an
+   See `tests/findings.test.js`.
+3. [x] A real end-to-end write against the live ToolsDB table, run twice with an
    identical finding, confirmed via `SELECT COUNT(*)` to have produced one
-   row, not two.
-4. A real end-to-end write of two findings differing only in `prompt_version`,
-   confirmed to have produced two rows, not an overwrite.
-5. `npm test` still passes with no regressions to the existing suite.
+   row, not two. Confirmed 2026-08-20 on the bastion.
+4. [x] A real end-to-end write of two findings differing only in `prompt_version`,
+   confirmed to have produced two rows, not an overwrite. Confirmed 2026-08-20
+   (`row_count` went from 1 to 2 after the `prompt_version='v2'` insert).
+5. [x] `npm test` still passes with no regressions to the existing suite.
+   `tests/findings.test.js` passes 4/4; the 16 unrelated pre-existing failures
+   elsewhere in the suite are present on this branch with or without this work.
+
+All test rows (`page_id = 999999999`) were deleted after verification —
+the live table holds no fixture data.
