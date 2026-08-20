@@ -102,15 +102,21 @@ function printArticle(result) {
 
     if (result.outcome === ARTICLE_OUTCOMES.FETCH_FAILED) {
         process.stdout.write(`  article fetch failed (status ${result.fetchStatus}): ${result.error}\n\n`);
-        return { citations: 0, withUrl: 0 };
+        return { citations: 0, withUrl: 0, fetched: 0, failed: 0 };
     }
     if (result.outcome === ARTICLE_OUTCOMES.NO_CITATIONS) {
         process.stdout.write(`  no citations extracted\n\n`);
-        return { citations: 0, withUrl: 0 };
+        return { citations: 0, withUrl: 0, fetched: 0, failed: 0 };
     }
 
-    const withUrl = result.citations.filter(c => c.url).length;
+    const withUrlCitations = result.citations.filter(c => c.url);
+    const fetched = withUrlCitations.filter(c => c.source.content).length;
+    const failed = withUrlCitations.length - fetched;
+    const withUrl = withUrlCitations.length;
     process.stdout.write(`  citations: ${result.citations.length} (${withUrl} with a fetchable URL)\n`);
+    if (withUrl > 0) {
+        process.stdout.write(`  sources: ${fetched} fetched, ${failed} failed (of ${withUrl} attempted)\n`);
+    }
 
     for (const c of result.citations.slice(0, 2)) {
         const claim = c.claimText.length > 100 ? `${c.claimText.slice(0, 100)}…` : c.claimText;
@@ -122,7 +128,7 @@ function printArticle(result) {
     }
     process.stdout.write('\n');
 
-    return { citations: result.citations.length, withUrl };
+    return { citations: result.citations.length, withUrl, fetched, failed };
 }
 
 async function main(argv) {
@@ -170,6 +176,8 @@ async function main(argv) {
 
     let totalCitations = 0;
     let totalWithUrl = 0;
+    let totalFetched = 0;
+    let totalFailed = 0;
 
     // core/urls.js logs one console.log per citation it examines (no-URL,
     // page-number-extracted, Harvard/sfn resolution) — fine for a human
@@ -186,16 +194,19 @@ async function main(argv) {
             fetchArticle: fetchArticleHtml,
             fetchSource: opts.liveSourceFetch ? liveFetchSource : stubFetchSource,
         })) {
-            const { citations, withUrl } = printArticle(result);
+            const { citations, withUrl, fetched, failed } = printArticle(result);
             totalCitations += citations;
             totalWithUrl += withUrl;
+            totalFetched += fetched;
+            totalFailed += failed;
         }
     } finally {
         console.log = realLog;
     }
 
     process.stderr.write(
-        `done. ${totalCitations} citation(s) extracted across ${candidates.length} article(s), ${totalWithUrl} with a fetchable URL.\n`
+        `done. ${totalCitations} citation(s) extracted across ${candidates.length} article(s), ` +
+        `${totalWithUrl} with a fetchable URL — ${totalFetched} fetched, ${totalFailed} failed.\n`
     );
     return 0;
 }
