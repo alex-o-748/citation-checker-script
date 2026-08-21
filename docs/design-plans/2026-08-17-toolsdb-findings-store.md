@@ -1,6 +1,8 @@
 # ToolsDB findings-store write path
 
 > **Status (2026-08-20):** Bootstrapped. `service/findings.js` is implemented and tested; the ToolsDB database (`s57953__source_verifier`) and `citation_findings` table have been created and hand-verified on the bastion (see "Definition of done" below). Original brief was for the storage stage of `2026-08-07-batch-source-checks-for-edit-suggestions.md` (§6) and the identity work in `2026-08-10-track-c-orchestration-extraction.md` (branch 5, now built as `core/anchor.js`).
+>
+> **Next (2026-08-21):** the write *primitive* built here has no callers — nothing maps a pipeline citation to a finding, and there is no ToolsDB connection helper. `2026-08-21-findings-write-path-wiring.md` designs that.
 
 ## What you're building, and where
 
