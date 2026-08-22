@@ -10,7 +10,6 @@
 import { readFile as fsReadFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import mysql from 'mysql2/promise';
 
 export const DEFAULT_CNF_PATH = join(homedir(), 'replica.my.cnf');
 
@@ -73,19 +72,28 @@ export function parseReplicaConfig(text) {
  * not used by any test in this repo, since there's nothing to assert against
  * without a live server, but the seam matches core/wikipedia.js's fetchImpl
  * pattern rather than hardcoding mysql2 as unavoidable.
+ *
+ * mysql2 itself is imported lazily (only when `createConnection` isn't
+ * supplied), not at module top level: a top-level `import mysql2` makes this
+ * whole module — and anything that imports from it, such as
+ * service/toolsdb.js reusing parseReplicaConfig() — fail to load in any
+ * environment where the driver isn't installed, before a single pure
+ * function like wikiHost() or parseReplicaConfig() ever runs.
  */
 export async function openReplicaConnection({
     wikiDb = 'enwiki',
     cluster = 'analytics',
     cnfPath = DEFAULT_CNF_PATH,
     readFile = fsReadFile,
-    createConnection = mysql.createConnection,
+    createConnection,
     connectTimeout = 30000,
 } = {}) {
     const cnfText = await readFile(cnfPath, 'utf8');
     const { user, password } = parseReplicaConfig(cnfText);
 
-    return createConnection({
+    const connect = createConnection ?? (await import('mysql2/promise')).createConnection;
+
+    return connect({
         host: wikiHost(wikiDb, { cluster }),
         port: 3306,
         user,

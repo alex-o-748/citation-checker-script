@@ -7,7 +7,9 @@ import {
   generateGroupSystemPrompt,
   generateGroupUserPrompt,
   assembleGroupSources,
+  PROMPT_VERSION,
 } from '../core/prompts.js';
+import { promptFingerprint } from '../core/anchor.js';
 
 test('generateSystemPrompt returns a non-empty string', () => {
   const out = generateSystemPrompt();
@@ -172,4 +174,26 @@ test('omission and source-unavailable examples carry an empty source_quote', () 
   const unavailable = examples.find(e => e.verdict === 'SOURCE UNAVAILABLE');
   assert.equal(omission.source_quote, '');
   assert.equal(unavailable.source_quote, '');
+});
+
+// --- prompt versioning (docs/design-plans/2026-08-21-findings-write-path-wiring.md §3) ---
+//
+// citation_findings.prompt_version is PROMPT_VERSION, hand-written and bumped
+// deliberately. This pinned fingerprint is the tripwire: if it fails, the
+// prompt text changed and a human must decide whether that change moves
+// verdicts (bump PROMPT_VERSION and update the pinned value below) or is
+// cosmetic (just update the pinned value). Do NOT "fix" a failure here by
+// regenerating the pinned value without reading what changed in the prompt.
+
+test('PROMPT_VERSION is the current hand-written version', () => {
+  assert.equal(PROMPT_VERSION, 'v1');
+});
+
+test('prompt fingerprint is pinned — any prompt wording change must fail this test', () => {
+  assert.equal(
+    promptFingerprint(),
+    'bc5ad07dfd034379c456d8f83ece5adbe27f49efee870129268ff9008cc22a8b',
+    'the prompt scaffold changed. Decide: does this move verdicts? ' +
+    'If yes, bump PROMPT_VERSION in core/prompts.js. Either way, update this pinned value.'
+  );
 });

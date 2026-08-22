@@ -1,6 +1,6 @@
 # Wiring the ToolsDB findings write path
 
-> **Status (2026-08-21):** Proposed, decisions settled. Architecture for the gap between `service/pipeline.js` (produces claims + source text) and `service/findings.js` (writes one finding row). The storage *primitive* is built and hand-verified — see `2026-08-17-toolsdb-findings-store.md`; nothing calls it. This doc designs what does.
+> **Status (2026-08-21):** Steps 1–6 implemented and tested (`npm test`: 713/716 — the 3 failures are pre-existing i18n table-completeness failures, unrelated to this work; `tests/findings.test.js`, `tests/finding-record.test.js`, `tests/toolsdb.test.js`, `tests/store-findings.test.js`, plus additions to `tests/anchor.test.js` and `tests/prompts.test.js`, are all green). Step 7 (bastion hand-verification) and step 8 (replay mode) are **not done** — no Toolforge session was available; see "What's still open" below.
 >
 > **Settled with the maintainer, 2026-08-21:** set-valued group hash (§2b); store per-source *and* collective rows (§2a); `prompt_version` hand-written with a test-pinned fingerprint (§3).
 
@@ -195,6 +195,14 @@ The mapper therefore classifies and skips:
 Both land in `skipped[]` with a reason code, and the runner prints the counts.
 This turns two documented hazards into enforced ones.
 
+**Implementation note:** the mechanism for detecting "the stub was used" is an
+explicit `sourceFetchEnabled` boolean on the mapper's context, set once per
+run by the caller — not string-sniffing the stub's placeholder error message.
+The stub applies to a whole run, never to one citation, so this is both
+simpler and more robust than per-citation detection would be: when
+`sourceFetchEnabled` is false, every URL-bearing citation classifies as stub,
+full stop, regardless of what happens to be sitting in its `source` field.
+
 ### 2e. `expires_at` — a policy, not a magic number
 
 §3 wants per-finding expiry rather than a constant baked into queries. The
@@ -352,18 +360,41 @@ on the bastion as before. One trap worth knowing going in: `affectedRows` counts
 
 ## Sequence
 
-| # | Step | Blocked on |
-| --- | --- | --- |
-| 1 | `groupSourceUrlHash()` in `core/anchor.js` | — |
-| 2 | `PROMPT_VERSION` + `promptFingerprint()` in `core/prompts.js`, + pinning test | — |
-| 3 | `service/toolsdb.js` | — |
-| 4 | `service/finding-record.js` | 1, 2 |
-| 5 | Bulk builder in `service/findings.js`; fix the collective test's `citation_number` | — |
-| 6 | `service/store-findings.js` | 3, 4, 5 |
-| 7 | Bastion: one article, `--write`, twice → row count stable; delete fixtures | 6 |
-| 8 | Replay mode over `dataset.json` — the demonstrable system | 6 |
+| # | Step | Blocked on | Status |
+| --- | --- | --- | --- |
+| 1 | `groupSourceUrlHash()` in `core/anchor.js` | — | Done |
+| 2 | `PROMPT_VERSION` + `promptFingerprint()` in `core/prompts.js`, + pinning test | — | Done |
+| 3 | `service/toolsdb.js` | — | Done |
+| 4 | `service/finding-record.js` | 1, 2 | Done |
+| 5 | Bulk builder in `service/findings.js`; fix the collective test's `citation_number` | — | Done |
+| 6 | `service/store-findings.js` | 3, 4, 5 | Done |
+| 7 | Bastion: one article, `--write`, twice → row count stable; delete fixtures | 6 | **Not done — needs a Toolforge session** |
+| 8 | Replay mode over `dataset.json` — the demonstrable system | 6 | **Not done — see the open question below** |
 
-1–6 need no Toolforge session and no WMCS answer.
+1–6 need no Toolforge session and no WMCS answer, and none needed one to
+build: `runSweep()` (the whole select → pipeline → map → write loop) is
+tested end-to-end with fakes in `tests/store-findings.test.js`, including the
+transaction/per-row-fallback path from §4. What's actually unverified is the
+one thing that categorically can't be: real MariaDB's `ON DUPLICATE KEY
+UPDATE` behavior. Step 7 is the only remaining gate on calling this "done".
+
+One fix that fell out of building step 3: `service/replicas.js` imported
+`mysql2` at module top level, which meant `tests/replicas.test.js` failed
+outright in any environment without the driver installed — one of the
+16 pre-existing failures this doc's earlier draft cited. `openReplicaConnection()`
+now lazy-imports the driver, the same pattern `toolsdb.js` needed anyway; that
+test file passes now.
+
+Testing this design's code without `mysql2` installed at all (only later
+installing it to get a real pass/fail signal, rather than assuming one) was
+also how the pure/injectable split earned its keep in practice, not just in
+principle: `service/finding-record.js`, `service/toolsdb.js`,
+`service/findings.js`, and `runSweep()` itself all load and their tests all
+pass with zero of this repo's runtime dependencies present — only
+`tests/store-findings.test.js` needs `jsdom`, and only because its *fixtures*
+build real citation HTML through `collectCitations()`, the same reason
+`tests/pipeline.test.js` already needs it. `store-findings.js`'s own code
+doesn't import `jsdom` until `main()`, lazily, same as `mysql2`.
 
 ## Explicitly out of scope
 

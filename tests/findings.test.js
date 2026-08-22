@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { buildUpsertQuery, upsertFinding } from '../service/findings.js';
-import { claimHash, sourceUrlHash } from '../core/anchor.js';
+import { buildUpsertQuery, buildBulkUpsertQuery, upsertFinding, DEFAULT_BULK_CHUNK_SIZE } from '../service/findings.js';
+import { claimHash, sourceUrlHash, groupSourceUrlHash } from '../core/anchor.js';
 
 test('buildUpsertQuery binds all values and computes hashes internally', () => {
     const finding = {
@@ -61,7 +61,12 @@ test('buildUpsertQuery handles collective group findings', () => {
         pageTitle: 'Test Article',
         revisionId: 987654321,
         claimText: 'The sky is blue',
-        citationNumber: '1, 2',
+        // buildUpsertQuery does no citation_number coercion itself — that's
+        // service/finding-record.js's toCitationNumber() job, upstream of
+        // this function. A realistic collective finding therefore already
+        // carries an integer (or null) here, never the raw "1, 2" string
+        // core/citations.js's collectCitations() can produce for a group.
+        citationNumber: 1,
         refName: null,
         sourceUrl: 'https://example.com',
         fetchedAt: new Date('2026-08-17T12:00:00Z'),
@@ -200,4 +205,115 @@ test('upsertFinding calls query with the constructed SQL and parameters', async 
     
     // Check that we have the right number of parameters
     assert.equal(call.params.length, 26);
+});
+
+// --- buildBulkUpsertQuery ---
+
+function makeFinding(overrides = {}) {
+    return {
+        wiki: 'enwiki',
+        pageId: 12345,
+        pageTitle: 'Test Article',
+        revisionId: 987654321,
+        claimText: 'The sky is blue',
+        citationNumber: 1,
+        refName: null,
+        sourceUrl: 'https://example.com',
+        fetchedAt: new Date('2026-08-17T12:00:00Z'),
+        groupId: null,
+        isCollective: false,
+        verdict: 'SUPPORTED',
+        confidence: 95,
+        reasonType: null,
+        rationale: 'Clear evidence in source',
+        provider: 'publicai',
+        model: 'qwen3-32b',
+        promptVersion: 'v1.0',
+        fetchStatus: 200,
+        sourceTruncated: false,
+        tokensIn: 100,
+        tokensOut: 50,
+        expiresAt: new Date('2026-09-17T12:00:00Z'),
+        published: true,
+        ...overrides,
+    };
+}
+
+test('buildBulkUpsertQuery rejects an empty or missing findings array', () => {
+    assert.throws(() => buildBulkUpsertQuery([]), TypeError);
+    assert.throws(() => buildBulkUpsertQuery(null), TypeError);
+    assert.throws(() => buildBulkUpsertQuery(undefined), TypeError);
+});
+
+test('buildBulkUpsertQuery rejects a non-positive-integer chunkSize', () => {
+    assert.throws(() => buildBulkUpsertQuery([makeFinding()], { chunkSize: 0 }), RangeError);
+    assert.throws(() => buildBulkUpsertQuery([makeFinding()], { chunkSize: -1 }), RangeError);
+    assert.throws(() => buildBulkUpsertQuery([makeFinding()], { chunkSize: 1.5 }), RangeError);
+});
+
+test('buildBulkUpsertQuery with N findings under the chunk size returns one chunk with N*26 placeholders', () => {
+    const findings = [makeFinding({ pageId: 1 }), makeFinding({ pageId: 2 }), makeFinding({ pageId: 3 })];
+    const chunks = buildBulkUpsertQuery(findings);
+
+    assert.equal(chunks.length, 1);
+    const { sql, params } = chunks[0];
+    assert.match(sql, /INSERT INTO citation_findings/);
+    assert.match(sql, /ON DUPLICATE KEY UPDATE/);
+    assert.equal(params.length, 3 * 26);
+    assert.equal((sql.match(/\?/g) || []).length, params.length);
+});
+
+test('buildBulkUpsertQuery splits findings across chunk boundaries in input order', () => {
+    const findings = Array.from({ length: DEFAULT_BULK_CHUNK_SIZE + 1 }, (_, i) => makeFinding({ pageId: i }));
+    const chunks = buildBulkUpsertQuery(findings);
+
+    assert.equal(chunks.length, 2, 'one findings past the default chunk size must start a second chunk');
+    assert.equal(chunks[0].params.length, DEFAULT_BULK_CHUNK_SIZE * 26);
+    assert.equal(chunks[1].params.length, 1 * 26);
+
+    // Order is preserved: the first param of each row is `wiki`, constant
+    // here, so check pageId (the 2nd param of every 26-wide row) instead.
+    assert.equal(chunks[0].params[1], 0);
+    assert.equal(chunks[1].params[1], DEFAULT_BULK_CHUNK_SIZE);
+});
+
+test('buildBulkUpsertQuery respects a custom chunkSize', () => {
+    const findings = Array.from({ length: 5 }, (_, i) => makeFinding({ pageId: i }));
+    const chunks = buildBulkUpsertQuery(findings, { chunkSize: 2 });
+    assert.equal(chunks.length, 3); // 2, 2, 1
+    assert.equal(chunks[0].params.length, 2 * 26);
+    assert.equal(chunks[1].params.length, 2 * 26);
+    assert.equal(chunks[2].params.length, 1 * 26);
+});
+
+test('a single-finding bulk chunk produces the same params as buildUpsertQuery for that finding — the two builders cannot drift apart', () => {
+    const finding = makeFinding();
+    const single = buildUpsertQuery(finding);
+    const bulk = buildBulkUpsertQuery([finding]);
+
+    assert.equal(bulk.length, 1);
+    assert.deepEqual(bulk[0].params, single.params);
+});
+
+test('buildBulkUpsertQuery computes source_url_hash per-row via core/anchor.js, same as buildUpsertQuery', () => {
+    const findings = [
+        makeFinding({ sourceUrl: 'https://a.example.com' }),
+        makeFinding({ sourceUrl: 'https://b.example.com' }),
+    ];
+    const [{ params }] = buildBulkUpsertQuery(findings);
+
+    // source_url_hash is param index 9 within each 26-wide row.
+    assert.deepEqual(params[9], sourceUrlHash('https://a.example.com'));
+    assert.deepEqual(params[9 + 26], sourceUrlHash('https://b.example.com'));
+    assert.notDeepEqual(params[9], params[9 + 26]);
+});
+
+test('buildBulkUpsertQuery hashes a collective finding\'s source_url_hash from sourceUrls, not sourceUrl', () => {
+    const finding = makeFinding({
+        isCollective: true,
+        sourceUrl: 'https://a.example.com; https://b.example.com',
+        sourceUrls: ['https://a.example.com', 'https://b.example.com'],
+    });
+    const [{ params }] = buildBulkUpsertQuery([finding]);
+    assert.deepEqual(params[9], groupSourceUrlHash(['https://a.example.com', 'https://b.example.com']));
 });

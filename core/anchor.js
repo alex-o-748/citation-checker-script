@@ -26,6 +26,7 @@
 // duplicated rather than imported.
 
 import { createHash } from 'node:crypto';
+import { promptFingerprintSource } from './prompts.js';
 
 // Normalizes claim text before hashing. extractClaimText() (core/claim.js)
 // already collapses whitespace and strips maintenance markers, so this is a
@@ -70,4 +71,36 @@ export function claimHash(claimText) {
 // it falls out of which URL reaches this function.
 export function sourceUrlHash(url) {
     return sha256(normalizeSourceUrl(url));
+}
+
+// The identity for a collective (adjacent-citation-group) finding, which is
+// anchored to several URLs at once rather than one. See
+// docs/design-plans/2026-08-21-findings-write-path-wiring.md §2b.
+//
+// Sorted so member order — a rendering artifact of the group, not a property
+// of the sources themselves — can't change the identity: two runs that fetch
+// the same group in a different order must dedup to the same row.
+//
+// NUL-joined (rather than e.g. comma-joined) so ["ab","c"] and ["a","bc"]
+// can't collide by having their normalized URLs concatenate to the same
+// string.
+//
+// Domain-separated with a "group\0" prefix so a group's identity can never
+// coincide with a single-URL sourceUrlHash, even for a one-member group —
+// a citation whose source is later split out of a group must not silently
+// resolve to a finding that was actually about the whole group.
+export function groupSourceUrlHash(urls) {
+    const normalized = (urls || []).map(normalizeSourceUrl).sort();
+    return sha256(`group\0${normalized.join('\0')}`);
+}
+
+// A hex fingerprint of the prompt-text scaffold (core/prompts.js's
+// promptFingerprintSource()) — NOT what's stored in citation_findings.
+// prompt_version (that's the hand-written core/prompts.js PROMPT_VERSION).
+// This exists purely so tests/prompts.test.js can pin a known value and fail
+// loudly the moment any prompt wording changes, forcing a human to decide
+// whether the change deserves a PROMPT_VERSION bump. See
+// docs/design-plans/2026-08-21-findings-write-path-wiring.md §3.
+export function promptFingerprint() {
+    return sha256(promptFingerprintSource()).toString('hex');
 }

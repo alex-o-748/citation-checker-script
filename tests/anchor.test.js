@@ -6,6 +6,7 @@ import {
     normalizeSourceUrl,
     claimHash,
     sourceUrlHash,
+    groupSourceUrlHash,
 } from '../core/anchor.js';
 
 test('normalizeClaim trims and collapses internal whitespace', () => {
@@ -101,4 +102,50 @@ test('claimHash and sourceUrlHash apply genuinely different normalization', () =
 test('empty and missing URLs hash consistently rather than throwing', () => {
     assert.deepEqual(sourceUrlHash(''), sourceUrlHash(null));
     assert.deepEqual(sourceUrlHash(null), sourceUrlHash(undefined));
+});
+
+test('groupSourceUrlHash is a 32-byte Buffer and deterministic', () => {
+    const h = groupSourceUrlHash(['https://a.com', 'https://b.com']);
+    assert.ok(Buffer.isBuffer(h));
+    assert.equal(h.length, 32);
+    assert.deepEqual(h, groupSourceUrlHash(['https://a.com', 'https://b.com']));
+});
+
+test('groupSourceUrlHash is independent of member order', () => {
+    assert.deepEqual(
+        groupSourceUrlHash(['https://a.com', 'https://b.com', 'https://c.com']),
+        groupSourceUrlHash(['https://c.com', 'https://a.com', 'https://b.com'])
+    );
+});
+
+test('groupSourceUrlHash differs for different member sets', () => {
+    assert.notDeepEqual(
+        groupSourceUrlHash(['https://a.com', 'https://b.com']),
+        groupSourceUrlHash(['https://a.com', 'https://c.com'])
+    );
+    assert.notDeepEqual(
+        groupSourceUrlHash(['https://a.com']),
+        groupSourceUrlHash(['https://a.com', 'https://b.com'])
+    );
+});
+
+test('groupSourceUrlHash NUL-joins so concatenation can\'t collide across a boundary', () => {
+    assert.notDeepEqual(
+        groupSourceUrlHash(['ab', 'c']),
+        groupSourceUrlHash(['a', 'bc'])
+    );
+});
+
+test('groupSourceUrlHash is domain-separated from sourceUrlHash, even for one member', () => {
+    // A single-source group must not resolve to the same identity as that
+    // source's own per-source row.
+    assert.notDeepEqual(
+        groupSourceUrlHash(['https://a.com']),
+        sourceUrlHash('https://a.com')
+    );
+});
+
+test('groupSourceUrlHash treats a missing/empty urls list like an empty set, not a throw', () => {
+    assert.deepEqual(groupSourceUrlHash([]), groupSourceUrlHash(undefined));
+    assert.deepEqual(groupSourceUrlHash(undefined), groupSourceUrlHash(null));
 });

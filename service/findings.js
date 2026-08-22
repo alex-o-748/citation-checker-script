@@ -7,58 +7,59 @@
 // Wikimedia Cloud infrastructure), so it stays small and every external call
 // is injectable, matching the pattern in service/replicas.js.
 
-import { claimHash, sourceUrlHash } from '../core/anchor.js';
+import { claimHash, sourceUrlHash, groupSourceUrlHash } from '../core/anchor.js';
 
-/**
- * Builds the upsert query for one citation finding.
- *
- * Returns { sql, params } for a parameterized query — all values are bound,
- * never interpolated. Callers pass the result straight to the driver.
- *
- * Computes claim_hash and source_url_hash internally via core/anchor.js —
- * callers supply plain text and URLs, never precomputed hashes.
- */
-export function buildUpsertQuery(finding) {
-    // Compute hashes internally — do not make the caller compute these
-    const claim_hash = claimHash(finding.claimText);
-    const source_url_hash = sourceUrlHash(finding.sourceUrl);
-    
-    const sql = `
-        INSERT INTO citation_findings (
-            wiki, page_id, page_title, revision_id,
-            claim_hash, claim_text, citation_number, ref_name,
-            source_url, source_url_hash, fetched_at,
-            group_id, is_collective,
-            verdict, confidence, reason_type, rationale,
-            provider, model, prompt_version,
-            fetch_status, source_truncated, tokens_in, tokens_out,
-            expires_at, published
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON DUPLICATE KEY UPDATE
-            page_title = VALUES(page_title),
-            revision_id = VALUES(revision_id),
-            claim_text = VALUES(claim_text),
-            citation_number = VALUES(citation_number),
-            ref_name = VALUES(ref_name),
-            source_url = VALUES(source_url),
-            fetched_at = VALUES(fetched_at),
-            group_id = VALUES(group_id),
-            is_collective = VALUES(is_collective),
-            verdict = VALUES(verdict),
-            confidence = VALUES(confidence),
-            reason_type = VALUES(reason_type),
-            rationale = VALUES(rationale),
-            provider = VALUES(provider),
-            model = VALUES(model),
-            fetch_status = VALUES(fetch_status),
-            source_truncated = VALUES(source_truncated),
-            tokens_in = VALUES(tokens_in),
-            tokens_out = VALUES(tokens_out),
-            expires_at = VALUES(expires_at),
-            published = VALUES(published)
-    `.trim().replace(/\n {8}/g, '\n');
+// Single source of truth for the column list and param order — shared by
+// buildUpsertQuery (one row) and buildBulkUpsertQuery (many rows in one
+// statement) so the two can never drift apart. A hand-copied second column
+// list is exactly how a future edit shifts one builder's values one column
+// left of the other's, silently — see
+// docs/design-plans/2026-08-21-findings-write-path-wiring.md §4.
+const COLUMNS = [
+    'wiki', 'page_id', 'page_title', 'revision_id',
+    'claim_hash', 'claim_text', 'citation_number', 'ref_name',
+    'source_url', 'source_url_hash', 'fetched_at',
+    'group_id', 'is_collective',
+    'verdict', 'confidence', 'reason_type', 'rationale',
+    'provider', 'model', 'prompt_version',
+    'fetch_status', 'source_truncated', 'tokens_in', 'tokens_out',
+    'expires_at', 'published',
+];
 
-    const params = [
+// Columns left out of ON DUPLICATE KEY UPDATE on purpose: the four other
+// unique-key columns (wiki, page_id, claim_hash, source_url_hash) can't
+// change on a row that matched the key, and prompt_version is itself part of
+// that key — a different prompt version can't match the same row, so it
+// inserts a new one instead of updating (that's the mechanism, not a gap).
+// created_at is absent from COLUMNS entirely: MariaDB's DEFAULT
+// CURRENT_TIMESTAMP sets it once, and no column not mentioned in the UPDATE
+// clause is touched by a duplicate-key hit — which is what keeps a
+// re-crawled finding's first-seen timestamp intact.
+const UPDATE_ONLY_COLUMNS = new Set(['wiki', 'page_id', 'claim_hash', 'source_url_hash', 'prompt_version']);
+const UPDATE_COLUMNS = COLUMNS.filter(c => !UPDATE_ONLY_COLUMNS.has(c));
+
+const UPDATE_CLAUSE = UPDATE_COLUMNS.map(c => `${c} = VALUES(${c})`).join(',\n            ');
+
+// Computes claim_hash and source_url_hash for one finding — internal, never
+// supplied by the caller (see buildUpsertQuery's doc comment on why). Shared
+// by both builders so the hashing rule can't diverge between them either.
+function computeHashes(finding) {
+    return {
+        claim_hash: claimHash(finding.claimText),
+        // A collective (adjacent-citation-group) finding is anchored to
+        // several URLs at once rather than one — see
+        // docs/design-plans/2026-08-21-findings-write-path-wiring.md §2b.
+        // finding.sourceUrl stays a human-readable, denormalized string for
+        // display (e.g. the member URLs joined) and is never itself hashed
+        // for a collective row; finding.sourceUrls (the raw list) is.
+        source_url_hash: finding.isCollective
+            ? groupSourceUrlHash(finding.sourceUrls || [])
+            : sourceUrlHash(finding.sourceUrl),
+    };
+}
+
+function computeParams(finding, { claim_hash, source_url_hash }) {
+    return [
         finding.wiki,
         finding.pageId,
         finding.pageTitle,
@@ -86,6 +87,76 @@ export function buildUpsertQuery(finding) {
         finding.expiresAt,
         finding.published ? 1 : 0,
     ];
+}
+
+/**
+ * Builds the upsert query for one citation finding.
+ *
+ * Returns { sql, params } for a parameterized query — all values are bound,
+ * never interpolated. Callers pass the result straight to the driver.
+ *
+ * Computes claim_hash and source_url_hash internally via core/anchor.js —
+ * callers supply plain text and URLs, never precomputed hashes.
+ */
+export function buildUpsertQuery(finding) {
+    const hashes = computeHashes(finding);
+
+    const sql = `
+        INSERT INTO citation_findings (
+            ${COLUMNS.join(', ')}
+        ) VALUES (${COLUMNS.map(() => '?').join(', ')})
+        ON DUPLICATE KEY UPDATE
+            ${UPDATE_CLAUSE}
+    `.trim().replace(/\n {8}/g, '\n');
+
+    return { sql, params: computeParams(finding, hashes) };
+}
+
+export const DEFAULT_BULK_CHUNK_SIZE = 500;
+
+/**
+ * Builds one or more upsert queries covering many findings, chunked so a
+ * single prepared statement never approaches MariaDB's 65535 placeholder
+ * ceiling (26 columns × 500 rows = 13000, comfortably under it — 26 × 2520
+ * would already exceed it, so 500 leaves real headroom for max_allowed_packet
+ * too). Returns an array of { sql, params }, one per chunk, in input order —
+ * a caller runs each inside the same transaction so an article's rows land
+ * all-or-nothing (see the runner design in
+ * docs/design-plans/2026-08-21-findings-write-path-wiring.md §4).
+ *
+ * Each row uses the exact same column order and hashing rule as
+ * buildUpsertQuery — both are derived from the same COLUMNS list and
+ * computeParams()/computeHashes() helpers above, so they cannot drift apart.
+ */
+export function buildBulkUpsertQuery(findings, { chunkSize = DEFAULT_BULK_CHUNK_SIZE } = {}) {
+    if (!Array.isArray(findings) || findings.length === 0) {
+        throw new TypeError('buildBulkUpsertQuery requires a non-empty array of findings');
+    }
+    if (!Number.isInteger(chunkSize) || chunkSize < 1) {
+        throw new RangeError(`chunkSize must be a positive integer (got: ${chunkSize})`);
+    }
+
+    const chunks = [];
+    for (let i = 0; i < findings.length; i += chunkSize) {
+        chunks.push(buildChunk(findings.slice(i, i + chunkSize)));
+    }
+    return chunks;
+}
+
+function buildChunk(findings) {
+    const rowPlaceholder = `(${COLUMNS.map(() => '?').join(', ')})`;
+    const params = [];
+    for (const finding of findings) {
+        params.push(...computeParams(finding, computeHashes(finding)));
+    }
+
+    const sql = `
+        INSERT INTO citation_findings (
+            ${COLUMNS.join(', ')}
+        ) VALUES ${findings.map(() => rowPlaceholder).join(', ')}
+        ON DUPLICATE KEY UPDATE
+            ${UPDATE_CLAUSE}
+    `.trim().replace(/\n {8}/g, '\n');
 
     return { sql, params };
 }

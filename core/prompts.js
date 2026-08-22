@@ -1,5 +1,47 @@
 // Pure prompt-generation logic. Imported by core/ consumers (CLI, benchmark).
-// Also injected byte-identically into main.js between <core-injected> markers.
+// Also injected byte-identically into main.js between <core-injected> markers
+// — everything in this file must stay browser-safe (no Node built-ins), which
+// is why the hashing half of the prompt-versioning story below lives in
+// core/anchor.js (Node-only, node:crypto) rather than here.
+
+// Identifies which version of the prompt text a stored finding was verified
+// against — see docs/design-plans/2026-08-17-toolsdb-findings-store.md and
+// 2026-08-21-findings-write-path-wiring.md §3. Hand-written and bumped
+// deliberately, NOT derived automatically from the prompt text: it is part of
+// the citation_findings unique key, so an automatically-derived version would
+// fork a new row lineage on every wording tweak, even ones that don't change
+// verdicts (a typo fix). A human decides that; promptFingerprintSource() below
+// exists so a test can force the human to notice a change happened at all.
+export const PROMPT_VERSION = 'v1';
+
+// The exact prompt text that reaches the model on every call, MINUS the
+// per-call claim and source text — the "scaffold" around them (labels,
+// framing sentences, the unavailable-source placeholder). Concatenates both
+// system prompts (which take no arguments) with both user-prompt generators
+// called on fixed sentinel arguments, so real claim/source content never
+// affects the result but a wording change to the surrounding template always
+// does.
+//
+// core/anchor.js hashes this string into a fingerprint that
+// tests/prompts.test.js pins — see PROMPT_VERSION above for why the hash
+// itself isn't what's stored.
+//
+// Deliberately NOT covered: anything that shapes a verdict without being
+// prompt text, e.g. source-truncation length. This function's contract is
+// "the prompt text was this", not "the whole verification setup was this".
+export function promptFingerprintSource() {
+    const parts = [
+        generateSystemPrompt(),
+        generateGroupSystemPrompt(),
+        generateUserPrompt('<CLAIM>', '<SOURCE>'),
+        generateGroupUserPrompt('<CLAIM>', '<SOURCES>'),
+        assembleGroupSources([
+            { citationNumbers: ['1'], url: 'https://example.com/a', content: 'Source Content:\n<AVAILABLE>' },
+            { citationNumbers: ['2'], url: 'https://example.com/b', content: null, status: 404 },
+        ]).text,
+    ];
+    return parts.join('\n\0\n').trim().replace(/\s+/g, ' ');
+}
 
 export function generateSystemPrompt() {
     return `You are a fact-checking assistant for Wikipedia. Analyze whether claims are supported by the provided source text.
