@@ -58,7 +58,29 @@ function computeHashes(finding) {
     };
 }
 
+// provider is part of the unique key (wiki, page_id, claim_hash,
+// source_url_hash, provider, prompt_version). MariaDB's unique index treats
+// NULL as never equal to NULL — even to itself — so a null provider silently
+// defeats ON DUPLICATE KEY UPDATE: two otherwise-identical findings both
+// insert instead of the second updating the first. Confirmed against real
+// ToolsDB on 2026-08-22 (every SOURCE UNAVAILABLE finding, provider left
+// null, duplicated on every re-run). Every other unique-key column is
+// NOT NULL in the schema or always computed (the two hashes); provider was
+// the one gap, closed here rather than only at the caller
+// (service/finding-record.js's NO_PROVIDER) so this can't regress no matter
+// what constructs the finding object.
+function assertNoNullProvider(finding) {
+    if (finding.provider == null) {
+        throw new TypeError(
+            'finding.provider must not be null/undefined — it is part of the unique key, and MariaDB never ' +
+            'treats two NULLs as equal, which silently defeats ON DUPLICATE KEY UPDATE and duplicates the row ' +
+            'on every re-run. Use a sentinel (e.g. service/finding-record.js\'s NO_PROVIDER) for "no provider".'
+        );
+    }
+}
+
 function computeParams(finding, { claim_hash, source_url_hash }) {
+    assertNoNullProvider(finding);
     return [
         finding.wiki,
         finding.pageId,

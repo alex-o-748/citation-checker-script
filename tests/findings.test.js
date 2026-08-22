@@ -110,6 +110,11 @@ test('buildUpsertQuery handles no-URL findings with empty-string hash', () => {
     // called: model stays null, prompt_version is set to whatever's
     // current at write time, published stays 0. See "Design question,
     // resolved" in docs/design-plans/2026-08-17-toolsdb-findings-store.md.
+    //
+    // provider does NOT stay null — corrected 2026-08-22 after real ToolsDB
+    // hand-verification found that a null provider (part of the unique key)
+    // defeats ON DUPLICATE KEY UPDATE and duplicates the row on every
+    // re-run. See the 'provider must never be null' tests below.
     const finding = {
         wiki: 'enwiki',
         pageId: 12345,
@@ -126,7 +131,7 @@ test('buildUpsertQuery handles no-URL findings with empty-string hash', () => {
         confidence: 0,
         reasonType: 'no_url',
         rationale: 'No URL found in reference',
-        provider: null,
+        provider: 'none',
         model: null, // no LLM was called
         promptVersion: 'v1.0', // current prompt version at write time
         fetchStatus: null,
@@ -143,7 +148,8 @@ test('buildUpsertQuery handles no-URL findings with empty-string hash', () => {
     const expectedSourceUrlHash = sourceUrlHash(null);
     assert.deepEqual(params[9], expectedSourceUrlHash);
 
-    // model (index 18) stays null; promptVersion (index 19) is still set
+    // model (index 18) stays null — it's NOT part of the unique key, so
+    // null is safe there; promptVersion (index 19) is still set
     assert.equal(params[18], null);
     assert.equal(params[19], 'v1.0');
 
@@ -316,4 +322,24 @@ test('buildBulkUpsertQuery hashes a collective finding\'s source_url_hash from s
     });
     const [{ params }] = buildBulkUpsertQuery([finding]);
     assert.deepEqual(params[9], groupSourceUrlHash(['https://a.example.com', 'https://b.example.com']));
+});
+
+// --- regression: provider must never reach the database as NULL ---
+//
+// provider is part of citation_findings' unique key. MariaDB's unique index
+// treats NULL as never equal to itself, so a null provider silently defeats
+// ON DUPLICATE KEY UPDATE — confirmed against real ToolsDB on 2026-08-22,
+// where every SOURCE UNAVAILABLE finding (provider left null) duplicated on
+// every re-run instead of updating in place. Guarded at this layer (not just
+// service/finding-record.js's NO_PROVIDER) so it can't regress no matter
+// what constructs the finding object.
+
+test('buildUpsertQuery rejects a finding with a null or undefined provider', () => {
+    assert.throws(() => buildUpsertQuery(makeFinding({ provider: null })), TypeError);
+    assert.throws(() => buildUpsertQuery(makeFinding({ provider: undefined })), TypeError);
+});
+
+test('buildBulkUpsertQuery rejects a finding with a null provider, even mixed in with valid ones', () => {
+    const findings = [makeFinding({ pageId: 1 }), makeFinding({ pageId: 2, provider: null })];
+    assert.throws(() => buildBulkUpsertQuery(findings), TypeError);
 });

@@ -27,6 +27,19 @@ export const SKIP_REASONS = Object.freeze({
     STUB_SOURCE_FETCH: 'stub_source_fetch',
 });
 
+// `provider` is part of citation_findings' unique key
+// (wiki, page_id, claim_hash, source_url_hash, provider, prompt_version).
+// MariaDB's unique index treats NULL as never equal to NULL — including to
+// itself — so a NULL in ANY unique-key column silently defeats
+// ON DUPLICATE KEY UPDATE: two rows identical in every other respect both
+// insert instead of the second updating the first. Confirmed the hard way
+// against real ToolsDB on 2026-08-22: every SOURCE UNAVAILABLE finding
+// (provider left null, since no LLM was called) duplicated on every re-run.
+// core/anchor.js's sourceUrlHash(null) already avoids this exact trap for
+// source_url_hash; this sentinel gives provider the same guarantee. Never
+// write `null` into finding.provider — use this instead.
+export const NO_PROVIDER = 'none';
+
 // How long a stored finding stays valid before a re-crawl should supersede
 // it — see §2e. Exported so a caller adjusting the policy doesn't have to
 // find a number buried in a template string.
@@ -93,7 +106,7 @@ const baseRecord = (article, { wiki, now }) => ({
     pageId: article.pageId,
     pageTitle: article.title,
     revisionId: article.revisionId,
-    provider: null,
+    provider: NO_PROVIDER,
     model: null,
     promptVersion: PROMPT_VERSION,
     fetchStatus: null,
@@ -161,7 +174,7 @@ async function perSourceRecord(citation, article, ctx, groupIdHex) {
             confidence: verdict.confidence ?? null,
             reasonType: verdict.reasonType ?? null,
             rationale: verdict.rationale ?? null,
-            provider: verdict.provider ?? null,
+            provider: verdict.provider ?? NO_PROVIDER,
             model: verdict.model ?? null,
             tokensIn: verdict.tokensIn ?? null,
             tokensOut: verdict.tokensOut ?? null,
@@ -250,7 +263,7 @@ async function collectiveRecord(members, article, ctx) {
             confidence: verdict.confidence ?? null,
             reasonType: verdict.reasonType ?? null,
             rationale: verdict.rationale ?? null,
-            provider: verdict.provider ?? null,
+            provider: verdict.provider ?? NO_PROVIDER,
             model: verdict.model ?? null,
             tokensIn: verdict.tokensIn ?? null,
             tokensOut: verdict.tokensOut ?? null,

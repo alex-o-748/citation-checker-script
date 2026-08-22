@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { toFindingRecords, toCitationNumber, SKIP_REASONS, TTL_MS } from '../service/finding-record.js';
+import { toFindingRecords, toCitationNumber, SKIP_REASONS, TTL_MS, NO_PROVIDER } from '../service/finding-record.js';
 import { buildUpsertQuery } from '../service/findings.js';
 import { groupSourceUrlHash, sourceUrlHash } from '../core/anchor.js';
 import { PROMPT_VERSION } from '../core/prompts.js';
@@ -175,8 +175,8 @@ test('a no-URL citation stores SOURCE UNAVAILABLE without calling the verifier',
     const r = records[0];
     assert.equal(r.verdict, 'SOURCE UNAVAILABLE');
     assert.equal(r.confidence, null);
-    assert.equal(r.model, null, 'no natural value — no LLM was called');
-    assert.equal(r.provider, null);
+    assert.equal(r.model, null, 'no natural value — no LLM was called; model is not part of the unique key, so null is safe here');
+    assert.equal(r.provider, NO_PROVIDER, 'never null — provider IS part of the unique key, and NULL != NULL there defeats dedup (see NO_PROVIDER)');
     assert.equal(r.promptVersion, PROMPT_VERSION, "set to what's current at write time even though unused");
     assert.equal(r.published, false);
     assert.equal(r.fetchedAt, null);
@@ -440,4 +440,65 @@ test('a solo citation gets group_id null and is_collective false', async () => {
     const { records } = await toFindingRecords(art, baseCtx());
     assert.equal(records[0].groupId, null);
     assert.equal(records[0].isCollective, false);
+});
+
+// --- regression: provider must never be null (found against real ToolsDB, 2026-08-22) ---
+//
+// provider is part of citation_findings' unique key. MariaDB's unique index
+// treats NULL as never equal to itself, so a null provider silently defeats
+// ON DUPLICATE KEY UPDATE: every re-run of the same no-URL/unavailable
+// finding inserted a fresh duplicate row instead of updating the existing
+// one. This was NOT caught by any fake-query unit test — it only showed up
+// against a real database, exactly the class of bug
+// docs/design-plans/2026-08-17-toolsdb-findings-store.md's "hand-verify on
+// the bastion" step exists to catch. These tests pin the fix (NO_PROVIDER)
+// across every code path that produces a record.
+
+test('provider is never null for a no-URL finding', async () => {
+    const art = article([citation({ url: null, source: { content: null, status: null, error: null, unavailableReason: 'no_url' } })]);
+    const { records } = await toFindingRecords(art, baseCtx());
+    assert.equal(records[0].provider, NO_PROVIDER);
+});
+
+test('provider is never null for a genuine fetch-failure finding', async () => {
+    const art = article([citation({ source: { content: null, status: 404, error: 'Not Found', unavailableReason: 'fetch_failed' } })]);
+    const { records } = await toFindingRecords(art, baseCtx());
+    assert.equal(records[0].provider, NO_PROVIDER);
+});
+
+test('provider is never null for a genuine SOURCE UNAVAILABLE collective row', async () => {
+    const art = article(groupCitations({
+        n: 2,
+        overrides: [
+            { source: { content: null, status: 404, error: 'Not Found' } },
+            { source: { content: null, status: 500, error: 'Server Error' } },
+        ],
+    }));
+    const { records } = await toFindingRecords(art, baseCtx());
+    const collective = records.find(r => r.isCollective);
+    assert.equal(collective.provider, NO_PROVIDER);
+});
+
+test('provider falls back to NO_PROVIDER (never null) if a verifier implementation omits it', async () => {
+    const art = article([citation()]);
+    const { records } = await toFindingRecords(art, baseCtx({ verifyCitation: async () => ({ verdict: 'SUPPORTED', confidence: 50 }) }));
+    assert.equal(records[0].provider, NO_PROVIDER);
+});
+
+test('no record produced across every scenario in this file ever has a null provider', async () => {
+    // A blanket sweep, cheap insurance against a future branch reintroducing
+    // `?? null` for provider anywhere in service/finding-record.js.
+    const scenarios = [
+        article([citation()]),
+        article([citation({ url: null, source: { content: null, status: null, error: null, unavailableReason: 'no_url' } })]),
+        article([citation({ source: { content: null, status: 404, error: 'Not Found' } })]),
+        article(groupCitations({ n: 3 })),
+        article(groupCitations({ n: 2, overrides: [{ source: { content: null, status: 404 } }, { source: { content: null, status: 500 } }] })),
+    ];
+    for (const art of scenarios) {
+        const { records } = await toFindingRecords(art, baseCtx());
+        for (const r of records) {
+            assert.notEqual(r.provider, null, `record for page ${r.pageId} claim "${r.claimText}" has a null provider`);
+        }
+    }
 });

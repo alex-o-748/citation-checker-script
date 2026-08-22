@@ -1,6 +1,11 @@
 # Wiring the ToolsDB findings write path
 
-> **Status (2026-08-21):** Steps 1–6 implemented and tested (`npm test`: 713/716 — the 3 failures are pre-existing i18n table-completeness failures, unrelated to this work; `tests/findings.test.js`, `tests/finding-record.test.js`, `tests/toolsdb.test.js`, `tests/store-findings.test.js`, plus additions to `tests/anchor.test.js` and `tests/prompts.test.js`, are all green). Step 7 (bastion hand-verification) and step 8 (replay mode) are **not done** — no Toolforge session was available; see "What's still open" below.
+> **Status (2026-08-22):** Steps 1–6 implemented and tested. Step 7 (bastion
+> hand-verification) is **in progress**: the first real run found a genuine
+> bug — a null `provider` silently defeats dedup, see §2g — now fixed in code
+> and covered by regression tests, but **not yet re-verified against real
+> MariaDB**. Step 8 (replay mode) is still **not done** — open question,
+> unresolved.
 >
 > **Settled with the maintainer, 2026-08-21:** set-valued group hash (§2b); store per-source *and* collective rows (§2a); `prompt_version` hand-written with a test-pinned fingerprint (§3).
 
@@ -231,6 +236,56 @@ predicate runs over what is already stored.
 honestly records the revision the verdict was computed against, even if the
 article was edited in between.
 
+### 2g. Bug found during step 7 hand-verification: `provider` must never be `NULL`
+
+Confirmed 2026-08-22 on the bastion, running `store-findings.js --write`
+twice over the same article: the second run did not update the first run's
+rows — it duplicated them. Every `SOURCE UNAVAILABLE` finding (no-URL and
+genuine fetch failures alike) had `provider = NULL`, because "no LLM was
+called" was originally modeled the same way `model` is: an honest null for a
+field with no natural value.
+
+That reasoning is correct for `model`. It is wrong for `provider`, because
+`provider` — unlike `model` — is one of the six columns in
+`uniq_finding (wiki, page_id, claim_hash, source_url_hash, provider,
+prompt_version)`. MariaDB's unique index follows ANSI NULL semantics: `NULL`
+is never equal to `NULL`, not even to itself. Two rows identical in every
+other respect, both with `provider = NULL`, are therefore *not* duplicates as
+far as the index is concerned — `ON DUPLICATE KEY UPDATE` never fires, and
+every re-run just inserts a fresh copy.
+
+The other five unique-key columns were already safe, for reasons that turn
+out to matter in hindsight:
+
+- `wiki`, `page_id`, `prompt_version` are `NOT NULL` in the schema and always
+  supplied.
+- `claim_hash`, `source_url_hash` are always *computed*, never passed through
+  — and `core/anchor.js`'s `sourceUrlHash(null)` was deliberately written to
+  return a real hash of the empty string rather than propagating null,
+  specifically so a no-URL citation gets a consistent, non-null value. That
+  design intent (stated in `core/anchor.js`'s own comment) is exactly the
+  property `provider` was missing — the fix is the same idea, just applied to
+  a plain column instead of a hash.
+
+**Fix:** `service/finding-record.js` exports `NO_PROVIDER = 'none'` and uses
+it everywhere `provider` would otherwise be `null` — the shared record
+defaults, and the `?? null` fallbacks after a verifier call (so a verifier
+implementation that forgets to supply `provider` can't reintroduce the bug
+either). `service/findings.js`'s `computeParams()` — the single choke point
+both `buildUpsertQuery` and `buildBulkUpsertQuery` route through — additionally
+throws a `TypeError` if `finding.provider` is ever `null`/`undefined`,
+regardless of caller. Belt and suspenders: the sentinel is the fix, the throw
+is what makes a regression impossible to ship silently.
+
+**Why the test suite didn't catch this before real MariaDB did:** every fake
+`query` function used in this repo's tests (here and in
+`tests/selection.test.js`'s `fakeReplica()`) just records what it was called
+with — none of them enforce uniqueness semantics, because doing so would mean
+re-implementing a chunk of MariaDB's index behavior inside a test double. That
+is precisely why the storage doc's "Definition of done" insists real
+`ON DUPLICATE KEY UPDATE` behavior can only be proven against real MariaDB —
+this is what it was for.
+
 ## 3. `prompt_version` — nothing owns it today
 
 The only occurrences in the repo are the string `'v1.0'` in a test. The column
@@ -368,15 +423,21 @@ on the bastion as before. One trap worth knowing going in: `affectedRows` counts
 | 4 | `service/finding-record.js` | 1, 2 | Done |
 | 5 | Bulk builder in `service/findings.js`; fix the collective test's `citation_number` | — | Done |
 | 6 | `service/store-findings.js` | 3, 4, 5 | Done |
-| 7 | Bastion: one article, `--write`, twice → row count stable; delete fixtures | 6 | **Not done — needs a Toolforge session** |
+| 7 | Bastion: one article, `--write`, twice → row count stable; delete fixtures | 6 | **In progress — found a real bug 2026-08-22, fixed in code (§2g), fix not yet re-verified on the bastion** |
 | 8 | Replay mode over `dataset.json` — the demonstrable system | 6 | **Not done — see the open question below** |
 
 1–6 need no Toolforge session and no WMCS answer, and none needed one to
 build: `runSweep()` (the whole select → pipeline → map → write loop) is
 tested end-to-end with fakes in `tests/store-findings.test.js`, including the
-transaction/per-row-fallback path from §4. What's actually unverified is the
-one thing that categorically can't be: real MariaDB's `ON DUPLICATE KEY
-UPDATE` behavior. Step 7 is the only remaining gate on calling this "done".
+transaction/per-row-fallback path from §4.
+
+Step 7 is exactly why hand-verification against real MariaDB was in the
+storage doc's definition of done and not skippable: the first real run
+exposed a null-in-unique-key bug (§2g) that every fake-`query` unit test in
+this repo was structurally incapable of catching. **Still needed:** re-run on
+the bastion with the fix in place — same article, `--write` twice — to
+confirm the row count now holds stable, then delete the duplicated test rows
+from the first (pre-fix) run.
 
 One fix that fell out of building step 3: `service/replicas.js` imported
 `mysql2` at module top level, which meant `tests/replicas.test.js` failed
