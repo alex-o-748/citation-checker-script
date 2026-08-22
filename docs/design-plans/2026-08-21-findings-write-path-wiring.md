@@ -1,6 +1,8 @@
 # Wiring the ToolsDB findings write path
 
-> **Status (2026-08-21):** Proposed. Architecture for the gap between `service/pipeline.js` (produces claims + source text) and `service/findings.js` (writes one finding row). The storage *primitive* is built and hand-verified — see `2026-08-17-toolsdb-findings-store.md`; nothing calls it. This doc designs what does.
+> **Status (2026-08-21):** Proposed, decisions settled. Architecture for the gap between `service/pipeline.js` (produces claims + source text) and `service/findings.js` (writes one finding row). The storage *primitive* is built and hand-verified — see `2026-08-17-toolsdb-findings-store.md`; nothing calls it. This doc designs what does.
+>
+> **Settled with the maintainer, 2026-08-21:** set-valued group hash (§2b); store per-source *and* collective rows (§2a); `prompt_version` hand-written with a test-pinned fingerprint (§3).
 
 ## The gap, precisely
 
@@ -127,6 +129,19 @@ So: **one row per source (`is_collective = 0`) plus one row per group
 `published` predicate and the read API instead. The write path stays dumb and
 reversible, which is the property every part of this design keeps asking for.
 
+The clinching argument is that the schema already answers this question: the
+`published` column exists precisely to separate *what we computed* from *what
+we show*, which only makes sense if the table holds more than what is shown.
+Inference is the expensive, irreversible step; storage is cheap. Discarding
+computed rows is the one mistake here that cannot be undone cheaply.
+
+**The cost, which lands on the read path rather than this one:** whoever writes
+the publication sweep and the read API must filter `is_collective` correctly,
+or editors get shown the per-source verdicts that the collective design exists
+to suppress. Mitigation: those query helpers should require an explicit
+`is_collective` choice rather than defaulting to one — a missing filter should
+fail to compile, not quietly return the misleading rows.
+
 ### 2b. The collective row needs a set-valued identity — and it fixes `group_id` too
 
 The collective row's `source_url_hash` must be a deterministic function of the
@@ -216,26 +231,62 @@ forks every row into a parallel lineage, and a value that fails to change when
 the prompt does silently overwrites findings from a prompt we no longer trust.
 That is the exact failure §6 introduced the column to prevent.
 
-**Derive it from the prompt text**, in `core/prompts.js`:
+**Decision: a hand-written constant, guarded by a test-pinned fingerprint of the
+prompt text.**
 
 ```js
-export function promptVersion();  // "p1-<sha256(normalized system + group prompts)[0..12]>"
+// core/prompts.js
+export const PROMPT_VERSION = 'v1';
+export function promptFingerprint();  // sha256 over the versioned prompt surface
 ```
 
-Both generators take no arguments and contain nothing volatile — verified — so
-the hash is stable. Hash the whitespace-normalized concatenation so reflowing a
-paragraph doesn't fork the lineage; keep the human-readable `p1-` prefix as a
-coarse epoch a maintainer can bump deliberately.
+`tests/prompts.test.js` pins the current fingerprint, the way
+`tests/quote.test.js` pins `QUOTE_STATUS_LIST`. Edit any prompt and that test
+fails with: *the prompt changed — bump `PROMPT_VERSION` if this affects
+verdicts, then update the pinned value.*
 
-Why not a hand-maintained constant: CLAUDE.md already warns the nine few-shot
-examples are load-bearing and that changing them changes verdicts. A constant
-relies on the person editing those examples remembering to bump it. A hash
-cannot be forgotten.
+This was chosen over the two obvious alternatives. A bare constant can be
+silently forgotten, and because `prompt_version` is in the unique key,
+forgetting doesn't error — it **overwrites** the old findings, leaving rows
+labelled `v1` that came from two different prompts. Using the fingerprint
+*itself* as the version can't be forgotten but is too sensitive: a typo fix
+forks the whole lineage for a change that moved no verdicts. The guard
+separates the two concerns — the machine notices every change, the human
+decides which changes deserve a fork.
 
-Pin the current value in a test, the way `tests/quote.test.js` pins
-`QUOTE_STATUS_LIST` — so any prompt edit fails loudly and the author has to
-acknowledge the fork rather than discover it in the data. Batch is English-only
-per §10, so only the English prompts are versioned.
+### What the fingerprint covers
+
+Only the parts that are the same on every call. The user prompt is per-call
+data, but it is variable content inside a **fixed scaffold** — `Claim:`,
+`Source text:`, the group prompt's "Evaluate whether they support it together",
+and `assembleGroupSources()`'s `Source [3][4] (url):` labels and
+`[This source could not be retrieved: …]` placeholder. Those words reach the
+model every time and would move verdicts if reworded, so they must be covered;
+the claim and the source text must not be.
+
+Hash the scaffold by calling the generators with **fixed sentinel arguments**:
+
+| Included | How |
+| --- | --- |
+| `generateSystemPrompt()` | Directly — takes no arguments |
+| `generateGroupSystemPrompt()` | Directly — takes no arguments |
+| `generateUserPrompt(...)` | `('<CLAIM>', '<SOURCE>')` — scaffold only |
+| `generateGroupUserPrompt(...)` | `('<CLAIM>', '<SOURCES>')` — scaffold only |
+| `assembleGroupSources(...)` | One fixed available + one fixed unavailable entry |
+
+Hash the whitespace-normalized concatenation, so reindenting a template literal
+isn't a change.
+
+**What it deliberately does not cover:** anything outside the prompt text that
+still shapes a verdict — source truncation length is the live example, since
+changing it moves verdicts without touching a prompt string. `provider` and
+`model` have their own columns; truncation does not. So the column means *"the
+prompt text was this"*, not *"the whole verification setup was this"*. Worth
+knowing before relying on it for an invalidation sweep.
+
+Batch is English-only per §10, so only the English prompts are versioned —
+`localizeSystemPrompt()` appends an output-language instruction and is a
+userscript concern.
 
 ## 4. Write policy — bulk, chunked, transactional per article
 
@@ -304,7 +355,7 @@ on the bastion as before. One trap worth knowing going in: `affectedRows` counts
 | # | Step | Blocked on |
 | --- | --- | --- |
 | 1 | `groupSourceUrlHash()` in `core/anchor.js` | — |
-| 2 | `promptVersion()` in `core/prompts.js` + pinning test | — |
+| 2 | `PROMPT_VERSION` + `promptFingerprint()` in `core/prompts.js`, + pinning test | — |
 | 3 | `service/toolsdb.js` | — |
 | 4 | `service/finding-record.js` | 1, 2 |
 | 5 | Bulk builder in `service/findings.js`; fix the collective test's `citation_number` | — |
