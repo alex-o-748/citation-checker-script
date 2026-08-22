@@ -146,8 +146,6 @@ function extractSourceText(sourceInfo) {
 function generateUserPrompt(claim, sourceInfo) {
     const sourceText = extractSourceText(sourceInfo);
 
-    console.log('[Verifier] Source text (first 2000 chars):', sourceText.substring(0, 2000));
-
     return `Claim: "${claim}"
 
 Source text:
@@ -1282,13 +1280,14 @@ async function callPublicAIAPI({ apiKey, model, systemPrompt, userContent, worke
 // injects an upstream key on the user's behalf.
 const HF_DIRECT_URL = 'https://router.huggingface.co/v1/chat/completions';
 
-async function callHuggingFaceAPI({ apiKey, model, systemPrompt, userContent, workerBase = 'https://publicai-proxy.alaexis.workers.dev', maxTokens, temperature }) {
+async function callHuggingFaceAPI({ apiKey, model, systemPrompt, userContent, workerBase = 'https://publicai-proxy.alaexis.workers.dev', maxTokens, temperature, extraHeaders }) {
     const direct = Boolean(apiKey);
     return callOpenAICompatibleChat({
         url: direct ? HF_DIRECT_URL : `${workerBase}/hf`,
         apiKey: direct ? apiKey : undefined,
         model, systemPrompt, userContent, maxTokens, temperature,
         label: 'HuggingFace',
+        extraHeaders,
     });
 }
 

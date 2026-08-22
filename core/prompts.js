@@ -137,8 +137,6 @@ export function extractSourceText(sourceInfo) {
 export function generateUserPrompt(claim, sourceInfo) {
     const sourceText = extractSourceText(sourceInfo);
 
-    console.log('[Verifier] Source text (first 2000 chars):', sourceText.substring(0, 2000));
-
     return `Claim: "${claim}"
 
 Source text:
