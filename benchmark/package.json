@@ -17,6 +17,7 @@
     "benchmark:openrouter-panel": "node run_benchmark.js --providers=openrouter-mistral-small-3.2,openrouter-nemotron-nano-9b-v2,openrouter-granite-4.1-8b,openrouter-gemma-4-26b-a4b,openrouter-qwen-3-32b",
     "benchmark:openrouter-fast": "node run_benchmark.js --providers=openrouter-mistral-small-3.2,openrouter-granite-4.1-8b,openrouter-gemma-4-26b-a4b",
     "benchmark:hf-panel": "node run_benchmark.js --providers=hf-qwen3-32b,hf-gpt-oss-20b,hf-deepseek-v3",
+    "benchmark:hf-gpt-oss-20b": "node run_benchmark.js --providers=hf-gpt-oss-20b",
     "benchmark:glm-5.2": "node run_benchmark.js --providers=hf-glm-5.2",
     "benchmark:new-models": "node run_benchmark.js --providers=liftwing-qwen3.6-27b",
     "wice:convert": "node convert_wice.js",
