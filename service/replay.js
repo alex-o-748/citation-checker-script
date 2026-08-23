@@ -23,8 +23,9 @@
 //      from inside Wikimedia Cloud infrastructure — the Toolforge bastion.
 //
 // Usage:
+//   node service/replay.js --dry-run --limit 5                 # liftwing, no key needed
+//   node service/replay.js --limit 20                          # writes to ToolsDB
 //   node service/replay.js --dry-run --limit 5 --provider claude
-//   node service/replay.js --limit 20 --provider publicai      # writes to ToolsDB
 //   node service/replay.js --help
 
 import { readFile as fsReadFile } from 'node:fs/promises';
@@ -43,13 +44,20 @@ import { PROMPT_VERSION } from '../core/prompts.js';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_DATASET_PATH = join(__dirname, '..', 'benchmark', 'dataset.json');
 
-// Mirrors cli/verify.js's provider tables (kept separate rather than
-// imported: service/ scripts don't depend on cli/, matching this repo's
-// layering — core/ is shared, cli/ and service/ are independent consumers of
-// it). Keep in sync by hand if either changes.
+// Sourced from main.js's this.providers config, which is the authoritative,
+// complete provider list — NOT from cli/verify.js's KNOWN_PROVIDERS, which
+// omits 'liftwing' with no stated reason and was wrongly treated as
+// authoritative in an earlier version of this file. That omission mattered
+// more here than it does in cli/verify.js: Lift Wing, called from inside
+// Toolforge, is the specific thing docs/design-plans/
+// 2026-08-07-batch-source-checks-for-edit-suggestions.md §5 calls "the
+// strongest single argument for Toolforge hosting" — a replay runner for a
+// Toolforge migration that can't select it is missing its own point. Keep in
+// sync with main.js's this.providers by hand if either changes.
 const PROVIDER_MODELS = {
     publicai:    'aisingapore/Qwen-SEA-LION-v4-32B-IT',
     huggingface: 'openai/gpt-oss-20b',
+    liftwing:    'llm-qwen36-27b',
     claude:      'claude-sonnet-4-6',
     gemini:      'gemini-flash-latest',
     openai:      'gpt-4o',
@@ -58,6 +66,7 @@ const PROVIDER_MODELS = {
 const PROVIDER_ENV_VARS = {
     publicai:    null,
     huggingface: null,
+    liftwing:    null, // proxied through the CORS worker; no client-side key
     claude:      'CLAUDE_API_KEY',
     gemini:      'GEMINI_API_KEY',
     openai:      'OPENAI_API_KEY',
@@ -69,7 +78,10 @@ export function parseCliArgs(argv) {
         options: {
             dataset:        { type: 'string', default: DEFAULT_DATASET_PATH },
             wiki:           { type: 'string', default: 'enwiki' },
-            provider:       { type: 'string', default: 'publicai' },
+            // liftwing default, not publicai: this runner exists for the
+            // Toolforge migration, and Lift Wing is the provider that
+            // migration is about — see the comment on PROVIDER_MODELS above.
+            provider:       { type: 'string', default: 'liftwing' },
             model:          { type: 'string' },
             limit:          { type: 'string' },
             'delay-ms':     { type: 'string', default: '1000' },
@@ -101,7 +113,7 @@ fetched when the dataset was built).
 Options:
   --dataset <path>   Dataset JSON file (default: benchmark/dataset.json)
   --wiki <db>        Wiki database name recorded on each finding (default: enwiki)
-  --provider <name>  One of: ${Object.keys(PROVIDER_MODELS).join(', ')} (default: publicai)
+  --provider <name>  One of: ${Object.keys(PROVIDER_MODELS).join(', ')} (default: liftwing)
   --model <id>       Override the provider's default model
   --limit <n>        Only process the first n dataset rows (default: all)
   --delay-ms <n>     Delay between model calls, ms (default: 1000)

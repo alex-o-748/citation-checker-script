@@ -524,16 +524,32 @@ touched a real model or the real ToolsDB table — that needs real network
 access this repo's own CI-less, bastion-less dev sessions don't have. Two
 steps, in order, each usable independently.
 
-### Step 1 — dry run, any machine with internet and a provider API key
+### Step 1 — dry run, any machine with internet
 
-No bastion, no `~/replica.my.cnf`. `--dry-run` runs the whole verify +
-assemble chain against real dataset rows and a real model, and prints each
-finding instead of writing it:
+No bastion, no `~/replica.my.cnf`, no API key. `--dry-run` runs the whole
+verify + assemble chain against real dataset rows and a real model, and
+prints each finding instead of writing it:
 
 ```bash
-export CLAUDE_API_KEY=...   # or the env var for whichever --provider
-node service/replay.js --dry-run --limit 5 --provider claude
+node service/replay.js --dry-run --limit 5
 ```
+
+`--provider` defaults to `liftwing` — the provider this whole phase exists
+to validate, per §5 of the parent design doc — and it's keyless (proxied
+through the CORS worker, same as `publicai`), so this runs with no setup at
+all. Pass `--provider claude` (plus `CLAUDE_API_KEY`) or another provider
+from the `--help` list to compare against a different model.
+
+**Caveat on what a `liftwing` call from here actually proves.**
+`core/providers.js`'s `callLiftwingAPI` still routes through the Cloudflare
+worker's `/liftwing` path, which holds an approved-bot JWT as a workaround —
+the same stopgap §5 calls *"a workaround sitting on a personal Cloudflare
+account rather than a durable position."* Running this from a laptop or CI
+gets today's keyless behavior and proves stage 4 works; it does **not**
+prove the rate-limit-free access that only exists calling from inside
+Toolforge, or once `tf-llm-router`'s already-deployed `/liftwing` route
+becomes the default path rather than an opt-in. Good enough for this
+integration test; not yet evidence the volume problem is solved.
 
 Expect, per row, a `{"row": "row_N", "finding": {...}}` line on stdout and a
 funnel summary on stderr (`processed`, `skipped (no page ID)`, `verdicts`).
@@ -557,7 +573,7 @@ mariadb --defaults-file=~/replica.my.cnf -h tools.db.svc.wikimedia.cloud \
   s57953__source_verifier < service/migrations/002-add-quote-columns.sql
 
 # The real run — same flags, minus --dry-run:
-node service/replay.js --limit 5 --provider claude
+node service/replay.js --limit 5
 ```
 
 Then confirm from the `mariadb` CLI, the same hand-verification standard the
