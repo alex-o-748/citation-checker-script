@@ -1,10 +1,33 @@
 # Phase 4: closing the batch loop — verify, then persist
 
-> **Status (2026-08-22):** Proposed. Implementation plan for the verification and
-> persistence stages of `2026-08-07-batch-source-checks-for-edit-suggestions.md`
+> **Status (2026-08-22):** In progress. Implementation plan for the verification
+> and persistence stages of `2026-08-07-batch-source-checks-for-edit-suggestions.md`
 > (stages 4 and 5), and the runner that joins them to the stages either side.
-> Nothing implemented yet. Depends on nothing external — deliberately, this
-> whole phase sits behind the WMCS egress gate rather than on it.
+> Depends on nothing external — deliberately, this whole phase sits behind the
+> WMCS egress gate rather than on it.
+>
+> **Landed same day:** branch 1 (`PROMPT_VERSION` + hash-pin test), branch 3's
+> quote columns (`service/migrations/002-add-quote-columns.sql`, not yet
+> applied to the live table — see that file's header), branch 4
+> (`service/verify.js`), and branch 5 (`service/assemble.js`,
+> `service/replay.js`, `service/toolsdb.js`, `service/wikipedia-pageids.js`).
+> `npm test` covers all of it with fakes — no network, no bastion. **Not yet
+> run against the real ToolsDB table or a real model**: that requires a
+> provider API key (for `--dry-run`) and, for a real write, the Toolforge
+> bastion (ToolsDB is unreachable from anywhere else) — neither was available
+> in the session that wrote this code. See "Running the real integration
+> test" below for the exact commands.
+>
+> **Not landed:** branch 2 (`core/groups.js`) and branch 6 (`main.js`
+> delegating to it) — group/collective verification is out of scope for this
+> first real run, since `benchmark/dataset.json` (the replay corpus) has no
+> grouped citations to exercise it against (§3, "Wrinkle 2"). §6a's
+> group/no-URL hash-collision fix is therefore also not yet needed and not
+> yet built. `service/replay.js` resolves each dataset row's `page_id` via a
+> live Wikipedia API call rather than a committed `benchmark/replay-page-ids.json`
+> — simpler for a one-off real run than the byte-reproducible corpus §3
+> originally proposed; revisit if this needs to become a repeatable CI-style
+> replay rather than a manual integration test.
 
 ## Where the pipeline actually stands
 
@@ -109,7 +132,17 @@ Everything it does with the response is already written and shared:
 That list is the argument that this stage is small. The only genuinely new code
 is the loop, the group trigger, and the halt rule.
 
-## 2. The fork question, argued
+**Implementation note (2026-08-22):** what actually landed is
+`verifyCitation(claimText, source, { callModel, signal, retry })` — one
+citation, not an async generator over a whole article. The generator-over-a-
+batch responsibility moved to the runner (`service/replay.js`), which calls
+`verifyCitation()` in a plain `for` loop and does its own incremental
+persistence (upserting each finding as it's assembled, per §5's halt rule).
+This is a smaller, sufficient shape for a solo-citation run — it has no group
+trigger or `phase`/event vocabulary because there is no group pass yet (§2
+below) and only one runner to consume progress. If `core/groups.js` lands and
+a second runner needs the same event stream `verifyArticle` sketches, revisit
+then rather than building the generator ahead of a second caller that needs it.
 
 The parent doc says, plainly: *"resist any temptation to fork logic into the
 service."* This plan proposes `service/verify.js` rather than landing
@@ -484,3 +517,70 @@ which is a categorically better thing to develop against than a schema. And the
 parent doc's argument for the whole sequence applies most to this phase: it
 produces a *working system to demonstrate*, entirely inside Wikimedia
 infrastructure, while the one genuinely blocked question is still with WMCS.
+## 13. Running the real integration test
+
+The code above is built and unit-tested with fakes, but nothing in it has
+touched a real model or the real ToolsDB table — that needs real network
+access this repo's own CI-less, bastion-less dev sessions don't have. Two
+steps, in order, each usable independently.
+
+### Step 1 — dry run, any machine with internet and a provider API key
+
+No bastion, no `~/replica.my.cnf`. `--dry-run` runs the whole verify +
+assemble chain against real dataset rows and a real model, and prints each
+finding instead of writing it:
+
+```bash
+export CLAUDE_API_KEY=...   # or the env var for whichever --provider
+node service/replay.js --dry-run --limit 5 --provider claude
+```
+
+Expect, per row, a `{"row": "row_N", "finding": {...}}` line on stdout and a
+funnel summary on stderr (`processed`, `skipped (no page ID)`, `verdicts`).
+This proves stage 4 end to end — prompts, retry, quote verification, the
+halt rule — without spending a single write against production infrastructure.
+Worth doing this step first regardless of bastion access, since it's the
+cheaper failure mode to debug.
+
+If a row's title fails to resolve to a page ID, or its `article_url` has no
+`oldid`, it's skipped and logged, not fatal — check the stderr counts add up
+to `--limit`.
+
+### Step 2 — real write, from the Toolforge bastion
+
+ToolsDB is unreachable from anywhere else. From inside the tool account:
+
+```bash
+# One-time: apply the quote-columns migration if not already applied —
+# confirm first with SHOW CREATE TABLE, per that file's own header.
+mariadb --defaults-file=~/replica.my.cnf -h tools.db.svc.wikimedia.cloud \
+  s57953__source_verifier < service/migrations/002-add-quote-columns.sql
+
+# The real run — same flags, minus --dry-run:
+node service/replay.js --limit 5 --provider claude
+```
+
+Then confirm from the `mariadb` CLI, the same hand-verification standard the
+original table creation and `service/findings.js` were held to:
+
+```sql
+SELECT COUNT(*) FROM citation_findings WHERE page_id IN (<the page_ids printed to stderr>);
+-- Re-run the exact same command. Row count should be unchanged (upsert, not duplicate).
+SELECT verdict, quote_status, published, prompt_version FROM citation_findings ORDER BY id DESC LIMIT 5;
+-- published should be 0 on every row (§4 — nothing is published in this phase).
+```
+
+Delete any rows written purely for this test afterward, the same way phase 3's
+bastion verification was cleaned up (`docs/design-plans/
+2026-08-17-toolsdb-findings-store.md`, "Definition of done").
+
+### What this does and doesn't prove
+
+Proves: the full stage-4/5 chain works against real infrastructure — a real
+model call, real quote verification, a real upsert, real dedup. This is the
+integration test.
+
+Doesn't prove: anything about stage 3 (source fetching is still the
+dataset's pre-fetched `source_text`, not a live fetch — that's stage 3,
+still gated on WMCS) or the group/collective path (§2, not built).
+

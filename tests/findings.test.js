@@ -21,6 +21,8 @@ test('buildUpsertQuery binds all values and computes hashes internally', () => {
         confidence: 95,
         reasonType: null,
         rationale: 'Clear evidence in source',
+        sourceQuote: 'The sky appears blue due to Rayleigh scattering.',
+        quoteStatus: 'exact',
         provider: 'publicai',
         model: 'qwen3-32b',
         promptVersion: 'v1.0',
@@ -37,21 +39,29 @@ test('buildUpsertQuery binds all values and computes hashes internally', () => {
     // Check that SQL has the right structure
     assert.match(sql, /INSERT INTO citation_findings/);
     assert.match(sql, /ON DUPLICATE KEY UPDATE/);
-    
+    assert.match(sql, /source_quote/);
+    assert.match(sql, /quote_status/);
+
     // Check that we have the right number of parameters
     const placeholderCount = (sql.match(/\?/g) || []).length;
     assert.equal(placeholderCount, params.length);
-    
-    // Check that we have 26 parameters (matching the schema)
-    assert.equal(params.length, 26);
-    
+
+    // Check that we have 28 parameters (matching the schema, including
+    // source_quote / quote_status added in service/migrations/
+    // 002-add-quote-columns.sql)
+    assert.equal(params.length, 28);
+
     // Check that hashes are computed correctly
     const expectedClaimHash = claimHash(finding.claimText);
     const expectedSourceUrlHash = sourceUrlHash(finding.sourceUrl);
-    
+
     // Find the positions of the hash parameters (should be at positions for claim_hash and source_url_hash)
     assert.deepEqual(params[4], expectedClaimHash);
     assert.deepEqual(params[9], expectedSourceUrlHash);
+
+    // source_quote / quote_status ride alongside rationale, ahead of provider/model
+    assert.equal(params[17], finding.sourceQuote);
+    assert.equal(params[18], finding.quoteStatus);
 });
 
 test('buildUpsertQuery handles collective group findings', () => {
@@ -71,6 +81,8 @@ test('buildUpsertQuery handles collective group findings', () => {
         confidence: 75,
         reasonType: 'omission',
         rationale: 'Some evidence missing',
+        sourceQuote: null,
+        quoteStatus: 'empty',
         provider: 'publicai',
         model: 'qwen3-32b',
         promptVersion: 'v1.0',
@@ -86,17 +98,17 @@ test('buildUpsertQuery handles collective group findings', () => {
 
     // Check that collective flag is properly converted to integer
     assert.equal(params[12], 1); // is_collective should be 1 for true
-    
+
     // Check that source_truncated is properly converted to integer
-    assert.equal(params[21], 1); // source_truncated should be 1 for true
-    
+    assert.equal(params[23], 1); // source_truncated should be 1 for true
+
     // Check that published is properly converted to integer
-    assert.equal(params[25], 0); // published should be 0 for false
-    
+    assert.equal(params[27], 0); // published should be 0 for false
+
     // Check that tokens_in is correctly placed
-    assert.equal(params[22], 150); // tokens_in should be 150
+    assert.equal(params[24], 150); // tokens_in should be 150
     // Check that tokens_out is correctly placed
-    assert.equal(params[23], 75); // tokens_out should be 75
+    assert.equal(params[25], 75); // tokens_out should be 75
 });
 
 test('buildUpsertQuery handles no-URL findings with empty-string hash', () => {
@@ -105,6 +117,9 @@ test('buildUpsertQuery handles no-URL findings with empty-string hash', () => {
     // called: model stays null, prompt_version is set to whatever's
     // current at write time, published stays 0. See "Design question,
     // resolved" in docs/design-plans/2026-08-17-toolsdb-findings-store.md.
+    // No LLM ran, so there is no quote to record either — quoteStatus stays
+    // null (not 'empty': 'empty' means the model was asked and offered
+    // nothing; here it was never asked at all).
     const finding = {
         wiki: 'enwiki',
         pageId: 12345,
@@ -121,6 +136,8 @@ test('buildUpsertQuery handles no-URL findings with empty-string hash', () => {
         confidence: 0,
         reasonType: 'no_url',
         rationale: 'No URL found in reference',
+        sourceQuote: null,
+        quoteStatus: null,
         provider: null,
         model: null, // no LLM was called
         promptVersion: 'v1.0', // current prompt version at write time
@@ -138,12 +155,16 @@ test('buildUpsertQuery handles no-URL findings with empty-string hash', () => {
     const expectedSourceUrlHash = sourceUrlHash(null);
     assert.deepEqual(params[9], expectedSourceUrlHash);
 
-    // model (index 18) stays null; promptVersion (index 19) is still set
+    // source_quote / quote_status (indices 17, 18) stay null
+    assert.equal(params[17], null);
     assert.equal(params[18], null);
-    assert.equal(params[19], 'v1.0');
+
+    // model (index 20) stays null; promptVersion (index 21) is still set
+    assert.equal(params[20], null);
+    assert.equal(params[21], 'v1.0');
 
     // published stays 0 for an unpublished no-URL finding
-    assert.equal(params[25], 0);
+    assert.equal(params[27], 0);
 });
 
 // Fake query function for testing upsertFinding
@@ -151,7 +172,7 @@ async function fakeQuery(sql, params) {
     // Record the call for inspection
     fakeQuery.calls = fakeQuery.calls || [];
     fakeQuery.calls.push({ sql, params });
-    
+
     // Return a mock result
     return { affectedRows: 1, insertId: 1 };
 }
@@ -173,6 +194,8 @@ test('upsertFinding calls query with the constructed SQL and parameters', async 
         confidence: 95,
         reasonType: null,
         rationale: 'Clear evidence in source',
+        sourceQuote: 'Clear evidence in source.',
+        quoteStatus: 'exact',
         provider: 'publicai',
         model: 'qwen3-32b',
         promptVersion: 'v1.0',
@@ -189,15 +212,15 @@ test('upsertFinding calls query with the constructed SQL and parameters', async 
 
     // Check that query was called once
     assert.equal(fakeQuery.calls.length, 1);
-    
+
     // Check that the result is returned
     assert.deepEqual(result, { affectedRows: 1, insertId: 1 });
-    
+
     // Check that the SQL contains the expected structure
     const call = fakeQuery.calls[0];
     assert.match(call.sql, /INSERT INTO citation_findings/);
     assert.match(call.sql, /ON DUPLICATE KEY UPDATE/);
-    
+
     // Check that we have the right number of parameters
-    assert.equal(call.params.length, 26);
+    assert.equal(call.params.length, 28);
 });
