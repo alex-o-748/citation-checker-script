@@ -1,16 +1,17 @@
 {
-  "generated": "2026-08-20T22:04:19.488Z",
+  "generated": "2026-08-23T21:56:52.317Z",
   "overview": {
     "datasetVersion": "all",
     "totalEntries": 187,
-    "totalCalls": 1108,
+    "totalCalls": 1290,
     "providers": [
       "apertus-70b",
       "qwen-sealion",
       "claude-sonnet-4-5",
       "gemini-2.5-flash",
       "claude-sonnet-5",
-      "gemini-3.7-flash"
+      "gemini-3.7-flash",
+      "hf-gpt-oss-20b"
     ]
   },
   "providers": {
@@ -407,6 +408,72 @@
           "avgWhenCorrect": 58.94827586206897,
           "avgWhenWrong": 39.473684210526315,
           "calibration": 19.474591651542653
+        }
+      }
+    },
+    "hf-gpt-oss-20b": {
+      "name": "Hf-gpt-oss-20b",
+      "model": "openai/gpt-oss-20b",
+      "sampleCount": 182,
+      "metrics": {
+        "total": 182,
+        "valid": 182,
+        "errors": 0,
+        "quotes": {
+          "eligible": 87,
+          "offered": 87,
+          "verified": 72,
+          "offerRate": 1,
+          "fidelity": 0.8275862068965517,
+          "accuracyWhenQuoteVerified": 0.8194444444444444,
+          "accuracyWhenQuoteUnverified": 0.8,
+          "verifiedRows": 72,
+          "unverifiedRows": 15,
+          "gap": 0.019444444444444375
+        },
+        "exactMatches": 114,
+        "partialMatches": 13,
+        "exactAccuracy": 0.6263736263736264,
+        "lenientAccuracy": 0.6978021978021978,
+        "binaryAccuracy": 0.6978021978021978,
+        "supportedVsRestCorrect": 143,
+        "supportedVsRestAccuracy": 0.7857142857142857,
+        "confusionMatrix": {
+          "Supported": {
+            "Supported": 48,
+            "Partially supported": 9,
+            "Not supported": 22,
+            "Source unavailable": 1
+          },
+          "Partially supported": {
+            "Supported": 4,
+            "Partially supported": 23,
+            "Not supported": 27,
+            "Source unavailable": 2
+          },
+          "Not supported": {
+            "Supported": 1,
+            "Partially supported": 2,
+            "Not supported": 43,
+            "Source unavailable": 0
+          },
+          "Source unavailable": {
+            "Supported": 0,
+            "Partially supported": 0,
+            "Not supported": 0,
+            "Source unavailable": 0
+          }
+        },
+        "latency": {
+          "avg": 3048.0714285714284,
+          "min": 550,
+          "max": 20156
+        },
+        "confidence": {
+          "avg": 60.55865921787709,
+          "avgWhenCorrect": 63.07017543859649,
+          "avgWhenWrong": 53.6764705882353,
+          "calibration": 9.393704850361196
         }
       }
     }
