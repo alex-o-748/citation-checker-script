@@ -77,7 +77,7 @@ The raw verdict is, in score terms, approximately "`supportedScore >= 50`" —
 and that threshold is one of the points the curve's own sweep already passes
 through. So the operating point sits *on* its own curve (within ~0.01–0.04 of
 TPR, which is noise from where the sweep happens to land a threshold), not
-below it. Checked across all 6 providers in the 2026-08-20 run — the gap
+below it. Checked across all 7 providers in the 2026-08-20 run — the gap
 between the operating point's TPR and the curve's TPR at that same FPR never
 exceeds 0.04. There's no meaningful accuracy being left on the table by using
 the bare verdict instead of a confidence gate at a fixed FPR.
@@ -109,7 +109,7 @@ than trusting this snapshot.
   whether thresholding helps at all (it doesn't, at a fixed FPR).
 - **Spotting a provider whose confidence is poorly calibrated relative to its
   verdict.** If a future provider's diamond does land meaningfully below its
-  own curve at the same FPR (unlike anything in the current 6), that's a
+  own curve at the same FPR (unlike anything in the current 7), that's a
   provider whose verdict category is throwing away signal its own confidence
   score has — worth a confidence-gate experiment specifically for that one.
 
