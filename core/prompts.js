@@ -1,6 +1,17 @@
 // Pure prompt-generation logic. Imported by core/ consumers (CLI, benchmark).
 // Also injected byte-identically into main.js between <core-injected> markers.
 
+// Identifies which revision of generateSystemPrompt()'s few-shot examples
+// produced a stored finding. Bump this whenever the prompt text changes —
+// tests/prompts.test.js pins a hash of the assembled prompt against this
+// constant and fails if they drift apart, so "changed the prompt, forgot to
+// bump the version" fails the suite instead of silently poisoning
+// citation_findings.prompt_version (that column is part of the row's unique
+// key — see docs/design-plans/2026-08-07-batch-source-checks-for-edit-suggestions.md
+// §6 — precisely so a prompt change invalidates old findings rather than
+// overwriting them).
+export const PROMPT_VERSION = 'v1';
+
 export function generateSystemPrompt() {
     return `You are a fact-checking assistant for Wikipedia. Analyze whether claims are supported by the provided source text.
 

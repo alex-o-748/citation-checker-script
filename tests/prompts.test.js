@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import {
   generateSystemPrompt,
   generateUserPrompt,
@@ -7,6 +8,7 @@ import {
   generateGroupSystemPrompt,
   generateGroupUserPrompt,
   assembleGroupSources,
+  PROMPT_VERSION,
 } from '../core/prompts.js';
 
 test('generateSystemPrompt returns a non-empty string', () => {
@@ -172,4 +174,25 @@ test('omission and source-unavailable examples carry an empty source_quote', () 
   const unavailable = examples.find(e => e.verdict === 'SOURCE UNAVAILABLE');
   assert.equal(omission.source_quote, '');
   assert.equal(unavailable.source_quote, '');
+});
+
+// citation_findings.prompt_version (ToolsDB) is part of that table's unique
+// key specifically so a prompt change invalidates old findings instead of
+// silently overwriting them — see PROMPT_VERSION's doc comment. That only
+// works if PROMPT_VERSION actually moves when the prompt does; this pins the
+// current prompt's hash so an edit to generateSystemPrompt() without a
+// matching version bump fails here instead of shipping unnoticed.
+//
+// On a deliberate prompt change: update PROMPT_VERSION in core/prompts.js,
+// then replace EXPECTED_HASH below with the value this test's failure
+// message reports.
+test('PROMPT_VERSION is bumped whenever the system prompt text changes', () => {
+  const EXPECTED_HASH = '37ed065d07fe628b794b31e8cb08699730ecedd130245f80aef065277354121f';
+  const actual = createHash('sha256').update(generateSystemPrompt(), 'utf8').digest('hex');
+  assert.equal(
+    actual,
+    EXPECTED_HASH,
+    `generateSystemPrompt() changed (hash now ${actual}) but PROMPT_VERSION is still "${PROMPT_VERSION}". ` +
+    `Bump PROMPT_VERSION in core/prompts.js and update EXPECTED_HASH in this test to match.`
+  );
 });
