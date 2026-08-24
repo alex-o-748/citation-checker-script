@@ -8,9 +8,10 @@
 > and the §6a fix (G4, continued); `service/csv-report.js` (G2);
 > `service/run-sweep.js` joining all six stages, printing the full funnel
 > (G1 + G5) — see each gap's own note below for what's still open under it.
-> **G3, G6, G7 remain**: G3 is a policy decision (turning on live source
-> fetching) this file cannot make; G6 (`ref_name`) and G7 (the publication
-> filter) are small and deliberately deferred, respectively. Old filenames
+> **G6, G7 remain**, small and deliberately deferred respectively. **G3 was
+> never actually two things** — small-scale attended live fetching needs no
+> permission (see G3's own note); only unattended Toolforge-hosted
+> production volume waits on WMCS, and *that's* still open. Old filenames
 > below (`service/verify.js`,
 > `service/pipeline.js`, `service/selection.js`, `service/assemble.js`,
 > `service/findings.js`, `service/replay.js`, `service/extract-articles.js`,
@@ -109,7 +110,8 @@ Ordered by what blocks the CSV. Only two of these are more than glue.
 > misleading per-source-only result G4 was about. 17 tests
 > (`tests/run-sweep.test.js`) cover the halt rule, incremental-in-ToolsDB /
 > whole-file-CSV persistence, the funnel, and group skip/collapse. Source
-> fetching is still stubbed by default (G3 unresolved), so a default run's
+> fetching is still stubbed by default (`--live-source-fetch` opts in — see
+> G3's note on what that actually still requires), so a default run's
 > findings are all `SOURCE UNAVAILABLE` — proves the wiring, not sourcing
 > accuracy.
 >
@@ -187,24 +189,42 @@ makes a disputed row diagnosable three weeks later.
 
 **Sort by page, then citation number**, so two runs diff cleanly.
 
-### G3 — Live source fetching, on for real · policy, not code
+### G3 — Live source fetching · two different questions, only one still open
 
-Stage 3 defaults to a stub, and `--live-source-fetch` exists only on
-`extract-articles.js`. Threading the flag through the new runner is trivial. The
-non-trivial part is that **with the stub, every row in the CSV is
-`SOURCE UNAVAILABLE`** — the deliverable is empty of findings.
+> **Corrected 2026-08-24.** Earlier revisions of this section blurred two
+> separable questions together. Splitting them: small-scale, attended live
+> fetching is **not blocked** — the parent doc already settled this in Track
+> B step 5 and in §5's "a handful of manual requests while exploring is
+> ordinary development, categorically unlike an unattended crawler." What
+> remains open is only the WMCS question at unattended/production volume
+> from Toolforge (§5's open question 1). `--live-source-fetch` on
+> `run-sweep.js` / `run-extract.js` at ~tens of articles, run once by a
+> person watching it, from anywhere with open internet, needs nobody's
+> permission — it is Track B step 5, which the parent doc explicitly wanted
+> done off-platform and un-gated, and it was never done.
 
-The honest position: the parent doc calls a handful of manual requests while
-exploring "ordinary development, categorically unlike an unattended crawler."
-A one-off attended run over ~50 articles is somewhere between that and the
-thing WMCS was asked about, and it is worth deciding which side of the line
-you want to be on *before* the run rather than defending it after. Two ways
-through, both legitimate:
+Stage 3 defaults to a stub — `--live-source-fetch` opts in, on both
+`run-extract.js` and `run-sweep.js`. **With the stub, every row in the CSV is
+`SOURCE UNAVAILABLE`** — the deliverable is empty of findings, so this is the
+one gap that silently determines whether a sweep produces anything to look
+at.
 
-- Run it small and attended, from a laptop rather than Toolforge, and say so in
-  the CSV's provenance. This is the funnel measurement the parent doc's Track B
-  step 5 explicitly wanted done off-platform and un-gated.
-- Wait for the WMCS answer and run it from Toolforge.
+**What's actually still blocking a run isn't policy, it's reachability from
+wherever the run happens.** Confirmed 2026-08-24, from this development
+session: its own outbound proxy returns a 403 policy denial for
+`en.wikipedia.org`, `source-fetcher.toolforge.org`, and
+`publicai-proxy.alaexis.workers.dev` — none of the three hosts a real sweep
+needs are on this environment's egress allowlist (only `api.anthropic.com`
+is, which covers the `claude` provider but not stage 3 or the other
+providers). That is this session's own sandboxing, unrelated to the WMCS
+question above, and it means an attended small-scale run has to happen
+somewhere with open internet — a laptop, or (once separately confirmed) the
+Toolforge bastion — not from a Claude Code session whose proxy hasn't
+allow-listed these hosts.
+
+So the sequencing is: run it small and attended, from a laptop, and say so in
+the CSV's provenance — no further clearance needed for that. Toolforge-hosted,
+unattended, production-volume fetching still waits on the WMCS answer.
 
 Track B step 5 was never done. The first option is that step, with a better
 output than the throwaway script it originally called for.
@@ -292,7 +312,7 @@ question, and the answer is "nothing has been through a filter yet."
 | --- | --- | --- | --- |
 | G1 | Sweep runner joining stages 1–5 | Medium | **Done** — `service/run-sweep.js` |
 | G2 | CSV writer | Small | **Done** — `service/csv-report.js` |
-| G3 | Live fetching turned on | Policy | **Yes** — stub ⇒ every finding `SOURCE UNAVAILABLE` |
+| G3 | Live fetching turned on | Reachability, not policy | **Partial** — small-scale needs no permission, just a host with open egress; production-volume Toolforge fetching still waits on WMCS |
 | G4 | Collective group verification | Medium | **Done** — no longer blocks correctness |
 | G5 | Full funnel accounting | Small | **Done** — printed by `run-sweep.js` |
 | G6 | `ref_name` collection | Small | No |

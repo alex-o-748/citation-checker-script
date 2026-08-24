@@ -9,8 +9,11 @@
 // per its own README, unattended fetching of third-party publisher URLs from
 // Wikimedia infrastructure has not yet been cleared with WMCS — so no batch
 // job may be pointed at it as a matter of course. Pass --live-source-fetch to
-// opt in for a one-off manual smoke test (e.g. from a Toolforge bastion,
-// after checking WMCS clearance); every other run stays stubbed.
+// opt in for a one-off manual, attended run — from a laptop or any host with
+// open egress this needs no clearance at all (docs/design-plans/
+// 2026-08-24-csv-deliverable-and-component-names.md, G3); only running it
+// unattended, at volume, from Toolforge itself is the part still gated on
+// WMCS. Every other run stays stubbed.
 //
 // Usage (on a Toolforge bastion, inside the tool account):
 //   node service/run-extract.js

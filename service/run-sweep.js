@@ -22,11 +22,18 @@
 // should see, and nothing downstream of this runner applies that yet.
 //
 // Source fetching defaults to the stub — the same one service/run-extract.js
-// uses. Real sources are opt-in only (--live-source-fetch), because
-// unattended fetching of third-party URLs from Toolforge has not been
-// cleared with WMCS. With the stub, every finding is SOURCE UNAVAILABLE —
-// the CSV proves the pipeline wiring, not sourcing accuracy, until that
-// clearance lands (G3, a policy question this file cannot answer).
+// uses. Real sources are opt-in only (--live-source-fetch). With the stub,
+// every finding is SOURCE UNAVAILABLE — the CSV proves the pipeline wiring,
+// not sourcing accuracy, until it's turned on.
+//
+// --live-source-fetch itself needs no permission for a small, attended run —
+// the design doc's G3 settles this: it is only unattended, production-volume
+// fetching *from Toolforge* that waits on WMCS. What a run of this flag
+// actually requires is a host with open egress to en.wikipedia.org,
+// TOOLFORGE_SOURCE_FETCHER_BASE below, and the chosen model provider — not
+// every environment has that (a sandboxed Claude Code session's own proxy,
+// for one, may not allow-list those hosts; check before assuming a run just
+// hung).
 //
 // The CSV is the default deliverable; a ToolsDB write is opt-in (--store),
 // inverting service/run-replay.js's default. Its bastion is unreachable from
@@ -107,8 +114,12 @@ Options:
   --model <id>          Override the provider's default model
   --delay-ms <n>        Delay after each model call, ms (default: 1000)
   --live-source-fetch   Fetch real sources via tf-source-fetcher instead of the
-                         stub. Not yet cleared by WMCS for unattended use —
-                         manual, attended runs only (see service/run-extract.js).
+                         stub. A small, attended run needs no permission (see
+                         the design doc's G3) — just a host with open egress
+                         to en.wikipedia.org and tf-source-fetcher, which not
+                         every environment has. Unattended, production-volume
+                         fetching from Toolforge is the part still waiting
+                         on WMCS.
   --store               Also upsert every finding into ToolsDB. Requires a
                          Toolforge bastion; the CSV is written either way.
   --out <path>          CSV output path (default: findings.csv)
