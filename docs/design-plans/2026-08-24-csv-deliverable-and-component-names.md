@@ -2,10 +2,16 @@
 
 > **Status (2026-08-24):** In progress. **Step 0** of the sequence below is
 > done: `service/` renamed per the "Proposed names" table, and
-> `service/` documented in `CLAUDE.md`. **G4** is also done: `core/groups.js`
-> + `main.js` delegation + `service/verifier.js`'s `verifyGroup()` — see G4's
-> own note below. **G1, G2, G3, G5, G6, G7** (the sweep runner, the CSV
-> writer, and the rest) are unbuilt. Old filenames below (`service/verify.js`,
+> `service/` documented in `CLAUDE.md`. **G1, G2, G4, G5 are done**:
+> `core/groups.js` + `main.js` delegation + `service/verifier.js`'s
+> `verifyGroup()` (G4); `service/finding-builder.js`'s `assembleGroupFinding()`
+> and the §6a fix (G4, continued); `service/csv-report.js` (G2);
+> `service/run-sweep.js` joining all six stages, printing the full funnel
+> (G1 + G5) — see each gap's own note below for what's still open under it.
+> **G3, G6, G7 remain**: G3 is a policy decision (turning on live source
+> fetching) this file cannot make; G6 (`ref_name`) and G7 (the publication
+> filter) are small and deliberately deferred, respectively. Old filenames
+> below (`service/verify.js`,
 > `service/pipeline.js`, `service/selection.js`, `service/assemble.js`,
 > `service/findings.js`, `service/replay.js`, `service/extract-articles.js`,
 > `service/select-articles.js`) describe the pre-rename state being analyzed
@@ -92,6 +98,31 @@ Ordered by what blocks the CSV. Only two of these are more than glue.
 
 ### G1 — The sweep runner · Medium · the actual missing piece
 
+> **Done 2026-08-24**, as `service/run-sweep.js` rather than the
+> `run-pipeline.js` name floated below (the "Proposed names" table's
+> `run-sweep.js` won out once it existed to name). Joins all six stages;
+> writes a CSV by default (G2) and, with `--store`, also upserts into
+> ToolsDB. Every citation — solo or a group member — gets its own
+> `verifyCitation()` call, and each group additionally gets one
+> `verifyGroup()` collective call (core/groups.js), so real articles with
+> adjacent citations produce a correct collective finding instead of the
+> misleading per-source-only result G4 was about. 17 tests
+> (`tests/run-sweep.test.js`) cover the halt rule, incremental-in-ToolsDB /
+> whole-file-CSV persistence, the funnel, and group skip/collapse. Source
+> fetching is still stubbed by default (G3 unresolved), so a default run's
+> findings are all `SOURCE UNAVAILABLE` — proves the wiring, not sourcing
+> accuracy.
+>
+> **One deviation from "persist incrementally" below, worth flagging rather
+> than silently deciding**: the `--store` path upserts each finding into
+> ToolsDB as it's computed (same guarantee `run-replay.js` already proved),
+> but the CSV is buffered in memory and written once, at the end (or at a
+> halt). A crash that isn't a caught `ProviderAuthError` — an unhandled
+> exception, `kill -9`, an OOM — loses the CSV's contents even though
+> ToolsDB (if `--store` was on) kept them. Accepted for now given the run
+> sizes in scope (~tens of articles per the parent doc's pilot); an
+> append-as-computed CSV writer would close this gap if sweep sizes grow.
+
 `service/run-pipeline.js`: `selectCandidates` → `runBatch` → `verifyCitation` →
 `assembleFinding` → sink. Every one of those functions exists, is exported, and
 is unit-tested. What the runner adds is the loop, the funnel counters, the halt
@@ -112,6 +143,18 @@ repo and worth copying rather than re-deciding:
   connections per wiki. Don't add concurrency without a per-wiki ceiling.
 
 ### G2 — The CSV writer · Small · but it has real decisions
+
+> **Done 2026-08-24**, as `service/csv-report.js` (matching the "Findings
+> Report" name below, not the file-format-flavored name this heading uses).
+> All three decisions below landed as designed: the CSV is the default sink
+> and `--store` is the opt-in (`run-sweep.js`); a `permalink` column is
+> derived from `page_id` + `revision_id` + a wiki-db-to-domain heuristic;
+> every finding is included, including no-model-ran rows. One correction —
+> `benchmark/generate_comparison.js`'s quoting (`'"' + v + '"'`) was not fit
+> to lift: it doesn't escape an embedded quote, and `claim_text` / `rationale`
+> / `source_quote` are exactly the arbitrary web/model prose CLAUDE.md warns
+> is never safe to write raw. `csv-report.js` does real RFC4180 escaping
+> instead (quote-doubling, and quoting on comma/quote/newline).
 
 Nothing in `service/`, `cli/`, or `core/` writes CSV. `benchmark/generate_comparison.js`
 does, for a different shape — lift its quoting rather than writing a third
@@ -171,12 +214,20 @@ output than the throwaway script it originally called for.
 > **Done 2026-08-24.** `core/groups.js` landed with the four rules below as
 > pure functions, `main.js` delegates to all four (verified with `node
 > scripts/sync-main.js --check` and the full suite, no behavior change), and
-> `service/verifier.js` gained `verifyGroup()` built on the same rules. What's
-> still open: nothing calls `verifyGroup()` yet — that's G1, the sweep
-> runner, still unbuilt — and `service/finding-builder.js` still doesn't know
-> how to assemble a collective row (§6a's group/no-URL hash-collision fix).
-> Both are correctly out of scope until G1 exists, per the phase-4 doc's own
-> sequencing.
+> `service/verifier.js` gained `verifyGroup()` built on the same rules.
+>
+> **Update, same day, once G1 landed:** `verifyGroup()` now has a real
+> caller — `service/run-sweep.js` calls it once per adjacent-citation group,
+> alongside a solo `verifyCitation()` for every member — and
+> `service/finding-builder.js` gained `assembleGroupFinding()`, including the
+> §6a hash-collision fix (`core/anchor.js`'s `groupSourceUrl()`: sorted,
+> deduped, newline-joined member URLs, so a collective row's
+> `source_url_hash` never collides with a no-URL member's). One gap the fix
+> surfaced: `citation_number` is `INT` in the original schema (001), but a
+> collective row's value is a joined list like `"5, 6"` — caught before any
+> collective row was ever written against the real table, migration in
+> `service/migrations/003-widen-citation-number.sql`, not yet applied (no
+> bastion access from here).
 
 `core/citations.js:94` already emits `groupId`, `groupSize` and `groupIndex`.
 `service/verify.js` says in its own header that it implements the solo path
@@ -201,6 +252,13 @@ This is the only item on the list that produces *wrong output* rather than
 than after.
 
 ### G5 — The funnel · Small
+
+> **Done 2026-08-24**, inside `service/run-sweep.js`. Prints
+> `citations seen → had a URL → fetched → verified → flagged → published`
+> to stderr, plus a separate line for adjacent-citation groups (checked /
+> skipped / flagged) — kept out of the main funnel deliberately, so a
+> group's extra collective call can't make `verified` or `flagged` exceed
+> `seen` and stop reading as a funnel. See G1's note on `verifyGroup()`.
 
 `extract-articles.js` counts `citations → withUrl → fetched → failed`. The §7
 funnel wants `→ verified → flagged → published` on the end. The runner should
@@ -232,11 +290,11 @@ question, and the answer is "nothing has been through a filter yet."
 
 | | Gap | Size | Blocks the CSV? |
 | --- | --- | --- | --- |
-| G1 | Sweep runner joining stages 1–5 | Medium | **Yes** |
-| G2 | CSV writer | Small | **Yes** |
-| G3 | Live fetching turned on | Policy | **Yes** — stub ⇒ empty CSV |
+| G1 | Sweep runner joining stages 1–5 | Medium | **Done** — `service/run-sweep.js` |
+| G2 | CSV writer | Small | **Done** — `service/csv-report.js` |
+| G3 | Live fetching turned on | Policy | **Yes** — stub ⇒ every finding `SOURCE UNAVAILABLE` |
 | G4 | Collective group verification | Medium | **Done** — no longer blocks correctness |
-| G5 | Full funnel accounting | Small | No |
+| G5 | Full funnel accounting | Small | **Done** — printed by `run-sweep.js` |
 | G6 | `ref_name` collection | Small | No |
 | G7 | Publication filter | — | No — deliberately deferred |
 

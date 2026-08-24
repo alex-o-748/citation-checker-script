@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { assembleFinding, FINDING_TTL_DAYS } from '../service/finding-builder.js';
+import { assembleFinding, assembleGroupFinding, FINDING_TTL_DAYS } from '../service/finding-builder.js';
 import { buildUpsertQuery } from '../service/findings-store.js';
 
 const candidate = { wiki: 'enwiki', pageId: 42, title: 'Test Article', revisionId: 987654321 };
@@ -139,6 +139,116 @@ test('assembled findings feed buildUpsertQuery without error', () => {
         provider: 'publicai', model: 'qwen3-32b', promptVersion: 'v1',
     });
 
+    const { sql, params } = buildUpsertQuery(finding);
+    assert.equal((sql.match(/\?/g) || []).length, params.length);
+});
+
+const groupMembers = [
+    {
+        claimText: 'The bridge, built in 1998, cost $200 million.',
+        citationNumber: '5',
+        url: 'https://a.example',
+        groupId: 'g1',
+        source: { content: 'Source URL: https://a.example\n\nSource Content:\nThe bridge opened in 1998.', status: 200 },
+    },
+    {
+        claimText: 'The bridge, built in 1998, cost $200 million.',
+        citationNumber: '6',
+        url: 'https://b.example',
+        groupId: 'g1',
+        source: { content: 'Source URL: https://b.example\n\nSource Content:\nFunding came from state grants.', status: 200 },
+    },
+];
+
+const groupVerification = {
+    skipped: false,
+    groupId: 'g1',
+    memberCitationNumbers: ['5', '6'],
+    verdict: 'PARTIALLY SUPPORTED',
+    confidence: 80,
+    reasonType: null,
+    rationale: 'Only the date is confirmed.',
+    sourceQuote: 'The bridge opened in 1998.',
+    quoteStatus: 'exact',
+    usage: { input: 200, output: 50 },
+};
+
+test('a collective group verdict assembles with a joined source_url and citation_number', () => {
+    const fetchedAt = new Date('2026-08-22T00:00:00Z');
+    const finding = assembleGroupFinding({
+        candidate, members: groupMembers, verification: groupVerification,
+        provider: 'publicai', model: 'qwen3-32b', promptVersion: 'v1',
+        fetchedAt,
+    });
+
+    assert.equal(finding.isCollective, true);
+    assert.equal(finding.groupId, 'g1');
+    assert.equal(finding.citationNumber, '5, 6');
+    assert.equal(finding.refName, null);
+    assert.equal(finding.sourceUrl, 'https://a.example\nhttps://b.example', 'sorted, newline-joined member URLs — §6a');
+    assert.equal(finding.claimText, groupMembers[0].claimText);
+    assert.equal(finding.verdict, 'PARTIALLY SUPPORTED');
+    assert.equal(finding.provider, 'publicai');
+    assert.equal(finding.tokensIn, 200);
+    assert.equal(finding.published, false);
+    assert.deepEqual(finding.fetchedAt, fetchedAt);
+    assert.deepEqual(
+        finding.expiresAt,
+        new Date(fetchedAt.getTime() + FINDING_TTL_DAYS * 24 * 60 * 60 * 1000)
+    );
+});
+
+test('a collective finding\'s source_url_hash never collides with a member\'s (§6a)', () => {
+    // The bug this whole function exists to fix: a null/empty collective
+    // source_url hashes identically to a no-URL member's, silently
+    // overwriting one row with the other on the unique key.
+    const finding = assembleGroupFinding({
+        candidate, members: groupMembers, verification: groupVerification,
+        provider: 'publicai', model: 'qwen3-32b', promptVersion: 'v1',
+    });
+    const noUrlMemberFinding = assembleFinding({
+        candidate,
+        citation: { claimText: 'x', citationNumber: '7', url: null, groupId: 'g1', source: { content: null, status: null } },
+        verification: { verdict: 'SOURCE UNAVAILABLE', confidence: null, reasonType: null, rationale: null, sourceQuote: null, quoteStatus: null, usage: null, fetchStatus: null },
+        provider: 'publicai', model: 'qwen3-32b', promptVersion: 'v1',
+    });
+
+    assert.notEqual(finding.sourceUrl, noUrlMemberFinding.sourceUrl);
+    const { params: groupParams } = buildUpsertQuery(finding);
+    const { params: memberParams } = buildUpsertQuery(noUrlMemberFinding);
+    // source_url_hash is params[9] in buildUpsertQuery's positional list.
+    assert.notDeepEqual(groupParams[9], memberParams[9]);
+});
+
+test('assembleGroupFinding refuses a skipped verifyGroup() result', () => {
+    assert.throws(
+        () => assembleGroupFinding({
+            candidate, members: groupMembers, verification: { skipped: true, groupId: 'g1' },
+            provider: 'publicai', model: 'qwen3-32b', promptVersion: 'v1',
+        }),
+        TypeError
+    );
+});
+
+test('a collective finding assembled from a group with a no-URL member still assembles', () => {
+    const members = [
+        groupMembers[0],
+        { claimText: groupMembers[0].claimText, citationNumber: '9', url: null, groupId: 'g1', source: { content: null, status: null } },
+        groupMembers[1],
+    ];
+    const finding = assembleGroupFinding({
+        candidate, members, verification: { ...groupVerification, memberCitationNumbers: ['5', '9', '6'] },
+        provider: 'publicai', model: 'qwen3-32b', promptVersion: 'v1',
+    });
+    assert.equal(finding.citationNumber, '5, 9, 6', 'the no-URL member is still listed');
+    assert.equal(finding.sourceUrl, 'https://a.example\nhttps://b.example', 'but contributes no URL to the joined list');
+});
+
+test('assembled group findings feed buildUpsertQuery without error', () => {
+    const finding = assembleGroupFinding({
+        candidate, members: groupMembers, verification: groupVerification,
+        provider: 'publicai', model: 'qwen3-32b', promptVersion: 'v1',
+    });
     const { sql, params } = buildUpsertQuery(finding);
     assert.equal((sql.match(/\?/g) || []).length, params.length);
 });

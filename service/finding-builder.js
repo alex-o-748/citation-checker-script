@@ -4,7 +4,17 @@
 // "assembly" to match the pipeline diagram in docs/design-plans/
 // 2026-08-22-batch-verification-and-persistence.md.
 //
+// assembleGroupFinding() does the same for a group's collective (multi-source)
+// verdict from service/verifier.js's verifyGroup(). It's a separate function
+// rather than a branch of assembleFinding() because the two draw from
+// genuinely different shapes — one citation with one source vs. several
+// citations with several sources — and the only thing they share is the
+// trailing "which columns get what" logic, factored into finishFinding()
+// below.
+//
 // Pure and synchronous — no I/O, no clock reads beyond an injectable `now`.
+
+import { groupSourceUrl } from '../core/anchor.js';
 
 // §4 of the design doc: nothing computed by this phase has been through the
 // §1 publication filter (that threshold doesn't exist yet — Track B), so
@@ -20,6 +30,32 @@ export const FINDING_TTL_DAYS = 30;
 function computeExpiresAt(hasContent, fetchedAt, ttlDays) {
     if (!hasContent) return null;
     return new Date(fetchedAt.getTime() + ttlDays * 24 * 60 * 60 * 1000);
+}
+
+// Columns both assembleFinding() and assembleGroupFinding() fill the same
+// way once they've each worked out the shape-specific fields above them
+// (citationNumber, sourceUrl, groupId, isCollective, sourceTruncated,
+// fetchStatus). `verification` is either verifyCitation()'s or
+// verifyGroup()'s return value — both carry verdict/confidence/reasonType/
+// rationale/sourceQuote/quoteStatus/usage under the same names.
+function finishFinding(base, { verification, provider, model, promptVersion, hasContent, fetchedAt, ttlDays }) {
+    const modelRan = Boolean(verification.usage);
+    return {
+        ...base,
+        verdict: verification.verdict,
+        confidence: verification.confidence,
+        reasonType: verification.reasonType,
+        rationale: verification.rationale,
+        sourceQuote: verification.sourceQuote,
+        quoteStatus: verification.quoteStatus,
+        provider: modelRan ? provider : null,
+        model: modelRan ? model : null,
+        promptVersion,
+        tokensIn: verification.usage?.input ?? null,
+        tokensOut: verification.usage?.output ?? null,
+        expiresAt: computeExpiresAt(hasContent, fetchedAt, ttlDays),
+        published: false,
+    };
 }
 
 /**
@@ -57,34 +93,83 @@ export function assembleFinding({
     ttlDays = FINDING_TTL_DAYS,
 }) {
     const hasContent = Boolean(citation.source?.content);
-    const modelRan = Boolean(verification.usage);
 
-    return {
-        wiki: candidate.wiki,
-        pageId: candidate.pageId,
-        pageTitle: candidate.title,
-        revisionId: candidate.revisionId,
-        claimText: citation.claimText,
-        citationNumber: citation.citationNumber ?? null,
-        refName: citation.refName ?? null,
-        sourceUrl: citation.url ?? null,
-        fetchedAt: hasContent ? fetchedAt : null,
-        groupId: citation.groupId ?? null,
-        isCollective: false,
-        verdict: verification.verdict,
-        confidence: verification.confidence,
-        reasonType: verification.reasonType,
-        rationale: verification.rationale,
-        sourceQuote: verification.sourceQuote,
-        quoteStatus: verification.quoteStatus,
-        provider: modelRan ? provider : null,
-        model: modelRan ? model : null,
-        promptVersion,
-        fetchStatus: verification.fetchStatus,
-        sourceTruncated: Boolean(citation.source?.content?.includes('\nTruncated: true')),
-        tokensIn: verification.usage?.input ?? null,
-        tokensOut: verification.usage?.output ?? null,
-        expiresAt: computeExpiresAt(hasContent, fetchedAt, ttlDays),
-        published: false,
-    };
+    return finishFinding(
+        {
+            wiki: candidate.wiki,
+            pageId: candidate.pageId,
+            pageTitle: candidate.title,
+            revisionId: candidate.revisionId,
+            claimText: citation.claimText,
+            citationNumber: citation.citationNumber ?? null,
+            refName: citation.refName ?? null,
+            sourceUrl: citation.url ?? null,
+            fetchedAt: hasContent ? fetchedAt : null,
+            groupId: citation.groupId ?? null,
+            isCollective: false,
+            fetchStatus: verification.fetchStatus,
+            sourceTruncated: Boolean(citation.source?.content?.includes('\nTruncated: true')),
+        },
+        { verification, provider, model, promptVersion, hasContent, fetchedAt, ttlDays }
+    );
+}
+
+/**
+ * Same as assembleFinding(), for a group's collective (multi-source) verdict.
+ *
+ * @param {object} args
+ * @param {{wiki: string, pageId: number, title: string, revisionId: number}} args.candidate
+ *   Same shape as assembleFinding()'s.
+ * @param {Array<object>} args.members - The group's citations (processArticle()
+ *   shape), pre-filtered to one groupId — the same array passed to
+ *   verifyGroup().
+ * @param {object} args.verification - verifyGroup()'s return value. Must have
+ *   `skipped: false` — a skipped group has no collective verdict to store;
+ *   callers should not call this for one (its per-source member findings,
+ *   from assembleFinding(), already cover it — see core/groups.js's header).
+ * @param {string} args.provider - Same gating as assembleFinding()'s.
+ * @param {string} args.model
+ * @param {string} args.promptVersion
+ * @param {Date} [args.fetchedAt]
+ * @param {number} [args.ttlDays]
+ */
+export function assembleGroupFinding({
+    candidate,
+    members,
+    verification,
+    provider,
+    model,
+    promptVersion,
+    fetchedAt = new Date(),
+    ttlDays = FINDING_TTL_DAYS,
+}) {
+    if (verification.skipped) {
+        throw new TypeError('assembleGroupFinding requires a completed (non-skipped) verifyGroup() result');
+    }
+
+    const hasContent = members.some(m => Boolean(m.source?.content));
+    const citationNumbers = verification.memberCitationNumbers ?? members.map(m => m.citationNumber);
+
+    return finishFinding(
+        {
+            wiki: candidate.wiki,
+            pageId: candidate.pageId,
+            pageTitle: candidate.title,
+            revisionId: candidate.revisionId,
+            claimText: members[0]?.claimText ?? null,
+            // Display only, per 001's schema comment — not an identifier.
+            // "5, 6" rather than a single number: service/migrations/
+            // 003-widen-citation-number.sql must be applied before this can
+            // be written to the real table (citation_number was INT).
+            citationNumber: citationNumbers.join(', '),
+            refName: null,
+            sourceUrl: groupSourceUrl(members.map(m => m.url)),
+            fetchedAt: hasContent ? fetchedAt : null,
+            groupId: verification.groupId ?? members[0]?.groupId ?? null,
+            isCollective: true,
+            fetchStatus: null,
+            sourceTruncated: members.some(m => m.source?.content?.includes('\nTruncated: true')),
+        },
+        { verification, provider, model, promptVersion, hasContent, fetchedAt, ttlDays }
+    );
 }
