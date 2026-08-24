@@ -517,12 +517,37 @@ which is a categorically better thing to develop against than a schema. And the
 parent doc's argument for the whole sequence applies most to this phase: it
 produces a *working system to demonstrate*, entirely inside Wikimedia
 infrastructure, while the one genuinely blocked question is still with WMCS.
+
 ## 13. Running the real integration test
 
 The code above is built and unit-tested with fakes, but nothing in it has
 touched a real model or the real ToolsDB table — that needs real network
-access this repo's own CI-less, bastion-less dev sessions don't have. Two
-steps, in order, each usable independently.
+access this repo's own CI-less, bastion-less dev sessions don't have. Three
+steps, in order.
+
+### Step 0 — get onto a shell with Node, not the bastion login shell
+
+**First-time gotcha, hit 2026-08-24:** the Toolforge bastion login host has no
+language runtimes on PATH — `npm: command not found` there is expected, not a
+broken tool account. Node/npm only exist inside the Kubernetes buildpack
+containers `webservice`/`jobs` actually run in. Track C step 6 ("hello-world
+deploy, plus a Lift Wing smoke test") would have surfaced this first if it had
+been done — as of this writing it hadn't, so this was the first time anyone
+on this project hit it.
+
+Get an interactive shell inside the Node buildpack container instead of the
+bare bastion:
+
+```bash
+webservice node18 shell
+```
+
+**Unverified as of this writing** — written down before a real bastion session
+confirmed it, so the exact image tag (`node18` vs. whatever Toolforge
+currently supports) may be stale. If it is, `webservice --help` or
+`toolforge-jobs images` lists the current options. **Once confirmed working,
+update this line to the exact command and delete this caveat** — don't leave
+a "might be stale" note sitting here once someone has actually verified it.
 
 ### Step 1 — dry run, any machine with internet
 
