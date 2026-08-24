@@ -573,6 +573,12 @@ default full-directory, full-concurrency run.
 
 ### Step 1 — dry run, any machine with internet
 
+**Confirmed working 2026-08-24, from the bastion's `webservice node18 shell`:**
+5 rows processed, 0 skipped, verdicts `{"SUPPORTED":3,"SOURCE UNAVAILABLE":1,"NOT SUPPORTED":1}`.
+First real proof stage 4 works end to end: page-ID resolution, the keyless
+Lift Wing call, verdict parsing, and quote verification all ran clean
+against real dataset rows. Step 2 (the real ToolsDB write) is next.
+
 No bastion, no `~/replica.my.cnf`, no API key. `--dry-run` runs the whole
 verify + assemble chain against real dataset rows and a real model, and
 prints each finding instead of writing it:
