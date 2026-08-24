@@ -35,10 +35,16 @@ test('rowsToCsv emits the header row', () => {
     const [header] = csv.trim().split('\n');
     assert.equal(
         header,
-        'page_title,page_id,revision_id,permalink,citation_number,is_collective,group_id,claim_text,' +
+        'page_title,page_id,revision_id,permalink,citation_number,ref_name,is_collective,group_id,claim_text,' +
         'source_url,verdict,confidence,reason_type,rationale,source_quote,quote_status,fetch_status,' +
         'source_truncated,provider,model,prompt_version,tokens_in,tokens_out,published'
     );
+});
+
+test('a named ref\'s recovered name appears in its own column', () => {
+    const row = findingToCsvRow({ ...baseFinding(), refName: 'smith2001' });
+    const refNameIndex = 5; // page_title, page_id, revision_id, permalink, citation_number, ref_name
+    assert.equal(row[refNameIndex], 'smith2001');
 });
 
 test('a finding round-trips its plain fields into CSV columns', () => {
@@ -98,16 +104,16 @@ test('a no-model-ran row (no URL, no verdict fields) is still included, not drop
 test('null and undefined fields render as empty cells, not the string "null"', () => {
     const csv = rowsToCsv([{ ...baseFinding(), groupId: null, reasonType: undefined }]);
     const cells = csv.trim().split('\n')[1].split(',');
-    assert.equal(cells[6], ''); // group_id
-    assert.equal(cells[11], ''); // reason_type
+    assert.equal(cells[7], ''); // group_id
+    assert.equal(cells[12], ''); // reason_type
     assert.doesNotMatch(csv, /\bnull\b/, 'a raw null must never render as the string "null"');
     assert.doesNotMatch(csv, /\bundefined\b/);
 });
 
 test('is_collective and source_truncated render as 0/1, not true/false', () => {
     const row = findingToCsvRow({ ...baseFinding(), isCollective: true, sourceTruncated: true });
-    assert.equal(row[5], 1);
-    assert.equal(row[16], 1);
+    assert.equal(row[6], 1);
+    assert.equal(row[17], 1);
 });
 
 test('an internal identity hash is never a column', () => {

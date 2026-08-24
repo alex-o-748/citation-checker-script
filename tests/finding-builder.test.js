@@ -54,6 +54,47 @@ test('a verified citation assembles into a finding with published always false',
     );
 });
 
+test('a citation from a named ref carries its recovered ref name into the finding', () => {
+    const citation = {
+        claimText: 'The bridge opened in 1998.',
+        citationNumber: '3',
+        refName: 'smith2001',
+        url: 'https://example.com/a',
+        groupId: null,
+        source: { content: 'Source URL: https://example.com/a\n\nSource Content:\nThe bridge opened to traffic in 1998.', status: 200 },
+    };
+    const verification = {
+        verdict: 'SUPPORTED', confidence: 90, reasonType: null, rationale: 'Direct match.',
+        sourceQuote: 'The bridge opened to traffic in 1998.', quoteStatus: 'exact',
+        usage: { input: 100, output: 40 }, fetchStatus: 200,
+    };
+
+    const finding = assembleFinding({
+        candidate, citation, verification,
+        provider: 'publicai', model: 'qwen3-32b', promptVersion: 'v1',
+    });
+
+    assert.equal(finding.refName, 'smith2001');
+});
+
+test('a citation from an unnamed ref stores a null ref name, not the string "null"', () => {
+    const citation = {
+        claimText: 'claim', citationNumber: '1', url: 'https://example.com/a', groupId: null,
+        source: { content: 'Source URL: https://example.com/a\n\nSource Content:\ntext', status: 200 },
+    };
+    const verification = {
+        verdict: 'SUPPORTED', confidence: 90, reasonType: null, rationale: null,
+        sourceQuote: null, quoteStatus: null, usage: { input: 1, output: 1 }, fetchStatus: 200,
+    };
+
+    const finding = assembleFinding({
+        candidate, citation, verification,
+        provider: 'publicai', model: 'qwen3-32b', promptVersion: 'v1',
+    });
+
+    assert.equal(finding.refName, null);
+});
+
 test('a no-URL citation assembles without provider/model/fetchedAt/expiresAt', () => {
     const citation = {
         claimText: 'A claim from an offline book.',

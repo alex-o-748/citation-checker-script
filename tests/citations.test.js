@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 
-import { collectCitations, attachGroupMetadata, refIdFromHref } from '../core/citations.js';
+import { collectCitations, attachGroupMetadata, refIdFromHref, refNameFromNoteId } from '../core/citations.js';
 
 // Builds a document shaped like rendered Wikipedia article HTML: inline
 // <sup class="reference"> anchors in the prose, and a footnote list whose <li>
@@ -51,9 +51,52 @@ test('collects a solo citation with its claim, url and page number', () => {
     assert.equal(c.url, 'https://example.com/bridge');
     assert.equal(c.pageNum, 42);
     assert.equal(c.refId, 'cite_note-1');
+    assert.equal(c.refName, null, 'an unnamed ref has no name to recover');
     // A lone citation is still a group, of size one.
     assert.equal(c.groupSize, 1);
     assert.equal(c.groupIndex, 0);
+});
+
+test('refNameFromNoteId recovers a named ref\'s sanitized name from its footnote id', () => {
+    assert.equal(refNameFromNoteId('cite_note-smith2001-1'), 'smith2001');
+    assert.equal(refNameFromNoteId('cite_note-John_Smith_2001-3'), 'John_Smith_2001');
+});
+
+test('refNameFromNoteId returns null for an unnamed ref\'s plain numbered id', () => {
+    assert.equal(refNameFromNoteId('cite_note-1'), null);
+    assert.equal(refNameFromNoteId('cite_note-42'), null);
+});
+
+test('refNameFromNoteId handles a purely numeric name via the trailing counter split', () => {
+    // <ref name="2"> renders as cite_note-2-5 (name "2", counter 5) — still
+    // recoverable, distinct from the unnamed cite_note-5 case above.
+    assert.equal(refNameFromNoteId('cite_note-2-5'), '2');
+});
+
+test('refNameFromNoteId handles empty and missing input without throwing', () => {
+    assert.equal(refNameFromNoteId(''), null);
+    assert.equal(refNameFromNoteId(null), null);
+    assert.equal(refNameFromNoteId(undefined), null);
+});
+
+test('a named ref cited once collects its ref name from the footnote id', () => {
+    const doc = buildDoc(
+        '<p>The bridge opened in 1998.@@smith2001-1@@</p>',
+        { 'smith2001-1': `Smith, J. ${link('https://example.com/bridge')}` }
+    );
+    const [c] = collectCitations(doc.getElementById('mw-content-text'));
+    assert.equal(c.refName, 'smith2001');
+});
+
+test('a named ref cited twice carries the same ref name on both occurrences', () => {
+    const doc = buildDoc(
+        `<p>First claim about the bridge.@@smith2001-1@@ Second, separate claim.@@smith2001-1@@</p>`,
+        { 'smith2001-1': `Smith, J. ${link('https://example.com/bridge')}` }
+    );
+    const citations = collectCitations(doc.getElementById('mw-content-text'));
+    assert.equal(citations.length, 2);
+    assert.equal(citations[0].refName, 'smith2001');
+    assert.equal(citations[1].refName, 'smith2001');
 });
 
 test('adjacent citations share one group; a text break starts a new one', () => {

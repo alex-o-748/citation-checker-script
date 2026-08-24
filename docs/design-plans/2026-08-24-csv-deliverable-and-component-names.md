@@ -2,17 +2,17 @@
 
 > **Status (2026-08-24):** In progress. **Step 0** of the sequence below is
 > done: `service/` renamed per the "Proposed names" table, and
-> `service/` documented in `CLAUDE.md`. **G1, G2, G4, G5 are done**:
+> `service/` documented in `CLAUDE.md`. **G1, G2, G4, G5, G6 are done**:
 > `core/groups.js` + `main.js` delegation + `service/verifier.js`'s
 > `verifyGroup()` (G4); `service/finding-builder.js`'s `assembleGroupFinding()`
 > and the §6a fix (G4, continued); `service/csv-report.js` (G2);
 > `service/run-sweep.js` joining all six stages, printing the full funnel
-> (G1 + G5) — see each gap's own note below for what's still open under it.
-> **G6, G7 remain**, small and deliberately deferred respectively. **G3 was
-> never actually two things** — small-scale attended live fetching needs no
-> permission (see G3's own note); only unattended Toolforge-hosted
-> production volume waits on WMCS, and *that's* still open. Old filenames
-> below (`service/verify.js`,
+> (G1 + G5); `core/citations.js`'s `refNameFromNoteId` (G6) — see each gap's
+> own note below for what's still open under it. **Only G7 remains**,
+> deliberately deferred. **G3 was never actually two things** —
+> small-scale attended live fetching needs no permission (see G3's own
+> note); only unattended Toolforge-hosted production volume waits on WMCS,
+> and *that's* still open. Old filenames below (`service/verify.js`,
 > `service/pipeline.js`, `service/selection.js`, `service/assemble.js`,
 > `service/findings.js`, `service/replay.js`, `service/extract-articles.js`,
 > `service/select-articles.js`) describe the pre-rename state being analyzed
@@ -288,6 +288,23 @@ behind it.
 
 ### G6 — `ref_name` is never collected · Small
 
+> **Done 2026-08-24.** `core/citations.js` gained `refNameFromNoteId(refId)`:
+> MediaWiki's Cite extension renders a *named* ref's footnote id as
+> `cite_note-<name>-<n>` (`<name>` sanitized for HTML-id use, `<n>` a global
+> counter) and an *unnamed* one as plain `cite_note-<n>` — since
+> `collectCitations()` already has the footnote id in hand (`refId`, from the
+> anchor's own href), recovering the name needed no new DOM access, on either
+> HTML source. The recovered value is the sanitized id-safe form, not
+> necessarily byte-identical to the wikitext attribute (an underscore may
+> have been a space) — accepted per CLAUDE.md's "ref_name... display only;
+> NOT an identifier". Flows through unchanged: `service/claim-extractor.js`'s
+> citation mapping, `service/finding-builder.js`'s `assembleFinding()`
+> (already read `citation.refName`, just never received one), and now
+> `service/csv-report.js`'s `ref_name` column (was missing from the CSV
+> entirely — added alongside). 10 new tests across
+> `tests/citations.test.js`, `tests/claim-extractor.test.js`,
+> `tests/finding-builder.test.js`, and `tests/csv-report.test.js`.
+
 `core/citations.js` doesn't extract it; `assemble.js` passes
 `citation.refName ?? null`, so the column is always NULL. §2 names it as half
 the citation anchor ("the source URL, plus the `<ref name="...">` when
@@ -315,7 +332,7 @@ question, and the answer is "nothing has been through a filter yet."
 | G3 | Live fetching turned on | Reachability, not policy | **Partial** — small-scale needs no permission, just a host with open egress; production-volume Toolforge fetching still waits on WMCS |
 | G4 | Collective group verification | Medium | **Done** — no longer blocks correctness |
 | G5 | Full funnel accounting | Small | **Done** — printed by `run-sweep.js` |
-| G6 | `ref_name` collection | Small | No |
+| G6 | `ref_name` collection | Small | **Done** — `core/citations.js`'s `refNameFromNoteId` |
 | G7 | Publication filter | — | No — deliberately deferred |
 
 Nothing here is architecturally hard. G1 and G2 are glue over code that is

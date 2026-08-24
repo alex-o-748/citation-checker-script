@@ -74,6 +74,7 @@ export async function processArticle(candidate, {
         if (signal?.aborted) break;
         results.push({
             citationNumber: citation.citationNumber,
+            refName: citation.refName,
             claimText: citation.claimText,
             url: citation.url,
             pageNum: citation.pageNum,

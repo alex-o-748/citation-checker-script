@@ -48,6 +48,7 @@ const COLUMNS = [
     ['revision_id', f => f.revisionId],
     ['permalink', f => permalink(f)],
     ['citation_number', f => f.citationNumber],
+    ['ref_name', f => f.refName],
     ['is_collective', f => (f.isCollective ? 1 : 0)],
     ['group_id', f => f.groupId],
     ['claim_text', f => f.claimText],
