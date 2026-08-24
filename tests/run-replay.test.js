@@ -218,6 +218,33 @@ test('a ProviderAuthError halts the run at exit code 3 and processes no further 
     assert.match(stderr.chunks.join(''), /halting/);
 });
 
+test('a non-auth, non-retryable error also halts, at exit code 4, without crashing uncaught', async () => {
+    // Non-retryable message on purpose — see the matching comment in
+    // tests/run-sweep.test.js. A retryable 429 reaches this same catch
+    // block after withRetry exhausts its attempts internally.
+    const rows = [okRow, { ...okRow, id: 'row_2' }, { ...okRow, id: 'row_3' }];
+    let callCount = 0;
+    const flakyCaller = () => async () => {
+        callCount++;
+        throw new Error('Lift Wing: unexpected response shape');
+    };
+    const stderr = { chunks: [], write(s) { this.chunks.push(s); } };
+
+    const code = await runReplay(
+        { provider: 'liftwing', dataset: 'unused', wiki: 'enwiki', limit: Infinity, delayMs: 0, dryRun: true, model: 'm' },
+        {
+            readFile: fakeDataset(rows),
+            resolvePageIdsFn: okPageIds,
+            makeModelCallerFn: flakyCaller,
+            stdout: { write() {} }, stderr,
+        }
+    );
+
+    assert.equal(code, 4);
+    assert.equal(callCount, 1, 'the run stops at the first unrecoverable error, not after all rows');
+    assert.match(stderr.chunks.join(''), /halting/);
+});
+
 test('a real run still closes the ToolsDB connection even when halted mid-run', async () => {
     const rows = [okRow, { ...okRow, id: 'row_2' }];
     const conn = fakeConnection();

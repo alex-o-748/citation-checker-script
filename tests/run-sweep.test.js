@@ -231,6 +231,31 @@ test('a ProviderAuthError halts the sweep and still writes the CSV with what was
     assert.match(stderrChunks.join(''), /halting/);
 });
 
+test('a non-auth, non-retryable error also halts and still writes the CSV, at exit code 4', async () => {
+    // A message that does not match core/retry.js's RETRYABLE_STATUS /
+    // RETRYABLE_NETWORK patterns, so it throws on the first attempt with no
+    // backoff delay — this test is about the runner's halt behavior, not
+    // withRetry's (covered separately by tests/retry.test.js). A retryable
+    // 429 reaches this same catch block after withRetry exhausts its
+    // attempts; the halt path doesn't care which kind of error it was.
+    let attempts = 0;
+    let written;
+    const stderrChunks = [];
+    const code = await runSweep(baseOpts(), baseIo({
+        makeModelCallerFn: () => async () => {
+            attempts++;
+            throw new Error('Lift Wing: unexpected response shape');
+        },
+        writeCsvReportFn: async findings => { written = findings; },
+        stderr: { write: s => stderrChunks.push(s) },
+    }));
+
+    assert.equal(code, 4);
+    assert.equal(attempts, 1, 'the sweep stops at the first unrecoverable error');
+    assert.deepEqual(written, [], 'nothing was computed before the halt, so the CSV is written empty, not skipped');
+    assert.match(stderrChunks.join(''), /halting/);
+});
+
 test('a ProviderAuthError still closes an open ToolsDB connection', async () => {
     const conn = fakeToolsDbConnection();
     const code = await runSweep(baseOpts({ store: true }), baseIo({

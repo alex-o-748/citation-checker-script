@@ -126,9 +126,11 @@ Options:
   --help, -h            Show this help and exit.
 
 A halt on an auth/billing error (401/402/403) from the model stops the run
-immediately, exit code 3 — see ProviderAuthError in service/verifier.js. The
-CSV (and, with --store, ToolsDB) still gets every finding computed before
-the halt; nothing already written is rolled back.
+immediately, exit code 3 — see ProviderAuthError in service/verifier.js. Any
+other unrecoverable model-call error (e.g. a 429 that exhausted retries)
+halts the same way, exit code 4. Either way the CSV (and, with --store,
+ToolsDB) still gets every finding computed before the halt; nothing already
+written is rolled back.
 `;
 
 // Stage 3 stand-in, identical to service/run-extract.js's stubFetchSource.
@@ -310,8 +312,8 @@ export async function runSweep(opts, {
                 try {
                     verification = await verifyCitation(citation.claimText, citation.source, { callModel });
                 } catch (error) {
-                    if (error instanceof ProviderAuthError) { haltCode = describeHalt(stderr, opts.provider, error, findings.length); break outer; }
-                    throw error;
+                    haltCode = describeHalt(stderr, opts.provider, error, findings.length);
+                    break outer;
                 }
                 if (verification.usage) { funnel.verified++; await sleep(opts.delayMs); }
                 if (recordVerdict(verification.verdict)) funnel.flagged++;
@@ -327,8 +329,8 @@ export async function runSweep(opts, {
                 try {
                     verification = await verifyGroup(members, { callModel });
                 } catch (error) {
-                    if (error instanceof ProviderAuthError) { haltCode = describeHalt(stderr, opts.provider, error, findings.length); break outer; }
-                    throw error;
+                    haltCode = describeHalt(stderr, opts.provider, error, findings.length);
+                    break outer;
                 }
                 funnel.groupsChecked++;
                 if (verification.skipped) { funnel.groupsSkipped++; continue; }
@@ -361,12 +363,30 @@ export async function runSweep(opts, {
     return haltCode ?? 0;
 }
 
+// Halts on ANY error verifyCitation()/verifyGroup() throws, not just
+// ProviderAuthError. A retry-exhausted 429/5xx (the case that matters at
+// 1000-article scale) is just as unrecoverable *for this run* as an
+// auth/billing error — core/retry.js already spent up to 5 attempts and a
+// ~30s backoff before this surfaced, so it is not a one-off blip worth
+// pressing on through. Previously only ProviderAuthError was caught here and
+// everything else was rethrown uncaught, which meant a single mid-run 429
+// (observed in practice: --delay-ms 0 against Lift Wing failed on the 3rd
+// citation) crashed the process *before* the CSV write at the bottom of
+// runSweep() ran, silently discarding every finding computed so far — the
+// opposite of what the halt path is for.
 function describeHalt(stderr, provider, error, writtenSoFar) {
+    if (error instanceof ProviderAuthError) {
+        stderr.write(
+            `sweep: halting — ${provider} returned an auth/billing error (${error.status ?? '?'}): ${error.message}\n` +
+            `sweep: ${writtenSoFar} finding(s) already computed are kept and will still be written to the CSV.\n`
+        );
+        return 3;
+    }
     stderr.write(
-        `sweep: halting — ${provider} returned an auth/billing error (${error.status ?? '?'}): ${error.message}\n` +
+        `sweep: halting — unrecoverable error calling ${provider}: ${error.message}\n` +
         `sweep: ${writtenSoFar} finding(s) already computed are kept and will still be written to the CSV.\n`
     );
-    return 3;
+    return 4;
 }
 
 export async function main(argv, io = {}) {

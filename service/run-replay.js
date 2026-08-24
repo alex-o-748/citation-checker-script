@@ -97,8 +97,10 @@ Options:
   --help, -h         Show this help and exit.
 
 A halt on an auth/billing error (401/402/403) from the model stops the run
-immediately, exit code 3 — see ProviderAuthError in service/verifier.js. Every
-finding written before the halt is kept; nothing is rolled back.
+immediately, exit code 3 — see ProviderAuthError in service/verifier.js. Any
+other unrecoverable model-call error (e.g. a 429 that exhausted retries)
+halts the same way, exit code 4. Every finding written before the halt is
+kept; nothing is rolled back.
 `;
 
 // Pulls the pinned revision id out of a dataset row's article_url
@@ -218,6 +220,10 @@ export async function runReplay(opts, {
             try {
                 verification = await verifyCitation(citation.claimText, citation.source, { callModel });
             } catch (error) {
+                // Halts on ANY error, not just ProviderAuthError — see the
+                // matching comment on run-sweep.js's describeHalt() for why a
+                // retry-exhausted 429/5xx gets the same halt-and-preserve
+                // treatment rather than crashing uncaught.
                 if (error instanceof ProviderAuthError) {
                     stderr.write(
                         `replay: halting — ${opts.provider} returned an auth/billing error ` +
@@ -226,7 +232,11 @@ export async function runReplay(opts, {
                     );
                     return 3;
                 }
-                throw error;
+                stderr.write(
+                    `replay: halting — unrecoverable error calling ${opts.provider}: ${error.message}\n` +
+                    `replay: ${written} finding(s) already written are kept; nothing further will be processed.\n`
+                );
+                return 4;
             }
 
             verdictCounts[verification.verdict] = (verdictCounts[verification.verdict] || 0) + 1;
