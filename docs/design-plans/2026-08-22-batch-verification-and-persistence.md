@@ -7,16 +7,18 @@
 > WMCS egress gate rather than on it.
 >
 > **Landed same day:** branch 1 (`PROMPT_VERSION` + hash-pin test), branch 3's
-> quote columns (`service/migrations/002-add-quote-columns.sql`, not yet
-> applied to the live table — see that file's header), branch 4
+> quote columns (`service/migrations/002-add-quote-columns.sql`), branch 4
 > (`service/verify.js`), and branch 5 (`service/assemble.js`,
 > `service/replay.js`, `service/toolsdb.js`, `service/wikipedia-pageids.js`).
-> `npm test` covers all of it with fakes — no network, no bastion. **Not yet
-> run against the real ToolsDB table or a real model**: that requires a
-> provider API key (for `--dry-run`) and, for a real write, the Toolforge
-> bastion (ToolsDB is unreachable from anywhere else) — neither was available
-> in the session that wrote this code. See "Running the real integration
-> test" below for the exact commands.
+> `npm test` covers all of it with fakes — no network, no bastion.
+>
+> **Confirmed against real infrastructure 2026-08-24**, from the Toolforge
+> bastion: the quote-columns migration applied to the live table; a
+> `--dry-run` verify pass against real `liftwing` calls; and a real write of
+> 5 findings into `citation_findings` (ids 36-40), hand-verified — including
+> one row (`verdict: SUPPORTED`, `quote_status: not-found`) that is live
+> proof the quote-verification path does its job on a real, imperfect model
+> response. See §13 for the full run record.
 >
 > **Not landed:** branch 2 (`core/groups.js`) and branch 6 (`main.js`
 > delegating to it) — group/collective verification is out of scope for this
@@ -616,6 +618,24 @@ If a row's title fails to resolve to a page ID, or its `article_url` has no
 to `--limit`.
 
 ### Step 2 — real write, from the Toolforge bastion
+
+**Confirmed working 2026-08-24.** 5 rows written (ids 36-40), hand-verified
+against the live table. Worth recording one row exactly: id 36 landed
+`verdict: SUPPORTED` with `quote_status: not-found` — the model asserted
+support but its quoted passage wasn't actually located in the source
+verbatim. Not a bug: that is precisely the row CLAUDE.md says the log exists
+to keep ("a not-found row is precisely the one worth inspecting later"), and
+it's the first real evidence — not a fake, not a synthetic test fixture —
+that the quote-verification path (`core/quote.js`'s `verifyQuote`, wired
+through `service/verify.js`) does its job on a real model response. Full
+detail on id 40 also confirmed correct: `expires_at` exactly `fetched_at` +
+30 days, `published: 0`, `prompt_version: v1`, `provider: liftwing`,
+`model: llm-qwen36-27b`, tokens populated.
+
+**This closes out the phase-4 integration test.** Stages 4 and 5 are proven
+end to end against real infrastructure — real Lift Wing calls, real ToolsDB
+writes. See "What this does and doesn't prove" below for the honest scope
+of that claim.
 
 ToolsDB is unreachable from anywhere else. From inside the tool account:
 
