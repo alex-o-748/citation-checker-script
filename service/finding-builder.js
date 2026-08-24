@@ -1,4 +1,4 @@
-// Stage between verify (service/verify.js) and store (service/findings.js):
+// Stage between verify (service/verifier.js) and store (service/findings-store.js):
 // turns one verifyCitation() result, plus the citation and candidate metadata
 // it came from, into the finding object buildUpsertQuery() expects. Named
 // "assembly" to match the pipeline diagram in docs/design-plans/
@@ -25,12 +25,12 @@ function computeExpiresAt(hasContent, fetchedAt, ttlDays) {
 /**
  * @param {object} args
  * @param {{wiki: string, pageId: number, title: string, revisionId: number}} args.candidate
- *   The selected-article row (service/selection.js's normalizeRow shape:
+ *   The selected-article row (service/article-picker.js's normalizeRow shape:
  *   pageId, title, revisionId), plus `wiki` — selectCandidates() doesn't
  *   return that field itself, so the caller attaches it from whichever wiki
  *   database it queried (e.g. the runner's --wiki argument).
  * @param {object} args.citation - One entry from processArticle()'s
- *   `citations` array (service/pipeline.js): claimText, url, citationNumber,
+ *   `citations` array (service/claim-extractor.js): claimText, url, citationNumber,
  *   groupId, source: {content, status, error, unavailableReason}.
  * @param {object} args.verification - verifyCitation()'s return value.
  * @param {string} args.provider - Provider name, for display. Only recorded

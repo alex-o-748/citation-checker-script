@@ -94,12 +94,12 @@ export async function openReplicaConnection({
         connectTimeout,
         // page_title and similar columns are VARBINARY in the MediaWiki
         // schema — mysql2 returns those as Buffer by default, which
-        // service/selection.js's normalizeRow() already expects and decodes.
+        // service/article-picker.js's normalizeRow() already expects and decodes.
     });
 }
 
 // Adapts a mysql2 connection to the (sql, params) => rows shape
-// service/selection.js's selectCandidates() expects.
+// service/article-picker.js's selectCandidates() expects.
 export function makeQueryFn(connection) {
     return async (sql, params) => {
         const [rows] = await connection.execute(sql, params);

@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { assembleFinding, FINDING_TTL_DAYS } from '../service/assemble.js';
-import { buildUpsertQuery } from '../service/findings.js';
+import { assembleFinding, FINDING_TTL_DAYS } from '../service/finding-builder.js';
+import { buildUpsertQuery } from '../service/findings-store.js';
 
 const candidate = { wiki: 'enwiki', pageId: 42, title: 'Test Article', revisionId: 987654321 };
 

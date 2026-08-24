@@ -7,7 +7,7 @@ import {
     processArticle,
     runBatch,
     sourceCacheKey,
-} from '../service/pipeline.js';
+} from '../service/claim-extractor.js';
 
 const parseHtml = html => new JSDOM(html).window.document;
 

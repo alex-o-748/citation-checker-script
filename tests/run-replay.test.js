@@ -7,8 +7,8 @@ import {
     toCitation,
     runReplay,
     HELP_TEXT,
-} from '../service/replay.js';
-import { ProviderAuthError } from '../service/verify.js';
+} from '../service/run-replay.js';
+import { ProviderAuthError } from '../service/verifier.js';
 
 test('extractOldid pulls the pinned revision out of the dataset URL form', () => {
     assert.equal(
@@ -239,7 +239,7 @@ test('a real run still closes the ToolsDB connection even when halted mid-run', 
 });
 
 test('--help prints usage and exits 0 without touching the dataset', async () => {
-    const { main } = await import('../service/replay.js');
+    const { main } = await import('../service/run-replay.js');
     const stdout = { chunks: [], write(s) { this.chunks.push(s); } };
     const code = await main(['node', 'replay.js', '--help'], { stdout });
     assert.equal(code, 0);

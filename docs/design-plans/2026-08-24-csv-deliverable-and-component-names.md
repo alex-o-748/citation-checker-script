@@ -1,6 +1,16 @@
 # One command, one shareable CSV — what's left, and what to call it
 
-> **Status (2026-08-24):** Proposed. Two questions, answered together because
+> **Status (2026-08-24):** In progress. **Step 0 of the sequence below is
+> done**: `service/` renamed per the "Proposed names" table, and
+> `service/` documented in `CLAUDE.md`. G1–G7 (the sweep runner, the CSV
+> writer, and the rest) are unbuilt. Old filenames below (`service/verify.js`,
+> `service/pipeline.js`, `service/selection.js`, `service/assemble.js`,
+> `service/findings.js`, `service/replay.js`, `service/extract-articles.js`,
+> `service/select-articles.js`) describe the pre-rename state being analyzed
+> and are left as drafted — see the "Proposed names" table for the mapping to
+> current names.
+>
+> Two questions, answered together because
 > the second is why the first is hard to see: (a) what remains before
 > `select → fetch → verify → CSV` runs as one command, and (b) what the
 > components of that pipeline should be *called*, so the parts stop blurring

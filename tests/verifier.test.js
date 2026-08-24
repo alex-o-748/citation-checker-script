@@ -6,7 +6,7 @@ import {
     isAuthOrBillingError,
     ProviderAuthError,
     makeModelCaller,
-} from '../service/verify.js';
+} from '../service/verifier.js';
 
 const okResponse = (body) => async () => ({
     text: JSON.stringify(body),

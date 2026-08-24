@@ -1,5 +1,5 @@
 // Stage 4 of the batch pipeline: turns a claim + already-fetched source (what
-// service/pipeline.js produces) into a verdict. Deliberately thin — every
+// service/claim-extractor.js produces) into a verdict. Deliberately thin — every
 // piece of actual logic already exists in core/ and is shared with the
 // userscript and CLI; this module is the retry wiring, the halt rule, and
 // the mapping into a plain result object.
@@ -66,10 +66,10 @@ export function makeModelCaller({ provider, apiKey, model, workerBase }) {
 /**
  * Verifies one claim against one already-fetched source.
  *
- * `source` is the shape service/pipeline.js's resolveSource() returns:
+ * `source` is the shape service/claim-extractor.js's resolveSource() returns:
  * { content, status, error, unavailableReason }. A missing `content` (no
  * URL, or the fetch failed) short-circuits to SOURCE UNAVAILABLE without
- * calling the model — matching main.js's and service/pipeline.js's existing
+ * calling the model — matching main.js's and service/claim-extractor.js's existing
  * "nothing to verify" handling, and the maintainer's 2026-08-20 decision
  * that these rows are still worth storing (docs/design-plans/
  * 2026-08-17-toolsdb-findings-store.md, "Design question, resolved").

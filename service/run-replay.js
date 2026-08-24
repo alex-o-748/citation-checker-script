@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 // Runnable integration test for stages 4-5 of the batch pipeline: verify and
 // store. Feeds benchmark/dataset.json's stored claim/source pairs through
-// service/verify.js and service/assemble.js, and — unless --dry-run — writes
+// service/verifier.js and service/finding-builder.js, and — unless --dry-run — writes
 // the results into the real ToolsDB citation_findings table via
-// service/findings.js.
+// service/findings-store.js.
 //
 // This is the replay path docs/design-plans/
 // 2026-08-22-batch-verification-and-persistence.md calls "the highest-value
@@ -23,10 +23,10 @@
 //      from inside Wikimedia Cloud infrastructure — the Toolforge bastion.
 //
 // Usage:
-//   node service/replay.js --dry-run --limit 5                 # liftwing, no key needed
-//   node service/replay.js --limit 20                          # writes to ToolsDB
-//   node service/replay.js --dry-run --limit 5 --provider claude
-//   node service/replay.js --help
+//   node service/run-replay.js --dry-run --limit 5                 # liftwing, no key needed
+//   node service/run-replay.js --limit 20                          # writes to ToolsDB
+//   node service/run-replay.js --dry-run --limit 5 --provider claude
+//   node service/run-replay.js --help
 
 import { readFile as fsReadFile } from 'node:fs/promises';
 import { parseArgs } from 'node:util';
@@ -34,9 +34,9 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 import { resolvePageIds } from './wikipedia-pageids.js';
-import { verifyCitation, makeModelCaller, ProviderAuthError } from './verify.js';
-import { assembleFinding } from './assemble.js';
-import { buildUpsertQuery, upsertFinding } from './findings.js';
+import { verifyCitation, makeModelCaller, ProviderAuthError } from './verifier.js';
+import { assembleFinding } from './finding-builder.js';
+import { buildUpsertQuery, upsertFinding } from './findings-store.js';
 import { openToolsDbConnection } from './toolsdb.js';
 import { makeQueryFn } from './replicas.js';
 import { PROMPT_VERSION } from '../core/prompts.js';
@@ -103,7 +103,7 @@ export function parseCliArgs(argv) {
     };
 }
 
-export const HELP_TEXT = `usage: node service/replay.js [options]
+export const HELP_TEXT = `usage: node service/run-replay.js [options]
 
 Runs benchmark/dataset.json's stored claim/source pairs through the batch
 pipeline's verify and store stages, proving the chain end to end with zero
@@ -124,7 +124,7 @@ Options:
   --help, -h         Show this help and exit.
 
 A halt on an auth/billing error (401/402/403) from the model stops the run
-immediately, exit code 3 — see ProviderAuthError in service/verify.js. Every
+immediately, exit code 3 — see ProviderAuthError in service/verifier.js. Every
 finding written before the halt is kept; nothing is rolled back.
 `;
 
@@ -140,8 +140,8 @@ export function extractOldid(articleUrl) {
     }
 }
 
-// Reshapes one dataset row into the citation shape service/verify.js and
-// service/assemble.js expect (the shape service/pipeline.js's processArticle
+// Reshapes one dataset row into the citation shape service/verifier.js and
+// service/finding-builder.js expect (the shape service/claim-extractor.js's processArticle
 // produces for a live-fetched citation). No groups: the replay corpus has
 // none to reshape (see the design doc's §3, "Wrinkle 2").
 export function toCitation(row) {
