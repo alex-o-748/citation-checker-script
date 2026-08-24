@@ -550,10 +550,26 @@ this reason. `cd` into the repo clone (same home directory, so it's still
 there) before running anything:
 
 ```bash
-cd ~/citation-checker-script   # or wherever you cloned it
+cd ~/citation-checker-script
 npm install
-npm test
 ```
+
+**Don't run `npm test` (or `node --test tests/`) here — this shell's
+container gets OOMKilled partway through.** Confirmed 2026-08-24: `node
+--test tests/` ran ~23 files (the pure-JS ones with no jsdom dependency)
+before the whole pod was killed, not just the node process. Node's test
+runner spawns test files with default concurrency, and jsdom-loading files
+push peak memory past this container's quota. That verification isn't
+needed here anyway — the suite already passed in the environment that built
+this code (691 passing, 3 pre-existing failures, confirmed before any of
+this reached the bastion). This shell's job is Step 1/2 below, not
+re-proving unit correctness.
+
+If you do want to run tests here regardless (debugging a bastion-specific
+failure, say), keep peak memory down: target specific files
+(`node --test tests/verify.test.js tests/assemble.test.js`) or force serial
+execution (`node --test --test-concurrency=1 tests/`) rather than the
+default full-directory, full-concurrency run.
 
 ### Step 1 — dry run, any machine with internet
 
