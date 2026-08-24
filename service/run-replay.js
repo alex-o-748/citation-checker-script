@@ -45,21 +45,29 @@ import { PROVIDER_MODELS, PROVIDER_ENV_VARS } from './provider-config.js';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_DATASET_PATH = join(__dirname, '..', 'benchmark', 'dataset.json');
 
+// See the matching comment in service/run-sweep.js: without this, "--provider
+// liftwing" measures the Cloudflare Worker's shared approved-bot-JWT budget
+// (core/providers.js's callLiftwingAPI() default workerBase), not Lift Wing
+// accessed directly from inside Toolforge via tf-llm-router — the path the
+// parent design doc's §5 Toolforge-migration argument is actually about.
+const TOOLFORGE_LLM_ROUTER_BASE = 'https://llm-router.toolforge.org';
+
 export function parseCliArgs(argv) {
     const { values } = parseArgs({
         args: argv.slice(2),
         options: {
-            dataset:        { type: 'string', default: DEFAULT_DATASET_PATH },
-            wiki:           { type: 'string', default: 'enwiki' },
+            dataset:          { type: 'string', default: DEFAULT_DATASET_PATH },
+            wiki:             { type: 'string', default: 'enwiki' },
             // liftwing default, not publicai: this runner exists for the
             // Toolforge migration, and Lift Wing is the provider that
             // migration is about — see the comment in ./provider-config.js.
-            provider:       { type: 'string', default: 'liftwing' },
-            model:          { type: 'string' },
-            limit:          { type: 'string' },
-            'delay-ms':     { type: 'string', default: '1000' },
-            'dry-run':      { type: 'boolean', default: false },
-            help:           { type: 'boolean', short: 'h', default: false },
+            provider:         { type: 'string', default: 'liftwing' },
+            model:            { type: 'string' },
+            limit:            { type: 'string' },
+            'delay-ms':       { type: 'string', default: '1000' },
+            'dry-run':        { type: 'boolean', default: false },
+            'live-llm-router': { type: 'boolean', default: false },
+            help:             { type: 'boolean', short: 'h', default: false },
         },
         strict: true,
     });
@@ -73,6 +81,7 @@ export function parseCliArgs(argv) {
         limit: values.limit ? Number(values.limit) : Infinity,
         delayMs: Number(values['delay-ms']),
         dryRun: values['dry-run'],
+        liveLlmRouter: values['live-llm-router'],
     };
 }
 
@@ -94,6 +103,13 @@ Options:
                       write anything — prints each finding to stdout instead.
                       Runnable from anywhere with a provider API key; no
                       bastion or ~/replica.my.cnf needed.
+  --live-llm-router  When --provider is liftwing, route the model call
+                      through tf-llm-router
+                      (https://github.com/alex-o-748/tf-llm-router) instead
+                      of the Cloudflare Worker CORS proxy. See the comment on
+                      TOOLFORGE_LLM_ROUTER_BASE in this file — the two paths
+                      have different rate-limit behavior and should be
+                      measured separately.
   --help, -h         Show this help and exit.
 
 A halt on an auth/billing error (401/402/403) from the model stops the run
@@ -194,7 +210,17 @@ export async function runReplay(opts, {
         }
     }
 
-    const callModel = makeModelCallerFn({ provider: opts.provider, apiKey, model: opts.model });
+    const useLlmRouter = opts.liveLlmRouter && opts.provider === 'liftwing';
+    if (opts.liveLlmRouter && opts.provider !== 'liftwing') {
+        stderr.write(`replay: --live-llm-router only affects --provider liftwing; ignoring for "${opts.provider}"\n`);
+    }
+    if (useLlmRouter) {
+        stderr.write(`replay: routing liftwing via ${TOOLFORGE_LLM_ROUTER_BASE}\n`);
+    }
+    const callModel = makeModelCallerFn({
+        provider: opts.provider, apiKey, model: opts.model,
+        ...(useLlmRouter ? { workerBase: TOOLFORGE_LLM_ROUTER_BASE } : {}),
+    });
 
     let processed = 0, skippedNoPageId = 0, skippedNoRevision = 0, written = 0;
     const verdictCounts = {};

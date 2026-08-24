@@ -66,6 +66,24 @@ import { PROVIDER_MODELS, PROVIDER_ENV_VARS } from './provider-config.js';
 // Same contract as service/run-extract.js's — see that file's comment.
 const TOOLFORGE_SOURCE_FETCHER_BASE = 'https://source-fetcher.toolforge.org';
 
+// Opt-in override that routes the liftwing provider's call through the
+// tf-llm-router Toolforge tool (https://github.com/alex-o-748/tf-llm-router)
+// instead of the Cloudflare Worker CORS proxy makeModelCaller() otherwise
+// defaults to (core/providers.js's callLiftwingAPI(), workerBase = the
+// publicai-proxy worker). Without this flag "--provider liftwing" measures
+// the worker's shared approved-bot-JWT path — the same one the live
+// userscript uses — not the Toolforge-internal Lift Wing access the parent
+// design doc (docs/design-plans/2026-08-07-batch-source-checks-for-edit-
+// suggestions.md §5) is actually about; those can have very different rate
+// limits, and conflating them was caught live (2026-08-24): a --delay-ms 0
+// run against the worker's /liftwing path 429'd after 2 calls, which is
+// evidence about the worker's shared JWT budget, not about what Lift Wing
+// itself would tolerate from inside Toolforge. Mirrors cli/verify.js's
+// TOOLFORGE_LLM_ROUTER_BASE override (there scoped to huggingface, since
+// that predates this one); tf-llm-router's already-deployed /liftwing route
+// is what makes this meaningful for liftwing specifically.
+const TOOLFORGE_LLM_ROUTER_BASE = 'https://llm-router.toolforge.org';
+
 export function parseCliArgs(argv) {
     const { values } = parseArgs({
         args: argv.slice(2),
@@ -77,6 +95,7 @@ export function parseCliArgs(argv) {
             model:               { type: 'string' },
             'delay-ms':          { type: 'string', default: '1000' },
             'live-source-fetch': { type: 'boolean', default: false },
+            'live-llm-router':   { type: 'boolean', default: false },
             store:               { type: 'boolean', default: false },
             out:                 { type: 'string', default: 'findings.csv' },
             help:                { type: 'boolean', short: 'h', default: false },
@@ -93,6 +112,7 @@ export function parseCliArgs(argv) {
         model: values.model || PROVIDER_MODELS[values.provider],
         delayMs: Number(values['delay-ms']),
         liveSourceFetch: values['live-source-fetch'],
+        liveLlmRouter: values['live-llm-router'],
         store: values.store,
         out: values.out,
     };
@@ -120,6 +140,16 @@ Options:
                          every environment has. Unattended, production-volume
                          fetching from Toolforge is the part still waiting
                          on WMCS.
+  --live-llm-router     When --provider is liftwing, route the model call
+                         through tf-llm-router
+                         (https://github.com/alex-o-748/tf-llm-router)
+                         instead of the Cloudflare Worker CORS proxy. The
+                         worker's /liftwing path is a shared approved-bot-JWT
+                         budget (the same one the live userscript uses);
+                         tf-llm-router's is Lift Wing accessed directly from
+                         inside Toolforge, per the design doc's §5 argument
+                         for the migration. The two have not been shown to
+                         share a rate limit — measure separately.
   --store               Also upsert every finding into ToolsDB. Requires a
                          Toolforge bastion; the CSV is written either way.
   --out <path>          CSV output path (default: findings.csv)
@@ -247,7 +277,18 @@ export async function runSweep(opts, {
         );
     }
     const fetchSource = fetchSourceFn ?? (opts.liveSourceFetch ? liveFetchSource : stubFetchSource);
-    const callModel = makeModelCallerFn({ provider: opts.provider, apiKey, model: opts.model });
+
+    const useLlmRouter = opts.liveLlmRouter && opts.provider === 'liftwing';
+    if (opts.liveLlmRouter && opts.provider !== 'liftwing') {
+        stderr.write(`sweep: --live-llm-router only affects --provider liftwing; ignoring for "${opts.provider}"\n`);
+    }
+    if (useLlmRouter) {
+        stderr.write(`sweep: routing liftwing via ${TOOLFORGE_LLM_ROUTER_BASE}\n`);
+    }
+    const callModel = makeModelCallerFn({
+        provider: opts.provider, apiKey, model: opts.model,
+        ...(useLlmRouter ? { workerBase: TOOLFORGE_LLM_ROUTER_BASE } : {}),
+    });
 
     const findings = [];
     // citationsSeen -> withUrl -> fetched -> verified -> flagged -> published

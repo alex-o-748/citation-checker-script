@@ -51,6 +51,40 @@ test('parseCliArgs defaults to liftwing — the Toolforge migration provider —
     assert.equal(opts.delayMs, 1000);
     assert.equal(opts.dryRun, false);
     assert.equal(opts.limit, Infinity);
+    assert.equal(opts.liveLlmRouter, false);
+});
+
+test('parseCliArgs applies --live-llm-router', () => {
+    const opts = parseCliArgs(['node', 'replay.js', '--live-llm-router']);
+    assert.equal(opts.liveLlmRouter, true);
+});
+
+test('--live-llm-router routes the liftwing call through tf-llm-router instead of the Cloudflare worker default', async () => {
+    let seenConfig;
+    await runReplay(
+        { provider: 'liftwing', dataset: 'unused', wiki: 'enwiki', limit: 1, delayMs: 0, dryRun: true, model: 'llm-qwen36-27b', liveLlmRouter: true },
+        {
+            env: {}, readFile: fakeDataset([okRow]), resolvePageIdsFn: okPageIds,
+            makeModelCallerFn: config => { seenConfig = config; return okModelCaller(); },
+            stdout: { write() {} }, stderr: { write() {} },
+        }
+    );
+    assert.equal(seenConfig.workerBase, 'https://llm-router.toolforge.org');
+});
+
+test('--live-llm-router is ignored (with a warning) for a provider other than liftwing', async () => {
+    let seenConfig;
+    const stderr = { chunks: [], write(s) { this.chunks.push(s); } };
+    await runReplay(
+        { provider: 'publicai', dataset: 'unused', wiki: 'enwiki', limit: 1, delayMs: 0, dryRun: true, model: 'aisingapore/Qwen-SEA-LION-v4-32B-IT', liveLlmRouter: true },
+        {
+            env: {}, readFile: fakeDataset([okRow]), resolvePageIdsFn: okPageIds,
+            makeModelCallerFn: config => { seenConfig = config; return okModelCaller(); },
+            stdout: { write() {} }, stderr,
+        }
+    );
+    assert.equal(seenConfig.workerBase, undefined);
+    assert.match(stderr.chunks.join(''), /only affects --provider liftwing/);
 });
 
 test('liftwing requires no API key, matching main.js\'s requiresKey: false', async () => {

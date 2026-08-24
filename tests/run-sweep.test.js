@@ -20,8 +20,14 @@ test('parseCliArgs defaults match run-replay.js\'s conventions (liftwing, no key
     assert.equal(opts.model, 'llm-qwen36-27b');
     assert.equal(opts.delayMs, 1000);
     assert.equal(opts.liveSourceFetch, false);
+    assert.equal(opts.liveLlmRouter, false);
     assert.equal(opts.store, false);
     assert.equal(opts.out, 'findings.csv');
+});
+
+test('parseCliArgs applies --live-llm-router', () => {
+    const opts = parseCliArgs(['node', 'sweep.js', '--live-llm-router']);
+    assert.equal(opts.liveLlmRouter, true);
 });
 
 test('parseCliArgs applies overrides', () => {
@@ -125,6 +131,51 @@ const baseOpts = (overrides = {}) => ({
     provider: 'liftwing', model: 'llm-qwen36-27b', delayMs: 0,
     liveSourceFetch: false, store: false, out: 'findings.csv',
     ...overrides,
+});
+
+test('--live-llm-router routes the liftwing call through tf-llm-router instead of the Cloudflare worker default', async () => {
+    let seenConfig;
+    await runSweep(baseOpts({ liveLlmRouter: true }), baseIo({
+        makeModelCallerFn: config => {
+            seenConfig = config;
+            return async () => ({
+                text: JSON.stringify({ confidence: 90, verdict: 'SUPPORTED', source_quote: '', comments: 'ok' }),
+                usage: { input: 10, output: 5 },
+            });
+        },
+    }));
+    assert.equal(seenConfig.workerBase, 'https://llm-router.toolforge.org');
+});
+
+test('--live-llm-router is ignored (with a warning) for a provider other than liftwing', async () => {
+    let seenConfig;
+    const stderrChunks = [];
+    await runSweep(baseOpts({ liveLlmRouter: true, provider: 'publicai', model: 'aisingapore/Qwen-SEA-LION-v4-32B-IT' }), baseIo({
+        makeModelCallerFn: config => {
+            seenConfig = config;
+            return async () => ({
+                text: JSON.stringify({ confidence: 90, verdict: 'SUPPORTED', source_quote: '', comments: 'ok' }),
+                usage: { input: 10, output: 5 },
+            });
+        },
+        stderr: { write: s => stderrChunks.push(s) },
+    }));
+    assert.equal(seenConfig.workerBase, undefined);
+    assert.match(stderrChunks.join(''), /only affects --provider liftwing/);
+});
+
+test('without --live-llm-router, liftwing gets no workerBase override (defaults to the Cloudflare worker in core/providers.js)', async () => {
+    let seenConfig;
+    await runSweep(baseOpts(), baseIo({
+        makeModelCallerFn: config => {
+            seenConfig = config;
+            return async () => ({
+                text: JSON.stringify({ confidence: 90, verdict: 'SUPPORTED', source_quote: '', comments: 'ok' }),
+                usage: { input: 10, output: 5 },
+            });
+        },
+    }));
+    assert.equal(seenConfig.workerBase, undefined);
 });
 
 test('a full sweep writes one finding per solo citation plus one per completed group', async () => {
