@@ -542,12 +542,18 @@ bare bastion:
 webservice node18 shell
 ```
 
-**Unverified as of this writing** — written down before a real bastion session
-confirmed it, so the exact image tag (`node18` vs. whatever Toolforge
-currently supports) may be stale. If it is, `webservice --help` or
-`toolforge-jobs images` lists the current options. **Once confirmed working,
-update this line to the exact command and delete this caveat** — don't leave
-a "might be stale" note sitting here once someone has actually verified it.
+**Confirmed working 2026-08-24.** One thing it doesn't do: carry over your
+bastion shell's working directory. It drops you at `$HOME`
+(`/data/project/<tool>`), not wherever you'd `cd`'d to before — `npm test`
+run straight after entering fails with `ENOENT ... package.json` for exactly
+this reason. `cd` into the repo clone (same home directory, so it's still
+there) before running anything:
+
+```bash
+cd ~/citation-checker-script   # or wherever you cloned it
+npm install
+npm test
+```
 
 ### Step 1 — dry run, any machine with internet
 
