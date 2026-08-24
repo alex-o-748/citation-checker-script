@@ -999,7 +999,25 @@ function getCitationGroup(refElement) {
     return refsInContainer.slice(start, end + 1);
 }
 
-function extractClaimText(refElement) {
+// Splits on a sentence-ending mark followed by whitespace and what looks like
+// the start of a new sentence, then returns the last piece. Deliberately
+// naive about abbreviations ("Dr. Smith", "U.S. policy") — for this use
+// (finding where the final sentence of a claim begins), under-splitting an
+// abbreviation into the same sentence is the safer failure than over-
+// splitting mid-abbreviation and truncating the real claim.
+const SENTENCE_SPLIT_RE = /(?<=[.!?])\s+(?=[A-Z0-9"'(À-Ü])/;
+
+// Returns just the final sentence of `text` — the sentence immediately
+// preceding wherever `text` ends. Used for the batch pipeline's stricter
+// claim scope (see extractClaimText's `scope` option); returns the whole
+// string unchanged if no sentence boundary is found.
+function lastSentence(text) {
+    if (!text) return text;
+    const parts = text.split(SENTENCE_SPLIT_RE);
+    return parts[parts.length - 1].trim();
+}
+
+function extractClaimText(refElement, { scope = 'paragraph' } = {}) {
     const document = refElement.ownerDocument;
     const container = refElement.closest('p, li, td, div, section');
     if (!container) {
@@ -1073,6 +1091,13 @@ function extractClaimText(refElement) {
             .trim();
     }
 
+    // Applied last, after the paragraph-scope text is settled (including its
+    // own too-short fallback above) — narrowing to the final sentence is a
+    // separate concern from finding the claim's boundary in the first place.
+    if (scope === 'sentence') {
+        claimText = lastSentence(claimText);
+    }
+
     return claimText;
 }
 
@@ -1132,7 +1157,7 @@ function refNameFromNoteId(refId) {
     return match ? match[1] : null;
 }
 
-function collectCitations(root, { minClaimLength = MIN_CLAIM_LENGTH } = {}) {
+function collectCitations(root, { minClaimLength = MIN_CLAIM_LENGTH, claimScope = 'paragraph' } = {}) {
     if (!root) return [];
     // A Document has no ownerDocument; an Element does. Either can be the root.
     const doc = root.ownerDocument || root;
@@ -1142,7 +1167,7 @@ function collectCitations(root, { minClaimLength = MIN_CLAIM_LENGTH } = {}) {
         const refId = refIdFromHref(refElement.getAttribute('href'));
         if (!refId) continue;
 
-        const claimText = extractClaimText(refElement);
+        const claimText = extractClaimText(refElement, { scope: claimScope });
         if (!claimText || claimText.length < minClaimLength) continue;
 
         citations.push({

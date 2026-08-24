@@ -55,7 +55,7 @@ export function refNameFromNoteId(refId) {
     return match ? match[1] : null;
 }
 
-export function collectCitations(root, { minClaimLength = MIN_CLAIM_LENGTH } = {}) {
+export function collectCitations(root, { minClaimLength = MIN_CLAIM_LENGTH, claimScope = 'paragraph' } = {}) {
     if (!root) return [];
     // A Document has no ownerDocument; an Element does. Either can be the root.
     const doc = root.ownerDocument || root;
@@ -65,7 +65,7 @@ export function collectCitations(root, { minClaimLength = MIN_CLAIM_LENGTH } = {
         const refId = refIdFromHref(refElement.getAttribute('href'));
         if (!refId) continue;
 
-        const claimText = extractClaimText(refElement);
+        const claimText = extractClaimText(refElement, { scope: claimScope });
         if (!claimText || claimText.length < minClaimLength) continue;
 
         citations.push({
