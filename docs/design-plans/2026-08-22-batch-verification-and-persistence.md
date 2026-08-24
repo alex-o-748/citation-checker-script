@@ -30,6 +30,15 @@
 > — simpler for a one-off real run than the byte-reproducible corpus §3
 > originally proposed; revisit if this needs to become a repeatable CI-style
 > replay rather than a manual integration test.
+>
+> **Renamed 2026-08-24** (`2026-08-24-csv-deliverable-and-component-names.md`):
+> `service/selection.js` → `service/article-picker.js`, `service/pipeline.js`
+> → `service/claim-extractor.js`, `service/verify.js` → `service/verifier.js`,
+> `service/assemble.js` → `service/finding-builder.js`, `service/findings.js`
+> → `service/findings-store.js`, `service/replay.js` → `service/run-replay.js`,
+> `service/extract-articles.js` → `service/run-extract.js`,
+> `service/select-articles.js` → `service/run-pick.js`. Body below is left as
+> drafted and refers to the old names throughout.
 
 ## Where the pipeline actually stands
 

@@ -27,7 +27,7 @@ export const ARTICLE_OUTCOMES = Object.freeze({
 /**
  * Runs one article through stages 1-3.
  *
- * `candidate` is a row from service/selection.js: { pageId, title, revisionId }.
+ * `candidate` is a row from service/article-picker.js: { pageId, title, revisionId }.
  *
  * Returns a record per article rather than throwing, because a batch run must
  * survive a single bad article — a 404 from a page deleted between selection
@@ -74,6 +74,7 @@ export async function processArticle(candidate, {
         if (signal?.aborted) break;
         results.push({
             citationNumber: citation.citationNumber,
+            refName: citation.refName,
             claimText: citation.claimText,
             url: citation.url,
             pageNum: citation.pageNum,

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { buildUpsertQuery, upsertFinding } from '../service/findings.js';
+import { buildUpsertQuery, upsertFinding } from '../service/findings-store.js';
 import { claimHash, sourceUrlHash } from '../core/anchor.js';
 
 test('buildUpsertQuery binds all values and computes hashes internally', () => {

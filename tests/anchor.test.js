@@ -6,6 +6,7 @@ import {
     normalizeSourceUrl,
     claimHash,
     sourceUrlHash,
+    groupSourceUrl,
 } from '../core/anchor.js';
 
 test('normalizeClaim trims and collapses internal whitespace', () => {
@@ -101,4 +102,46 @@ test('claimHash and sourceUrlHash apply genuinely different normalization', () =
 test('empty and missing URLs hash consistently rather than throwing', () => {
     assert.deepEqual(sourceUrlHash(''), sourceUrlHash(null));
     assert.deepEqual(sourceUrlHash(null), sourceUrlHash(undefined));
+});
+
+test('groupSourceUrl sorts and newline-joins distinct member URLs', () => {
+    assert.equal(
+        groupSourceUrl(['https://b.example', 'https://a.example']),
+        'https://a.example\nhttps://b.example'
+    );
+});
+
+test('groupSourceUrl dedupes repeated URLs (a named ref cited twice in the group)', () => {
+    assert.equal(
+        groupSourceUrl(['https://a.example', 'https://a.example', 'https://b.example']),
+        'https://a.example\nhttps://b.example'
+    );
+});
+
+test('groupSourceUrl drops null/empty entries (a no-URL member of the group)', () => {
+    assert.equal(
+        groupSourceUrl(['https://a.example', null, '', 'https://b.example']),
+        'https://a.example\nhttps://b.example'
+    );
+});
+
+test('groupSourceUrl returns null when no member has a URL', () => {
+    // Not the case this function exists to fix (service/finding-builder.js's
+    // assembleGroupFinding() is only ever called for a group that passed
+    // shouldSkipCollective(), which requires >=2 members with fetched
+    // content — and claim-extractor.js's resolveSource() never produces
+    // content without a URL, so a real all-no-URL group never reaches here).
+    // Documented anyway as the honest answer for a direct call: null, not ''
+    // — a caller that skips the collision this module exists to prevent by
+    // hashing this result unconditionally would be making its own mistake,
+    // not inheriting one from here.
+    assert.equal(groupSourceUrl([]), null);
+    assert.equal(groupSourceUrl([null, undefined, '']), null);
+});
+
+test('groupSourceUrl is deterministic regardless of input order', () => {
+    assert.equal(
+        groupSourceUrl(['https://z.example', 'https://a.example', 'https://m.example']),
+        groupSourceUrl(['https://a.example', 'https://m.example', 'https://z.example'])
+    );
 });

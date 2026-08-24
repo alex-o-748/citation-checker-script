@@ -1,7 +1,7 @@
 // Resolving article titles to page IDs via the MediaWiki Action API.
 //
-// service/selection.js's Wiki Replicas rows carry page_id directly; this
-// module exists for the one caller that doesn't — service/replay.js, whose
+// service/article-picker.js's Wiki Replicas rows carry page_id directly; this
+// module exists for the one caller that doesn't — service/run-replay.js, whose
 // input is benchmark/dataset.json, a standalone JSON file with a title and
 // an oldid but no page_id (see docs/design-plans/
 // 2026-08-22-batch-verification-and-persistence.md §3, "Wrinkle 1").
@@ -51,7 +51,7 @@ function chunk(array, size) {
  * normalized form, so a caller can look up with whatever string it started
  * with. A title MediaWiki reports missing (deleted, moved, typo) is simply
  * absent from the map rather than throwing — callers skip rows they can't
- * resolve, the same "survive one bad row" pattern service/pipeline.js uses
+ * resolve, the same "survive one bad row" pattern service/claim-extractor.js uses
  * for a single article's fetch failure.
  *
  * Redirects are not followed: a genuine #REDIRECT page resolves to the

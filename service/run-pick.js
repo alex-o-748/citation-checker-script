@@ -9,13 +9,13 @@
 // (argv, exit code, closing the connection).
 //
 // Usage (on a Toolforge bastion, inside the tool account):
-//   node service/select-articles.js
-//   node service/select-articles.js --criterion citation-needed --max 20
-//   node service/select-articles.js --wiki enwiki --max 500 > candidates.json
+//   node service/run-pick.js
+//   node service/run-pick.js --criterion citation-needed --max 20
+//   node service/run-pick.js --wiki enwiki --max 500 > candidates.json
 
 import { parseArgs } from 'node:util';
 import { openReplicaConnection, makeQueryFn } from './replicas.js';
-import { selectCandidates, CRITERIA } from './selection.js';
+import { selectCandidates, CRITERIA } from './article-picker.js';
 
 function parseCliArgs(argv) {
     const { values } = parseArgs({
@@ -37,7 +37,7 @@ function parseCliArgs(argv) {
     };
 }
 
-const HELP_TEXT = `usage: node service/select-articles.js [options]
+const HELP_TEXT = `usage: node service/run-pick.js [options]
 
 Options:
   --criterion <name>  Selection criterion. One of: ${Object.keys(CRITERIA).join(', ')}

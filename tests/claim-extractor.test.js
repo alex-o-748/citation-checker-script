@@ -7,7 +7,7 @@ import {
     processArticle,
     runBatch,
     sourceCacheKey,
-} from '../service/pipeline.js';
+} from '../service/claim-extractor.js';
 
 const parseHtml = html => new JSDOM(html).window.document;
 
@@ -52,6 +52,21 @@ test('processArticle extracts citations and attaches fetched sources', async () 
     assert.equal(first.url, 'https://example.com/a');
     assert.equal(first.source.content, 'text of https://example.com/a');
     assert.equal(first.source.unavailableReason, null);
+    assert.equal(first.refName, null, 'an unnamed ref has no name to recover');
+});
+
+test('processArticle carries a named ref\'s recovered name through to its citation', async () => {
+    const result = await processArticle(candidate, {
+        parseHtml,
+        fetchSource: fetchSourceOk,
+        fetchArticle: async () => ({
+            html: article('<p>The bridge opened to traffic in 1998.@@smith2001-1@@</p>',
+                { 'smith2001-1': link('https://example.com/a') }),
+            status: 200, error: null,
+        }),
+    });
+
+    assert.equal(result.citations[0].refName, 'smith2001');
 });
 
 test('processArticle pins the revision it was asked for', async () => {

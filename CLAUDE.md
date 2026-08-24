@@ -39,6 +39,7 @@ benchmark/
   analysis_v1.json               # Frozen v1 analysis snapshot
   analysis_v3.json               # Frozen v3 analysis snapshot
 Benchmarking_data_Citations.csv  # Source ground truth data (Dataset version + WMF override columns)
+service/                         # Toolforge batch pipeline: select -> extract -> fetch -> verify -> store (see Batch Pipeline below)
 .github/workflows/               # Scheduled talk-page scraper (not test/build CI)
 docs/                            # Reference docs + design plans (see docs/README.md)
 ```
@@ -138,6 +139,32 @@ WiCE also has no `Source unavailable` rows and ships frozen 2023 Common Crawl ev
 - `OPENAI_API_KEY` - OpenAI
 - `GEMINI_API_KEY` - Gemini
 - `PUBLICAI_API_KEY` - PublicAI models
+
+## Batch Pipeline (`service/`)
+
+A separate, Toolforge-hosted pipeline that runs citation verification unattended, at scale, over a queue of articles rather than one citation a user clicked — the WMF "Edit Suggestions" integration described in `docs/design-plans/2026-08-07-batch-source-checks-for-edit-suggestions.md`. It imports `core/` directly (like `benchmark/` and `cli/` do) and shares no code with `main.js` beyond that.
+
+**Now a single runnable pipeline** (`service/run-sweep.js`, landed 2026-08-24): select → extract → fetch → verify → assemble → CSV, in one command. Every stage is built; source fetching (stage 3) is still stubbed by default, so a default run's findings are all `SOURCE UNAVAILABLE` until `--live-source-fetch` is passed. That flag needs no permission for a small, attended run from anywhere with open internet — only unattended, production-volume fetching *from Toolforge itself* waits on WMCS (see `docs/design-plans/2026-08-24-csv-deliverable-and-component-names.md`'s G3). See that doc for what else is still open (the publication filter; the read API stage 6 was originally specified as).
+
+One noun per component; anything runnable is prefixed `run-`:
+
+| Stage | Component | File | Does |
+|---|---|---|---|
+| 1 Select | **Article Picker** | `service/article-picker.js` + `service/replicas.js` | Builds and runs the Wiki Replicas query that picks candidate articles (e.g. pages carrying `{{Failed verification}}`) |
+| 2 Extract | **Claim Extractor** | `service/claim-extractor.js` | Fetches an article's rendered HTML at a pinned revision and pulls out each citation's claim text, `<ref name="...">` when present, and adjacent-citation group metadata (`core/citations.js`) |
+| 3 Fetch | **Source Fetcher** | `tf-source-fetcher` (separate Toolforge tool), reached via `core/worker.js` | Retrieves the cited source's content. **Stubbed by default** — unattended fetching of third-party URLs from Toolforge isn't yet cleared with WMCS; opt in per-run with `--live-source-fetch` |
+| 4 Verify | **Verifier** | `service/verifier.js` | One model call per claim → verdict (`verifyCitation`), plus one collective call per adjacent-citation group (`verifyGroup`, using `core/groups.js`'s dedup/skip rules — shared with the userscript's own group verification) — via `core/prompts.js` / `core/providers.js` / `core/parsing.js`. Calls the **LLM Router** (`tf-llm-router`, a separate Toolforge tool) for the model call itself. Halts the whole run (doesn't just log) on a 401/402/403 from the model, so a spent API budget can't silently turn into a queue of wrong "source unavailable" rows |
+| 5 Store | **Finding Builder** + **Findings Store** | `service/finding-builder.js` + `service/findings-store.js` + `service/toolsdb.js` | Turns a verdict (solo or collective — `assembleFinding` / `assembleGroupFinding`) into a row (claim hash, TTL, `published:false` pending a precision threshold — see the design doc) and upserts it into ToolsDB's `citation_findings` table |
+| 6 Report | **Findings Report** | `service/csv-report.js` | Turns computed findings into a shareable CSV — the default sink for `service/run-sweep.js`. A read API (the parent design's original stage 6 spec) is still gated on the Suggestions team answering how claim text maps to a wikitext location |
+
+Runnable entry points, each a thin wiring layer over the components above:
+
+| Runner | Does | Outbound network |
+|---|---|---|
+| `service/run-pick.js` | Stage 1 only, prints selected articles as JSON | Wiki Replicas |
+| `service/run-extract.js` | Stages 1-3, prints a citations/URLs/fetched/failed funnel | Wiki Replicas, Wikipedia REST, source fetcher (opt-in) |
+| `service/run-replay.js` | Stages 4-5 over `benchmark/dataset.json`'s stored claim/source pairs instead of live fetching — the integration test for verify+store with zero third-party requests | Model API only (+ Wikipedia REST to resolve page IDs) |
+| `service/run-sweep.js` | **All six stages**, writing a CSV by default and (with `--store`) also upserting into ToolsDB | Wiki Replicas, Wikipedia REST, model API, source fetcher (opt-in) |
 
 ## Development Workflow
 
