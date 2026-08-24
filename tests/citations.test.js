@@ -199,6 +199,19 @@ test('minClaimLength is configurable', () => {
     assert.equal(collectCitations(root, { minClaimLength: 1 }).length, 1);
 });
 
+test('claimScope "sentence" narrows a two-sentence claim to the last sentence', () => {
+    const doc = buildDoc(
+        '<p>Paris is the capital of France. It is on the Seine.@@1@@</p>',
+        { 1: link('https://example.com/paris') }
+    );
+
+    const root = doc.getElementById('mw-content-text');
+    const [fullScope] = collectCitations(root);
+    const [sentenceScope] = collectCitations(root, { claimScope: 'sentence' });
+    assert.ok(fullScope.claimText.includes('Paris is the capital of France'));
+    assert.equal(sentenceScope.claimText, 'It is on the Seine.');
+});
+
 test('a citation with no fetchable URL is kept, with url null', () => {
     const doc = buildDoc(
         '<p>The bridge opened to traffic in 1998.@@1@@</p>',
