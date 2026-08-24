@@ -19,6 +19,7 @@ test('parseCliArgs defaults match run-replay.js\'s conventions (liftwing, no key
     assert.equal(opts.provider, 'liftwing');
     assert.equal(opts.model, 'llm-qwen36-27b');
     assert.equal(opts.delayMs, 1000);
+    assert.equal(opts.concurrency, 1);
     assert.equal(opts.liveSourceFetch, false);
     assert.equal(opts.liveLlmRouter, false);
     assert.equal(opts.store, false);
@@ -34,13 +35,14 @@ test('parseCliArgs applies overrides', () => {
     const opts = parseCliArgs([
         'node', 'sweep.js', '--criterion', 'citation-needed', '--max', '10',
         '--provider', 'claude', '--model', 'claude-opus-5', '--live-source-fetch',
-        '--store', '--out', 'out.csv',
+        '--concurrency', '8', '--store', '--out', 'out.csv',
     ]);
     assert.equal(opts.criterion, 'citation-needed');
     assert.equal(opts.max, 10);
     assert.equal(opts.provider, 'claude');
     assert.equal(opts.model, 'claude-opus-5');
     assert.equal(opts.liveSourceFetch, true);
+    assert.equal(opts.concurrency, 8);
     assert.equal(opts.store, true);
     assert.equal(opts.out, 'out.csv');
 });
@@ -82,6 +84,16 @@ function article(prose, footnotes) {
         .map(([id, html]) => `<li id="cite_note-${id}">${html}</li>`)
         .join('');
     return `<!DOCTYPE html><body>${body}<ol class="references">${list}</ol></body>`;
+}
+
+// An article with `n` independent solo citations [1]..[n], each pointing at
+// its own https://x.example/<i> — for exercising the verify-stage pool with
+// more parallel tasks than a single small article naturally has.
+function articleWithSoloCitations(n) {
+    const ids = Array.from({ length: n }, (_, i) => i + 1);
+    const prose = `<p>${ids.map(id => `Sentence ${id}.@@${id}@@`).join(' ')}</p>`;
+    const footnotes = Object.fromEntries(ids.map(id => [id, link(`https://x.example/${id}`)]));
+    return article(prose, footnotes);
 }
 
 // One solo citation [1] and one adjacent 2-member group [2][3].
@@ -128,7 +140,7 @@ const baseIo = (overrides = {}) => ({
 
 const baseOpts = (overrides = {}) => ({
     criterion: 'failed-verification', wiki: 'enwiki', max: 1,
-    provider: 'liftwing', model: 'llm-qwen36-27b', delayMs: 0,
+    provider: 'liftwing', model: 'llm-qwen36-27b', delayMs: 0, concurrency: 1,
     liveSourceFetch: false, store: false, out: 'findings.csv',
     ...overrides,
 });
@@ -256,6 +268,16 @@ test('a non-positive-integer --max is rejected before any connection is made', a
     assert.equal(connected, false);
 });
 
+test('a non-positive-integer --concurrency is rejected before any connection is made', async () => {
+    let connected = false;
+    const code = await runSweep(
+        baseOpts({ concurrency: 0 }),
+        baseIo({ connectReplicas: async () => { connected = true; return fakeReplicaConnection([]); } })
+    );
+    assert.equal(code, 2);
+    assert.equal(connected, false);
+});
+
 test('a Wiki Replicas connection failure is a fatal error', async () => {
     const code = await runSweep(baseOpts(), baseIo({
         connectReplicas: async () => { throw new Error('ECONNREFUSED'); },
@@ -305,6 +327,82 @@ test('a non-auth, non-retryable error also halts and still writes the CSV, at ex
     assert.equal(attempts, 1, 'the sweep stops at the first unrecoverable error');
     assert.deepEqual(written, [], 'nothing was computed before the halt, so the CSV is written empty, not skipped');
     assert.match(stderrChunks.join(''), /halting/);
+});
+
+function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+test('--concurrency N actually runs up to N model calls at once, not more', async () => {
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const code = await runSweep(baseOpts({ concurrency: 3 }), baseIo({
+        fetchArticle: async () => ({ html: articleWithSoloCitations(6), status: 200, error: null }),
+        makeModelCallerFn: () => async () => {
+            inFlight++;
+            maxInFlight = Math.max(maxInFlight, inFlight);
+            await sleep(15);
+            inFlight--;
+            return {
+                text: JSON.stringify({ confidence: 90, verdict: 'SUPPORTED', source_quote: '', comments: 'ok' }),
+                usage: { input: 10, output: 5 },
+            };
+        },
+    }));
+
+    assert.equal(code, 0);
+    assert.equal(maxInFlight, 3, 'exactly the configured concurrency should overlap, not 1 (serial) or 6 (unbounded)');
+});
+
+test('halting stops new dispatch but keeps findings already in flight when the halt was detected', async () => {
+    let attempts = 0;
+    let written;
+    const code = await runSweep(baseOpts({ concurrency: 2 }), baseIo({
+        fetchArticle: async () => ({ html: articleWithSoloCitations(6), status: 200, error: null }),
+        makeModelCallerFn: () => async (systemPrompt, userContent) => {
+            attempts++;
+            // The 2nd citation fails immediately (no delay); the other 5
+            // would succeed after a delay long enough that the immediate
+            // failure is guaranteed to set `halted` well before any of them
+            // resolve, so this deterministically exercises "in-flight work
+            // present when halted flips still gets recorded."
+            if (userContent.includes('https://x.example/2')) {
+                throw new Error('Lift Wing: unexpected response shape');
+            }
+            await sleep(15);
+            return {
+                text: JSON.stringify({ confidence: 90, verdict: 'SUPPORTED', source_quote: '', comments: 'ok' }),
+                usage: { input: 10, output: 5 },
+            };
+        },
+        writeCsvReportFn: async findings => { written = findings; },
+    }));
+
+    assert.equal(code, 4);
+    assert.ok(attempts < 6, `expected new dispatch to stop after halting, got ${attempts} attempts out of 6 possible`);
+    assert.equal(written.length, 1, 'only the one call already in flight when the halt was detected should have completed and been recorded');
+});
+
+test('halting stops the producer from fetching further articles, not just further verifying', async () => {
+    const candidates = [
+        { pageId: 1, pageTitle: 'A', revisionId: 1 },
+        { pageId: 2, pageTitle: 'B', revisionId: 2 },
+        { pageId: 3, pageTitle: 'C', revisionId: 3 },
+    ];
+    let fetchCount = 0;
+    const code = await runSweep(baseOpts({ max: 3, concurrency: 1 }), baseIo({
+        connectReplicas: async () => fakeReplicaConnection(candidates),
+        fetchArticle: async () => {
+            fetchCount++;
+            return { html: articleWithSoloCitations(1), status: 200, error: null };
+        },
+        makeModelCallerFn: () => async () => {
+            throw new Error('Lift Wing: unexpected response shape');
+        },
+    }));
+
+    assert.equal(code, 4);
+    assert.equal(fetchCount, 1, 'article B and C should never be fetched once article A\'s only citation halted the run');
 });
 
 test('a ProviderAuthError still closes an open ToolsDB connection', async () => {

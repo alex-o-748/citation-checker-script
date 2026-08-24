@@ -45,7 +45,12 @@
 //   node service/run-sweep.js --max 5 --out findings.csv
 //   node service/run-sweep.js --max 50 --live-source-fetch --out findings.csv
 //   node service/run-sweep.js --max 5 --out findings.csv --store   # also ToolsDB
+//   node service/run-sweep.js --max 50 --live-llm-router --concurrency 16 --out findings.csv
 //   node service/run-sweep.js --help
+//
+// --concurrency controls only the verify stage (model calls); fetching stays
+// serial. See --concurrency's --help text and scripts/probe-concurrency.js
+// for how to (re-)measure the ceiling for whatever backend you're calling.
 
 import { JSDOM } from 'jsdom';
 import { parseArgs } from 'node:util';
@@ -94,6 +99,7 @@ export function parseCliArgs(argv) {
             provider:            { type: 'string', default: 'liftwing' },
             model:               { type: 'string' },
             'delay-ms':          { type: 'string', default: '1000' },
+            concurrency:         { type: 'string', default: '1' },
             'live-source-fetch': { type: 'boolean', default: false },
             'live-llm-router':   { type: 'boolean', default: false },
             store:               { type: 'boolean', default: false },
@@ -111,6 +117,7 @@ export function parseCliArgs(argv) {
         provider: values.provider,
         model: values.model || PROVIDER_MODELS[values.provider],
         delayMs: Number(values['delay-ms']),
+        concurrency: Number(values.concurrency),
         liveSourceFetch: values['live-source-fetch'],
         liveLlmRouter: values['live-llm-router'],
         store: values.store,
@@ -133,6 +140,17 @@ Options:
   --provider <name>     One of: ${Object.keys(PROVIDER_MODELS).join(', ')} (default: liftwing)
   --model <id>          Override the provider's default model
   --delay-ms <n>        Delay after each model call, ms (default: 1000)
+  --concurrency <n>     Model calls (verifyCitation/verifyGroup) to run at once
+                         (default: 1, i.e. serial — matches every prior version
+                         of this runner). --delay-ms still applies per worker,
+                         so effective sustained rate is roughly
+                         concurrency / delay-ms. Measured against tf-llm-router
+                         on 2026-08-24: throughput scaled up through
+                         concurrency=32 (~2.2 calls/s) then flattened/regressed
+                         at 64 — that plateau is specific to whichever backend
+                         you're calling and worth re-measuring
+                         (scripts/probe-concurrency.js) before trusting a
+                         number this comment will go stale on.
   --live-source-fetch   Fetch real sources via tf-source-fetcher instead of the
                          stub. A small, attended run needs no permission (see
                          the design doc's G3) — just a host with open egress
@@ -226,6 +244,10 @@ export async function runSweep(opts, {
 } = {}) {
     if (!Number.isInteger(opts.max) || opts.max < 1) {
         stderr.write(`sweep: --max must be a positive integer (got: ${opts.max})\n`);
+        return 2;
+    }
+    if (!Number.isInteger(opts.concurrency) || opts.concurrency < 1) {
+        stderr.write(`sweep: --concurrency must be a positive integer (got: ${opts.concurrency})\n`);
         return 2;
     }
 
@@ -328,13 +350,40 @@ export async function runSweep(opts, {
     const realLog = console.log;
     console.log = () => {};
 
-    let haltCode = null;
-    try {
-        // One shared source cache across the whole sweep, not per article —
-        // the same reason service/claim-extractor.js's own header gives:
-        // "one source is often cited across many articles."
-        outer:
-        for await (const article of runBatch(candidates, { parseHtml, fetchArticle, fetchSource })) {
+    // Producer/pool split: a single producer coroutine drives runBatch()
+    // (fetch stays serial — out of scope here, see scripts/probe-concurrency.js
+    // for the model-call-only concurrency this measures) and yields one task
+    // per solo citation or per group; opts.concurrency worker coroutines pull
+    // from that *same* async generator concurrently. Multiple concurrent
+    // `for await` consumers over one shared async generator is a real,
+    // verified pattern (each .next() call queues and resolves with the next
+    // distinct value, in call order) — not a hand-rolled queue class, just
+    // this file relying on that generator semantics.
+    //
+    // `halted` is checked by the producer between articles (so a fatal error
+    // stops further fetching, not just further verifying — the property the
+    // old fully-serial loop had for free) and by each worker before acting on
+    // a pulled task (so tasks already queued up from an already-fetched
+    // article are drained without dispatching new model calls, rather than
+    // processed). Tasks already in flight when halted flips are allowed to
+    // finish and record normally — halting stops new dispatch, not work
+    // already committed to the network.
+    let halted = false;
+    let haltError = null;
+
+    async function* generateTasks() {
+        // Deliberately not `for await (const article of runBatch(...))`:
+        // for-await-of fetches the *next* value before running the loop
+        // body, so a halted check inside the body would let one extra
+        // article's worth of fetching slip through after halting before it
+        // took effect. Driving runBatch's iterator by hand puts the check
+        // before each fetch instead of after.
+        const articles = runBatch(candidates, { parseHtml, fetchArticle, fetchSource });
+        while (true) {
+            if (halted) return;
+            const { value: article, done } = await articles.next();
+            if (done) return;
+
             funnel.articles++;
             if (article.outcome !== ARTICLE_OUTCOMES.OK) {
                 funnel.articlesFailed++;
@@ -348,30 +397,40 @@ export async function runSweep(opts, {
                 funnel.citationsSeen++;
                 if (citation.url) funnel.citationsWithUrl++;
                 if (citation.source?.content) funnel.citationsFetched++;
+                yield { kind: 'solo', wikiCandidate, citation };
+            }
+            for (const members of groups) {
+                yield { kind: 'group', wikiCandidate, members };
+            }
+        }
+    }
 
+    async function worker(tasks) {
+        for await (const task of tasks) {
+            if (halted) continue; // drain without dispatching new model calls
+
+            if (task.kind === 'solo') {
                 let verification;
                 try {
-                    verification = await verifyCitation(citation.claimText, citation.source, { callModel });
+                    verification = await verifyCitation(task.citation.claimText, task.citation.source, { callModel });
                 } catch (error) {
-                    haltCode = describeHalt(stderr, opts.provider, error, findings.length);
-                    break outer;
+                    if (!halted) { halted = true; haltError = error; }
+                    continue;
                 }
                 if (verification.usage) { funnel.verified++; await sleep(opts.delayMs); }
                 if (recordVerdict(verification.verdict)) funnel.flagged++;
 
                 await record(assembleFinding({
-                    candidate: wikiCandidate, citation, verification,
+                    candidate: task.wikiCandidate, citation: task.citation, verification,
                     provider: opts.provider, model: opts.model, promptVersion: PROMPT_VERSION,
                 }));
-            }
-
-            for (const members of groups) {
+            } else {
                 let verification;
                 try {
-                    verification = await verifyGroup(members, { callModel });
+                    verification = await verifyGroup(task.members, { callModel });
                 } catch (error) {
-                    haltCode = describeHalt(stderr, opts.provider, error, findings.length);
-                    break outer;
+                    if (!halted) { halted = true; haltError = error; }
+                    continue;
                 }
                 funnel.groupsChecked++;
                 if (verification.skipped) { funnel.groupsSkipped++; continue; }
@@ -379,15 +438,29 @@ export async function runSweep(opts, {
                 if (recordVerdict(verification.verdict)) funnel.groupsFlagged++;
 
                 await record(assembleGroupFinding({
-                    candidate: wikiCandidate, members, verification,
+                    candidate: task.wikiCandidate, members: task.members, verification,
                     provider: opts.provider, model: opts.model, promptVersion: PROMPT_VERSION,
                 }));
             }
         }
+    }
+
+    try {
+        // One shared source cache across the whole sweep, not per article —
+        // the same reason service/claim-extractor.js's own header gives:
+        // "one source is often cited across many articles."
+        const tasks = generateTasks();
+        await Promise.all(Array.from({ length: opts.concurrency }, () => worker(tasks)));
     } finally {
         console.log = realLog;
         if (toolsDbConnection) await toolsDbConnection.end();
     }
+
+    // Computed after every worker has drained, not at the moment haltError
+    // was set — other workers may have finished and recorded findings
+    // concurrently between the failure and the pool actually stopping, so
+    // findings.length here is the true final count, not a lower bound.
+    const haltCode = haltError ? describeHalt(stderr, opts.provider, haltError, findings.length) : null;
 
     await writeCsvReportFn(findings, opts.out);
     stderr.write(
