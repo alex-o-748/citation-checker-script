@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
     verifyCitation,
+    verifyGroup,
     isAuthOrBillingError,
     ProviderAuthError,
     makeModelCaller,
@@ -14,6 +15,21 @@ const okResponse = (body) => async () => ({
 });
 
 const source = (content, extra = {}) => ({ content, status: 200, error: null, ...extra });
+
+const withContent = body => `Source URL: https://example.com\n\nSource Content:\n${body}`;
+
+// One member of an adjacent-citation group, in the shape
+// service/claim-extractor.js's processArticle() produces.
+const member = (citationNumber, { url = `https://example.com/${citationNumber}`, pageNum = null, content = null, status = 200, error = null, groupId = 'g1', groupSize = 2, groupIndex = 0 } = {}) => ({
+    citationNumber,
+    claimText: 'The bridge, built in 1998, cost $200 million.',
+    url,
+    pageNum,
+    groupId,
+    groupSize,
+    groupIndex,
+    source: { content, status, error },
+});
 
 test('a no-URL / unfetched source resolves to SOURCE UNAVAILABLE without calling the model', async () => {
     let called = false;
@@ -139,4 +155,111 @@ test('makeModelCaller binds provider config without leaking it into the returned
 
 test('makeModelCaller requires a provider name', () => {
     assert.throws(() => makeModelCaller({}), TypeError);
+});
+
+test('verifyGroup skips the model call when at most one member has a usable source', async () => {
+    let called = false;
+    const members = [
+        member('5', { groupIndex: 0, content: withContent('some text'), status: 200 }),
+        member('6', { groupIndex: 1, content: null, status: 403, error: 'forbidden' }),
+    ];
+    const result = await verifyGroup(members, {
+        callModel: async () => { called = true; return { text: '{}', usage: {} }; },
+    });
+    assert.deepEqual(result, { skipped: true, groupId: 'g1' });
+    assert.equal(called, false, 'a group with <=1 usable source must not call the model');
+});
+
+test('verifyGroup calls the model with assembled sources when two or more are usable', async () => {
+    const members = [
+        member('5', { groupIndex: 0, url: 'https://a.example', content: withContent('The bridge opened in 1998.') }),
+        member('6', { groupIndex: 1, url: 'https://b.example', content: withContent('Funding came from state and federal grants.') }),
+    ];
+    const result = await verifyGroup(members, {
+        callModel: okResponse({
+            confidence: 88,
+            verdict: 'PARTIALLY SUPPORTED',
+            source_quote: 'The bridge opened in 1998.',
+            comments: 'Only the date is confirmed.',
+        }),
+    });
+
+    assert.equal(result.skipped, false);
+    assert.equal(result.groupId, 'g1');
+    assert.deepEqual(result.memberCitationNumbers, ['5', '6']);
+    assert.equal(result.verdict, 'PARTIALLY SUPPORTED');
+    assert.equal(result.quoteStatus, 'exact');
+    assert.deepEqual(result.usage, { input: 120, output: 30 });
+});
+
+test('verifyGroup dedupes members sharing the same URL into one source block', async () => {
+    const members = [
+        member('5', { groupIndex: 0, groupSize: 3, url: 'https://shared.example', content: withContent('Shared source text.') }),
+        member('6', { groupIndex: 1, groupSize: 3, url: 'https://shared.example', content: withContent('Shared source text.') }),
+        member('7', { groupIndex: 2, groupSize: 3, url: 'https://distinct.example', content: withContent('Distinct source text.') }),
+    ];
+    let seenUserContent;
+    const result = await verifyGroup(members, {
+        callModel: async (systemPrompt, userContent) => {
+            seenUserContent = userContent;
+            return {
+                text: JSON.stringify({ confidence: 90, verdict: 'SUPPORTED', source_quote: 'Shared source text.', comments: 'ok' }),
+                usage: { input: 1, output: 1 },
+            };
+        },
+    });
+
+    assert.equal(result.skipped, false);
+    assert.deepEqual(result.memberCitationNumbers, ['5', '6', '7']);
+    assert.match(seenUserContent, /\[5\]\[6\]/, 'both citation numbers label the shared source');
+    assert.equal((seenUserContent.match(/Source \[/g) || []).length, 2, 'the shared source contributes one block, not two');
+});
+
+test('verifyGroup verifies a quote against any member source, not just the first', async () => {
+    const members = [
+        member('5', { groupIndex: 0, url: 'https://a.example', content: withContent('Alpha fact only.') }),
+        member('6', { groupIndex: 1, url: 'https://b.example', content: withContent('Beta fact confirmed here.') }),
+    ];
+    const result = await verifyGroup(members, {
+        callModel: okResponse({
+            confidence: 70,
+            verdict: 'PARTIALLY SUPPORTED',
+            source_quote: 'Beta fact confirmed here.',
+            comments: 'ok',
+        }),
+    });
+    assert.equal(result.quoteStatus, 'exact');
+});
+
+for (const status of [401, 402, 403]) {
+    test(`verifyGroup halts with ProviderAuthError on a ${status}`, async () => {
+        const members = [
+            member('5', { groupIndex: 0, url: 'https://a.example', content: withContent('text a') }),
+            member('6', { groupIndex: 1, url: 'https://b.example', content: withContent('text b') }),
+        ];
+        let attempts = 0;
+        await assert.rejects(
+            () => verifyGroup(members, {
+                callModel: async () => {
+                    attempts++;
+                    throw new Error(`PublicAI API request failed (${status}): insufficient wallet balance`);
+                },
+                retry: { maxRetries: 5, minBackoffMs: 0, maxBackoffMs: 0, jitterMs: 0, sleepFn: async () => {} },
+            }),
+            ProviderAuthError
+        );
+        assert.equal(attempts, 1, 'an auth/billing error must not be retried');
+    });
+}
+
+test('verifyGroup requires a callModel function', async () => {
+    const members = [member('5', { groupIndex: 0, content: withContent('a') })];
+    await assert.rejects(() => verifyGroup(members, {}), TypeError);
+});
+
+test('verifyGroup requires a non-empty members array', async () => {
+    await assert.rejects(
+        () => verifyGroup([], { callModel: async () => ({ text: '{}', usage: {} }) }),
+        TypeError
+    );
 });

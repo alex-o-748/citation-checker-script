@@ -4,19 +4,28 @@
 // userscript and CLI; this module is the retry wiring, the halt rule, and
 // the mapping into a plain result object.
 //
-// Scope note: only the solo (one-source-per-claim) path is implemented.
-// Adjacent-group collective verification (core/groups.js, not yet built) is
-// deliberately out of scope here — see docs/design-plans/
-// 2026-08-22-batch-verification-and-persistence.md §2 — and
-// benchmark/dataset.json, the replay corpus this module exists to run
-// against first, has no grouped citations to exercise it against anyway.
+// verifyCitation() is the solo (one-source-per-claim) path. verifyGroup() is
+// the adjacent-group collective path, added once core/groups.js existed to
+// share the dedup/skip/merge rules with the userscript — see that module's
+// header, and docs/design-plans/2026-08-22-batch-verification-and-persistence.md
+// §2 for why the two were built in that order. Nothing in this repo calls
+// verifyGroup() yet: no runner joins the full six-stage pipeline
+// (docs/design-plans/2026-08-24-csv-deliverable-and-component-names.md, G1),
+// and benchmark/dataset.json, the replay corpus service/run-replay.js drives,
+// has no grouped citations to exercise it against. It is tested in isolation
+// so the sweep runner has correct logic to call once it exists.
 
-import { generateSystemPrompt, generateUserPrompt, extractSourceText } from '../core/prompts.js';
+import {
+    generateSystemPrompt, generateUserPrompt, extractSourceText,
+    generateGroupSystemPrompt, generateGroupUserPrompt, assembleGroupSources,
+} from '../core/prompts.js';
 import { callProviderAPI } from '../core/providers.js';
 import { parseVerificationResult } from '../core/parsing.js';
 import { canonicalizeVerdict } from '../core/verdicts.js';
 import { verifyQuote } from '../core/quote.js';
 import { withRetry } from '../core/retry.js';
+import { groupSourceEntries, shouldSkipCollective } from '../core/groups.js';
+import { sourceCacheKey } from './claim-extractor.js';
 
 // Thrown when the model call fails with 401/402/403. Distinct from every
 // other failure this module can raise: a runner must halt the whole batch on
@@ -138,5 +147,104 @@ export async function verifyCitation(claimText, source, {
         quoteStatus: quote.status,
         usage: response.usage ?? null,
         fetchStatus: source.status ?? null,
+    };
+}
+
+/**
+ * Verifies one adjacent-citation group's collective (multi-source) claim.
+ *
+ * `members` are one group's citations, in the shape
+ * service/claim-extractor.js's processArticle() produces (each carrying a
+ * resolved `source`), pre-filtered to a single `groupId` and sorted by
+ * `groupIndex` — the caller's job, since a runner iterating a flat citations
+ * array already knows how to group them (`citations.filter(c => c.groupId
+ * === id)`).
+ *
+ * Uses core/groups.js for the dedup and skip rules, so this computes the
+ * same group unit the userscript's verifyGroupCollective() does. Returns
+ * `{ skipped: true, groupId }` when at most one member source has usable
+ * text — the same placeholder shape main.js's reportGroupResults holds for a
+ * skipped group, and what core/groups.js's mergeReportUnits() expects to
+ * find there. Otherwise returns the same shape verifyCitation() does, plus
+ * `groupId` and `memberCitationNumbers`.
+ *
+ * Throws ProviderAuthError on a 401/402/403, same as verifyCitation() —
+ * callers must halt the whole batch on this rather than record it as a
+ * per-group failure.
+ */
+export async function verifyGroup(members, {
+    callModel,
+    signal,
+    retry = {},
+} = {}) {
+    if (typeof callModel !== 'function') {
+        throw new TypeError('verifyGroup requires a callModel(systemPrompt, userContent) function');
+    }
+    if (!Array.isArray(members) || members.length === 0) {
+        throw new TypeError('verifyGroup requires a non-empty array of group members');
+    }
+
+    const groupId = members[0].groupId;
+    const claimText = members[0].claimText;
+    const memberCitationNumbers = members.map(m => m.citationNumber);
+
+    // Dedupe by cache key so a source cited twice in the group (named refs)
+    // is sent once, with both citation numbers on its label. Each member
+    // already carries its own resolved `source` (processArticle() resolved
+    // it per-citation against a shared cache), so — unlike the userscript,
+    // which looks members up in a live sourceCache — this reads straight off
+    // the member.
+    const entries = groupSourceEntries(members, m => ({
+        key: m.url ? sourceCacheKey(m.url, m.pageNum) : `__nourl_${m.citationNumber}`,
+        url: m.url || null,
+        content: m.source?.content ?? null,
+        error: m.source?.error ?? null,
+        status: m.source?.status ?? null,
+    }));
+
+    // With at most one usable source the collective verdict would just
+    // restate the solo one, so skip the model call entirely.
+    if (shouldSkipCollective(entries)) {
+        return { skipped: true, groupId };
+    }
+
+    const { text: assembledText } = assembleGroupSources(entries);
+    const systemPrompt = generateGroupSystemPrompt();
+    const userContent = generateGroupUserPrompt(claimText, assembledText);
+
+    const retryOptions = { ...retry };
+    if (signal && !retryOptions.shouldAbort) {
+        retryOptions.shouldAbort = () => Boolean(signal.aborted);
+    }
+
+    let response;
+    try {
+        response = await withRetry(() => callModel(systemPrompt, userContent), retryOptions);
+    } catch (error) {
+        if (isAuthOrBillingError(error)) {
+            const status = Number((error.message || '').match(/\((\d{3})\)/)?.[1]) || null;
+            throw new ProviderAuthError(error.message, { status, cause: error });
+        }
+        throw error;
+    }
+
+    const parsed = parseVerificationResult(response.text);
+    const verdict = canonicalizeVerdict(parsed.verdict) || parsed.verdict;
+    // The group quote is checked against the assembled text of every source
+    // in the group, so a verbatim quote from any one of them verifies —
+    // matching main.js's buildQuoteView(parsed, assembledText).
+    const quote = verifyQuote(extractSourceText(assembledText), parsed.source_quote);
+
+    return {
+        skipped: false,
+        groupId,
+        memberCitationNumbers,
+        verdict,
+        confidence: parsed.confidence ?? null,
+        reasonType: parsed.reason_type || null,
+        rationale: parsed.comments || null,
+        sourceQuote: parsed.source_quote || null,
+        quoteStatus: quote.status,
+        usage: response.usage ?? null,
     };
 }

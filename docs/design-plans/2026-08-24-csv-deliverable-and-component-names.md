@@ -1,8 +1,10 @@
 # One command, one shareable CSV — what's left, and what to call it
 
-> **Status (2026-08-24):** In progress. **Step 0 of the sequence below is
-> done**: `service/` renamed per the "Proposed names" table, and
-> `service/` documented in `CLAUDE.md`. G1–G7 (the sweep runner, the CSV
+> **Status (2026-08-24):** In progress. **Step 0** of the sequence below is
+> done: `service/` renamed per the "Proposed names" table, and
+> `service/` documented in `CLAUDE.md`. **G4** is also done: `core/groups.js`
+> + `main.js` delegation + `service/verifier.js`'s `verifyGroup()` — see G4's
+> own note below. **G1, G2, G3, G5, G6, G7** (the sweep runner, the CSV
 > writer, and the rest) are unbuilt. Old filenames below (`service/verify.js`,
 > `service/pipeline.js`, `service/selection.js`, `service/assemble.js`,
 > `service/findings.js`, `service/replay.js`, `service/extract-articles.js`,
@@ -166,6 +168,16 @@ output than the throwaway script it originally called for.
 
 ### G4 — Collective verification for adjacent groups · Medium · **the one correctness gap**
 
+> **Done 2026-08-24.** `core/groups.js` landed with the four rules below as
+> pure functions, `main.js` delegates to all four (verified with `node
+> scripts/sync-main.js --check` and the full suite, no behavior change), and
+> `service/verifier.js` gained `verifyGroup()` built on the same rules. What's
+> still open: nothing calls `verifyGroup()` yet — that's G1, the sweep
+> runner, still unbuilt — and `service/finding-builder.js` still doesn't know
+> how to assemble a collective row (§6a's group/no-URL hash-collision fix).
+> Both are correctly out of scope until G1 exists, per the phase-4 doc's own
+> sequencing.
+
 `core/citations.js:94` already emits `groupId`, `groupSize` and `groupIndex`.
 `service/verify.js` says in its own header that it implements the solo path
 only, and that this is fine because *"benchmark/dataset.json, the replay corpus
@@ -223,7 +235,7 @@ question, and the answer is "nothing has been through a filter yet."
 | G1 | Sweep runner joining stages 1–5 | Medium | **Yes** |
 | G2 | CSV writer | Small | **Yes** |
 | G3 | Live fetching turned on | Policy | **Yes** — stub ⇒ empty CSV |
-| G4 | Collective group verification | Medium | No — but output is wrong without it |
+| G4 | Collective group verification | Medium | **Done** — no longer blocks correctness |
 | G5 | Full funnel accounting | Small | No |
 | G6 | `ref_name` collection | Small | No |
 | G7 | Publication filter | — | No — deliberately deferred |
