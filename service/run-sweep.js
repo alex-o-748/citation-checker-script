@@ -46,6 +46,7 @@
 //   node service/run-sweep.js --max 50 --live-source-fetch --out findings.csv
 //   node service/run-sweep.js --max 5 --out findings.csv --store   # also ToolsDB
 //   node service/run-sweep.js --max 50 --live-llm-router --concurrency 16 --out findings.csv
+//   node service/run-sweep.js --title Asia --live-source-fetch --live-llm-router --out findings.csv
 //   node service/run-sweep.js --help
 //
 // --concurrency controls only the verify stage (model calls); fetching stays
@@ -59,6 +60,7 @@ import { openReplicaConnection, makeQueryFn } from './replicas.js';
 import { selectCandidates, CRITERIA } from './article-picker.js';
 import { runBatch, ARTICLE_OUTCOMES } from './claim-extractor.js';
 import { fetchArticleHtml } from '../core/wikipedia.js';
+import { resolveArticleRef } from './wikipedia-pageids.js';
 import { fetchSourceContent } from '../core/worker.js';
 import { verifyCitation, verifyGroup, makeModelCaller, ProviderAuthError } from './verifier.js';
 import { assembleFinding, assembleGroupFinding } from './finding-builder.js';
@@ -95,6 +97,7 @@ export function parseCliArgs(argv) {
         options: {
             criterion:           { type: 'string', default: 'failed-verification' },
             wiki:                { type: 'string', default: 'enwiki' },
+            title:               { type: 'string' },
             max:                 { type: 'string', default: '5' },
             provider:            { type: 'string', default: 'liftwing' },
             model:               { type: 'string' },
@@ -113,6 +116,7 @@ export function parseCliArgs(argv) {
         help: values.help,
         criterion: values.criterion,
         wiki: values.wiki,
+        title: values.title,
         max: Number(values.max),
         provider: values.provider,
         model: values.model || PROVIDER_MODELS[values.provider],
@@ -136,6 +140,11 @@ Options:
   --criterion <name>   Selection criterion. One of: ${Object.keys(CRITERIA).join(', ')}
                         (default: failed-verification)
   --wiki <db>           Wiki database name, e.g. enwiki, frwiki (default: enwiki)
+  --title <name>        Skip selection entirely and run against exactly this one
+                         article (e.g. "Asia"), resolved to its current page id
+                         and revision via the Wikipedia Action API — no Wiki
+                         Replicas connection needed in this mode. Overrides
+                         --criterion and --max, which are ignored when set.
   --max <n>             Maximum articles to process (default: 5)
   --provider <name>     One of: ${Object.keys(PROVIDER_MODELS).join(', ')} (default: liftwing)
   --model <id>          Override the provider's default model
@@ -240,9 +249,10 @@ export async function runSweep(opts, {
     makeModelCallerFn = makeModelCaller,
     writeCsvReportFn = writeCsvReport,
     parseHtml = html => new JSDOM(html).window.document,
+    resolveArticleRefFn = resolveArticleRef,
     readFile,
 } = {}) {
-    if (!Number.isInteger(opts.max) || opts.max < 1) {
+    if (!opts.title && (!Number.isInteger(opts.max) || opts.max < 1)) {
         stderr.write(`sweep: --max must be a positive integer (got: ${opts.max})\n`);
         return 2;
     }
@@ -258,27 +268,53 @@ export async function runSweep(opts, {
         return 2;
     }
 
-    let replicaConnection;
-    try {
-        replicaConnection = await connectReplicas({ wikiDb: opts.wiki });
-    } catch (error) {
-        stderr.write(`sweep: could not connect to Wiki Replicas: ${error.message}\n`);
-        return 1;
-    }
-
+    // --title bypasses selection (stage 1) entirely — no Wiki Replicas
+    // connection needed, since there's nothing to select from a template
+    // transclusion query. Resolved via the same Action API resolvePageIds()
+    // already uses for service/run-replay.js's dataset rows, extended
+    // (resolveArticleRef) to also fetch the current revision id in the same
+    // round trip — a finding needs to record which revision it was computed
+    // against, same reason core/wikipedia.js's deriveRestUrl() always pins one.
     let candidates;
-    try {
-        candidates = await selectCandidates(makeQueryFn(replicaConnection), {
-            criterion: opts.criterion,
-            max: opts.max,
-        });
-    } catch (error) {
-        stderr.write(`sweep: ${error.message}\n`);
-        return 1;
-    } finally {
-        await replicaConnection.end();
+    if (opts.title) {
+        let resolved;
+        try {
+            resolved = await resolveArticleRefFn(opts.title);
+        } catch (error) {
+            stderr.write(`sweep: could not resolve --title "${opts.title}": ${error.message}\n`);
+            return 1;
+        }
+        if (!resolved) {
+            stderr.write(`sweep: article "${opts.title}" not found\n`);
+            return 1;
+        }
+        candidates = [resolved];
+        stderr.write(
+            `sweep: targeting a single article: "${resolved.title}" ` +
+            `(page ${resolved.pageId}, revision ${resolved.revisionId})\n`
+        );
+    } else {
+        let replicaConnection;
+        try {
+            replicaConnection = await connectReplicas({ wikiDb: opts.wiki });
+        } catch (error) {
+            stderr.write(`sweep: could not connect to Wiki Replicas: ${error.message}\n`);
+            return 1;
+        }
+
+        try {
+            candidates = await selectCandidates(makeQueryFn(replicaConnection), {
+                criterion: opts.criterion,
+                max: opts.max,
+            });
+        } catch (error) {
+            stderr.write(`sweep: ${error.message}\n`);
+            return 1;
+        } finally {
+            await replicaConnection.end();
+        }
+        stderr.write(`sweep: selected ${candidates.length} article(s)\n`);
     }
-    stderr.write(`sweep: selected ${candidates.length} article(s)\n`);
 
     let toolsDbConnection = null;
     let toolsDbQuery = null;

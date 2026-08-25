@@ -87,3 +87,49 @@ export async function resolvePageIds(titles, {
 
     return result;
 }
+
+/**
+ * Resolves one article title to { pageId, title, revisionId } — the shape
+ * service/article-picker.js's selectCandidates() rows already have, needed
+ * by anything that wants to run the pipeline against one named article
+ * without a Wiki Replicas query (service/run-sweep.js's --title).
+ *
+ * Unlike resolvePageIds() (page ID only, batched, many titles), this needs
+ * the *current* revision id too — a batch runner records which revision a
+ * finding was computed against, same reason core/wikipedia.js's
+ * deriveRestUrl() always pins one. One extra query param (`rvprop=ids`) on
+ * the same Action API call gets both in one round trip rather than two.
+ *
+ * Returns null if the title doesn't resolve (missing, deleted, typo'd) —
+ * same "let the caller decide, don't throw" contract as resolvePageIds().
+ */
+export async function resolveArticleRef(title, {
+    host = DEFAULT_API_HOST,
+    userAgent = DEFAULT_USER_AGENT,
+    fetchImpl = fetch,
+} = {}) {
+    const params = new URLSearchParams({
+        action: 'query',
+        format: 'json',
+        formatversion: '2',
+        titles: title,
+        prop: 'revisions',
+        rvprop: 'ids',
+        rvlimit: '1',
+    });
+    const url = `https://${host}/w/api.php?${params.toString()}`;
+
+    const response = await fetchImpl(url, { headers: { 'User-Agent': userAgent } });
+    if (!response.ok) {
+        throw new Error(`Wikipedia API returned HTTP ${response.status} resolving "${title}"`);
+    }
+    const data = await response.json();
+    const page = data.query?.pages?.[0];
+    if (!page || page.missing || !page.pageid || !page.revisions?.[0]?.revid) return null;
+
+    return {
+        pageId: page.pageid,
+        title: page.title,
+        revisionId: page.revisions[0].revid,
+    };
+}
