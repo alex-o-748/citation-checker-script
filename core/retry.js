@@ -34,6 +34,22 @@ function defaultSleep(ms) {
 
 export function isRetryableError(error) {
     const msg = error?.message ?? '';
+
+    // Node's fetch (undici) always throws this exact generic message for a
+    // network/transport-layer failure — DNS, connection reset, refused, TLS
+    // — never for an HTTP-level 4xx/5xx response (those resolve normally
+    // and are turned into the "API request failed (<status>)" shape by our
+    // own provider code, matched below). The actual reason lives one level
+    // down in `error.cause` (e.g. `{ code: 'ENOTFOUND' }` or `ECONNRESET`),
+    // which this function never inspected — so this entire category of
+    // real transient failures skipped retry and went straight to a hard
+    // failure. Real incident, 2026-08-24: a live sweep against
+    // tf-llm-router halted immediately on "fetch failed" with zero retry
+    // attempts. Matched by exact equality, not substring, so this can't
+    // accidentally widen retry to some other error that merely mentions
+    // "fetch failed" in a longer message.
+    if (msg === 'fetch failed') return true;
+
     return RETRYABLE_STATUS.test(msg) || RETRYABLE_NETWORK.test(msg);
 }
 

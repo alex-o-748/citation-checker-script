@@ -255,3 +255,45 @@ test('isRetryableError: non-provider error shapes are unchanged by the provider-
     assert.equal(isRetryableError(new Error('Feedback failed: HTTP 429')), false);
     assert.equal(isRetryableError(new Error('Proxy returned non-JSON response (HTTP 503)')), false);
 });
+
+// ---- isRetryableError: undici's generic "fetch failed" wrapper -------------
+// Node's fetch throws this exact top-level message for every network/
+// transport-layer failure (DNS, connection reset, refused, TLS); the real
+// reason (e.g. `{ code: 'ENOTFOUND' }`) lives one level down in `.cause`,
+// which isRetryableError never inspected. Real incident, 2026-08-24: a live
+// sweep against tf-llm-router halted immediately on "fetch failed" with zero
+// retry attempts — a transient DNS/connection hiccup got treated as
+// permanently fatal instead of retried like any other network error.
+
+test('isRetryableError: true for undici\'s generic "fetch failed", regardless of the cause', () => {
+    const dnsFailure = new TypeError('fetch failed');
+    dnsFailure.cause = Object.assign(new Error('getaddrinfo ENOTFOUND llm-router.toolforge.org'), { code: 'ENOTFOUND' });
+    assert.equal(isRetryableError(dnsFailure), true);
+
+    // Even with no .cause at all (defensive — every real occurrence has one)
+    // or a cause that names nothing recognizable, it's still a transport
+    // failure by fetch's own semantics, not an application error.
+    assert.equal(isRetryableError(new TypeError('fetch failed')), true);
+    const opaqueCause = new TypeError('fetch failed');
+    opaqueCause.cause = new Error('something unrecognizable');
+    assert.equal(isRetryableError(opaqueCause), true);
+});
+
+test('isRetryableError: only the exact "fetch failed" message triggers this, not a longer message containing it', () => {
+    assert.equal(isRetryableError(new Error('proxy: fetch failed for https://example.com')), false);
+});
+
+test('withRetry: retries on undici\'s "fetch failed" and eventually succeeds', async () => {
+    let calls = 0;
+    const result = await withRetry(async () => {
+        calls++;
+        if (calls < 2) {
+            const err = new TypeError('fetch failed');
+            err.cause = Object.assign(new Error('getaddrinfo ENOTFOUND'), { code: 'ENOTFOUND' });
+            throw err;
+        }
+        return 'ok';
+    }, { sleepFn: noSleep });
+    assert.equal(result, 'ok');
+    assert.equal(calls, 2);
+});
