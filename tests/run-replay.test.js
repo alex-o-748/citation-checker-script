@@ -51,6 +51,40 @@ test('parseCliArgs defaults to liftwing — the Toolforge migration provider —
     assert.equal(opts.delayMs, 1000);
     assert.equal(opts.dryRun, false);
     assert.equal(opts.limit, Infinity);
+    assert.equal(opts.liveLlmRouter, false);
+});
+
+test('parseCliArgs applies --live-llm-router', () => {
+    const opts = parseCliArgs(['node', 'replay.js', '--live-llm-router']);
+    assert.equal(opts.liveLlmRouter, true);
+});
+
+test('--live-llm-router routes the liftwing call through tf-llm-router instead of the Cloudflare worker default', async () => {
+    let seenConfig;
+    await runReplay(
+        { provider: 'liftwing', dataset: 'unused', wiki: 'enwiki', limit: 1, delayMs: 0, dryRun: true, model: 'llm-qwen36-27b', liveLlmRouter: true },
+        {
+            env: {}, readFile: fakeDataset([okRow]), resolvePageIdsFn: okPageIds,
+            makeModelCallerFn: config => { seenConfig = config; return okModelCaller(); },
+            stdout: { write() {} }, stderr: { write() {} },
+        }
+    );
+    assert.equal(seenConfig.workerBase, 'https://llm-router.toolforge.org');
+});
+
+test('--live-llm-router is ignored (with a warning) for a provider other than liftwing', async () => {
+    let seenConfig;
+    const stderr = { chunks: [], write(s) { this.chunks.push(s); } };
+    await runReplay(
+        { provider: 'publicai', dataset: 'unused', wiki: 'enwiki', limit: 1, delayMs: 0, dryRun: true, model: 'aisingapore/Qwen-SEA-LION-v4-32B-IT', liveLlmRouter: true },
+        {
+            env: {}, readFile: fakeDataset([okRow]), resolvePageIdsFn: okPageIds,
+            makeModelCallerFn: config => { seenConfig = config; return okModelCaller(); },
+            stdout: { write() {} }, stderr,
+        }
+    );
+    assert.equal(seenConfig.workerBase, undefined);
+    assert.match(stderr.chunks.join(''), /only affects --provider liftwing/);
 });
 
 test('liftwing requires no API key, matching main.js\'s requiresKey: false', async () => {
@@ -215,6 +249,33 @@ test('a ProviderAuthError halts the run at exit code 3 and processes no further 
 
     assert.equal(code, 3);
     assert.equal(callCount, 1, 'the run stops at the first auth/billing error, not after all rows');
+    assert.match(stderr.chunks.join(''), /halting/);
+});
+
+test('a non-auth, non-retryable error also halts, at exit code 4, without crashing uncaught', async () => {
+    // Non-retryable message on purpose — see the matching comment in
+    // tests/run-sweep.test.js. A retryable 429 reaches this same catch
+    // block after withRetry exhausts its attempts internally.
+    const rows = [okRow, { ...okRow, id: 'row_2' }, { ...okRow, id: 'row_3' }];
+    let callCount = 0;
+    const flakyCaller = () => async () => {
+        callCount++;
+        throw new Error('Lift Wing: unexpected response shape');
+    };
+    const stderr = { chunks: [], write(s) { this.chunks.push(s); } };
+
+    const code = await runReplay(
+        { provider: 'liftwing', dataset: 'unused', wiki: 'enwiki', limit: Infinity, delayMs: 0, dryRun: true, model: 'm' },
+        {
+            readFile: fakeDataset(rows),
+            resolvePageIdsFn: okPageIds,
+            makeModelCallerFn: flakyCaller,
+            stdout: { write() {} }, stderr,
+        }
+    );
+
+    assert.equal(code, 4);
+    assert.equal(callCount, 1, 'the run stops at the first unrecoverable error, not after all rows');
     assert.match(stderr.chunks.join(''), /halting/);
 });
 

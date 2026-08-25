@@ -45,7 +45,12 @@
 //   node service/run-sweep.js --max 5 --out findings.csv
 //   node service/run-sweep.js --max 50 --live-source-fetch --out findings.csv
 //   node service/run-sweep.js --max 5 --out findings.csv --store   # also ToolsDB
+//   node service/run-sweep.js --max 50 --live-llm-router --concurrency 16 --out findings.csv
 //   node service/run-sweep.js --help
+//
+// --concurrency controls only the verify stage (model calls); fetching stays
+// serial. See --concurrency's --help text and scripts/probe-concurrency.js
+// for how to (re-)measure the ceiling for whatever backend you're calling.
 
 import { JSDOM } from 'jsdom';
 import { parseArgs } from 'node:util';
@@ -66,6 +71,24 @@ import { PROVIDER_MODELS, PROVIDER_ENV_VARS } from './provider-config.js';
 // Same contract as service/run-extract.js's — see that file's comment.
 const TOOLFORGE_SOURCE_FETCHER_BASE = 'https://source-fetcher.toolforge.org';
 
+// Opt-in override that routes the liftwing provider's call through the
+// tf-llm-router Toolforge tool (https://github.com/alex-o-748/tf-llm-router)
+// instead of the Cloudflare Worker CORS proxy makeModelCaller() otherwise
+// defaults to (core/providers.js's callLiftwingAPI(), workerBase = the
+// publicai-proxy worker). Without this flag "--provider liftwing" measures
+// the worker's shared approved-bot-JWT path — the same one the live
+// userscript uses — not the Toolforge-internal Lift Wing access the parent
+// design doc (docs/design-plans/2026-08-07-batch-source-checks-for-edit-
+// suggestions.md §5) is actually about; those can have very different rate
+// limits, and conflating them was caught live (2026-08-24): a --delay-ms 0
+// run against the worker's /liftwing path 429'd after 2 calls, which is
+// evidence about the worker's shared JWT budget, not about what Lift Wing
+// itself would tolerate from inside Toolforge. Mirrors cli/verify.js's
+// TOOLFORGE_LLM_ROUTER_BASE override (there scoped to huggingface, since
+// that predates this one); tf-llm-router's already-deployed /liftwing route
+// is what makes this meaningful for liftwing specifically.
+const TOOLFORGE_LLM_ROUTER_BASE = 'https://llm-router.toolforge.org';
+
 export function parseCliArgs(argv) {
     const { values } = parseArgs({
         args: argv.slice(2),
@@ -76,7 +99,9 @@ export function parseCliArgs(argv) {
             provider:            { type: 'string', default: 'liftwing' },
             model:               { type: 'string' },
             'delay-ms':          { type: 'string', default: '1000' },
+            concurrency:         { type: 'string', default: '1' },
             'live-source-fetch': { type: 'boolean', default: false },
+            'live-llm-router':   { type: 'boolean', default: false },
             store:               { type: 'boolean', default: false },
             out:                 { type: 'string', default: 'findings.csv' },
             help:                { type: 'boolean', short: 'h', default: false },
@@ -92,7 +117,9 @@ export function parseCliArgs(argv) {
         provider: values.provider,
         model: values.model || PROVIDER_MODELS[values.provider],
         delayMs: Number(values['delay-ms']),
+        concurrency: Number(values.concurrency),
         liveSourceFetch: values['live-source-fetch'],
+        liveLlmRouter: values['live-llm-router'],
         store: values.store,
         out: values.out,
     };
@@ -113,6 +140,17 @@ Options:
   --provider <name>     One of: ${Object.keys(PROVIDER_MODELS).join(', ')} (default: liftwing)
   --model <id>          Override the provider's default model
   --delay-ms <n>        Delay after each model call, ms (default: 1000)
+  --concurrency <n>     Model calls (verifyCitation/verifyGroup) to run at once
+                         (default: 1, i.e. serial — matches every prior version
+                         of this runner). --delay-ms still applies per worker,
+                         so effective sustained rate is roughly
+                         concurrency / delay-ms. Measured against tf-llm-router
+                         on 2026-08-24: throughput scaled up through
+                         concurrency=32 (~2.2 calls/s) then flattened/regressed
+                         at 64 — that plateau is specific to whichever backend
+                         you're calling and worth re-measuring
+                         (scripts/probe-concurrency.js) before trusting a
+                         number this comment will go stale on.
   --live-source-fetch   Fetch real sources via tf-source-fetcher instead of the
                          stub. A small, attended run needs no permission (see
                          the design doc's G3) — just a host with open egress
@@ -120,15 +158,27 @@ Options:
                          every environment has. Unattended, production-volume
                          fetching from Toolforge is the part still waiting
                          on WMCS.
+  --live-llm-router     When --provider is liftwing, route the model call
+                         through tf-llm-router
+                         (https://github.com/alex-o-748/tf-llm-router)
+                         instead of the Cloudflare Worker CORS proxy. The
+                         worker's /liftwing path is a shared approved-bot-JWT
+                         budget (the same one the live userscript uses);
+                         tf-llm-router's is Lift Wing accessed directly from
+                         inside Toolforge, per the design doc's §5 argument
+                         for the migration. The two have not been shown to
+                         share a rate limit — measure separately.
   --store               Also upsert every finding into ToolsDB. Requires a
                          Toolforge bastion; the CSV is written either way.
   --out <path>          CSV output path (default: findings.csv)
   --help, -h            Show this help and exit.
 
 A halt on an auth/billing error (401/402/403) from the model stops the run
-immediately, exit code 3 — see ProviderAuthError in service/verifier.js. The
-CSV (and, with --store, ToolsDB) still gets every finding computed before
-the halt; nothing already written is rolled back.
+immediately, exit code 3 — see ProviderAuthError in service/verifier.js. Any
+other unrecoverable model-call error (e.g. a 429 that exhausted retries)
+halts the same way, exit code 4. Either way the CSV (and, with --store,
+ToolsDB) still gets every finding computed before the halt; nothing already
+written is rolled back.
 `;
 
 // Stage 3 stand-in, identical to service/run-extract.js's stubFetchSource.
@@ -196,6 +246,10 @@ export async function runSweep(opts, {
         stderr.write(`sweep: --max must be a positive integer (got: ${opts.max})\n`);
         return 2;
     }
+    if (!Number.isInteger(opts.concurrency) || opts.concurrency < 1) {
+        stderr.write(`sweep: --concurrency must be a positive integer (got: ${opts.concurrency})\n`);
+        return 2;
+    }
 
     const envVar = PROVIDER_ENV_VARS[opts.provider];
     const apiKey = envVar ? env[envVar] : undefined;
@@ -245,7 +299,18 @@ export async function runSweep(opts, {
         );
     }
     const fetchSource = fetchSourceFn ?? (opts.liveSourceFetch ? liveFetchSource : stubFetchSource);
-    const callModel = makeModelCallerFn({ provider: opts.provider, apiKey, model: opts.model });
+
+    const useLlmRouter = opts.liveLlmRouter && opts.provider === 'liftwing';
+    if (opts.liveLlmRouter && opts.provider !== 'liftwing') {
+        stderr.write(`sweep: --live-llm-router only affects --provider liftwing; ignoring for "${opts.provider}"\n`);
+    }
+    if (useLlmRouter) {
+        stderr.write(`sweep: routing liftwing via ${TOOLFORGE_LLM_ROUTER_BASE}\n`);
+    }
+    const callModel = makeModelCallerFn({
+        provider: opts.provider, apiKey, model: opts.model,
+        ...(useLlmRouter ? { workerBase: TOOLFORGE_LLM_ROUTER_BASE } : {}),
+    });
 
     const findings = [];
     // citationsSeen -> withUrl -> fetched -> verified -> flagged -> published
@@ -285,13 +350,95 @@ export async function runSweep(opts, {
     const realLog = console.log;
     console.log = () => {};
 
-    let haltCode = null;
-    try {
-        // One shared source cache across the whole sweep, not per article —
-        // the same reason service/claim-extractor.js's own header gives:
-        // "one source is often cited across many articles."
-        outer:
-        for await (const article of runBatch(candidates, { parseHtml, fetchArticle, fetchSource })) {
+    // Producer/pool split: a single producer coroutine drives runBatch()
+    // (fetch stays serial — out of scope here, see scripts/probe-concurrency.js
+    // for the model-call-only concurrency this measures) and yields one task
+    // per solo citation or per group; opts.concurrency worker coroutines pull
+    // from that *same* async generator concurrently. Multiple concurrent
+    // `for await` consumers over one shared async generator is a real,
+    // verified pattern (each .next() call queues and resolves with the next
+    // distinct value, in call order) — not a hand-rolled queue class, just
+    // this file relying on that generator semantics.
+    //
+    // `halted` is checked by the producer between articles (so a fatal error
+    // stops further fetching, not just further verifying — the property the
+    // old fully-serial loop had for free) and by each worker before acting on
+    // a pulled task (so tasks already queued up from an already-fetched
+    // article are drained without dispatching new model calls, rather than
+    // processed). Tasks already in flight when halted flips are allowed to
+    // finish and record normally — halting stops new dispatch, not work
+    // already committed to the network.
+    let halted = false;
+    let haltError = null;
+
+    // Answers "is fetch or verify the bottleneck" without guessing. `fetchMs`
+    // is true wall-clock time (the producer is the only thing calling
+    // articles.next(), so these deltas never overlap with each other — they
+    // DO overlap with worker time, since fetch(article N+1) and verify
+    // (article N's citations) run concurrently by design, so fetchMs isn't
+    // simply subtractable from the run's total wall-clock; it's a real lower
+    // bound on how much serial fetch cost this run paid, comparable directly
+    // against the total). `verifyMs`/`verifyCalls` are summed across
+    // opts.concurrency workers running in parallel — a sum of durations, not
+    // wall-clock — so `verifyMs / verifyCalls` is a genuine average per-call
+    // latency, but `verifyMs` itself is not a wall-clock figure (divide by
+    // concurrency for a rough wall-clock estimate). Includes short-circuited
+    // SOURCE UNAVAILABLE citations and skipped groups, which return near
+    // instantly — noted where this prints, not filtered out, to keep this
+    // one pass over every task instead of two.
+    const timing = { fetchMs: 0, verifyMs: 0, verifyCalls: 0, verifyMinMs: Infinity, verifyMaxMs: 0 };
+
+    // withRetry() (core/retry.js) already exposes onAttemptFailed for
+    // exactly this — verifyCitation()/verifyGroup() already pass their
+    // `retry` option straight through to it, so no changes were needed
+    // there. Without this, a call that silently retried once or twice
+    // before succeeding (a transient 429/5xx, or a temporary connection
+    // blip now that core/retry.js retries those — see the "fetch failed"
+    // fix) is indistinguishable from a call that was just genuinely slow:
+    // both show up as one big number in `timing.verifyMs`. This answers
+    // that directly: `backoffMs` is real sleep time paid waiting to retry,
+    // separable from `verifyMs` to see how much of a slow average is
+    // retry backoff versus actual model latency.
+    const retryStats = { failedAttempts: 0, backoffMs: 0, callsRetried: 0 };
+
+    // Called once per verifyCitation()/verifyGroup() call; returns the
+    // onAttemptFailed handler to pass as that call's `retry` option, plus a
+    // finish() to call after the call settles (success or throw) that folds
+    // any retries observed into retryStats exactly once per call, not once
+    // per attempt.
+    function trackRetries() {
+        let retried = false;
+        const onAttemptFailed = ({ backoff }) => {
+            retryStats.failedAttempts++;
+            retryStats.backoffMs += backoff;
+            retried = true;
+        };
+        return { onAttemptFailed, finish: () => { if (retried) retryStats.callsRetried++; } };
+    }
+
+    function recordVerifyDuration(startedAt) {
+        const ms = Date.now() - startedAt;
+        timing.verifyMs += ms;
+        timing.verifyCalls++;
+        if (ms < timing.verifyMinMs) timing.verifyMinMs = ms;
+        if (ms > timing.verifyMaxMs) timing.verifyMaxMs = ms;
+    }
+
+    async function* generateTasks() {
+        // Deliberately not `for await (const article of runBatch(...))`:
+        // for-await-of fetches the *next* value before running the loop
+        // body, so a halted check inside the body would let one extra
+        // article's worth of fetching slip through after halting before it
+        // took effect. Driving runBatch's iterator by hand puts the check
+        // before each fetch instead of after.
+        const articles = runBatch(candidates, { parseHtml, fetchArticle, fetchSource });
+        while (true) {
+            if (halted) return;
+            const fetchStartedAt = Date.now();
+            const { value: article, done } = await articles.next();
+            timing.fetchMs += Date.now() - fetchStartedAt;
+            if (done) return;
+
             funnel.articles++;
             if (article.outcome !== ARTICLE_OUTCOMES.OK) {
                 funnel.articlesFailed++;
@@ -305,46 +452,82 @@ export async function runSweep(opts, {
                 funnel.citationsSeen++;
                 if (citation.url) funnel.citationsWithUrl++;
                 if (citation.source?.content) funnel.citationsFetched++;
+                yield { kind: 'solo', wikiCandidate, citation };
+            }
+            for (const members of groups) {
+                yield { kind: 'group', wikiCandidate, members };
+            }
+        }
+    }
 
+    async function worker(tasks) {
+        for await (const task of tasks) {
+            if (halted) continue; // drain without dispatching new model calls
+
+            if (task.kind === 'solo') {
                 let verification;
+                const verifyStartedAt = Date.now();
+                const { onAttemptFailed, finish } = trackRetries();
                 try {
-                    verification = await verifyCitation(citation.claimText, citation.source, { callModel });
+                    verification = await verifyCitation(task.citation.claimText, task.citation.source, { callModel, retry: { onAttemptFailed } });
                 } catch (error) {
-                    if (error instanceof ProviderAuthError) { haltCode = describeHalt(stderr, opts.provider, error, findings.length); break outer; }
-                    throw error;
+                    recordVerifyDuration(verifyStartedAt);
+                    finish();
+                    if (!halted) { halted = true; haltError = error; }
+                    continue;
                 }
+                recordVerifyDuration(verifyStartedAt);
+                finish();
                 if (verification.usage) { funnel.verified++; await sleep(opts.delayMs); }
                 if (recordVerdict(verification.verdict)) funnel.flagged++;
 
                 await record(assembleFinding({
-                    candidate: wikiCandidate, citation, verification,
+                    candidate: task.wikiCandidate, citation: task.citation, verification,
                     provider: opts.provider, model: opts.model, promptVersion: PROMPT_VERSION,
                 }));
-            }
-
-            for (const members of groups) {
+            } else {
                 let verification;
+                const verifyStartedAt = Date.now();
+                const { onAttemptFailed, finish } = trackRetries();
                 try {
-                    verification = await verifyGroup(members, { callModel });
+                    verification = await verifyGroup(task.members, { callModel, retry: { onAttemptFailed } });
                 } catch (error) {
-                    if (error instanceof ProviderAuthError) { haltCode = describeHalt(stderr, opts.provider, error, findings.length); break outer; }
-                    throw error;
+                    recordVerifyDuration(verifyStartedAt);
+                    finish();
+                    if (!halted) { halted = true; haltError = error; }
+                    continue;
                 }
+                recordVerifyDuration(verifyStartedAt);
+                finish();
                 funnel.groupsChecked++;
                 if (verification.skipped) { funnel.groupsSkipped++; continue; }
                 if (verification.usage) await sleep(opts.delayMs);
                 if (recordVerdict(verification.verdict)) funnel.groupsFlagged++;
 
                 await record(assembleGroupFinding({
-                    candidate: wikiCandidate, members, verification,
+                    candidate: task.wikiCandidate, members: task.members, verification,
                     provider: opts.provider, model: opts.model, promptVersion: PROMPT_VERSION,
                 }));
             }
         }
+    }
+
+    try {
+        // One shared source cache across the whole sweep, not per article —
+        // the same reason service/claim-extractor.js's own header gives:
+        // "one source is often cited across many articles."
+        const tasks = generateTasks();
+        await Promise.all(Array.from({ length: opts.concurrency }, () => worker(tasks)));
     } finally {
         console.log = realLog;
         if (toolsDbConnection) await toolsDbConnection.end();
     }
+
+    // Computed after every worker has drained, not at the moment haltError
+    // was set — other workers may have finished and recorded findings
+    // concurrently between the failure and the pool actually stopping, so
+    // findings.length here is the true final count, not a lower bound.
+    const haltCode = haltError ? describeHalt(stderr, opts.provider, haltError, findings.length) : null;
 
     await writeCsvReportFn(findings, opts.out);
     stderr.write(
@@ -357,16 +540,50 @@ export async function runSweep(opts, {
         `sweep: verdicts: ${JSON.stringify(verdictCounts)}\n` +
         `sweep: wrote ${findings.length} finding(s) to ${opts.out}${toolsDbQuery ? ' and ToolsDB' : ''}.\n`
     );
+    stderr.write(
+        `sweep: timing — fetch (serial, wall-clock): ${(timing.fetchMs / 1000).toFixed(3)}s. ` +
+        `verify: ${timing.verifyCalls} call(s), ${(timing.verifyMs / 1000).toFixed(3)}s summed across ` +
+        `${opts.concurrency} concurrent worker(s) (~${timing.verifyCalls ? (timing.verifyMs / timing.verifyCalls).toFixed(0) : 0}ms/call avg, ` +
+        `min ${timing.verifyCalls ? timing.verifyMinMs : 0}ms, max ${timing.verifyMaxMs}ms; ` +
+        `includes near-instant short-circuited/skipped tasks, which pull the average and min down). ` +
+        `fetch and verify run concurrently in this pipeline (fetch(article N+1) overlaps verify(article N)), so ` +
+        `these two numbers don't simply add up to the total wall-clock time — compare fetch's figure against the ` +
+        `total run time (e.g. from the shell's own \`time\`) to see how much of it fetch alone accounts for.\n`
+    );
+    stderr.write(
+        `sweep: retries — ${retryStats.failedAttempts} failed attempt(s) across ${retryStats.callsRetried} call(s) ` +
+        `retried at least once, ${(retryStats.backoffMs / 1000).toFixed(3)}s spent sleeping in backoff. This time is ` +
+        `already included in the verify total above — a high number here means a slow verify average may be ` +
+        `mostly retry backoff, not model latency.\n`
+    );
 
     return haltCode ?? 0;
 }
 
+// Halts on ANY error verifyCitation()/verifyGroup() throws, not just
+// ProviderAuthError. A retry-exhausted 429/5xx (the case that matters at
+// 1000-article scale) is just as unrecoverable *for this run* as an
+// auth/billing error — core/retry.js already spent up to 5 attempts and a
+// ~30s backoff before this surfaced, so it is not a one-off blip worth
+// pressing on through. Previously only ProviderAuthError was caught here and
+// everything else was rethrown uncaught, which meant a single mid-run 429
+// (observed in practice: --delay-ms 0 against Lift Wing failed on the 3rd
+// citation) crashed the process *before* the CSV write at the bottom of
+// runSweep() ran, silently discarding every finding computed so far — the
+// opposite of what the halt path is for.
 function describeHalt(stderr, provider, error, writtenSoFar) {
+    if (error instanceof ProviderAuthError) {
+        stderr.write(
+            `sweep: halting — ${provider} returned an auth/billing error (${error.status ?? '?'}): ${error.message}\n` +
+            `sweep: ${writtenSoFar} finding(s) already computed are kept and will still be written to the CSV.\n`
+        );
+        return 3;
+    }
     stderr.write(
-        `sweep: halting — ${provider} returned an auth/billing error (${error.status ?? '?'}): ${error.message}\n` +
+        `sweep: halting — unrecoverable error calling ${provider}: ${error.message}\n` +
         `sweep: ${writtenSoFar} finding(s) already computed are kept and will still be written to the CSV.\n`
     );
-    return 3;
+    return 4;
 }
 
 export async function main(argv, io = {}) {

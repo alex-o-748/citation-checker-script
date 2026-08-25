@@ -19,22 +19,30 @@ test('parseCliArgs defaults match run-replay.js\'s conventions (liftwing, no key
     assert.equal(opts.provider, 'liftwing');
     assert.equal(opts.model, 'llm-qwen36-27b');
     assert.equal(opts.delayMs, 1000);
+    assert.equal(opts.concurrency, 1);
     assert.equal(opts.liveSourceFetch, false);
+    assert.equal(opts.liveLlmRouter, false);
     assert.equal(opts.store, false);
     assert.equal(opts.out, 'findings.csv');
+});
+
+test('parseCliArgs applies --live-llm-router', () => {
+    const opts = parseCliArgs(['node', 'sweep.js', '--live-llm-router']);
+    assert.equal(opts.liveLlmRouter, true);
 });
 
 test('parseCliArgs applies overrides', () => {
     const opts = parseCliArgs([
         'node', 'sweep.js', '--criterion', 'citation-needed', '--max', '10',
         '--provider', 'claude', '--model', 'claude-opus-5', '--live-source-fetch',
-        '--store', '--out', 'out.csv',
+        '--concurrency', '8', '--store', '--out', 'out.csv',
     ]);
     assert.equal(opts.criterion, 'citation-needed');
     assert.equal(opts.max, 10);
     assert.equal(opts.provider, 'claude');
     assert.equal(opts.model, 'claude-opus-5');
     assert.equal(opts.liveSourceFetch, true);
+    assert.equal(opts.concurrency, 8);
     assert.equal(opts.store, true);
     assert.equal(opts.out, 'out.csv');
 });
@@ -76,6 +84,16 @@ function article(prose, footnotes) {
         .map(([id, html]) => `<li id="cite_note-${id}">${html}</li>`)
         .join('');
     return `<!DOCTYPE html><body>${body}<ol class="references">${list}</ol></body>`;
+}
+
+// An article with `n` independent solo citations [1]..[n], each pointing at
+// its own https://x.example/<i> — for exercising the verify-stage pool with
+// more parallel tasks than a single small article naturally has.
+function articleWithSoloCitations(n) {
+    const ids = Array.from({ length: n }, (_, i) => i + 1);
+    const prose = `<p>${ids.map(id => `Sentence ${id}.@@${id}@@`).join(' ')}</p>`;
+    const footnotes = Object.fromEntries(ids.map(id => [id, link(`https://x.example/${id}`)]));
+    return article(prose, footnotes);
 }
 
 // One solo citation [1] and one adjacent 2-member group [2][3].
@@ -122,9 +140,54 @@ const baseIo = (overrides = {}) => ({
 
 const baseOpts = (overrides = {}) => ({
     criterion: 'failed-verification', wiki: 'enwiki', max: 1,
-    provider: 'liftwing', model: 'llm-qwen36-27b', delayMs: 0,
+    provider: 'liftwing', model: 'llm-qwen36-27b', delayMs: 0, concurrency: 1,
     liveSourceFetch: false, store: false, out: 'findings.csv',
     ...overrides,
+});
+
+test('--live-llm-router routes the liftwing call through tf-llm-router instead of the Cloudflare worker default', async () => {
+    let seenConfig;
+    await runSweep(baseOpts({ liveLlmRouter: true }), baseIo({
+        makeModelCallerFn: config => {
+            seenConfig = config;
+            return async () => ({
+                text: JSON.stringify({ confidence: 90, verdict: 'SUPPORTED', source_quote: '', comments: 'ok' }),
+                usage: { input: 10, output: 5 },
+            });
+        },
+    }));
+    assert.equal(seenConfig.workerBase, 'https://llm-router.toolforge.org');
+});
+
+test('--live-llm-router is ignored (with a warning) for a provider other than liftwing', async () => {
+    let seenConfig;
+    const stderrChunks = [];
+    await runSweep(baseOpts({ liveLlmRouter: true, provider: 'publicai', model: 'aisingapore/Qwen-SEA-LION-v4-32B-IT' }), baseIo({
+        makeModelCallerFn: config => {
+            seenConfig = config;
+            return async () => ({
+                text: JSON.stringify({ confidence: 90, verdict: 'SUPPORTED', source_quote: '', comments: 'ok' }),
+                usage: { input: 10, output: 5 },
+            });
+        },
+        stderr: { write: s => stderrChunks.push(s) },
+    }));
+    assert.equal(seenConfig.workerBase, undefined);
+    assert.match(stderrChunks.join(''), /only affects --provider liftwing/);
+});
+
+test('without --live-llm-router, liftwing gets no workerBase override (defaults to the Cloudflare worker in core/providers.js)', async () => {
+    let seenConfig;
+    await runSweep(baseOpts(), baseIo({
+        makeModelCallerFn: config => {
+            seenConfig = config;
+            return async () => ({
+                text: JSON.stringify({ confidence: 90, verdict: 'SUPPORTED', source_quote: '', comments: 'ok' }),
+                usage: { input: 10, output: 5 },
+            });
+        },
+    }));
+    assert.equal(seenConfig.workerBase, undefined);
 });
 
 test('a full sweep writes one finding per solo citation plus one per completed group', async () => {
@@ -205,6 +268,16 @@ test('a non-positive-integer --max is rejected before any connection is made', a
     assert.equal(connected, false);
 });
 
+test('a non-positive-integer --concurrency is rejected before any connection is made', async () => {
+    let connected = false;
+    const code = await runSweep(
+        baseOpts({ concurrency: 0 }),
+        baseIo({ connectReplicas: async () => { connected = true; return fakeReplicaConnection([]); } })
+    );
+    assert.equal(code, 2);
+    assert.equal(connected, false);
+});
+
 test('a Wiki Replicas connection failure is a fatal error', async () => {
     const code = await runSweep(baseOpts(), baseIo({
         connectReplicas: async () => { throw new Error('ECONNREFUSED'); },
@@ -231,6 +304,134 @@ test('a ProviderAuthError halts the sweep and still writes the CSV with what was
     assert.match(stderrChunks.join(''), /halting/);
 });
 
+test('a non-auth, non-retryable error also halts and still writes the CSV, at exit code 4', async () => {
+    // A message that does not match core/retry.js's RETRYABLE_STATUS /
+    // RETRYABLE_NETWORK patterns, so it throws on the first attempt with no
+    // backoff delay — this test is about the runner's halt behavior, not
+    // withRetry's (covered separately by tests/retry.test.js). A retryable
+    // 429 reaches this same catch block after withRetry exhausts its
+    // attempts; the halt path doesn't care which kind of error it was.
+    let attempts = 0;
+    let written;
+    const stderrChunks = [];
+    const code = await runSweep(baseOpts(), baseIo({
+        makeModelCallerFn: () => async () => {
+            attempts++;
+            throw new Error('Lift Wing: unexpected response shape');
+        },
+        writeCsvReportFn: async findings => { written = findings; },
+        stderr: { write: s => stderrChunks.push(s) },
+    }));
+
+    assert.equal(code, 4);
+    assert.equal(attempts, 1, 'the sweep stops at the first unrecoverable error');
+    assert.deepEqual(written, [], 'nothing was computed before the halt, so the CSV is written empty, not skipped');
+    assert.match(stderrChunks.join(''), /halting/);
+});
+
+function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+test('--concurrency N actually runs up to N model calls at once, not more', async () => {
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const code = await runSweep(baseOpts({ concurrency: 3 }), baseIo({
+        fetchArticle: async () => ({ html: articleWithSoloCitations(6), status: 200, error: null }),
+        makeModelCallerFn: () => async () => {
+            inFlight++;
+            maxInFlight = Math.max(maxInFlight, inFlight);
+            await sleep(15);
+            inFlight--;
+            return {
+                text: JSON.stringify({ confidence: 90, verdict: 'SUPPORTED', source_quote: '', comments: 'ok' }),
+                usage: { input: 10, output: 5 },
+            };
+        },
+    }));
+
+    assert.equal(code, 0);
+    assert.equal(maxInFlight, 3, 'exactly the configured concurrency should overlap, not 1 (serial) or 6 (unbounded)');
+});
+
+test('a context-length-exceeded failure records an ERROR finding and does NOT halt the sweep', async () => {
+    let written;
+    const code = await runSweep(baseOpts({ concurrency: 1 }), baseIo({
+        fetchArticle: async () => ({ html: articleWithSoloCitations(3), status: 200, error: null }),
+        makeModelCallerFn: () => async (systemPrompt, userContent) => {
+            // Only the 2nd citation's source is "too big" — the other two
+            // should still succeed normally, proving the run kept going
+            // rather than halting on the one bad citation.
+            if (userContent.includes('https://x.example/2')) {
+                throw new Error(
+                    'Lift Wing API request failed (500): VLLMValidationError: maximum context length is 32768 tokens'
+                );
+            }
+            return {
+                text: JSON.stringify({ confidence: 90, verdict: 'SUPPORTED', source_quote: '', comments: 'ok' }),
+                usage: { input: 10, output: 5 },
+            };
+        },
+        writeCsvReportFn: async findings => { written = findings; },
+    }));
+
+    assert.equal(code, 0, 'a context-length failure must not halt the sweep the way an unrecognized error does');
+    assert.equal(written.length, 3, 'all 3 citations got a recorded finding, including the errored one');
+    const verdicts = written.map(f => f.verdict).sort();
+    assert.deepEqual(verdicts, ['ERROR', 'SUPPORTED', 'SUPPORTED']);
+});
+
+test('halting stops new dispatch but keeps findings already in flight when the halt was detected', async () => {
+    let attempts = 0;
+    let written;
+    const code = await runSweep(baseOpts({ concurrency: 2 }), baseIo({
+        fetchArticle: async () => ({ html: articleWithSoloCitations(6), status: 200, error: null }),
+        makeModelCallerFn: () => async (systemPrompt, userContent) => {
+            attempts++;
+            // The 2nd citation fails immediately (no delay); the other 5
+            // would succeed after a delay long enough that the immediate
+            // failure is guaranteed to set `halted` well before any of them
+            // resolve, so this deterministically exercises "in-flight work
+            // present when halted flips still gets recorded."
+            if (userContent.includes('https://x.example/2')) {
+                throw new Error('Lift Wing: unexpected response shape');
+            }
+            await sleep(15);
+            return {
+                text: JSON.stringify({ confidence: 90, verdict: 'SUPPORTED', source_quote: '', comments: 'ok' }),
+                usage: { input: 10, output: 5 },
+            };
+        },
+        writeCsvReportFn: async findings => { written = findings; },
+    }));
+
+    assert.equal(code, 4);
+    assert.ok(attempts < 6, `expected new dispatch to stop after halting, got ${attempts} attempts out of 6 possible`);
+    assert.equal(written.length, 1, 'only the one call already in flight when the halt was detected should have completed and been recorded');
+});
+
+test('halting stops the producer from fetching further articles, not just further verifying', async () => {
+    const candidates = [
+        { pageId: 1, pageTitle: 'A', revisionId: 1 },
+        { pageId: 2, pageTitle: 'B', revisionId: 2 },
+        { pageId: 3, pageTitle: 'C', revisionId: 3 },
+    ];
+    let fetchCount = 0;
+    const code = await runSweep(baseOpts({ max: 3, concurrency: 1 }), baseIo({
+        connectReplicas: async () => fakeReplicaConnection(candidates),
+        fetchArticle: async () => {
+            fetchCount++;
+            return { html: articleWithSoloCitations(1), status: 200, error: null };
+        },
+        makeModelCallerFn: () => async () => {
+            throw new Error('Lift Wing: unexpected response shape');
+        },
+    }));
+
+    assert.equal(code, 4);
+    assert.equal(fetchCount, 1, 'article B and C should never be fetched once article A\'s only citation halted the run');
+});
+
 test('a ProviderAuthError still closes an open ToolsDB connection', async () => {
     const conn = fakeToolsDbConnection();
     const code = await runSweep(baseOpts({ store: true }), baseIo({
@@ -249,6 +450,65 @@ test('an article that fails to fetch is counted but contributes no citations', a
     }));
     assert.equal(code, 0);
     assert.deepEqual(written, []);
+});
+
+test('the timing summary reports real fetch and verify durations, not zeros', async () => {
+    const stderrChunks = [];
+    const code = await runSweep(baseOpts({ concurrency: 1 }), baseIo({
+        fetchArticle: async () => {
+            await sleep(30);
+            return { html: articleWithSoloCitations(2), status: 200, error: null };
+        },
+        makeModelCallerFn: () => async () => {
+            await sleep(20);
+            return {
+                text: JSON.stringify({ confidence: 90, verdict: 'SUPPORTED', source_quote: '', comments: 'ok' }),
+                usage: { input: 10, output: 5 },
+            };
+        },
+        stderr: { write: s => stderrChunks.push(s) },
+    }));
+    assert.equal(code, 0);
+
+    const output = stderrChunks.join('');
+    const timingLine = output.match(/sweep: timing — fetch \(serial, wall-clock\): ([\d.]+)s\. verify: (\d+) call\(s\), ([\d.]+)s/);
+    assert.ok(timingLine, `expected a timing summary line, got:\n${output}`);
+
+    const [, fetchSec, verifyCalls, verifySec] = timingLine;
+    assert.ok(Number(fetchSec) >= 0.025, `fetch should reflect the ~30ms artificial delay, got ${fetchSec}s`);
+    assert.equal(Number(verifyCalls), 2, 'both solo citations should have gone through a verify call');
+    assert.ok(Number(verifySec) >= 0.035, `2 calls at ~20ms each should sum to at least ~40ms, got ${verifySec}s`);
+});
+
+test('the retries summary reports backoff time separately from verify time, distinguishing it from genuine model latency', async () => {
+    let attempts = 0;
+    const stderrChunks = [];
+    const code = await runSweep(baseOpts({ concurrency: 1 }), baseIo({
+        fetchArticle: async () => ({ html: articleWithSoloCitations(1), status: 200, error: null }),
+        makeModelCallerFn: () => async () => {
+            attempts++;
+            if (attempts === 1) throw new Error('Lift Wing API request failed (503): temporarily unavailable');
+            return {
+                text: JSON.stringify({ confidence: 90, verdict: 'SUPPORTED', source_quote: '', comments: 'ok' }),
+                usage: { input: 10, output: 5 },
+            };
+        },
+        stderr: { write: s => stderrChunks.push(s) },
+    }));
+    assert.equal(code, 0);
+    assert.equal(attempts, 2, 'the transient 503 should have been retried once, then succeeded');
+
+    const output = stderrChunks.join('');
+    const retriesLine = output.match(/sweep: retries — (\d+) failed attempt\(s\) across (\d+) call\(s\) retried at least once, ([\d.]+)s spent sleeping in backoff/);
+    assert.ok(retriesLine, `expected a retries summary line, got:\n${output}`);
+
+    const [, failedAttempts, callsRetried, backoffSec] = retriesLine;
+    assert.equal(Number(failedAttempts), 1);
+    assert.equal(Number(callsRetried), 1);
+    // core/retry.js's default minBackoffMs is 1000 — the one retry here pays
+    // at least that much in real backoff, which should now be visible as its
+    // own number rather than hidden inside a generic "verify was slow".
+    assert.ok(Number(backoffSec) >= 1.0, `expected at least ~1s of real backoff, got ${backoffSec}s`);
 });
 
 test('--help prints usage and exits 0 without connecting to anything', async () => {
