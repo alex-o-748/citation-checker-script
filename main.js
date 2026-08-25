@@ -1,6 +1,6 @@
-// {{Wikipedia:USync |repo=https://github.com/alex-o-748/citation-checker-script |ref=refs/heads/main|path=main.js}}
+// {{Wikipedia:USync |repo=https://github.com/alex-o-748/citation-checker-script |ref=refs/heads/dev|path=main.js}}
 //Inspired by User:Polygnotus/Scripts/AI_Source_Verification.js
-//Inspired by User:Phlsph7/SourceVerificationAIAssistant.js        
+//Inspired by User:Phlsph7/SourceVerificationAIAssistant.js         
 
 (function() {
     'use strict';
@@ -999,7 +999,25 @@ function getCitationGroup(refElement) {
     return refsInContainer.slice(start, end + 1);
 }
 
-function extractClaimText(refElement) {
+// Splits on a sentence-ending mark followed by whitespace and what looks like
+// the start of a new sentence, then returns the last piece. Deliberately
+// naive about abbreviations ("Dr. Smith", "U.S. policy") — for this use
+// (finding where the final sentence of a claim begins), under-splitting an
+// abbreviation into the same sentence is the safer failure than over-
+// splitting mid-abbreviation and truncating the real claim.
+const SENTENCE_SPLIT_RE = /(?<=[.!?])\s+(?=[A-Z0-9"'(À-Ü])/;
+
+// Returns just the final sentence of `text` — the sentence immediately
+// preceding wherever `text` ends. Used for the batch pipeline's stricter
+// claim scope (see extractClaimText's `scope` option); returns the whole
+// string unchanged if no sentence boundary is found.
+function lastSentence(text) {
+    if (!text) return text;
+    const parts = text.split(SENTENCE_SPLIT_RE);
+    return parts[parts.length - 1].trim();
+}
+
+function extractClaimText(refElement, { scope = 'paragraph' } = {}) {
     const document = refElement.ownerDocument;
     const container = refElement.closest('p, li, td, div, section');
     if (!container) {
@@ -1073,6 +1091,13 @@ function extractClaimText(refElement) {
             .trim();
     }
 
+    // Applied last, after the paragraph-scope text is settled (including its
+    // own too-short fallback above) — narrowing to the final sentence is a
+    // separate concern from finding the claim's boundary in the first place.
+    if (scope === 'sentence') {
+        claimText = lastSentence(claimText);
+    }
+
     return claimText;
 }
 
@@ -1132,7 +1157,7 @@ function refNameFromNoteId(refId) {
     return match ? match[1] : null;
 }
 
-function collectCitations(root, { minClaimLength = MIN_CLAIM_LENGTH } = {}) {
+function collectCitations(root, { minClaimLength = MIN_CLAIM_LENGTH, claimScope = 'paragraph' } = {}) {
     if (!root) return [];
     // A Document has no ownerDocument; an Element does. Either can be the root.
     const doc = root.ownerDocument || root;
@@ -1142,7 +1167,7 @@ function collectCitations(root, { minClaimLength = MIN_CLAIM_LENGTH } = {}) {
         const refId = refIdFromHref(refElement.getAttribute('href'));
         if (!refId) continue;
 
-        const claimText = extractClaimText(refElement);
+        const claimText = extractClaimText(refElement, { scope: claimScope });
         if (!claimText || claimText.length < minClaimLength) continue;
 
         citations.push({
@@ -2266,6 +2291,11 @@ function useToolforgeSourceFetcher() {
         'API key required for {name}': 'Clé API requise pour {name}',
         'Results are logged for research. Your username is not recorded.':
             'Les résultats sont enregistrés à des fins de recherche. Votre nom d’utilisateur n’est pas enregistré.',
+        'Claim scope': 'Portée de l’affirmation',
+        'Full claim': 'Affirmation complète',
+        'Last sentence only': 'Dernière phrase uniquement',
+        '"Last sentence only" avoids flagging a multi-sentence claim as unsupported just because an earlier sentence lacks a citation.':
+            '« Dernière phrase uniquement » évite de signaler une affirmation de plusieurs phrases comme non étayée simplement parce qu’une phrase précédente manque de source.',
 
         // Verifier tab + first-run notification
         'Verify': 'Vérifier',
@@ -2555,6 +2585,11 @@ function useToolforgeSourceFetcher() {
         'API key required for {name}': 'Se necesita una clave API para {name}',
         'Results are logged for research. Your username is not recorded.':
             'Los resultados se registran con fines de investigación. El nombre de usuario no se registra.',
+        'Claim scope': 'Alcance de la afirmación',
+        'Full claim': 'Afirmación completa',
+        'Last sentence only': 'Solo la última frase',
+        '"Last sentence only" avoids flagging a multi-sentence claim as unsupported just because an earlier sentence lacks a citation.':
+            'Con «Solo la última frase» se evita marcar como no respaldada una afirmación de varias frases solo porque a una frase anterior le falta una fuente.',
 
         // Verifier tab + first-run notification
         'Verify': 'Verificar',
@@ -2880,6 +2915,14 @@ function useToolforgeSourceFetcher() {
                 localStorage.setItem('source_verifier_provider', 'huggingface');
             }
             this.currentProvider = storedProvider || 'huggingface';
+            // 'paragraph' (default) is the full "between citations" span, which
+            // can include multiple sentences — same scope the batch pipeline
+            // used before it moved to 'sentence' by default (see CLAUDE.md).
+            // Exposed here for the same reason: a multi-sentence claim can flag
+            // NOT SUPPORTED because only its first sentence lacks a citation,
+            // and 'sentence' narrows to just the sentence next to the ref.
+            const storedClaimScope = localStorage.getItem('verifier_claim_scope');
+            this.claimScope = storedClaimScope === 'sentence' ? 'sentence' : 'paragraph';
             this.sidebarWidth = localStorage.getItem('verifier_sidebar_width') || '400px';
             this.isVisible = localStorage.getItem('verifier_sidebar_visible') === 'true';
             this.buttons = {};
@@ -3008,6 +3051,9 @@ function useToolforgeSourceFetcher() {
                         <div id="verifier-provider-container"></div>
                         <div id="verifier-provider-info"></div>
                         <div id="verifier-key-buttons"></div>
+                        <div id="verifier-claim-scope-label">${this.t('Claim scope')}</div>
+                        <div id="verifier-claim-scope-container"></div>
+                        <div id="verifier-claim-scope-note">${this.t('"Last sentence only" avoids flagging a multi-sentence claim as unsupported just because an earlier sentence lacks a citation.')}</div>
                         <div id="verifier-accuracy-note"></div>
                         <div id="verifier-privacy-note">${this.t('Results are logged for research. Your username is not recorded.')}</div>
                         <div id="verifier-settings-done-container"></div>
@@ -3668,6 +3714,20 @@ function useToolforgeSourceFetcher() {
                 #verifier-provider-info.free-provider a {
                     color: inherit;
                     text-decoration: underline;
+                }
+                #verifier-claim-scope-label {
+                    font-size: 12px;
+                    font-weight: bold;
+                    color: var(--sv-ink-4);
+                    margin-bottom: 4px;
+                }
+                #verifier-claim-scope-container {
+                    margin-bottom: 6px;
+                }
+                #verifier-claim-scope-note {
+                    font-size: 12px;
+                    color: var(--sv-ink-4);
+                    margin-bottom: 10px;
                 }
                 #verifier-buttons-container {
                     display: flex;
@@ -4450,7 +4510,18 @@ function useToolforgeSourceFetcher() {
                 }
             });
             this.buttons.providerSelect.getMenu().selectItemByData(this.currentProvider);
-            
+
+            // Claim scope selector
+            this.buttons.claimScopeSelect = new OO.ui.DropdownWidget({
+                menu: {
+                    items: [
+                        new OO.ui.MenuOptionWidget({ data: 'paragraph', label: this.t('Full claim') }),
+                        new OO.ui.MenuOptionWidget({ data: 'sentence', label: this.t('Last sentence only') })
+                    ]
+                }
+            });
+            this.buttons.claimScopeSelect.getMenu().selectItemByData(this.claimScope);
+
             this.buttons.setKey = new OO.ui.ButtonWidget({
                 label: this.t('Set API Key'),
                 flags: ['primary', 'progressive'],
@@ -4529,6 +4600,7 @@ function useToolforgeSourceFetcher() {
             document.getElementById('verifier-close-btn-container').appendChild(this.buttons.close.$element[0]);
             document.getElementById('verifier-settings-btn-container').appendChild(this.buttons.settings.$element[0]);
             document.getElementById('verifier-provider-container').appendChild(this.buttons.providerSelect.$element[0]);
+            document.getElementById('verifier-claim-scope-container').appendChild(this.buttons.claimScopeSelect.$element[0]);
             document.getElementById('verifier-settings-done-container').appendChild(this.buttons.settingsDone.$element[0]);
 
             this.updateProviderInfo();
@@ -5015,7 +5087,7 @@ function useToolforgeSourceFetcher() {
         }
 
         extractClaimText(refElement) {
-            return extractClaimText(refElement);
+            return extractClaimText(refElement, { scope: this.claimScope });
         }
 
         getCitationGroup(refElement) {
@@ -5163,7 +5235,12 @@ function useToolforgeSourceFetcher() {
                 this.updateTheme();
                 this.updateStatus(this.t('Switched to {name}', { name: this.providers[this.currentProvider].name }));
             });
-            
+
+            this.buttons.claimScopeSelect.getMenu().on('select', (item) => {
+                this.claimScope = item.getData();
+                localStorage.setItem('verifier_claim_scope', this.claimScope);
+            });
+
             this.buttons.setKey.on('click', () => {
                 this.setApiKey();
             });
@@ -5607,7 +5684,7 @@ function useToolforgeSourceFetcher() {
             // Footnote backlinks use .mw-cite-backlink, not .reference, so no
             // dedup is needed. The batch runner passes a Parsoid document as the
             // root instead; see core/citations.js.
-            return collectCitations(document.getElementById('mw-content-text'));
+            return collectCitations(document.getElementById('mw-content-text'), { claimScope: this.claimScope });
         }
 
         attachGroupMetadata(citations) {

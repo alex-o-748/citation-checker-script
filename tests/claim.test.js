@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
-import { extractClaimText, getCitationGroup, MAINTENANCE_MARKER_RE } from '../core/claim.js';
+import { extractClaimText, getCitationGroup, lastSentence, MAINTENANCE_MARKER_RE } from '../core/claim.js';
 
 function mkDoc(html) {
   return new JSDOM(`<!DOCTYPE html><body>${html}</body>`).window.document;
@@ -89,6 +89,35 @@ test('extractClaimText returns the same claim for every citation in a [1][2][3] 
   assert.equal(claim1, claim2);
   assert.equal(claim2, claim3);
   assert.ok(claim1.includes('boiling point of water is 100 degrees Celsius'));
+});
+
+test('lastSentence returns the final sentence of a multi-sentence claim', () => {
+  const text = 'Water boils at 100 degrees Celsius. It freezes at 0 degrees Celsius.';
+  assert.equal(lastSentence(text), 'It freezes at 0 degrees Celsius.');
+});
+
+test('lastSentence returns the whole string when it is a single sentence', () => {
+  const text = 'Water boils at 100 degrees Celsius.';
+  assert.equal(lastSentence(text), text);
+});
+
+test('extractClaimText with scope "sentence" narrows a two-sentence claim to the last sentence', () => {
+  const doc = mkDoc(`
+    <p>Paris is the capital of France. It is on the Seine.<sup id="cite_ref-1" class="reference"><a href="#cite_note-1">[1]</a></sup></p>
+  `);
+  const ref = doc.getElementById('cite_ref-1');
+  const fullClaim = extractClaimText(ref);
+  const sentenceClaim = extractClaimText(ref, { scope: 'sentence' });
+  assert.ok(fullClaim.includes('Paris is the capital of France'), `full-scope claim lost the first sentence: ${fullClaim}`);
+  assert.equal(sentenceClaim, 'It is on the Seine.');
+});
+
+test('extractClaimText with scope "sentence" returns the same text as default scope for a single-sentence claim', () => {
+  const doc = mkDoc(`
+    <p>The boiling point of water is 100 degrees Celsius.<sup id="cite_ref-1" class="reference"><a href="#cite_note-1">[1]</a></sup></p>
+  `);
+  const ref = doc.getElementById('cite_ref-1');
+  assert.equal(extractClaimText(ref, { scope: 'sentence' }), extractClaimText(ref));
 });
 
 test('getCitationGroup returns all three refs for a [1][2][3] run regardless of which is passed', () => {
