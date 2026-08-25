@@ -480,6 +480,37 @@ test('the timing summary reports real fetch and verify durations, not zeros', as
     assert.ok(Number(verifySec) >= 0.035, `2 calls at ~20ms each should sum to at least ~40ms, got ${verifySec}s`);
 });
 
+test('the retries summary reports backoff time separately from verify time, distinguishing it from genuine model latency', async () => {
+    let attempts = 0;
+    const stderrChunks = [];
+    const code = await runSweep(baseOpts({ concurrency: 1 }), baseIo({
+        fetchArticle: async () => ({ html: articleWithSoloCitations(1), status: 200, error: null }),
+        makeModelCallerFn: () => async () => {
+            attempts++;
+            if (attempts === 1) throw new Error('Lift Wing API request failed (503): temporarily unavailable');
+            return {
+                text: JSON.stringify({ confidence: 90, verdict: 'SUPPORTED', source_quote: '', comments: 'ok' }),
+                usage: { input: 10, output: 5 },
+            };
+        },
+        stderr: { write: s => stderrChunks.push(s) },
+    }));
+    assert.equal(code, 0);
+    assert.equal(attempts, 2, 'the transient 503 should have been retried once, then succeeded');
+
+    const output = stderrChunks.join('');
+    const retriesLine = output.match(/sweep: retries — (\d+) failed attempt\(s\) across (\d+) call\(s\) retried at least once, ([\d.]+)s spent sleeping in backoff/);
+    assert.ok(retriesLine, `expected a retries summary line, got:\n${output}`);
+
+    const [, failedAttempts, callsRetried, backoffSec] = retriesLine;
+    assert.equal(Number(failedAttempts), 1);
+    assert.equal(Number(callsRetried), 1);
+    // core/retry.js's default minBackoffMs is 1000 — the one retry here pays
+    // at least that much in real backoff, which should now be visible as its
+    // own number rather than hidden inside a generic "verify was slow".
+    assert.ok(Number(backoffSec) >= 1.0, `expected at least ~1s of real backoff, got ${backoffSec}s`);
+});
+
 test('--help prints usage and exits 0 without connecting to anything', async () => {
     const stdout = { chunks: [], write(s) { this.chunks.push(s); } };
     const code = await main(['node', 'sweep.js', '--help'], { stdout });

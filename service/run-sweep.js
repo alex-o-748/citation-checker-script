@@ -386,7 +386,43 @@ export async function runSweep(opts, {
     // SOURCE UNAVAILABLE citations and skipped groups, which return near
     // instantly — noted where this prints, not filtered out, to keep this
     // one pass over every task instead of two.
-    const timing = { fetchMs: 0, verifyMs: 0, verifyCalls: 0 };
+    const timing = { fetchMs: 0, verifyMs: 0, verifyCalls: 0, verifyMinMs: Infinity, verifyMaxMs: 0 };
+
+    // withRetry() (core/retry.js) already exposes onAttemptFailed for
+    // exactly this — verifyCitation()/verifyGroup() already pass their
+    // `retry` option straight through to it, so no changes were needed
+    // there. Without this, a call that silently retried once or twice
+    // before succeeding (a transient 429/5xx, or a temporary connection
+    // blip now that core/retry.js retries those — see the "fetch failed"
+    // fix) is indistinguishable from a call that was just genuinely slow:
+    // both show up as one big number in `timing.verifyMs`. This answers
+    // that directly: `backoffMs` is real sleep time paid waiting to retry,
+    // separable from `verifyMs` to see how much of a slow average is
+    // retry backoff versus actual model latency.
+    const retryStats = { failedAttempts: 0, backoffMs: 0, callsRetried: 0 };
+
+    // Called once per verifyCitation()/verifyGroup() call; returns the
+    // onAttemptFailed handler to pass as that call's `retry` option, plus a
+    // finish() to call after the call settles (success or throw) that folds
+    // any retries observed into retryStats exactly once per call, not once
+    // per attempt.
+    function trackRetries() {
+        let retried = false;
+        const onAttemptFailed = ({ backoff }) => {
+            retryStats.failedAttempts++;
+            retryStats.backoffMs += backoff;
+            retried = true;
+        };
+        return { onAttemptFailed, finish: () => { if (retried) retryStats.callsRetried++; } };
+    }
+
+    function recordVerifyDuration(startedAt) {
+        const ms = Date.now() - startedAt;
+        timing.verifyMs += ms;
+        timing.verifyCalls++;
+        if (ms < timing.verifyMinMs) timing.verifyMinMs = ms;
+        if (ms > timing.verifyMaxMs) timing.verifyMaxMs = ms;
+    }
 
     async function* generateTasks() {
         // Deliberately not `for await (const article of runBatch(...))`:
@@ -431,16 +467,17 @@ export async function runSweep(opts, {
             if (task.kind === 'solo') {
                 let verification;
                 const verifyStartedAt = Date.now();
+                const { onAttemptFailed, finish } = trackRetries();
                 try {
-                    verification = await verifyCitation(task.citation.claimText, task.citation.source, { callModel });
+                    verification = await verifyCitation(task.citation.claimText, task.citation.source, { callModel, retry: { onAttemptFailed } });
                 } catch (error) {
-                    timing.verifyMs += Date.now() - verifyStartedAt;
-                    timing.verifyCalls++;
+                    recordVerifyDuration(verifyStartedAt);
+                    finish();
                     if (!halted) { halted = true; haltError = error; }
                     continue;
                 }
-                timing.verifyMs += Date.now() - verifyStartedAt;
-                timing.verifyCalls++;
+                recordVerifyDuration(verifyStartedAt);
+                finish();
                 if (verification.usage) { funnel.verified++; await sleep(opts.delayMs); }
                 if (recordVerdict(verification.verdict)) funnel.flagged++;
 
@@ -451,16 +488,17 @@ export async function runSweep(opts, {
             } else {
                 let verification;
                 const verifyStartedAt = Date.now();
+                const { onAttemptFailed, finish } = trackRetries();
                 try {
-                    verification = await verifyGroup(task.members, { callModel });
+                    verification = await verifyGroup(task.members, { callModel, retry: { onAttemptFailed } });
                 } catch (error) {
-                    timing.verifyMs += Date.now() - verifyStartedAt;
-                    timing.verifyCalls++;
+                    recordVerifyDuration(verifyStartedAt);
+                    finish();
                     if (!halted) { halted = true; haltError = error; }
                     continue;
                 }
-                timing.verifyMs += Date.now() - verifyStartedAt;
-                timing.verifyCalls++;
+                recordVerifyDuration(verifyStartedAt);
+                finish();
                 funnel.groupsChecked++;
                 if (verification.skipped) { funnel.groupsSkipped++; continue; }
                 if (verification.usage) await sleep(opts.delayMs);
@@ -506,10 +544,17 @@ export async function runSweep(opts, {
         `sweep: timing — fetch (serial, wall-clock): ${(timing.fetchMs / 1000).toFixed(3)}s. ` +
         `verify: ${timing.verifyCalls} call(s), ${(timing.verifyMs / 1000).toFixed(3)}s summed across ` +
         `${opts.concurrency} concurrent worker(s) (~${timing.verifyCalls ? (timing.verifyMs / timing.verifyCalls).toFixed(0) : 0}ms/call avg, ` +
-        `includes near-instant short-circuited/skipped tasks). fetch and verify run concurrently in this pipeline ` +
-        `(fetch(article N+1) overlaps verify(article N)), so these two numbers don't simply add up to the total ` +
-        `wall-clock time — compare fetch's figure against the total run time (e.g. from the shell's own \`time\`) ` +
-        `to see how much of it fetch alone accounts for.\n`
+        `min ${timing.verifyCalls ? timing.verifyMinMs : 0}ms, max ${timing.verifyMaxMs}ms; ` +
+        `includes near-instant short-circuited/skipped tasks, which pull the average and min down). ` +
+        `fetch and verify run concurrently in this pipeline (fetch(article N+1) overlaps verify(article N)), so ` +
+        `these two numbers don't simply add up to the total wall-clock time — compare fetch's figure against the ` +
+        `total run time (e.g. from the shell's own \`time\`) to see how much of it fetch alone accounts for.\n`
+    );
+    stderr.write(
+        `sweep: retries — ${retryStats.failedAttempts} failed attempt(s) across ${retryStats.callsRetried} call(s) ` +
+        `retried at least once, ${(retryStats.backoffMs / 1000).toFixed(3)}s spent sleeping in backoff. This time is ` +
+        `already included in the verify total above — a high number here means a slow verify average may be ` +
+        `mostly retry backoff, not model latency.\n`
     );
 
     return haltCode ?? 0;
