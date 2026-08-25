@@ -128,6 +128,50 @@ for (const status of [401, 402, 403]) {
     });
 }
 
+test('a context-length-exceeded failure resolves to a per-citation ERROR result, not a throw, and is not retried', async () => {
+    let attempts = 0;
+    const src = source('Source URL: https://example.com\n\nSource Content:\nSome very long text about a bridge.');
+    const result = await verifyCitation('claim', src, {
+        callModel: async () => {
+            attempts++;
+            throw new Error(
+                'Lift Wing API request failed (500): {"error":"VLLMValidationError : This model\'s maximum context ' +
+                'length is 32768 tokens. However, you requested 0 output tokens and your prompt contains at least ' +
+                '32769 input tokens, for a total of at least 32769 tokens."}'
+            );
+        },
+        retry: { maxRetries: 5, minBackoffMs: 0, maxBackoffMs: 0, jitterMs: 0, sleepFn: async () => {} },
+    });
+
+    assert.equal(attempts, 1, 'a context-length failure is permanent for this exact prompt — retrying it is pointless');
+    assert.equal(result.verdict, 'ERROR');
+    assert.equal(result.reasonType, 'context_length');
+    assert.match(result.rationale, /maximum context length/);
+    assert.equal(result.usage, null, 'no tokens were actually generated');
+    assert.equal(result.sourceQuote, null);
+    assert.equal(result.quoteStatus, null);
+});
+
+test('verifyGroup: a context-length-exceeded failure resolves to a per-group ERROR result, not a throw', async () => {
+    const members = [
+        member('5', { groupIndex: 0, url: 'https://a.example', content: withContent('A'.repeat(200)) }),
+        member('6', { groupIndex: 1, url: 'https://b.example', content: withContent('B'.repeat(200)) }),
+    ];
+    const result = await verifyGroup(members, {
+        callModel: async () => {
+            throw new Error('Lift Wing API request failed (500): VLLMValidationError: maximum context length is 32768 tokens');
+        },
+        retry: { maxRetries: 5, minBackoffMs: 0, maxBackoffMs: 0, jitterMs: 0, sleepFn: async () => {} },
+    });
+
+    assert.equal(result.skipped, false);
+    assert.equal(result.verdict, 'ERROR');
+    assert.equal(result.reasonType, 'context_length');
+    assert.equal(result.groupId, 'g1');
+    assert.deepEqual(result.memberCitationNumbers, ['5', '6']);
+    assert.equal(result.usage, null);
+});
+
 test('isAuthOrBillingError is narrower than a generic 4xx', () => {
     assert.equal(isAuthOrBillingError(new Error('API request failed (402): no balance')), true);
     assert.equal(isAuthOrBillingError(new Error('API request failed (429): rate limited')), false);

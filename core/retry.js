@@ -28,12 +28,31 @@
 const RETRYABLE_STATUS = /^(?:HTTP |[^:()]*API request failed \()(429|500|502|503|504)\b/;
 const RETRYABLE_NETWORK = /timeout|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|socket hang up/i;
 
+// vLLM (Lift Wing's backend for open-weight models) reports a genuine
+// input-validation failure — the prompt exceeds the model's context
+// window — as an HTTP 500, which would otherwise match RETRYABLE_STATUS
+// above. Retrying buys nothing: the same oversized prompt produces the
+// identical error on every attempt, so retrying just burns up to ~30s of
+// backoff before failing anyway, on a request that will never succeed no
+// matter how many times it's sent. Real incident, 2026-08-24: exactly this
+// on a live sweep against tf-llm-router. Exported (not just used inline
+// below) so service/verifier.js can recognize this specific failure after
+// withRetry gives up and record it as a per-citation result instead of
+// treating it as a run-halting error the way an unrecognized failure is.
+const CONTEXT_LENGTH_EXCEEDED = /maximum context length|VLLMValidationError/i;
+
+export function isContextLengthError(error) {
+    return CONTEXT_LENGTH_EXCEEDED.test(error?.message ?? '');
+}
+
 function defaultSleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 export function isRetryableError(error) {
     const msg = error?.message ?? '';
+
+    if (isContextLengthError(error)) return false;
 
     // Node's fetch (undici) always throws this exact generic message for a
     // network/transport-layer failure — DNS, connection reset, refused, TLS

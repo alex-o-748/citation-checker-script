@@ -354,6 +354,33 @@ test('--concurrency N actually runs up to N model calls at once, not more', asyn
     assert.equal(maxInFlight, 3, 'exactly the configured concurrency should overlap, not 1 (serial) or 6 (unbounded)');
 });
 
+test('a context-length-exceeded failure records an ERROR finding and does NOT halt the sweep', async () => {
+    let written;
+    const code = await runSweep(baseOpts({ concurrency: 1 }), baseIo({
+        fetchArticle: async () => ({ html: articleWithSoloCitations(3), status: 200, error: null }),
+        makeModelCallerFn: () => async (systemPrompt, userContent) => {
+            // Only the 2nd citation's source is "too big" — the other two
+            // should still succeed normally, proving the run kept going
+            // rather than halting on the one bad citation.
+            if (userContent.includes('https://x.example/2')) {
+                throw new Error(
+                    'Lift Wing API request failed (500): VLLMValidationError: maximum context length is 32768 tokens'
+                );
+            }
+            return {
+                text: JSON.stringify({ confidence: 90, verdict: 'SUPPORTED', source_quote: '', comments: 'ok' }),
+                usage: { input: 10, output: 5 },
+            };
+        },
+        writeCsvReportFn: async findings => { written = findings; },
+    }));
+
+    assert.equal(code, 0, 'a context-length failure must not halt the sweep the way an unrecognized error does');
+    assert.equal(written.length, 3, 'all 3 citations got a recorded finding, including the errored one');
+    const verdicts = written.map(f => f.verdict).sort();
+    assert.deepEqual(verdicts, ['ERROR', 'SUPPORTED', 'SUPPORTED']);
+});
+
 test('halting stops new dispatch but keeps findings already in flight when the halt was detected', async () => {
     let attempts = 0;
     let written;

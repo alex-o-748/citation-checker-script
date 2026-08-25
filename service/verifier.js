@@ -23,14 +23,16 @@ import { callProviderAPI } from '../core/providers.js';
 import { parseVerificationResult } from '../core/parsing.js';
 import { canonicalizeVerdict } from '../core/verdicts.js';
 import { verifyQuote } from '../core/quote.js';
-import { withRetry } from '../core/retry.js';
+import { withRetry, isContextLengthError } from '../core/retry.js';
 import { groupSourceEntries, shouldSkipCollective } from '../core/groups.js';
 import { sourceCacheKey } from './claim-extractor.js';
 
-// Thrown when the model call fails with 401/402/403. Distinct from every
-// other failure this module can raise: a runner must halt the whole batch on
-// this, not record it as a per-citation failure — see isAuthOrBillingError's
-// doc comment for why.
+// Thrown when the model call fails with 401/402/403. Distinct from a
+// context-length failure (below), which is data-dependent — specific to
+// this one citation's source, not evidence every future call is doomed —
+// and from every other failure, which halts the whole batch: a runner must
+// halt on THIS one rather than record it as a per-citation failure — see
+// isAuthOrBillingError's doc comment for why.
 export class ProviderAuthError extends Error {
     constructor(message, { status, cause } = {}) {
         super(message);
@@ -92,6 +94,14 @@ export function makeModelCaller({ provider, apiKey, model, workerBase }) {
  * Throws ProviderAuthError on a 401/402/403 from the model call. Callers
  * (runners) must halt the whole batch on this rather than record it as a
  * per-citation failure.
+ *
+ * A prompt that exceeds the model's context window (vLLM/Lift Wing's
+ * "maximum context length" validation error) does NOT throw — it's
+ * data-dependent and permanent for this one citation's source, unrelated to
+ * whether any other citation will succeed, so it's returned as a normal
+ * `verdict: 'ERROR'` result instead, same as the no-content short-circuit
+ * above. core/retry.js declines to retry it for the same reason (the same
+ * oversized prompt fails identically every time).
  */
 export async function verifyCitation(claimText, source, {
     callModel,
@@ -130,6 +140,23 @@ export async function verifyCitation(claimText, source, {
         if (isAuthOrBillingError(error)) {
             const status = Number((error.message || '').match(/\((\d{3})\)/)?.[1]) || null;
             throw new ProviderAuthError(error.message, { status, cause: error });
+        }
+        // Data-dependent, per-citation, and permanent for this exact source
+        // — retrying (core/retry.js already declined to) or halting the
+        // whole batch over it would both be wrong; recorded as a normal
+        // (non-throwing) result instead, same as the no-content
+        // short-circuit above, so a runner just moves on to the next task.
+        if (isContextLengthError(error)) {
+            return {
+                verdict: 'ERROR',
+                confidence: null,
+                reasonType: 'context_length',
+                rationale: `Source too large for the model's context window: ${error.message}`,
+                sourceQuote: null,
+                quoteStatus: null,
+                usage: null,
+                fetchStatus: source.status ?? null,
+            };
         }
         throw error;
     }
@@ -170,7 +197,8 @@ export async function verifyCitation(claimText, source, {
  *
  * Throws ProviderAuthError on a 401/402/403, same as verifyCitation() —
  * callers must halt the whole batch on this rather than record it as a
- * per-group failure.
+ * per-group failure. A context-length failure, same as verifyCitation(),
+ * does not throw — returned as `{ skipped: false, verdict: 'ERROR', ... }`.
  */
 export async function verifyGroup(members, {
     callModel,
@@ -224,6 +252,23 @@ export async function verifyGroup(members, {
         if (isAuthOrBillingError(error)) {
             const status = Number((error.message || '').match(/\((\d{3})\)/)?.[1]) || null;
             throw new ProviderAuthError(error.message, { status, cause: error });
+        }
+        // See verifyCitation()'s matching branch: data-dependent and
+        // permanent for this exact group's assembled sources, not evidence
+        // the batch itself is broken.
+        if (isContextLengthError(error)) {
+            return {
+                skipped: false,
+                groupId,
+                memberCitationNumbers,
+                verdict: 'ERROR',
+                confidence: null,
+                reasonType: 'context_length',
+                rationale: `Source too large for the model's context window: ${error.message}`,
+                sourceQuote: null,
+                quoteStatus: null,
+                usage: null,
+            };
         }
         throw error;
     }
