@@ -371,6 +371,23 @@ export async function runSweep(opts, {
     let halted = false;
     let haltError = null;
 
+    // Answers "is fetch or verify the bottleneck" without guessing. `fetchMs`
+    // is true wall-clock time (the producer is the only thing calling
+    // articles.next(), so these deltas never overlap with each other — they
+    // DO overlap with worker time, since fetch(article N+1) and verify
+    // (article N's citations) run concurrently by design, so fetchMs isn't
+    // simply subtractable from the run's total wall-clock; it's a real lower
+    // bound on how much serial fetch cost this run paid, comparable directly
+    // against the total). `verifyMs`/`verifyCalls` are summed across
+    // opts.concurrency workers running in parallel — a sum of durations, not
+    // wall-clock — so `verifyMs / verifyCalls` is a genuine average per-call
+    // latency, but `verifyMs` itself is not a wall-clock figure (divide by
+    // concurrency for a rough wall-clock estimate). Includes short-circuited
+    // SOURCE UNAVAILABLE citations and skipped groups, which return near
+    // instantly — noted where this prints, not filtered out, to keep this
+    // one pass over every task instead of two.
+    const timing = { fetchMs: 0, verifyMs: 0, verifyCalls: 0 };
+
     async function* generateTasks() {
         // Deliberately not `for await (const article of runBatch(...))`:
         // for-await-of fetches the *next* value before running the loop
@@ -381,7 +398,9 @@ export async function runSweep(opts, {
         const articles = runBatch(candidates, { parseHtml, fetchArticle, fetchSource });
         while (true) {
             if (halted) return;
+            const fetchStartedAt = Date.now();
             const { value: article, done } = await articles.next();
+            timing.fetchMs += Date.now() - fetchStartedAt;
             if (done) return;
 
             funnel.articles++;
@@ -411,12 +430,17 @@ export async function runSweep(opts, {
 
             if (task.kind === 'solo') {
                 let verification;
+                const verifyStartedAt = Date.now();
                 try {
                     verification = await verifyCitation(task.citation.claimText, task.citation.source, { callModel });
                 } catch (error) {
+                    timing.verifyMs += Date.now() - verifyStartedAt;
+                    timing.verifyCalls++;
                     if (!halted) { halted = true; haltError = error; }
                     continue;
                 }
+                timing.verifyMs += Date.now() - verifyStartedAt;
+                timing.verifyCalls++;
                 if (verification.usage) { funnel.verified++; await sleep(opts.delayMs); }
                 if (recordVerdict(verification.verdict)) funnel.flagged++;
 
@@ -426,12 +450,17 @@ export async function runSweep(opts, {
                 }));
             } else {
                 let verification;
+                const verifyStartedAt = Date.now();
                 try {
                     verification = await verifyGroup(task.members, { callModel });
                 } catch (error) {
+                    timing.verifyMs += Date.now() - verifyStartedAt;
+                    timing.verifyCalls++;
                     if (!halted) { halted = true; haltError = error; }
                     continue;
                 }
+                timing.verifyMs += Date.now() - verifyStartedAt;
+                timing.verifyCalls++;
                 funnel.groupsChecked++;
                 if (verification.skipped) { funnel.groupsSkipped++; continue; }
                 if (verification.usage) await sleep(opts.delayMs);
@@ -472,6 +501,15 @@ export async function runSweep(opts, {
         `(<=1 usable source), ${funnel.groupsFlagged} flagged.\n` +
         `sweep: verdicts: ${JSON.stringify(verdictCounts)}\n` +
         `sweep: wrote ${findings.length} finding(s) to ${opts.out}${toolsDbQuery ? ' and ToolsDB' : ''}.\n`
+    );
+    stderr.write(
+        `sweep: timing — fetch (serial, wall-clock): ${(timing.fetchMs / 1000).toFixed(3)}s. ` +
+        `verify: ${timing.verifyCalls} call(s), ${(timing.verifyMs / 1000).toFixed(3)}s summed across ` +
+        `${opts.concurrency} concurrent worker(s) (~${timing.verifyCalls ? (timing.verifyMs / timing.verifyCalls).toFixed(0) : 0}ms/call avg, ` +
+        `includes near-instant short-circuited/skipped tasks). fetch and verify run concurrently in this pipeline ` +
+        `(fetch(article N+1) overlaps verify(article N)), so these two numbers don't simply add up to the total ` +
+        `wall-clock time — compare fetch's figure against the total run time (e.g. from the shell's own \`time\`) ` +
+        `to see how much of it fetch alone accounts for.\n`
     );
 
     return haltCode ?? 0;

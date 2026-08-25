@@ -452,6 +452,34 @@ test('an article that fails to fetch is counted but contributes no citations', a
     assert.deepEqual(written, []);
 });
 
+test('the timing summary reports real fetch and verify durations, not zeros', async () => {
+    const stderrChunks = [];
+    const code = await runSweep(baseOpts({ concurrency: 1 }), baseIo({
+        fetchArticle: async () => {
+            await sleep(30);
+            return { html: articleWithSoloCitations(2), status: 200, error: null };
+        },
+        makeModelCallerFn: () => async () => {
+            await sleep(20);
+            return {
+                text: JSON.stringify({ confidence: 90, verdict: 'SUPPORTED', source_quote: '', comments: 'ok' }),
+                usage: { input: 10, output: 5 },
+            };
+        },
+        stderr: { write: s => stderrChunks.push(s) },
+    }));
+    assert.equal(code, 0);
+
+    const output = stderrChunks.join('');
+    const timingLine = output.match(/sweep: timing — fetch \(serial, wall-clock\): ([\d.]+)s\. verify: (\d+) call\(s\), ([\d.]+)s/);
+    assert.ok(timingLine, `expected a timing summary line, got:\n${output}`);
+
+    const [, fetchSec, verifyCalls, verifySec] = timingLine;
+    assert.ok(Number(fetchSec) >= 0.025, `fetch should reflect the ~30ms artificial delay, got ${fetchSec}s`);
+    assert.equal(Number(verifyCalls), 2, 'both solo citations should have gone through a verify call');
+    assert.ok(Number(verifySec) >= 0.035, `2 calls at ~20ms each should sum to at least ~40ms, got ${verifySec}s`);
+});
+
 test('--help prints usage and exits 0 without connecting to anything', async () => {
     const stdout = { chunks: [], write(s) { this.chunks.push(s); } };
     const code = await main(['node', 'sweep.js', '--help'], { stdout });
