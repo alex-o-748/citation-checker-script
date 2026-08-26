@@ -174,10 +174,10 @@ test('hostForProvider: Anthropic and Gemini are independent hosts', () => {
 // Behavioral wiring tests — full parser coverage lives in tests/parsing.test.js.
 
 test('shapeResult: delegates JSON parsing to core and title-cases the verdict', () => {
-    const text = JSON.stringify({ verdict: 'SUPPORTED', confidence: 90, comments: 'ok' });
+    const text = JSON.stringify({ verdict: 'SUPPORTED', support_score: 90, comments: 'ok' });
     const out = shapeResult({ text, usage: { input: 10, output: 5, cost_usd: null } });
     assert.equal(out.verdict, 'Supported');
-    assert.equal(out.confidence, 90);
+    assert.equal(out.support_score, 90);
     assert.equal(out.raw_response, text);
     assert.deepEqual(out.usage, { input: 10, output: 5, cost_usd: null });
 });
@@ -194,7 +194,7 @@ test('shapeResult: recovers verdict from the Granite-style markdown fallback', (
 test('shapeResult: returns PARSE_ERROR sentinel on unrecoverable prose', () => {
     const out = shapeResult({ text: 'I cannot determine this.', usage: null });
     assert.equal(out.verdict, 'PARSE_ERROR');
-    assert.equal(out.confidence, 0);
+    assert.equal(out.support_score, 0);
 });
 
 // ---- scoreResult (error rows must not be double-counted as "wrong") --------

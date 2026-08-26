@@ -96,7 +96,7 @@ export async function verifyCitation(claimText, source, {
     if (!source?.content) {
         return {
             verdict: 'SOURCE UNAVAILABLE',
-            confidence: null,
+            supportScore: null,
             reasonType: null,
             rationale: null,
             sourceQuote: null,
@@ -131,7 +131,7 @@ export async function verifyCitation(claimText, source, {
 
     return {
         verdict,
-        confidence: parsed.confidence ?? null,
+        supportScore: parsed.support_score ?? null,
         reasonType: parsed.reason_type || null,
         rationale: parsed.comments || null,
         sourceQuote: parsed.source_quote || null,

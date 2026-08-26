@@ -142,25 +142,25 @@ export function calculateMetrics(results) {
     const minLatency = latencies.length > 0 ? Math.min(...latencies) : 0;
     const maxLatency = latencies.length > 0 ? Math.max(...latencies) : 0;
 
-    // Confidence stats
-    const confidences = validResults.map(r => r.confidence).filter(c => c > 0);
-    const avgConfidence = confidences.length > 0
-        ? confidences.reduce((a, b) => a + b, 0) / confidences.length
+    // Support score stats
+    const supportScores = validResults.map(r => r.support_score).filter(c => c > 0);
+    const avgSupportScore = supportScores.length > 0
+        ? supportScores.reduce((a, b) => a + b, 0) / supportScores.length
         : 0;
 
-    // Confidence by correctness
-    const correctConfidences = validResults
+    // Support score by correctness
+    const correctSupportScores = validResults
         .filter(r => normalizeVerdict(r.predicted_verdict) === normalizeVerdict(r.ground_truth))
-        .map(r => r.confidence);
-    const wrongConfidences = validResults
+        .map(r => r.support_score);
+    const wrongSupportScores = validResults
         .filter(r => normalizeVerdict(r.predicted_verdict) !== normalizeVerdict(r.ground_truth))
-        .map(r => r.confidence);
+        .map(r => r.support_score);
 
-    const avgConfidenceCorrect = correctConfidences.length > 0
-        ? correctConfidences.reduce((a, b) => a + b, 0) / correctConfidences.length
+    const avgSupportScoreCorrect = correctSupportScores.length > 0
+        ? correctSupportScores.reduce((a, b) => a + b, 0) / correctSupportScores.length
         : 0;
-    const avgConfidenceWrong = wrongConfidences.length > 0
-        ? wrongConfidences.reduce((a, b) => a + b, 0) / wrongConfidences.length
+    const avgSupportScoreWrong = wrongSupportScores.length > 0
+        ? wrongSupportScores.reduce((a, b) => a + b, 0) / wrongSupportScores.length
         : 0;
 
     // Quote fidelity: of the entries where a supporting/contradicting passage
@@ -223,11 +223,11 @@ export function calculateMetrics(results) {
             min: minLatency,
             max: maxLatency
         },
-        confidence: {
-            avg: avgConfidence,
-            avgWhenCorrect: avgConfidenceCorrect,
-            avgWhenWrong: avgConfidenceWrong,
-            calibration: avgConfidenceCorrect - avgConfidenceWrong // Higher = better calibrated
+        support_score: {
+            avg: avgSupportScore,
+            avgWhenCorrect: avgSupportScoreCorrect,
+            avgWhenWrong: avgSupportScoreWrong,
+            calibration: avgSupportScoreCorrect - avgSupportScoreWrong // Higher = better calibrated
         }
     };
 }
@@ -292,11 +292,11 @@ function generateMarkdownReport(analysis) {
         md += `- Average: ${m.latency.avg.toFixed(0)}ms\n`;
         md += `- Range: ${m.latency.min.toFixed(0)}ms - ${m.latency.max.toFixed(0)}ms\n\n`;
 
-        md += '**Confidence Calibration:**\n';
-        md += `- Average confidence: ${m.confidence.avg.toFixed(1)}\n`;
-        md += `- When correct: ${m.confidence.avgWhenCorrect.toFixed(1)}\n`;
-        md += `- When wrong: ${m.confidence.avgWhenWrong.toFixed(1)}\n`;
-        md += `- Calibration gap: ${m.confidence.calibration.toFixed(1)} (higher = better)\n\n`;
+        md += '**Support Score Calibration:**\n';
+        md += `- Average support score: ${m.support_score.avg.toFixed(1)}\n`;
+        md += `- When correct: ${m.support_score.avgWhenCorrect.toFixed(1)}\n`;
+        md += `- When wrong: ${m.support_score.avgWhenWrong.toFixed(1)}\n`;
+        md += `- Calibration gap: ${m.support_score.calibration.toFixed(1)} (higher = better)\n\n`;
 
         md += '**Confusion Matrix:**\n\n';
         md += '| Ground Truth \\ Predicted | Supported | Partial | Not Supported | Unavailable |\n';
@@ -332,9 +332,9 @@ function generateMarkdownReport(analysis) {
     md += `2. **Fastest response**: ${analysis.providers[fastestProvider].name} with ${analysis.providers[fastestProvider].metrics.latency.avg.toFixed(0)}ms average\n`;
 
     const bestCalibrated = providers.reduce((a, b) =>
-        analysis.providers[a].metrics.confidence.calibration > analysis.providers[b].metrics.confidence.calibration ? a : b
+        analysis.providers[a].metrics.support_score.calibration > analysis.providers[b].metrics.support_score.calibration ? a : b
     );
-    md += `3. **Best calibrated**: ${analysis.providers[bestCalibrated].name} (confidence scores correlate with correctness)\n`;
+    md += `3. **Best calibrated**: ${analysis.providers[bestCalibrated].name} (support scores correlate with correctness)\n`;
 
     return md;
 }

@@ -56,7 +56,7 @@ for (const r of rows.slice(0, LIMIT)) {
     console.log('─'.repeat(72));
     console.log(`${r.entry_id}  ·  ${r.provider}`);
     console.log(`  ground truth : ${r.ground_truth}`);
-    console.log(`  predicted    : ${r.predicted_verdict}  (confidence ${r.confidence ?? 'n/a'})`);
+    console.log(`  predicted    : ${r.predicted_verdict}  (support score ${r.support_score ?? 'n/a'})`);
     if (r.error) console.log(`  error        : ${r.error}`);
     console.log(`  claim        : ${FULL ? claim : truncate(claim)}`);
     if (r.comments) console.log(`  model says   : ${FULL ? r.comments : truncate(r.comments)}`);

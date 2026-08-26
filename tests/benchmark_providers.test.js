@@ -1,7 +1,7 @@
 // Characterization tests for benchmark/run_benchmark.js's callProvider.
 //
 // Asserts the unified contract that every provider type produces:
-//   { verdict, confidence, comments, raw_response, usage: { input, output, cost_usd }, latency, error }
+//   { verdict, support_score, comments, raw_response, usage: { input, output, cost_usd }, latency, error }
 //
 // Pre-refactor, callProvider used Node's `https` module per provider, returned
 // { verdict, ... } without a usage field, and routed through a local httpPost
@@ -25,7 +25,7 @@ function withMockFetch(handler) {
     };
 }
 
-const VERDICT_JSON = '{"verdict":"SUPPORTED","confidence":85,"comments":"clear match"}';
+const VERDICT_JSON = '{"verdict":"SUPPORTED","support_score":85,"comments":"clear match"}';
 
 function withEnv(vars, fn) {
     const saved = {};
@@ -54,7 +54,7 @@ test('callProvider publicai returns parsed verdict and usage shape, max_tokens=1
         await withEnv({ PUBLICAI_API_KEY: 'test' }, async () => {
             const result = await callProvider('apertus-70b', 'sys', 'user');
             assert.equal(result.verdict, 'Supported');
-            assert.equal(result.confidence, 85);
+            assert.equal(result.support_score, 85);
             assert.equal(result.comments, 'clear match');
             assert.equal(result.usage.input, 120);
             assert.equal(result.usage.output, 18);

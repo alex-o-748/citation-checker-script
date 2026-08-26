@@ -393,7 +393,9 @@ export async function runVerify(opts, { stdout = process.stdout, stderr = proces
             source_url: sourceUrl,
             provider,
             verdict: verdict.verdict,
-            confidence: verdict.confidence,
+            // Wire/column name stays `confidence` (see core/feedback.js's
+            // buildLogPayload) — it's the Neon column, unmigrated for now.
+            confidence: verdict.support_score,
         });
     }
 
@@ -402,7 +404,7 @@ export async function runVerify(opts, { stdout = process.stdout, stderr = proces
     //     reported as such rather than shown.
     const quoteCheck = verifyQuote(extractSourceText(fetchResult.content), verdict.source_quote);
     stdout.write(`Verdict:    ${verdict.verdict}\n`);
-    stdout.write(`Confidence: ${verdict.confidence ?? 'n/a'}\n`);
+    stdout.write(`Support score: ${verdict.support_score ?? 'n/a'}\n`);
     stdout.write(`Claim:      ${claim}\n`);
     stdout.write(`Source:     ${sourceUrl}\n`);
     if (verdict.source_quote) {

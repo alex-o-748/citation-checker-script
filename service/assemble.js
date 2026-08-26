@@ -72,7 +72,7 @@ export function assembleFinding({
         groupId: citation.groupId ?? null,
         isCollective: false,
         verdict: verification.verdict,
-        confidence: verification.confidence,
+        supportScore: verification.supportScore,
         reasonType: verification.reasonType,
         rationale: verification.rationale,
         sourceQuote: verification.sourceQuote,

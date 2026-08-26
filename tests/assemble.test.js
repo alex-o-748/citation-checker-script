@@ -16,7 +16,7 @@ test('a verified citation assembles into a finding with published always false',
     };
     const verification = {
         verdict: 'SUPPORTED',
-        confidence: 90,
+        supportScore: 90,
         reasonType: null,
         rationale: 'Direct match.',
         sourceQuote: 'The bridge opened to traffic in 1998.',
@@ -64,7 +64,7 @@ test('a no-URL citation assembles without provider/model/fetchedAt/expiresAt', (
     };
     const verification = {
         verdict: 'SOURCE UNAVAILABLE',
-        confidence: null,
+        supportScore: null,
         reasonType: null,
         rationale: null,
         sourceQuote: null,
@@ -97,7 +97,7 @@ test('a fetch failure keeps its status but still assembles without a provider', 
     };
     const verification = {
         verdict: 'SOURCE UNAVAILABLE',
-        confidence: null,
+        supportScore: null,
         reasonType: null,
         rationale: null,
         sourceQuote: null,
@@ -125,7 +125,7 @@ test('assembled findings feed buildUpsertQuery without error', () => {
     };
     const verification = {
         verdict: 'SUPPORTED',
-        confidence: 90,
+        supportScore: 90,
         reasonType: null,
         rationale: 'Direct match.',
         sourceQuote: 'The bridge opened to traffic in 1998.',

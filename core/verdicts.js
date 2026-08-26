@@ -16,7 +16,7 @@ export const VERDICTS = Object.freeze({
     SOURCE_UNAVAILABLE:  'SOURCE UNAVAILABLE',
 });
 
-// Ordered by the confidence guide in core/prompts.js. Confusion-matrix
+// Ordered by the support score guide in core/prompts.js. Confusion-matrix
 // rows/columns in analyze_results.js iterate this list.
 export const VERDICT_LIST = Object.freeze([
     VERDICTS.SUPPORTED,

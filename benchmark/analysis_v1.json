@@ -58,7 +58,7 @@
           "min": 365,
           "max": 7614
         },
-        "confidence": {
+        "support_score": {
           "avg": 79.79729729729729,
           "avgWhenCorrect": 82.20930232558139,
           "avgWhenWrong": 74.0625,
@@ -110,7 +110,7 @@
           "min": 370,
           "max": 6292
         },
-        "confidence": {
+        "support_score": {
           "avg": 81.18055555555556,
           "avgWhenCorrect": 86,
           "avgWhenWrong": 55.75,
@@ -162,7 +162,7 @@
           "min": 375,
           "max": 4637
         },
-        "confidence": {
+        "support_score": {
           "avg": 77.27272727272727,
           "avgWhenCorrect": 82.4,
           "avgWhenWrong": 39.2,
@@ -214,7 +214,7 @@
           "min": 125,
           "max": 305
         },
-        "confidence": {
+        "support_score": {
           "avg": 0,
           "avgWhenCorrect": 0,
           "avgWhenWrong": 0,
@@ -266,7 +266,7 @@
           "min": 19,
           "max": 62
         },
-        "confidence": {
+        "support_score": {
           "avg": 0,
           "avgWhenCorrect": 0,
           "avgWhenWrong": 0,
@@ -318,7 +318,7 @@
           "min": 2315,
           "max": 7377
         },
-        "confidence": {
+        "support_score": {
           "avg": 86.25,
           "avgWhenCorrect": 86.9298245614035,
           "avgWhenWrong": 47.89473684210526,
@@ -370,7 +370,7 @@
           "min": 27,
           "max": 7426
         },
-        "confidence": {
+        "support_score": {
           "avg": 81.47058823529412,
           "avgWhenCorrect": 83,
           "avgWhenWrong": 23.333333333333332,

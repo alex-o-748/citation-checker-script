@@ -10,6 +10,17 @@
 // Pure prompt-generation logic. Imported by core/ consumers (CLI, benchmark).
 // Also injected byte-identically into main.js between <core-injected> markers.
 
+// Identifies which revision of generateSystemPrompt()'s few-shot examples
+// produced a stored finding. Bump this whenever the prompt text changes —
+// tests/prompts.test.js pins a hash of the assembled prompt against this
+// constant and fails if they drift apart, so "changed the prompt, forgot to
+// bump the version" fails the suite instead of silently poisoning
+// citation_findings.prompt_version (that column is part of the row's unique
+// key — see docs/design-plans/2026-08-07-batch-source-checks-for-edit-suggestions.md
+// §6 — precisely so a prompt change invalidates old findings rather than
+// overwriting them).
+const PROMPT_VERSION = 'v2';
+
 function generateSystemPrompt() {
     return `You are a fact-checking assistant for Wikipedia. Analyze whether claims are supported by the provided source text.
 
@@ -38,11 +49,11 @@ It is NOT usable if it's:
 
 IMPORTANT: If the source text contains actual article content (paragraphs of text, quotes, factual statements), it IS usable even if it also contains archive navigation, headers, footers, or other page chrome. Only return SOURCE UNAVAILABLE when there is genuinely no article content to analyze.
 
-If the source text is not usable, you MUST return verdict SOURCE UNAVAILABLE with confidence 0. Do not attempt to verify the claim - if you cannot find actual article or book content to quote, the source is unavailable.
+If the source text is not usable, you MUST return verdict SOURCE UNAVAILABLE with support_score 0. Do not attempt to verify the claim - if you cannot find actual article or book content to quote, the source is unavailable.
 
 Respond in JSON format:
 {
-  "confidence": <number 0-100>,
+  "support_score": <number 0-100>,
   "verdict": "<verdict>",
   "reason_type": "<only for NOT SUPPORTED: 'contradiction' or 'omission'>",
   "source_quote": "<the passage from the source text, copied word for word>",
@@ -59,7 +70,7 @@ The "source_quote" field:
 - Use "" (empty string) when there is nothing to quote: SOURCE UNAVAILABLE, and NOT SUPPORTED with reason_type "omission" (the source says nothing about the claim, so no passage can be quoted).
 - Never quote from the claim, and never write a passage the source does not contain. If you cannot find a passage worth quoting, use "".
 
-Confidence guide:
+Support score guide:
 - 80-100: SUPPORTED
 - 50-79: PARTIALLY SUPPORTED
 - 1-49: NOT SUPPORTED
@@ -69,56 +80,56 @@ Confidence guide:
 Claim: "The committee published its findings in 1932."
 Source text: "History of Modern Economics - Economic Research Council - Google Books Sign in Hidden fields Books Try the new Google Books Check out the new look and enjoy easier access to your favorite features Try it now No thanks My library Help Advanced Book Search Download EPUB Download PDF Plain text Read eBook Get this book in print AbeBooks On Demand Books Amazon Find in a library All sellers About this book Terms of Service Plain text PDF EPUB"
 
-{"confidence": 0, "verdict": "SOURCE UNAVAILABLE", "source_quote": "", "comments": "Google Books interface with no actual book content, only navigation and metadata."}
+{"support_score": 0, "verdict": "SOURCE UNAVAILABLE", "source_quote": "", "comments": "Google Books interface with no actual book content, only navigation and metadata."}
 </example>
 
 <example>
 Claim: "The bridge was completed in 1998."
 Source text: "Skip to main content Web Archive toolbar... Capture date: 2015-03-12 ... City Tribune - Local News ... The Morrison Bridge project broke ground in 1994 after years of planning. Construction faced multiple delays due to funding shortages. The bridge was finally opened to traffic in August 2002, four years behind schedule. Mayor Davis called it 'a triumph of persistence.'"
 
-{"confidence": 15, "verdict": "NOT SUPPORTED", "reason_type": "contradiction", "source_quote": "The bridge was finally opened to traffic in August 2002, four years behind schedule.", "comments": "Source says the bridge opened in 2002, not 1998. The article is accessible despite being an Internet Archive capture."}
+{"support_score": 15, "verdict": "NOT SUPPORTED", "reason_type": "contradiction", "source_quote": "The bridge was finally opened to traffic in August 2002, four years behind schedule.", "comments": "Source says the bridge opened in 2002, not 1998. The article is accessible despite being an Internet Archive capture."}
 </example>
 
 <example>
 Claim: "The company was founded in 1985 by John Smith."
 Source text: "Acme Corp was established in 1985. Its founder, John Smith, served as CEO until 2001."
 
-{"confidence": 95, "verdict": "SUPPORTED", "source_quote": "Acme Corp was established in 1985. Its founder, John Smith, served as CEO until 2001.", "comments": "Definitive match with paraphrasing."}
+{"support_score": 95, "verdict": "SUPPORTED", "source_quote": "Acme Corp was established in 1985. Its founder, John Smith, served as CEO until 2001.", "comments": "Definitive match with paraphrasing."}
 </example>
 
 <example>
 Claim: "The treaty was signed by 45 countries."
 Source text: "The treaty, finalized in March, was signed by over 30 nations, though the exact number remains disputed."
 
-{"confidence": 20, "verdict": "NOT SUPPORTED", "reason_type": "contradiction", "source_quote": "The treaty, finalized in March, was signed by over 30 nations, though the exact number remains disputed.", "comments": "Source says \\"over 30,\\" not 45."}
+{"support_score": 20, "verdict": "NOT SUPPORTED", "reason_type": "contradiction", "source_quote": "The treaty, finalized in March, was signed by over 30 nations, though the exact number remains disputed.", "comments": "Source says \\"over 30,\\" not 45."}
 </example>
 
 <example>
 Claim: "The treaty was signed in Paris."
 Source text: "It is believed the treaty was signed in Paris, though some historians dispute this."
 
-{"confidence": 60, "verdict": "PARTIALLY SUPPORTED", "source_quote": "It is believed the treaty was signed in Paris, though some historians dispute this.", "comments": "Source hedges this as uncertain; Wikipedia states it as fact."}
+{"support_score": 60, "verdict": "PARTIALLY SUPPORTED", "source_quote": "It is believed the treaty was signed in Paris, though some historians dispute this.", "comments": "Source hedges this as uncertain; Wikipedia states it as fact."}
 </example>
 
 <example>
 Claim: "The population increased by 12% between 2010 and 2020."
 Source text: "Census data shows significant population growth in the region during the 2010s."
 
-{"confidence": 55, "verdict": "PARTIALLY SUPPORTED", "source_quote": "Census data shows significant population growth in the region during the 2010s.", "comments": "Source confirms growth but doesn't specify 12%."}
+{"support_score": 55, "verdict": "PARTIALLY SUPPORTED", "source_quote": "Census data shows significant population growth in the region during the 2010s.", "comments": "Source confirms growth but doesn't specify 12%."}
 </example>
 
 <example>
 Claim: "The president resigned on March 3."
 Source text: "The president remained in office throughout March."
 
-{"confidence": 5, "verdict": "NOT SUPPORTED", "reason_type": "contradiction", "source_quote": "The president remained in office throughout March.", "comments": "Source directly contradicts the claim."}
+{"support_score": 5, "verdict": "NOT SUPPORTED", "reason_type": "contradiction", "source_quote": "The president remained in office throughout March.", "comments": "Source directly contradicts the claim."}
 </example>
 
 <example>
 Claim: "She received the Nobel Prize in Chemistry in 2015."
 Source text: "Professor Martin completed her PhD at Oxford in 1998 and joined the faculty at Cambridge in 2003. Her research focuses on organic synthesis and catalysis. She has published over 200 papers and received several university teaching awards."
 
-{"confidence": 10, "verdict": "NOT SUPPORTED", "reason_type": "omission", "source_quote": "", "comments": "The source discusses her academic career and publications but makes no mention of a Nobel Prize."}
+{"support_score": 10, "verdict": "NOT SUPPORTED", "reason_type": "omission", "source_quote": "", "comments": "The source discusses her academic career and publications but makes no mention of a Nobel Prize."}
 </example>`;
 }
 
@@ -155,7 +166,7 @@ ${sourceText}`;
 // System prompt for the "adjacent citations" / collective-verification path:
 // one claim is cited by several adjacent sources, and we judge whether the
 // sources TOGETHER support it. Kept deliberately close to generateSystemPrompt
-// (same JSON schema, verdict vocabulary, confidence scale, reason_type rules)
+// (same JSON schema, verdict vocabulary, support score scale, reason_type rules)
 // so verdicts stay comparable; the differences are the "collective" framing and
 // the handling of partially-unavailable source sets. This is a NEW prompt — the
 // single-source benchmark, which uses generateSystemPrompt, is unaffected.
@@ -173,11 +184,11 @@ Rules:
 
 Source text evaluation:
 Some of the provided sources may be unusable — a paywall, login page, library catalog/metadata page (e.g. WorldCat, Google Books, JSTOR preview), cookie/JavaScript notice, 404/redirect, or an explicit "[This source could not be retrieved: ...]" note. Ignore unusable sources and judge the claim against the sources that DO contain usable article/book content.
-Only return verdict SOURCE UNAVAILABLE with confidence 0 if NONE of the provided sources contain usable content.
+Only return verdict SOURCE UNAVAILABLE with support_score 0 if NONE of the provided sources contain usable content.
 
 Respond in JSON format:
 {
-  "confidence": <number 0-100>,
+  "support_score": <number 0-100>,
   "verdict": "<verdict>",
   "reason_type": "<only for NOT SUPPORTED: 'contradiction' or 'omission'>",
   "source_quote": "<the passage from one of the sources, copied word for word>",
@@ -194,7 +205,7 @@ The "source_quote" field:
 - Use "" (empty string) when there is nothing to quote: SOURCE UNAVAILABLE, and NOT SUPPORTED with reason_type "omission".
 - Never quote from the claim, and never write a passage the sources do not contain. If you cannot find a passage worth quoting, use "".
 
-Confidence guide:
+Support score guide:
 - 80-100: SUPPORTED
 - 50-79: PARTIALLY SUPPORTED
 - 1-49: NOT SUPPORTED
@@ -205,7 +216,7 @@ Claim: "The company was founded in 1985 by John Smith, who led it until 2001."
 Source [1] (https://example.com/a): "Acme Corp was established in 1985 in Ohio."
 Source [2] (https://example.com/b): "John Smith founded Acme Corp and served as its chief executive until 2001."
 
-{"confidence": 92, "verdict": "SUPPORTED", "source_quote": "John Smith founded Acme Corp and served as its chief executive until 2001.", "comments": "Source [1] gives the 1985 founding year; source [2] confirms John Smith as founder and his tenure until 2001. Together they support the whole claim."}
+{"support_score": 92, "verdict": "SUPPORTED", "source_quote": "John Smith founded Acme Corp and served as its chief executive until 2001.", "comments": "Source [1] gives the 1985 founding year; source [2] confirms John Smith as founder and his tenure until 2001. Together they support the whole claim."}
 </example>
 
 <example>
@@ -213,7 +224,7 @@ Claim: "The treaty was signed in Paris in 1990."
 Source [1] (https://example.com/a): [This source could not be retrieved: HTTP 403]
 Source [2] (https://example.com/b): "The accord was signed in the French capital in the spring of 1990."
 
-{"confidence": 88, "verdict": "SUPPORTED", "source_quote": "The accord was signed in the French capital in the spring of 1990.", "comments": "Source [1] was unavailable, but source [2] states the accord was signed in the French capital (Paris) in 1990, which supports the claim."}
+{"support_score": 88, "verdict": "SUPPORTED", "source_quote": "The accord was signed in the French capital in the spring of 1990.", "comments": "Source [1] was unavailable, but source [2] states the accord was signed in the French capital (Paris) in 1990, which supports the claim."}
 </example>
 
 <example>
@@ -221,7 +232,7 @@ Claim: "The bridge, built in 1998, cost $200 million."
 Source [1] (https://example.com/a): "The bridge opened to traffic in 1998 after four years of construction."
 Source [2] (https://example.com/b): "Funding for the project came from a mix of state and federal grants."
 
-{"confidence": 55, "verdict": "PARTIALLY SUPPORTED", "source_quote": "The bridge opened to traffic in 1998 after four years of construction.", "comments": "Source [1] supports the 1998 date. Neither source states the $200 million cost, so that part is unverified."}
+{"support_score": 55, "verdict": "PARTIALLY SUPPORTED", "source_quote": "The bridge opened to traffic in 1998 after four years of construction.", "comments": "Source [1] supports the 1998 date. Neither source states the $200 million cost, so that part is unverified."}
 </example>`;
 }
 
@@ -288,7 +299,7 @@ const VERDICTS = Object.freeze({
     SOURCE_UNAVAILABLE:  'SOURCE UNAVAILABLE',
 });
 
-// Ordered by the confidence guide in core/prompts.js. Confusion-matrix
+// Ordered by the support score guide in core/prompts.js. Confusion-matrix
 // rows/columns in analyze_results.js iterate this list.
 const VERDICT_LIST = Object.freeze([
     VERDICTS.SUPPORTED,
@@ -394,7 +405,7 @@ function parseVerificationResult(response) {
         const result = JSON.parse(jsonStr);
         return {
             verdict: result.verdict || 'UNKNOWN',
-            confidence: result.confidence ?? null,
+            support_score: result.support_score ?? null,
             comments: result.comments || '',
             reason_type: result.reason_type || null,
             // Field-name aliases: models occasionally camelCase the key or
@@ -417,13 +428,13 @@ function parseVerificationResult(response) {
     if (match) {
         const verdict = canonicalizeVerdict(match[1]);
         if (verdict) {
-            return { verdict, confidence: null, comments: '<extracted from non-JSON response>', source_quote: '' };
+            return { verdict, support_score: null, comments: '<extracted from non-JSON response>', source_quote: '' };
         }
     }
 
     return {
         verdict: 'PARSE_ERROR',
-        confidence: null,
+        support_score: null,
         comments: `Failed to parse AI response: ${response.substring(0, 200)}`,
         source_quote: ''
     };
@@ -1710,7 +1721,11 @@ function buildLogPayload(fields = {}) {
         provider:        fields.provider ?? null,
         model:           fields.model ?? null,
         verdict:         fields.verdict ?? null,
-        confidence:      fields.confidence ?? null,
+        // Sent as `confidence` — not renamed to match `supportScore` — because
+        // it must line up with the Neon `verification_logs.confidence` column
+        // (see docs/worker-logging-reference.md). Renaming the wire/column
+        // name is a separate DB migration; this only renames the internal name.
+        confidence:      fields.supportScore ?? null,
         reason_type:     fields.reasonType ?? null,
         // Without these two a thumbs-down is uninterpretable: you know the
         // check was wrong but not what it claimed or why it decided that.
@@ -5206,7 +5221,7 @@ function useToolforgeSourceFetcher() {
         // user can see gets one — including the ones that never reached an
         // LLM — so the feedback controls are uniformly available.
         //
-        // `parsed` is the verdict object ({ verdict, confidence, comments,
+        // `parsed` is the verdict object ({ verdict, support_score, comments,
         // reason_type }); `context` overrides the active-citation fields for
         // the batch paths, which verify citations other than the selected one.
         //
@@ -5234,7 +5249,7 @@ function useToolforgeSourceFetcher() {
                 provider: this.currentProvider,
                 model: provider.model || null,
                 verdict: parsed?.verdict,
-                confidence: parsed?.confidence,
+                supportScore: parsed?.support_score,
                 reasonType: parsed?.reason_type ?? null,
                 claimText: fromContext('claimText', this.activeClaim),
                 comments: parsed?.comments,
@@ -6241,7 +6256,7 @@ function useToolforgeSourceFetcher() {
 
             let result;
             if (!anyAvailable) {
-                result = { ...base, verdict: 'SOURCE UNAVAILABLE', confidence: 0, comments: this.t('None of the grouped sources could be retrieved.') };
+                result = { ...base, verdict: 'SOURCE UNAVAILABLE', support_score: 0, comments: this.t('None of the grouped sources could be retrieved.') };
             } else {
                 try {
                     const apiResult = await withRetry(
@@ -6273,7 +6288,7 @@ function useToolforgeSourceFetcher() {
                     result = {
                         ...base,
                         verdict: parsed.verdict,
-                        confidence: parsed.confidence,
+                        support_score: parsed.support_score,
                         comments: parsed.comments,
                         reason_type: parsed.reason_type,
                         sourceQuote: quoteView.quote,
@@ -6282,7 +6297,7 @@ function useToolforgeSourceFetcher() {
                         quoteStatus: quoteView.status,
                     };
                 } catch (e) {
-                    result = { ...base, verdict: 'ERROR', confidence: null, comments: e.message };
+                    result = { ...base, verdict: 'ERROR', support_score: null, comments: e.message };
                 }
             }
 
@@ -6424,7 +6439,7 @@ function useToolforgeSourceFetcher() {
                         url: null,
                         refElement: citation.refElement,
                         verdict: 'SOURCE UNAVAILABLE',
-                        confidence: 0,
+                        support_score: 0,
                         comments: this.t('No URL found in reference'),
                         truncated: false
                     };
@@ -6463,7 +6478,7 @@ function useToolforgeSourceFetcher() {
                             url: citation.url,
                             refElement: citation.refElement,
                             verdict: 'SOURCE UNAVAILABLE',
-                            confidence: 0,
+                            support_score: 0,
                             comments,
                             fetchStatus: fetchResult.status,
                             fetchError: fetchResult.error,
@@ -6518,7 +6533,7 @@ function useToolforgeSourceFetcher() {
                                 url: citation.url,
                                 refElement: citation.refElement,
                                 verdict: parsed.verdict,
-                                confidence: parsed.confidence,
+                                support_score: parsed.support_score,
                                 comments: parsed.comments,
                                 reason_type: parsed.reason_type,
                                 sourceQuote: quoteView.quote,
@@ -6544,7 +6559,7 @@ function useToolforgeSourceFetcher() {
                                 url: citation.url,
                                 refElement: citation.refElement,
                                 verdict: 'ERROR',
-                                confidence: null,
+                                support_score: null,
                                 comments: e.message,
                                 truncated: sourceTruncated
                             };

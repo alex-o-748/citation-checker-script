@@ -8,7 +8,7 @@ function row(overrides) {
   return {
     predicted_verdict: 'Supported',
     ground_truth: 'Supported',
-    confidence: 90,
+    support_score: 90,
     latency_ms: 100,
     error: null,
     source_quote: '',
@@ -58,7 +58,7 @@ test('fidelity separates quotes that were offered from quotes that checked out',
 
 test('quote metrics are zero, not NaN, on legacy results with no quote fields', () => {
   const m = calculateMetrics([
-    { predicted_verdict: 'Supported', ground_truth: 'Supported', confidence: 90, latency_ms: 10, error: null },
+    { predicted_verdict: 'Supported', ground_truth: 'Supported', support_score: 90, latency_ms: 10, error: null },
   ]);
   assert.equal(m.quotes.offered, 0);
   assert.equal(m.quotes.offerRate, 0);

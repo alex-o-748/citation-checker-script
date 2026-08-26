@@ -56,7 +56,7 @@
           "min": 504,
           "max": 9519
         },
-        "confidence": {
+        "support_score": {
           "avg": 79.0728476821192,
           "avgWhenCorrect": 79.82142857142857,
           "avgWhenWrong": 73.73239436619718,
@@ -108,7 +108,7 @@
           "min": 458,
           "max": 7381
         },
-        "confidence": {
+        "support_score": {
           "avg": 77.65517241379311,
           "avgWhenCorrect": 76.34408602150538,
           "avgWhenWrong": 67.09677419354838,
@@ -160,7 +160,7 @@
           "min": 2377,
           "max": 8974
         },
-        "confidence": {
+        "support_score": {
           "avg": 79.93055555555556,
           "avgWhenCorrect": 81.81318681318682,
           "avgWhenWrong": 42.78947368421053,
@@ -212,7 +212,7 @@
           "min": 1358,
           "max": 16386
         },
-        "confidence": {
+        "support_score": {
           "avg": 60,
           "avgWhenCorrect": 50.92741935483871,
           "avgWhenWrong": 39.435483870967744,

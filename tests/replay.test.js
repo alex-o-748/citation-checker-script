@@ -89,7 +89,7 @@ const okRow = {
 
 const okPageIds = async () => new Map([['Test Article', 42]]);
 const okModelCaller = () => async () => ({
-    text: JSON.stringify({ confidence: 90, verdict: 'SUPPORTED', source_quote: 'The bridge opened to traffic in 1998.', comments: 'match' }),
+    text: JSON.stringify({ support_score: 90, verdict: 'SUPPORTED', source_quote: 'The bridge opened to traffic in 1998.', comments: 'match' }),
     usage: { input: 10, output: 5 },
 });
 

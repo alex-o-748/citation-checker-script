@@ -38,7 +38,7 @@ test('a supported verdict carries a verified quote', async () => {
     const src = source('Source URL: https://example.com\n\nSource Content:\nAcme Corp was founded in 1985 by John Smith.');
     const result = await verifyCitation('The company was founded in 1985 by John Smith.', src, {
         callModel: okResponse({
-            confidence: 95,
+            support_score: 95,
             verdict: 'SUPPORTED',
             source_quote: 'Acme Corp was founded in 1985 by John Smith.',
             comments: 'Direct match.',
@@ -46,7 +46,7 @@ test('a supported verdict carries a verified quote', async () => {
     });
 
     assert.equal(result.verdict, 'SUPPORTED');
-    assert.equal(result.confidence, 95);
+    assert.equal(result.supportScore, 95);
     assert.equal(result.quoteStatus, 'exact');
     assert.equal(result.sourceQuote, 'Acme Corp was founded in 1985 by John Smith.');
     assert.deepEqual(result.usage, { input: 120, output: 30 });
@@ -56,7 +56,7 @@ test('a quote the source does not contain is still recorded, with its own status
     const src = source('Source URL: https://example.com\n\nSource Content:\nAcme Corp was founded in 1985.');
     const result = await verifyCitation('The company was founded by John Smith.', src, {
         callModel: okResponse({
-            confidence: 40,
+            support_score: 40,
             verdict: 'NOT SUPPORTED',
             reason_type: 'omission',
             source_quote: 'John Smith personally founded the company.',
@@ -85,7 +85,7 @@ test('a transient 503 is retried and eventually succeeds', async () => {
         callModel: async () => {
             attempts++;
             if (attempts < 3) throw new Error('PublicAI API request failed (503): upstream unavailable');
-            return { text: JSON.stringify({ confidence: 80, verdict: 'SUPPORTED', source_quote: '', comments: 'ok' }), usage: {} };
+            return { text: JSON.stringify({ support_score: 80, verdict: 'SUPPORTED', source_quote: '', comments: 'ok' }), usage: {} };
         },
         retry: { maxRetries: 5, minBackoffMs: 0, maxBackoffMs: 0, jitterMs: 0, sleepFn: async () => {} },
     });
