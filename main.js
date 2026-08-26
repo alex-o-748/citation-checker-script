@@ -1,6 +1,6 @@
-// {{Wikipedia:USync |repo=https://github.com/alex-o-748/citation-checker-script |ref=refs/heads/main|path=main.js}}
+// {{Wikipedia:USync |repo=https://github.com/alex-o-748/citation-checker-script |ref=refs/heads/dev|path=main.js}}
 //Inspired by User:Polygnotus/Scripts/AI_Source_Verification.js
-//Inspired by User:Phlsph7/SourceVerificationAIAssistant.js        
+//Inspired by User:Phlsph7/SourceVerificationAIAssistant.js         
 
 (function() {
     'use strict';
@@ -758,12 +758,47 @@ function quoteExpectedFor(verdict, reasonType) {
 const RETRYABLE_STATUS = /^(?:HTTP |[^:()]*API request failed \()(429|500|502|503|504)\b/;
 const RETRYABLE_NETWORK = /timeout|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|socket hang up/i;
 
+// vLLM (Lift Wing's backend for open-weight models) reports a genuine
+// input-validation failure — the prompt exceeds the model's context
+// window — as an HTTP 500, which would otherwise match RETRYABLE_STATUS
+// above. Retrying buys nothing: the same oversized prompt produces the
+// identical error on every attempt, so retrying just burns up to ~30s of
+// backoff before failing anyway, on a request that will never succeed no
+// matter how many times it's sent. Real incident, 2026-08-24: exactly this
+// on a live sweep against tf-llm-router. Exported (not just used inline
+// below) so service/verifier.js can recognize this specific failure after
+// withRetry gives up and record it as a per-citation result instead of
+// treating it as a run-halting error the way an unrecognized failure is.
+const CONTEXT_LENGTH_EXCEEDED = /maximum context length|VLLMValidationError/i;
+
+function isContextLengthError(error) {
+    return CONTEXT_LENGTH_EXCEEDED.test(error?.message ?? '');
+}
+
 function defaultSleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 function isRetryableError(error) {
     const msg = error?.message ?? '';
+
+    if (isContextLengthError(error)) return false;
+
+    // Node's fetch (undici) always throws this exact generic message for a
+    // network/transport-layer failure — DNS, connection reset, refused, TLS
+    // — never for an HTTP-level 4xx/5xx response (those resolve normally
+    // and are turned into the "API request failed (<status>)" shape by our
+    // own provider code, matched below). The actual reason lives one level
+    // down in `error.cause` (e.g. `{ code: 'ENOTFOUND' }` or `ECONNRESET`),
+    // which this function never inspected — so this entire category of
+    // real transient failures skipped retry and went straight to a hard
+    // failure. Real incident, 2026-08-24: a live sweep against
+    // tf-llm-router halted immediately on "fetch failed" with zero retry
+    // attempts. Matched by exact equality, not substring, so this can't
+    // accidentally widen retry to some other error that merely mentions
+    // "fetch failed" in a longer message.
+    if (msg === 'fetch failed') return true;
+
     return RETRYABLE_STATUS.test(msg) || RETRYABLE_NETWORK.test(msg);
 }
 
@@ -999,7 +1034,25 @@ function getCitationGroup(refElement) {
     return refsInContainer.slice(start, end + 1);
 }
 
-function extractClaimText(refElement) {
+// Splits on a sentence-ending mark followed by whitespace and what looks like
+// the start of a new sentence, then returns the last piece. Deliberately
+// naive about abbreviations ("Dr. Smith", "U.S. policy") — for this use
+// (finding where the final sentence of a claim begins), under-splitting an
+// abbreviation into the same sentence is the safer failure than over-
+// splitting mid-abbreviation and truncating the real claim.
+const SENTENCE_SPLIT_RE = /(?<=[.!?])\s+(?=[A-Z0-9"'(À-Ü])/;
+
+// Returns just the final sentence of `text` — the sentence immediately
+// preceding wherever `text` ends. Used for the batch pipeline's stricter
+// claim scope (see extractClaimText's `scope` option); returns the whole
+// string unchanged if no sentence boundary is found.
+function lastSentence(text) {
+    if (!text) return text;
+    const parts = text.split(SENTENCE_SPLIT_RE);
+    return parts[parts.length - 1].trim();
+}
+
+function extractClaimText(refElement, { scope = 'paragraph' } = {}) {
     const document = refElement.ownerDocument;
     const container = refElement.closest('p, li, td, div, section');
     if (!container) {
@@ -1073,6 +1126,13 @@ function extractClaimText(refElement) {
             .trim();
     }
 
+    // Applied last, after the paragraph-scope text is settled (including its
+    // own too-short fallback above) — narrowing to the final sentence is a
+    // separate concern from finding the claim's boundary in the first place.
+    if (scope === 'sentence') {
+        claimText = lastSentence(claimText);
+    }
+
     return claimText;
 }
 
@@ -1110,7 +1170,29 @@ function refIdFromHref(href) {
     return refId || null;
 }
 
-function collectCitations(root, { minClaimLength = MIN_CLAIM_LENGTH } = {}) {
+// Recovers a named <ref name="..."> from its rendered footnote id, when the
+// citation came from one. MediaWiki's Cite extension renders a *named* ref's
+// footnote id as `cite_note-<name>-<n>` — <name> being the ref's `name`
+// attribute, sanitized for HTML-id use (Sanitizer::escapeIdForAttribute:
+// spaces become underscores, and so on), and <n> a global reference counter
+// unrelated to the name, shared across every occurrence of that same named
+// ref. An *unnamed* ref renders as plain `cite_note-<n>`, with no name
+// segment to recover — refId already gives us that whole footnote id
+// (refIdFromHref reads it off the same href this function's caller does), so
+// no extra DOM access is needed to try to recover one.
+//
+// The recovered value is the *sanitized* id-safe form, not necessarily
+// byte-identical to the wikitext attribute (an underscore may have been a
+// space) — acceptable per CLAUDE.md: "ref_name... display only; NOT an
+// identifier". Works identically on browser-skin and Parsoid REST HTML: Cite
+// renders this id the same way on both, unlike the URL/page-number
+// extraction in core/urls.js, which does differ between the two sources.
+function refNameFromNoteId(refId) {
+    const match = /^cite_note-(.+)-\d+$/.exec(refId || '');
+    return match ? match[1] : null;
+}
+
+function collectCitations(root, { minClaimLength = MIN_CLAIM_LENGTH, claimScope = 'paragraph' } = {}) {
     if (!root) return [];
     // A Document has no ownerDocument; an Element does. Either can be the root.
     const doc = root.ownerDocument || root;
@@ -1120,12 +1202,13 @@ function collectCitations(root, { minClaimLength = MIN_CLAIM_LENGTH } = {}) {
         const refId = refIdFromHref(refElement.getAttribute('href'));
         if (!refId) continue;
 
-        const claimText = extractClaimText(refElement);
+        const claimText = extractClaimText(refElement, { scope: claimScope });
         if (!claimText || claimText.length < minClaimLength) continue;
 
         citations.push({
             refElement,
             refId,
+            refName: refNameFromNoteId(refId),
             citationNumber: refElement.textContent.replace(/[\[\]]/g, '').trim(),
             claimText,
             url: extractReferenceUrl(refElement, doc),
@@ -1179,6 +1262,126 @@ function attachGroupMetadata(citations) {
             visited.add(c);
         });
     }
+}
+
+// --- core/groups.js ---
+// Adjacent-citation group semantics: when the collective (multi-source)
+// verification for a group should fire, how a group's members collapse to
+// one entry per distinct source, whether the collective verdict is worth
+// running at all, and how a collective verdict merges with per-source
+// results into one unit per claim.
+//
+// Extracted verbatim from main.js's verifyGroupCollective() and
+// getReportUnits() so the userscript and the Toolforge batch pipeline
+// (service/verifier.js) compute identical group units instead of maintaining
+// two implementations that can silently drift — see docs/design-plans/
+// 2026-08-22-batch-verification-and-persistence.md §2 and docs/design-plans/
+// 2026-08-24-csv-deliverable-and-component-names.md (G4). Pure logic only:
+// no DOM, no fetch, no provider call — callers own all of that.
+
+
+/**
+ * True when `citation` is the last member of its adjacent-citation group —
+ * the point at which the group's collective verification should fire, once
+ * per group rather than once per member. A solo citation (no group, or a
+ * group of one) is never "close".
+ */
+function isGroupClose(citation) {
+    return Boolean(citation && citation.groupSize > 1 && citation.groupIndex === citation.groupSize - 1);
+}
+
+/**
+ * Dedupes an adjacent-citation group's members down to one entry per
+ * distinct source. Two citations backed by the same named `<ref>` (or the
+ * same URL at the same page number) collapse into a single entry carrying
+ * both citation numbers, so the group prompt (assembleGroupSources()) isn't
+ * asked to show the model the same source text twice.
+ *
+ * `sourceFor(member)` resolves one member to its source; callers own *how*,
+ * because that differs by caller: the userscript looks a member up in its
+ * `url|page=N`-keyed sourceCache, while the batch pipeline already carries
+ * each citation's resolved `source` object directly
+ * (service/claim-extractor.js's processArticle output). It must return
+ * `{ key, url, content, error, status }` — `key` is the dedup key; the rest
+ * become the entry's fields the first time that key is seen.
+ *
+ * @param {Array<object>} members - Group members, sharing one groupId.
+ * @param {(member: object) => {key: string, url?: string|null, content?: string|null, error?: string|null, status?: number|null}} sourceFor
+ * @returns {Array<{citationNumbers: (string|number)[], url: string|null, content: string|null, error: string|null, status: number|null}>}
+ */
+function groupSourceEntries(members, sourceFor) {
+    const byKey = new Map();
+    for (const member of members) {
+        const { key, url, content, error, status } = sourceFor(member);
+        let entry = byKey.get(key);
+        if (!entry) {
+            entry = {
+                citationNumbers: [],
+                url: url || null,
+                content: content ?? null,
+                error: error ?? null,
+                status: status ?? null,
+            };
+            byKey.set(key, entry);
+        }
+        entry.citationNumbers.push(member.citationNumber);
+    }
+    return Array.from(byKey.values());
+}
+
+/**
+ * Whether the collective (multi-source) verdict should be skipped in favor
+ * of the group's existing per-source results. True when at most one member
+ * source has usable text — with ≤1 available source, a collective verdict
+ * would just restate the solo one, so running it would burn a model call to
+ * say nothing new.
+ *
+ * @param {ReturnType<typeof groupSourceEntries>} entries
+ */
+function shouldSkipCollective(entries) {
+    const availableCount = entries.filter(e => e.content && extractSourceText(e.content).trim()).length;
+    return availableCount <= 1;
+}
+
+/**
+ * Merges per-source results and collective group verdicts into one entry per
+ * claim, in the order `results` presents them: a solo citation passes
+ * through unchanged; an adjacent group collapses to its collective verdict.
+ * A group whose collective check was skipped (§ shouldSkipCollective) falls
+ * back to its per-source member results instead. A group whose collective
+ * check hasn't completed yet (`groupResults` has no entry for it) is omitted
+ * entirely — a result page that hasn't finished a group shouldn't report a
+ * partial or wrong verdict for it.
+ *
+ * Drives the summary counts and the wikitext/plaintext exporters — this is
+ * the merge that decides which row means "for a group, the collective
+ * verdict is the one to publish" (docs/design-plans/
+ * 2026-08-07-batch-source-checks-for-edit-suggestions.md §6).
+ *
+ * @param {Array<object>} results - Per-source results, one per citation.
+ * @param {Map<string, object>} groupResults - Collective verdicts (or
+ *   `{ skipped: true, groupId }` placeholders), keyed by groupId.
+ */
+function mergeReportUnits(results, groupResults) {
+    const units = [];
+    const seenGroups = new Set();
+    for (const r of results) {
+        if (r.groupSize && r.groupSize > 1) {
+            if (seenGroups.has(r.groupId)) continue;
+            seenGroups.add(r.groupId);
+            const collective = groupResults.get(r.groupId);
+            if (collective && !collective.skipped) {
+                units.push(collective);
+            } else if (collective && collective.skipped) {
+                for (const x of results) {
+                    if (x.groupId === r.groupId) units.push(x);
+                }
+            }
+        } else {
+            units.push(r);
+        }
+    }
+    return units;
 }
 
 // --- core/providers.js ---
@@ -2127,6 +2330,11 @@ function useToolforgeSourceFetcher() {
         'API key required for {name}': 'Clé API requise pour {name}',
         'Results are logged for research. Your username is not recorded.':
             'Les résultats sont enregistrés à des fins de recherche. Votre nom d’utilisateur n’est pas enregistré.',
+        'Claim scope': 'Portée de l’affirmation',
+        'Full claim': 'Affirmation complète',
+        'Last sentence only': 'Dernière phrase uniquement',
+        '"Last sentence only" avoids flagging a multi-sentence claim as unsupported just because an earlier sentence lacks a citation.':
+            '« Dernière phrase uniquement » évite de signaler une affirmation de plusieurs phrases comme non étayée simplement parce qu’une phrase précédente manque de source.',
 
         // Verifier tab + first-run notification
         'Verify': 'Vérifier',
@@ -2416,6 +2624,11 @@ function useToolforgeSourceFetcher() {
         'API key required for {name}': 'Se necesita una clave API para {name}',
         'Results are logged for research. Your username is not recorded.':
             'Los resultados se registran con fines de investigación. El nombre de usuario no se registra.',
+        'Claim scope': 'Alcance de la afirmación',
+        'Full claim': 'Afirmación completa',
+        'Last sentence only': 'Solo la última frase',
+        '"Last sentence only" avoids flagging a multi-sentence claim as unsupported just because an earlier sentence lacks a citation.':
+            'Con «Solo la última frase» se evita marcar como no respaldada una afirmación de varias frases solo porque a una frase anterior le falta una fuente.',
 
         // Verifier tab + first-run notification
         'Verify': 'Verificar',
@@ -2741,6 +2954,14 @@ function useToolforgeSourceFetcher() {
                 localStorage.setItem('source_verifier_provider', 'huggingface');
             }
             this.currentProvider = storedProvider || 'huggingface';
+            // 'paragraph' (default) is the full "between citations" span, which
+            // can include multiple sentences — same scope the batch pipeline
+            // used before it moved to 'sentence' by default (see CLAUDE.md).
+            // Exposed here for the same reason: a multi-sentence claim can flag
+            // NOT SUPPORTED because only its first sentence lacks a citation,
+            // and 'sentence' narrows to just the sentence next to the ref.
+            const storedClaimScope = localStorage.getItem('verifier_claim_scope');
+            this.claimScope = storedClaimScope === 'sentence' ? 'sentence' : 'paragraph';
             this.sidebarWidth = localStorage.getItem('verifier_sidebar_width') || '400px';
             this.isVisible = localStorage.getItem('verifier_sidebar_visible') === 'true';
             this.buttons = {};
@@ -2869,6 +3090,9 @@ function useToolforgeSourceFetcher() {
                         <div id="verifier-provider-container"></div>
                         <div id="verifier-provider-info"></div>
                         <div id="verifier-key-buttons"></div>
+                        <div id="verifier-claim-scope-label">${this.t('Claim scope')}</div>
+                        <div id="verifier-claim-scope-container"></div>
+                        <div id="verifier-claim-scope-note">${this.t('"Last sentence only" avoids flagging a multi-sentence claim as unsupported just because an earlier sentence lacks a citation.')}</div>
                         <div id="verifier-accuracy-note"></div>
                         <div id="verifier-privacy-note">${this.t('Results are logged for research. Your username is not recorded.')}</div>
                         <div id="verifier-settings-done-container"></div>
@@ -3529,6 +3753,20 @@ function useToolforgeSourceFetcher() {
                 #verifier-provider-info.free-provider a {
                     color: inherit;
                     text-decoration: underline;
+                }
+                #verifier-claim-scope-label {
+                    font-size: 12px;
+                    font-weight: bold;
+                    color: var(--sv-ink-4);
+                    margin-bottom: 4px;
+                }
+                #verifier-claim-scope-container {
+                    margin-bottom: 6px;
+                }
+                #verifier-claim-scope-note {
+                    font-size: 12px;
+                    color: var(--sv-ink-4);
+                    margin-bottom: 10px;
                 }
                 #verifier-buttons-container {
                     display: flex;
@@ -4311,7 +4549,18 @@ function useToolforgeSourceFetcher() {
                 }
             });
             this.buttons.providerSelect.getMenu().selectItemByData(this.currentProvider);
-            
+
+            // Claim scope selector
+            this.buttons.claimScopeSelect = new OO.ui.DropdownWidget({
+                menu: {
+                    items: [
+                        new OO.ui.MenuOptionWidget({ data: 'paragraph', label: this.t('Full claim') }),
+                        new OO.ui.MenuOptionWidget({ data: 'sentence', label: this.t('Last sentence only') })
+                    ]
+                }
+            });
+            this.buttons.claimScopeSelect.getMenu().selectItemByData(this.claimScope);
+
             this.buttons.setKey = new OO.ui.ButtonWidget({
                 label: this.t('Set API Key'),
                 flags: ['primary', 'progressive'],
@@ -4390,6 +4639,7 @@ function useToolforgeSourceFetcher() {
             document.getElementById('verifier-close-btn-container').appendChild(this.buttons.close.$element[0]);
             document.getElementById('verifier-settings-btn-container').appendChild(this.buttons.settings.$element[0]);
             document.getElementById('verifier-provider-container').appendChild(this.buttons.providerSelect.$element[0]);
+            document.getElementById('verifier-claim-scope-container').appendChild(this.buttons.claimScopeSelect.$element[0]);
             document.getElementById('verifier-settings-done-container').appendChild(this.buttons.settingsDone.$element[0]);
 
             this.updateProviderInfo();
@@ -4876,7 +5126,7 @@ function useToolforgeSourceFetcher() {
         }
 
         extractClaimText(refElement) {
-            return extractClaimText(refElement);
+            return extractClaimText(refElement, { scope: this.claimScope });
         }
 
         getCitationGroup(refElement) {
@@ -5024,7 +5274,12 @@ function useToolforgeSourceFetcher() {
                 this.updateTheme();
                 this.updateStatus(this.t('Switched to {name}', { name: this.providers[this.currentProvider].name }));
             });
-            
+
+            this.buttons.claimScopeSelect.getMenu().on('select', (item) => {
+                this.claimScope = item.getData();
+                localStorage.setItem('verifier_claim_scope', this.claimScope);
+            });
+
             this.buttons.setKey.on('click', () => {
                 this.setApiKey();
             });
@@ -5468,7 +5723,7 @@ function useToolforgeSourceFetcher() {
             // Footnote backlinks use .mw-cite-backlink, not .reference, so no
             // dedup is needed. The batch runner passes a Parsoid document as the
             // root instead; see core/citations.js.
-            return collectCitations(document.getElementById('mw-content-text'));
+            return collectCitations(document.getElementById('mw-content-text'), { claimScope: this.claimScope });
         }
 
         attachGroupMetadata(citations) {
@@ -6196,35 +6451,23 @@ function useToolforgeSourceFetcher() {
 
             // Dedupe by cache key so a source cited twice in the group (named
             // refs) is sent once, with both citation numbers on its label.
-            const byKey = new Map();
-            for (const m of members) {
+            // Shared with the batch pipeline via core/groups.js — see that
+            // file's header for why this isn't reimplemented per caller.
+            const entries = groupSourceEntries(members, m => {
                 const cacheKey = m.url
                     ? (m.pageNum ? `${m.url}|page=${m.pageNum}` : m.url)
                     : `__nourl_${m.citationNumber}`;
-                let entry = byKey.get(cacheKey);
-                if (!entry) {
-                    const fetchResult = m.url
-                        ? (this.sourceCache.get(cacheKey) || { content: null, error: null, status: null })
-                        : { content: null, error: 'No URL found in reference', status: null };
-                    entry = {
-                        citationNumbers: [],
-                        url: m.url || null,
-                        content: fetchResult.content,
-                        error: fetchResult.error,
-                        status: fetchResult.status,
-                    };
-                    byKey.set(cacheKey, entry);
-                }
-                entry.citationNumbers.push(m.citationNumber);
-            }
-            const entries = Array.from(byKey.values());
+                const fetchResult = m.url
+                    ? (this.sourceCache.get(cacheKey) || { content: null, error: null, status: null })
+                    : { content: null, error: 'No URL found in reference', status: null };
+                return { key: cacheKey, url: m.url || null, content: fetchResult.content, error: fetchResult.error, status: fetchResult.status };
+            });
             const truncated = entries.some(e => e.content && e.content.includes('\nTruncated: true'));
             const { text: assembledText, anyAvailable } = assembleGroupSources(entries);
 
             // When only one source is available the collective verdict would
             // duplicate the individual per-source result, so skip it.
-            const availableCount = entries.filter(e => e.content && extractSourceText(e.content).trim()).length;
-            if (availableCount <= 1) {
+            if (shouldSkipCollective(entries)) {
                 this.reportGroupResults.set(groupId, { skipped: true, groupId });
                 this.hideGroupCollectiveSlot(groupId);
                 // Marking the group skipped changes what getReportUnits()
@@ -6334,26 +6577,10 @@ function useToolforgeSourceFetcher() {
         // adjacent group collapses to its collective verdict. Groups whose
         // collective check hasn't completed yet are omitted until it does.
         // Used by the summary counts and the wikitext/plaintext exporters.
+        // Shared with the batch pipeline via core/groups.js's
+        // mergeReportUnits() — see that file's header.
         getReportUnits() {
-            const units = [];
-            const seenGroups = new Set();
-            for (const r of this.reportResults) {
-                if (r.groupSize && r.groupSize > 1) {
-                    if (seenGroups.has(r.groupId)) continue;
-                    seenGroups.add(r.groupId);
-                    const collective = this.reportGroupResults.get(r.groupId);
-                    if (collective && !collective.skipped) {
-                        units.push(collective);
-                    } else if (collective && collective.skipped) {
-                        for (const x of this.reportResults) {
-                            if (x.groupId === r.groupId) units.push(x);
-                        }
-                    }
-                } else {
-                    units.push(r);
-                }
-            }
-            return units;
+            return mergeReportUnits(this.reportResults, this.reportGroupResults);
         }
 
         async verifyAllCitations() {
@@ -6598,7 +6825,7 @@ function useToolforgeSourceFetcher() {
                 // collective check: the whole group's sources are cached by now
                 // (group members are contiguous and processed in order), so we
                 // assemble them and ask for a single verdict over the combination.
-                if (citation.groupSize > 1 && citation.groupIndex === citation.groupSize - 1 && !this.reportCancelled) {
+                if (isGroupClose(citation) && !this.reportCancelled) {
                     const groupToken = (citation.groupCitationNumbers || []).map(n => `[${n}]`).join('');
                     this.updateReportProgress(completed, progressTotal, this.t('Checking combined sources {token}', { token: groupToken }), startTime);
                     await this.verifyGroupCollective(citation, citations, startTime, delayBetweenCalls, completed, progressTotal);

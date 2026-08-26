@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 // Runnable integration test for stages 4-5 of the batch pipeline: verify and
 // store. Feeds benchmark/dataset.json's stored claim/source pairs through
-// service/verify.js and service/assemble.js, and — unless --dry-run — writes
+// service/verifier.js and service/finding-builder.js, and — unless --dry-run — writes
 // the results into the real ToolsDB citation_findings table via
-// service/findings.js.
+// service/findings-store.js.
 //
 // This is the replay path docs/design-plans/
 // 2026-08-22-batch-verification-and-persistence.md calls "the highest-value
@@ -23,10 +23,10 @@
 //      from inside Wikimedia Cloud infrastructure — the Toolforge bastion.
 //
 // Usage:
-//   node service/replay.js --dry-run --limit 5                 # liftwing, no key needed
-//   node service/replay.js --limit 20                          # writes to ToolsDB
-//   node service/replay.js --dry-run --limit 5 --provider claude
-//   node service/replay.js --help
+//   node service/run-replay.js --dry-run --limit 5                 # liftwing, no key needed
+//   node service/run-replay.js --limit 20                          # writes to ToolsDB
+//   node service/run-replay.js --dry-run --limit 5 --provider claude
+//   node service/run-replay.js --help
 
 import { readFile as fsReadFile } from 'node:fs/promises';
 import { parseArgs } from 'node:util';
@@ -34,59 +34,40 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 import { resolvePageIds } from './wikipedia-pageids.js';
-import { verifyCitation, makeModelCaller, ProviderAuthError } from './verify.js';
-import { assembleFinding } from './assemble.js';
-import { buildUpsertQuery, upsertFinding } from './findings.js';
+import { verifyCitation, makeModelCaller, ProviderAuthError } from './verifier.js';
+import { assembleFinding } from './finding-builder.js';
+import { buildUpsertQuery, upsertFinding } from './findings-store.js';
 import { openToolsDbConnection } from './toolsdb.js';
 import { makeQueryFn } from './replicas.js';
 import { PROMPT_VERSION } from '../core/prompts.js';
+import { PROVIDER_MODELS, PROVIDER_ENV_VARS } from './provider-config.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_DATASET_PATH = join(__dirname, '..', 'benchmark', 'dataset.json');
 
-// Sourced from main.js's this.providers config, which is the authoritative,
-// complete provider list — NOT from cli/verify.js's KNOWN_PROVIDERS, which
-// omits 'liftwing' with no stated reason and was wrongly treated as
-// authoritative in an earlier version of this file. That omission mattered
-// more here than it does in cli/verify.js: Lift Wing, called from inside
-// Toolforge, is the specific thing docs/design-plans/
-// 2026-08-07-batch-source-checks-for-edit-suggestions.md §5 calls "the
-// strongest single argument for Toolforge hosting" — a replay runner for a
-// Toolforge migration that can't select it is missing its own point. Keep in
-// sync with main.js's this.providers by hand if either changes.
-const PROVIDER_MODELS = {
-    publicai:    'aisingapore/Qwen-SEA-LION-v4-32B-IT',
-    huggingface: 'openai/gpt-oss-20b',
-    liftwing:    'llm-qwen36-27b',
-    claude:      'claude-sonnet-4-6',
-    gemini:      'gemini-flash-latest',
-    openai:      'gpt-4o',
-};
-
-const PROVIDER_ENV_VARS = {
-    publicai:    null,
-    huggingface: null,
-    liftwing:    null, // proxied through the CORS worker; no client-side key
-    claude:      'CLAUDE_API_KEY',
-    gemini:      'GEMINI_API_KEY',
-    openai:      'OPENAI_API_KEY',
-};
+// See the matching comment in service/run-sweep.js: without this, "--provider
+// liftwing" measures the Cloudflare Worker's shared approved-bot-JWT budget
+// (core/providers.js's callLiftwingAPI() default workerBase), not Lift Wing
+// accessed directly from inside Toolforge via tf-llm-router — the path the
+// parent design doc's §5 Toolforge-migration argument is actually about.
+const TOOLFORGE_LLM_ROUTER_BASE = 'https://llm-router.toolforge.org';
 
 export function parseCliArgs(argv) {
     const { values } = parseArgs({
         args: argv.slice(2),
         options: {
-            dataset:        { type: 'string', default: DEFAULT_DATASET_PATH },
-            wiki:           { type: 'string', default: 'enwiki' },
+            dataset:          { type: 'string', default: DEFAULT_DATASET_PATH },
+            wiki:             { type: 'string', default: 'enwiki' },
             // liftwing default, not publicai: this runner exists for the
             // Toolforge migration, and Lift Wing is the provider that
-            // migration is about — see the comment on PROVIDER_MODELS above.
-            provider:       { type: 'string', default: 'liftwing' },
-            model:          { type: 'string' },
-            limit:          { type: 'string' },
-            'delay-ms':     { type: 'string', default: '1000' },
-            'dry-run':      { type: 'boolean', default: false },
-            help:           { type: 'boolean', short: 'h', default: false },
+            // migration is about — see the comment in ./provider-config.js.
+            provider:         { type: 'string', default: 'liftwing' },
+            model:            { type: 'string' },
+            limit:            { type: 'string' },
+            'delay-ms':       { type: 'string', default: '1000' },
+            'dry-run':        { type: 'boolean', default: false },
+            'live-llm-router': { type: 'boolean', default: false },
+            help:             { type: 'boolean', short: 'h', default: false },
         },
         strict: true,
     });
@@ -100,10 +81,11 @@ export function parseCliArgs(argv) {
         limit: values.limit ? Number(values.limit) : Infinity,
         delayMs: Number(values['delay-ms']),
         dryRun: values['dry-run'],
+        liveLlmRouter: values['live-llm-router'],
     };
 }
 
-export const HELP_TEXT = `usage: node service/replay.js [options]
+export const HELP_TEXT = `usage: node service/run-replay.js [options]
 
 Runs benchmark/dataset.json's stored claim/source pairs through the batch
 pipeline's verify and store stages, proving the chain end to end with zero
@@ -121,11 +103,20 @@ Options:
                       write anything — prints each finding to stdout instead.
                       Runnable from anywhere with a provider API key; no
                       bastion or ~/replica.my.cnf needed.
+  --live-llm-router  When --provider is liftwing, route the model call
+                      through tf-llm-router
+                      (https://github.com/alex-o-748/tf-llm-router) instead
+                      of the Cloudflare Worker CORS proxy. See the comment on
+                      TOOLFORGE_LLM_ROUTER_BASE in this file — the two paths
+                      have different rate-limit behavior and should be
+                      measured separately.
   --help, -h         Show this help and exit.
 
 A halt on an auth/billing error (401/402/403) from the model stops the run
-immediately, exit code 3 — see ProviderAuthError in service/verify.js. Every
-finding written before the halt is kept; nothing is rolled back.
+immediately, exit code 3 — see ProviderAuthError in service/verifier.js. Any
+other unrecoverable model-call error (e.g. a 429 that exhausted retries)
+halts the same way, exit code 4. Every finding written before the halt is
+kept; nothing is rolled back.
 `;
 
 // Pulls the pinned revision id out of a dataset row's article_url
@@ -140,8 +131,8 @@ export function extractOldid(articleUrl) {
     }
 }
 
-// Reshapes one dataset row into the citation shape service/verify.js and
-// service/assemble.js expect (the shape service/pipeline.js's processArticle
+// Reshapes one dataset row into the citation shape service/verifier.js and
+// service/finding-builder.js expect (the shape service/claim-extractor.js's processArticle
 // produces for a live-fetched citation). No groups: the replay corpus has
 // none to reshape (see the design doc's §3, "Wrinkle 2").
 export function toCitation(row) {
@@ -219,7 +210,17 @@ export async function runReplay(opts, {
         }
     }
 
-    const callModel = makeModelCallerFn({ provider: opts.provider, apiKey, model: opts.model });
+    const useLlmRouter = opts.liveLlmRouter && opts.provider === 'liftwing';
+    if (opts.liveLlmRouter && opts.provider !== 'liftwing') {
+        stderr.write(`replay: --live-llm-router only affects --provider liftwing; ignoring for "${opts.provider}"\n`);
+    }
+    if (useLlmRouter) {
+        stderr.write(`replay: routing liftwing via ${TOOLFORGE_LLM_ROUTER_BASE}\n`);
+    }
+    const callModel = makeModelCallerFn({
+        provider: opts.provider, apiKey, model: opts.model,
+        ...(useLlmRouter ? { workerBase: TOOLFORGE_LLM_ROUTER_BASE } : {}),
+    });
 
     let processed = 0, skippedNoPageId = 0, skippedNoRevision = 0, written = 0;
     const verdictCounts = {};
@@ -245,6 +246,10 @@ export async function runReplay(opts, {
             try {
                 verification = await verifyCitation(citation.claimText, citation.source, { callModel });
             } catch (error) {
+                // Halts on ANY error, not just ProviderAuthError — see the
+                // matching comment on run-sweep.js's describeHalt() for why a
+                // retry-exhausted 429/5xx gets the same halt-and-preserve
+                // treatment rather than crashing uncaught.
                 if (error instanceof ProviderAuthError) {
                     stderr.write(
                         `replay: halting — ${opts.provider} returned an auth/billing error ` +
@@ -253,7 +258,11 @@ export async function runReplay(opts, {
                     );
                     return 3;
                 }
-                throw error;
+                stderr.write(
+                    `replay: halting — unrecoverable error calling ${opts.provider}: ${error.message}\n` +
+                    `replay: ${written} finding(s) already written are kept; nothing further will be processed.\n`
+                );
+                return 4;
             }
 
             verdictCounts[verification.verdict] = (verdictCounts[verification.verdict] || 0) + 1;

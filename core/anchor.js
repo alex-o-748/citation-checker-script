@@ -71,3 +71,21 @@ export function claimHash(claimText) {
 export function sourceUrlHash(url) {
     return sha256(normalizeSourceUrl(url));
 }
+
+// Deterministic `source_url` for a collective (multi-source) finding, which
+// has no single cited URL. Sorted, deduped, newline-joined member URLs — so
+// source_url_hash (computed above by sourceUrlHash(), unchanged) is always
+// genuinely hash(source_url) for a collective row the same as for any other,
+// and two distinct groups — or a group and a no-URL member of that same
+// group, which would otherwise both hash the empty string — never collide on
+// the unique key. See docs/design-plans/
+// 2026-08-22-batch-verification-and-persistence.md §6a.
+//
+// Named groupSourceUrl rather than that doc's proposed groupSourceUrlHash:
+// it returns the source_url string a collective row is stored with, not a
+// hash — sourceUrlHash() above still does the actual hashing, unchanged, the
+// same way it does for every other row.
+export function groupSourceUrl(urls) {
+    const distinct = [...new Set((urls || []).filter(Boolean).map(normalizeSourceUrl))].sort();
+    return distinct.length ? distinct.join('\n') : null;
+}
