@@ -228,6 +228,93 @@ test('fetchSourceContent handles Wayback API failure gracefully', async () => {
   }
 });
 
+test('fetchSourceContent with archiveFirst never fetches the live URL', async () => {
+  const mock = mockFetch(async (url) => {
+    assert.ok(url.includes('archive.org/wayback/available') || url.includes('web.archive.org'),
+      `should only contact archive.org, got: ${url}`);
+    if (url.includes('wayback/available')) {
+      return {
+        ok: true, status: 200,
+        json: async () => ({
+          archived_snapshots: {
+            closest: { available: true, timestamp: '20240101120000', url: 'http://web.archive.org/web/20240101120000/https://example.com/doc' }
+          }
+        }),
+      };
+    }
+    return { ok: true, status: 200, json: async () => ({ content: 'c'.repeat(500), truncated: false }) };
+  });
+  try {
+    const result = await fetchSourceContent('https://example.com/doc', null, { archiveFirst: true });
+    assert.ok(result.content);
+    assert.equal(mock.calls.length, 2);
+  } finally {
+    mock.restore();
+  }
+});
+
+test('fetchSourceContent with archiveFirst returns an error when no snapshot exists', async () => {
+  const mock = mockFetch(async () => ({ ok: true, status: 200, json: async () => ({ archived_snapshots: {} }) }));
+  try {
+    const result = await fetchSourceContent('https://example.com/doc', null, { archiveFirst: true });
+    assert.equal(result.content, null);
+    assert.match(result.error, /no wayback snapshot/i);
+    assert.equal(mock.calls.length, 1);
+  } finally {
+    mock.restore();
+  }
+});
+
+test('fetchSourceContent reports per-request telemetry via onRequest', async () => {
+  const mock = mockFetch(async (url) => {
+    if (url.includes('wayback/available')) {
+      return {
+        ok: true, status: 200,
+        json: async () => ({
+          archived_snapshots: {
+            closest: { available: true, timestamp: '20240101120000', url: 'http://web.archive.org/web/20240101120000/https://example.com/doc' }
+          }
+        }),
+      };
+    }
+    return { ok: true, status: 200, json: async () => ({ content: 'd'.repeat(500), truncated: false }) };
+  });
+  const records = [];
+  try {
+    await fetchSourceContent('https://example.com/doc', null, {
+      archiveFirst: true,
+      onRequest: (rec) => records.push(rec),
+    });
+    assert.equal(records.length, 2);
+    assert.equal(records[0].kind, 'wayback-availability');
+    assert.equal(records[0].ok, true);
+    assert.equal(records[1].kind, 'source-fetch');
+    assert.equal(records[1].ok, true);
+    assert.equal(records[1].bytes, 500);
+    assert.ok(typeof records[0].latencyMs === 'number');
+  } finally {
+    mock.restore();
+  }
+});
+
+test('fetchSourceContent onRequest reports failures too', async () => {
+  // Live fetch fails, so the default (non-archiveFirst) path also probes
+  // Wayback availability — both calls should report through onRequest.
+  const mock = mockFetch(async () => ({ ok: true, status: 200, json: async () => ({ error: 'upstream 404', status: 404 }) }));
+  const records = [];
+  try {
+    await fetchSourceContent('https://example.com/doc', null, { onRequest: (rec) => records.push(rec) });
+    assert.equal(records.length, 2);
+    assert.equal(records[0].kind, 'source-fetch');
+    assert.equal(records[0].ok, false);
+    assert.equal(records[0].status, 404);
+    assert.equal(records[0].error, 'upstream 404');
+    assert.equal(records[1].kind, 'wayback-availability');
+  } finally {
+    mock.restore();
+  }
+});
+
 test('logVerification posts payload and swallows failures', async () => {
   const mock = mockFetch(async () => ({ ok: true, json: async () => ({}) }));
   try {
