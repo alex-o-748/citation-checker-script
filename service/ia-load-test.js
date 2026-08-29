@@ -120,11 +120,18 @@ const parseHtml = html => new JSDOM(html).window.document;
 // Returns one task per *unique* (url, pageNum), each carrying every citation
 // across the candidate pool that cites it (a source is often shared across
 // articles, and de-duping here is a request we don't have to spend on IA).
-export async function extractTasks(candidates, { fetchArticle = fetchArticleHtml } = {}) {
+// `onProgress(articlesDone, articlesTotal, uniqueSourcesSoFar)`, when
+// supplied, fires after each article — this loop is sequential (one real
+// Wikipedia REST fetch per candidate, not parallelized), so on a few hundred
+// candidates it can run for minutes with nothing else to show for it. Without
+// this a caller watching the log sees one line and then silence, which is
+// indistinguishable from a hang.
+export async function extractTasks(candidates, { fetchArticle = fetchArticleHtml, onProgress } = {}) {
     const tasks = [];
     const byKey = new Map();
     const noopFetchSource = async () => ({ content: null, status: null, error: null });
 
+    let articlesDone = 0;
     for await (const result of runBatch(candidates, {
         parseHtml,
         fetchArticle,
@@ -133,7 +140,11 @@ export async function extractTasks(candidates, { fetchArticle = fetchArticleHtml
         // fetch phase, which keys its own dedup off this task list.
         sourceCache: new Map(),
     })) {
-        if (result.outcome !== 'ok') continue;
+        articlesDone++;
+        if (result.outcome !== 'ok') {
+            onProgress?.(articlesDone, candidates.length, tasks.length);
+            continue;
+        }
         for (const c of result.citations) {
             if (!c.url) continue;
             const key = sourceCacheKey(c.url, c.pageNum);
@@ -151,6 +162,7 @@ export async function extractTasks(candidates, { fetchArticle = fetchArticleHtml
                 claimText: c.claimText,
             });
         }
+        onProgress?.(articlesDone, candidates.length, tasks.length);
     }
     return tasks;
 }
@@ -329,7 +341,16 @@ async function main(argv) {
     console.log = () => {};
     let tasks;
     try {
-        tasks = await extractTasks(candidates);
+        tasks = await extractTasks(candidates, {
+            // Every 10 articles (and always the last one) rather than every
+            // single one — enough to prove it's alive without flooding the
+            // log across a few hundred candidates.
+            onProgress: (done, total, uniqueSoFar) => {
+                if (done % 10 === 0 || done === total) {
+                    process.stderr.write(`  ${done}/${total} article(s) processed, ${uniqueSoFar} unique source(s) found so far\n`);
+                }
+            },
+        });
     } finally {
         console.log = realLog;
     }

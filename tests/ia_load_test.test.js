@@ -75,6 +75,27 @@ test('extractTasks dedups a source shared across articles into one task', async 
     assert.equal(b.citations.length, 1);
 });
 
+test('extractTasks calls onProgress once per article, including failed fetches', async () => {
+    const progress = [];
+    await extractTasks(candidates, {
+        fetchArticle: async (c) => fetchArticleFor(c),
+        onProgress: (done, total, uniqueSoFar) => progress.push({ done, total, uniqueSoFar }),
+    });
+
+    assert.equal(progress.length, 2, 'one call per candidate article');
+    assert.deepEqual(progress[0], { done: 1, total: 2, uniqueSoFar: 2 }, 'article A alone already yields both sources');
+    assert.deepEqual(progress[1], { done: 2, total: 2, uniqueSoFar: 2 }, 'article B only adds a duplicate of source a');
+});
+
+test('extractTasks calls onProgress even for an article that fails to fetch', async () => {
+    const progress = [];
+    await extractTasks([{ pageId: 99, title: 'Missing', revisionId: 1 }], {
+        fetchArticle: async () => ({ html: null, status: 404, error: 'gone' }),
+        onProgress: (done, total, uniqueSoFar) => progress.push({ done, total, uniqueSoFar }),
+    });
+    assert.deepEqual(progress, [{ done: 1, total: 1, uniqueSoFar: 0 }]);
+});
+
 test('extractTasks skips articles that fail to fetch without throwing', async () => {
     const tasks = await extractTasks([{ pageId: 99, title: 'Missing', revisionId: 1 }], {
         fetchArticle: async () => ({ html: null, status: 404, error: 'gone' }),
