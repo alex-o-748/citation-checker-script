@@ -2,6 +2,21 @@
 
 import { isGoogleBooksUrl, parseArchiveOrgUrl } from './urls.js';
 
+// Identifies this codebase's direct calls to archive.org (the Wayback
+// availability lookup below) — without it, that request carries no
+// distinguishing UA at all. fetchViaProxy's calls go through workerBase (our
+// own proxy/sidecar infra), which brands its own outbound requests
+// separately (see tf-source-fetcher's src/config.js), so this only needs to
+// cover the one call this module makes to a third party directly.
+//
+// Duplicated from core/wikipedia.js's DEFAULT_USER_AGENT rather than
+// imported: this module is inlined into main.js by scripts/sync-main.js,
+// which strips `import` lines outright rather than resolving them — an
+// import here would silently vanish from the userscript build and throw a
+// ReferenceError in the browser.
+const DEFAULT_USER_AGENT =
+    'citation-checker-script (https://github.com/alex-o-748/citation-checker-script)';
+
 // `onRequest`, when supplied, is called once per outbound HTTP call this
 // function makes — `{ kind: 'source-fetch', url, status, ok, error, latencyMs,
 // bytes }` — regardless of success or failure. It exists for the Internet
@@ -69,7 +84,7 @@ async function findWaybackSnapshot(url, onRequest) {
     const startedAt = Date.now();
     try {
         const apiUrl = `https://archive.org/wayback/available?url=${encodeURIComponent(url)}`;
-        const response = await fetch(apiUrl);
+        const response = await fetch(apiUrl, { headers: { 'User-Agent': DEFAULT_USER_AGENT } });
         const data = await response.json();
         onRequest?.({ kind: 'wayback-availability', url, status: response.status, ok: response.ok, error: null, latencyMs: Date.now() - startedAt, bytes: null });
         const snapshot = data?.archived_snapshots?.closest;

@@ -297,6 +297,23 @@ test('fetchSourceContent reports per-request telemetry via onRequest', async () 
   }
 });
 
+test('fetchSourceContent sends a descriptive User-Agent on the direct archive.org call', async () => {
+  const mock = mockFetch(async (url) => {
+    if (String(url).includes('wayback/available')) {
+      return { ok: true, status: 200, json: async () => ({ archived_snapshots: {} }) };
+    }
+    return { ok: true, status: 200, json: async () => ({ error: 'upstream 404', status: 404 }) };
+  });
+  try {
+    await fetchSourceContent('https://example.com/doc', null);
+    const waybackCall = mock.calls.find(c => c.url.includes('wayback/available'));
+    assert.ok(waybackCall, 'should have called the wayback availability API');
+    assert.match(waybackCall.opts?.headers?.['User-Agent'] ?? '', /citation-checker-script/);
+  } finally {
+    mock.restore();
+  }
+});
+
 test('fetchSourceContent onRequest reports failures too', async () => {
   // Live fetch fails, so the default (non-archiveFirst) path also probes
   // Wayback availability — both calls should report through onRequest.
