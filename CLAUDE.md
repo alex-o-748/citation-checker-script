@@ -184,6 +184,39 @@ Runnable entry points, each a thin wiring layer over the components above:
 - Claim extraction uses "between citations" logic by design (not full sentences) for precision
 - `extractClaimText(refElement, { scope })` (`core/claim.js`) supports two claim scopes. `scope: 'paragraph'` (the default, used by `main.js` and the CLI/benchmark) is the full "between citations" span, which can include multiple sentences when the previous citation is more than one sentence back. `scope: 'sentence'` narrows that span to only its final sentence (via `lastSentence()`) — `core/citations.js`'s `collectCitations(root, { claimScope })` threads this through, and `service/claim-extractor.js`'s `processArticle()` defaults `claimScope` to `'sentence'` for the batch pipeline. This matters because in an unattended batch run, a multi-sentence claim where only the first sentence lacks support reads as a false NOT SUPPORTED on the whole span — there's no editor present to notice that only part of the claim is a "citation needed" case, not an "unsupported" one. The interactive userscript defaults to paragraph scope, where a human reads the full claim and isn't misled by that ambiguity — but it also exposes a "Claim scope" setting (Settings panel, persisted to `localStorage` as `verifier_claim_scope`) letting an editor switch to sentence scope for both single-citation checks and "Verify All Citations", for the same false-positive reason batch mode defaults to it.
 
+### Claim extraction must not use DOM Range (read before touching `core/claim.js`)
+
+`core/claim.js` walks the DOM directly (`textBetween`) to get the text between
+two citation markers. The obvious implementation — a `Range` with
+`setStartAfter` / `setEndBefore` / `toString()` — is what it used to do, and it
+is a trap: **under JSDOM, every Range boundary comparison is O(document).**
+jsdom's `isFollowing(a, b)` walks forward from `b` through the rest of the
+document looking for `a`, so when `a` precedes `b` it scans to the end of the
+page and returns false. `Range.toString()` runs that twice per text node, and
+`setStart`/`setEnd` run it too.
+
+Claim extraction calls this once per citation plus once per adjacent pair, so
+the cost was **quadratic in article length**. Measured on Parsoid-shaped HTML:
+
+| Citations | HTML | Range-based | Walk-based |
+|---|---|---|---|
+| 240 | 110 KB | 1.3 s | 18 ms |
+| 480 | 220 KB | 6.0 s | 35 ms |
+| 960 | 440 KB | 40.2 s | 67 ms |
+
+A browser hides this completely — `Range` is native there, and the userscript
+only ever handles one article — which is why the cost only appeared once the
+same code was reused by the benchmark and the Toolforge batch runner.
+
+Two tests in `tests/claim.test.js` pin it: one stubs `document.createRange()` to
+throw (structural, deterministic), and one asserts per-citation cost stays flat
+as the article grows 8× (catches any other O(document) step). Both fail against
+the old implementation.
+
+The remaining per-article cost is JSDOM parsing plus URL resolution, both
+linear. If extraction needs to get faster again, that is where to look — not
+here.
+
 ### Benchmark row_id fragility (read before reordering the CSV)
 
 `extract_dataset.js` derives each row's stable id as `row_<csv_line>`, where `csv_line` is the line number in `Benchmarking_data_Citations.csv` (`_rowIndex = index + 2`, accounting for the header). Two consequences a future regenerate must handle:
