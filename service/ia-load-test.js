@@ -216,6 +216,18 @@ export function makeBreaker(windowSize) {
     };
 }
 
+// Prefixes a status line with an ISO timestamp — for a run spanning minutes
+// to hours (article extraction alone can take a while; see extractTasks's
+// onProgress), a plain transcript can't answer "how long did that step take"
+// after the fact. A leading blank line (used for visual spacing between
+// steps) is kept before the timestamp rather than after it, so spacing still
+// reads naturally.
+export function timestampedLog(msg) {
+    const leading = msg.match(/^\n+/)?.[0] ?? '';
+    const rest = msg.slice(leading.length);
+    process.stderr.write(`${leading}[${new Date().toISOString()}] ${rest}`);
+}
+
 function makeLogger(logPath) {
     const stream = fs.createWriteStream(logPath, { flags: 'a' });
     return {
@@ -238,7 +250,7 @@ export async function runLoadTest({
     warnErrorRate,
     abortErrorRate,
     window,
-    log = (msg) => process.stderr.write(msg),
+    log = timestampedLog,
 }) {
     const completedKeys = resume ? loadCompletedKeys(out) : new Set();
     if (completedKeys.size) {
@@ -322,7 +334,7 @@ async function main(argv) {
         return 0;
     }
     if (!opts.candidates) {
-        process.stderr.write('error: --candidates is required\n');
+        timestampedLog('error: --candidates is required\n');
         return 2;
     }
 
@@ -330,11 +342,11 @@ async function main(argv) {
     try {
         candidates = JSON.parse(fs.readFileSync(opts.candidates, 'utf8'));
     } catch (error) {
-        process.stderr.write(`error: could not read --candidates ${opts.candidates}: ${error.message}\n`);
+        timestampedLog(`error: could not read --candidates ${opts.candidates}: ${error.message}\n`);
         return 1;
     }
 
-    process.stderr.write('extracting citations from candidate articles...\n');
+    timestampedLog('extracting citations from candidate articles...\n');
     // core/urls.js logs one console.log per citation it examines — fine for a
     // human watching one article in devtools, unusable noise across hundreds.
     const realLog = console.log;
@@ -347,14 +359,14 @@ async function main(argv) {
             // log across a few hundred candidates.
             onProgress: (done, total, uniqueSoFar) => {
                 if (done % 10 === 0 || done === total) {
-                    process.stderr.write(`  ${done}/${total} article(s) processed, ${uniqueSoFar} unique source(s) found so far\n`);
+                    timestampedLog(`  ${done}/${total} article(s) processed, ${uniqueSoFar} unique source(s) found so far\n`);
                 }
             },
         });
     } finally {
         console.log = realLog;
     }
-    process.stderr.write(`${tasks.length} unique source(s) to fetch across ${candidates.length} candidate article(s)\n`);
+    timestampedLog(`${tasks.length} unique source(s) to fetch across ${candidates.length} candidate article(s)\n`);
 
     const { aborted, requestCount, stepSummaries } = await runLoadTest({
         tasks,
@@ -368,11 +380,11 @@ async function main(argv) {
         window: opts.window,
     });
 
-    process.stderr.write(`\ntotal requests logged: ${requestCount}\n`);
-    process.stderr.write(`log: ${opts.out}\n`);
-    if (opts.contentOut) process.stderr.write(`content: ${opts.contentOut}\n`);
+    timestampedLog(`\ntotal requests logged: ${requestCount}\n`);
+    timestampedLog(`log: ${opts.out}\n`);
+    if (opts.contentOut) timestampedLog(`content: ${opts.contentOut}\n`);
     for (const s of stepSummaries) {
-        process.stderr.write(`  ${s.label}: ${s.ok} ok, ${s.failed} failed, ${(s.ms / 1000).toFixed(1)}s\n`);
+        timestampedLog(`  ${s.label}: ${s.ok} ok, ${s.failed} failed, ${(s.ms / 1000).toFixed(1)}s\n`);
     }
 
     return aborted ? 1 : 0;

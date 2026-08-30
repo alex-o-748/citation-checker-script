@@ -12,6 +12,7 @@ import {
     makeBreaker,
     runLoadTest,
     DEFAULT_STEPS,
+    timestampedLog,
 } from '../service/ia-load-test.js';
 
 const parseHtml = html => new JSDOM(html).window.document;
@@ -158,6 +159,31 @@ test('makeBreaker computes a rolling rate and evicts old records', () => {
     assert.equal(breaker.errorRate(), 0);
     for (let i = 0; i < 10; i++) breaker.record(false);
     assert.equal(breaker.errorRate(), 1, 'window fully evicted the earlier successes');
+});
+
+test('timestampedLog prefixes the message with an ISO timestamp', () => {
+    const original = process.stderr.write;
+    const written = [];
+    process.stderr.write = (chunk) => { written.push(chunk); return true; };
+    try {
+        timestampedLog('hello\n');
+    } finally {
+        process.stderr.write = original;
+    }
+    assert.equal(written.length, 1);
+    assert.match(written[0], /^\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z\] hello\n$/);
+});
+
+test('timestampedLog keeps a leading blank line before the timestamp, not after', () => {
+    const original = process.stderr.write;
+    const written = [];
+    process.stderr.write = (chunk) => { written.push(chunk); return true; };
+    try {
+        timestampedLog('\n=== step 1 ===\n');
+    } finally {
+        process.stderr.write = original;
+    }
+    assert.match(written[0], /^\n\[\d{4}-\d{2}-\d{2}T[\d:.]+Z\] === step 1 ===\n$/);
 });
 
 test('DEFAULT_STEPS sums to a five-figure request budget', () => {
