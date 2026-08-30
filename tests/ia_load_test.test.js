@@ -43,7 +43,7 @@ const candidates = [
     { pageId: 2, title: 'Article B', revisionId: 20 },
 ];
 
-// processArticle() (service/pipeline.js) calls fetchArticle({ title,
+// processArticle() (service/claim-extractor.js) calls fetchArticle({ title,
 // revisionId }) — not the whole candidate — so this keys off title.
 function fetchArticleFor({ title }) {
     if (title === 'Article A') return { html: articleA, status: 200, error: null };

@@ -13,9 +13,10 @@
 // and WMF — see service/analyze-ia-load-test.js.
 //
 // Article fetch + citation/claim extraction (stages 1-2 of the batch
-// pipeline) are reused as-is from service/pipeline.js's runBatch(), with a
-// no-op fetchSource — this script owns stage 3 (source fetch) itself, since
-// that's the part under test: ramp control, per-request telemetry, resume.
+// pipeline) are reused as-is from service/claim-extractor.js's runBatch(),
+// with a no-op fetchSource — this script owns stage 3 (source fetch) itself,
+// since that's the part under test: ramp control, per-request telemetry,
+// resume.
 //
 // Usage:
 //   # once, wherever Wiki Replicas is reachable (a Toolforge bastion):
@@ -38,7 +39,7 @@ import fs from 'node:fs';
 import { JSDOM } from 'jsdom';
 import { fetchArticleHtml } from '../core/wikipedia.js';
 import { fetchSourceContent } from '../core/worker.js';
-import { runBatch, sourceCacheKey } from './pipeline.js';
+import { runBatch, sourceCacheKey } from './claim-extractor.js';
 
 // Ramp table: each step attempts up to `requests` not-yet-attempted unique
 // sources at `concurrency` in flight. Deliberately fixed steps rather than an
