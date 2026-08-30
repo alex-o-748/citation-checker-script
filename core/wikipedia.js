@@ -31,10 +31,19 @@ export function deriveRestUrl({ title, revisionId } = {}, { host = DEFAULT_WIKI_
     return revisionId ? `${base}/${revisionId}` : base;
 }
 
+// Matches tf-source-fetcher's FETCH_TIMEOUT_MS default (src/config.js) —
+// without a bound here, a single stalled connection hangs indefinitely
+// (observed in practice on Toolforge's shared egress, which is intermittently
+// slow: a batch of 30 sequential article fetches that should take under a
+// minute took roughly an hour, almost certainly a handful of hung connections
+// with no timeout to cut them off).
+export const DEFAULT_FETCH_TIMEOUT_MS = 20000;
+
 export async function fetchArticleHtml({ title, revisionId }, {
     host = DEFAULT_WIKI_HOST,
     userAgent = DEFAULT_USER_AGENT,
     fetchImpl = fetch,
+    timeoutMs = DEFAULT_FETCH_TIMEOUT_MS,
 } = {}) {
     let url;
     try {
@@ -43,9 +52,13 @@ export async function fetchArticleHtml({ title, revisionId }, {
         return { html: null, status: null, error: error.message };
     }
 
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+
     try {
         const response = await fetchImpl(url, {
             headers: { 'User-Agent': userAgent, 'Accept': 'text/html' },
+            signal: controller.signal,
         });
 
         if (!response.ok) {
@@ -59,7 +72,15 @@ export async function fetchArticleHtml({ title, revisionId }, {
         return { html: await response.text(), status: response.status, error: null };
     } catch (error) {
         // Network-level failure: no status at all, which callers distinguish
-        // from a real HTTP error the way core/worker.js does.
-        return { html: null, status: null, error: error?.message || String(error) };
+        // from a real HTTP error the way core/worker.js does. An abort from
+        // our own timer is reported distinctly rather than as a generic
+        // network error, so a stalled connection is distinguishable from one
+        // that was actually refused.
+        const message = error?.name === 'AbortError'
+            ? `Request to Wikipedia timed out after ${timeoutMs}ms`
+            : (error?.message || String(error));
+        return { html: null, status: null, error: message };
+    } finally {
+        clearTimeout(timer);
     }
 }

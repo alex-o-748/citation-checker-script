@@ -30,8 +30,8 @@ const STATUS = argVal('status', 'wrong'); // exact | partial | wrong | error | a
 const LIMIT = parseInt(argVal('limit', '20'), 10);
 const FULL = args.includes('--full');
 
-const DATASET_PATH = path.join(__dirname, 'dataset.json');
-const RESULTS_PATH = path.join(__dirname, 'results.json');
+const DATASET_PATH = path.resolve(__dirname, argVal('dataset', 'dataset.json'));
+const RESULTS_PATH = path.resolve(__dirname, argVal('results', 'results.json'));
 
 const dataset = loadRows(DATASET_PATH);
 const datasetById = new Map(dataset.map(e => [e.id, e]));
@@ -67,3 +67,4 @@ console.log('─'.repeat(72));
 if (rows.length > LIMIT) {
     console.log(`\n(${rows.length - LIMIT} more not shown — raise --limit or narrow with --provider)`);
 }
+

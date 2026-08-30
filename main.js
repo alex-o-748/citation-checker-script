@@ -1708,7 +1708,33 @@ async function callProviderAPI(name, config) {
 // Calls to the Cloudflare Worker proxy: source fetching and verification logging.
 
 
-async function fetchViaProxy(fetchUrl, pageNum, workerBase, sourceUrl) {
+// Identifies this codebase's direct calls to archive.org (the Wayback
+// availability lookup below) — without it, that request carries no
+// distinguishing UA at all. fetchViaProxy's calls go through workerBase (our
+// own proxy/sidecar infra), which brands its own outbound requests
+// separately (see tf-source-fetcher's src/config.js), so this only needs to
+// cover the one call this module makes to a third party directly.
+//
+// Duplicated from core/wikipedia.js's DEFAULT_USER_AGENT rather than
+// imported: this module is inlined into main.js by scripts/sync-main.js,
+// which strips `import` lines outright rather than resolving them — an
+// import here would silently vanish from the userscript build and throw a
+// ReferenceError in the browser.
+const DEFAULT_USER_AGENT =
+    'citation-checker-script (https://github.com/alex-o-748/citation-checker-script)';
+
+// `onRequest`, when supplied, is called once per outbound HTTP call this
+// function makes — `{ kind: 'source-fetch', url, status, ok, error, latencyMs,
+// bytes }` — regardless of success or failure. It exists for the Internet
+// Archive load-test runner (service/ia-load-test.js), which needs per-request
+// telemetry that the returned `{content, error, status}` summary can't carry;
+// no caller in this repo passed it before that runner, so omitting it is a
+// silent no-op and default behavior is unchanged.
+async function fetchViaProxy(fetchUrl, pageNum, workerBase, sourceUrl, onRequest) {
+    const startedAt = Date.now();
+    const report = (status, ok, error, bytes = null) => {
+        onRequest?.({ kind: 'source-fetch', url: fetchUrl, status, ok, error, latencyMs: Date.now() - startedAt, bytes });
+    };
     try {
         let proxyUrl = `${workerBase}/?fetch=${encodeURIComponent(fetchUrl)}`;
         if (pageNum) {
@@ -1720,6 +1746,7 @@ async function fetchViaProxy(fetchUrl, pageNum, workerBase, sourceUrl) {
         try {
             data = await response.json();
         } catch (_) {
+            report(proxyStatus, false, `non-JSON response (HTTP ${proxyStatus})`);
             return { content: null, error: `Proxy returned non-JSON response (HTTP ${proxyStatus})`, status: proxyStatus };
         }
 
@@ -1727,6 +1754,7 @@ async function fetchViaProxy(fetchUrl, pageNum, workerBase, sourceUrl) {
 
         if (data.error) {
             console.warn('[CitationVerifier] Proxy error:', data.error);
+            report(status, false, data.error);
             return { content: null, error: data.error, status };
         }
 
@@ -1742,29 +1770,35 @@ async function fetchViaProxy(fetchUrl, pageNum, workerBase, sourceUrl) {
             if (isTruncated) {
                 meta += `\nTruncated: true`;
             }
+            report(status, true, null, data.content.length);
             return { content: `${meta}\n\nSource Content:\n${data.content}`, error: null, status };
         }
 
         if (data.pdf && !pageNum && data.totalPages > 15) {
             console.log('[CitationVerifier] Large PDF without page param, content may be truncated');
         }
+        report(status, false, 'empty or too-short content');
         return { content: null, error: 'Source content was empty or too short to verify', status };
     } catch (error) {
+        report(null, false, error?.message || String(error));
         console.error('Proxy fetch failed:', error);
         return { content: null, error: error?.message || String(error), status: null };
     }
 }
 
-async function findWaybackSnapshot(url) {
+async function findWaybackSnapshot(url, onRequest) {
+    const startedAt = Date.now();
     try {
         const apiUrl = `https://archive.org/wayback/available?url=${encodeURIComponent(url)}`;
-        const response = await fetch(apiUrl);
+        const response = await fetch(apiUrl, { headers: { 'User-Agent': DEFAULT_USER_AGENT } });
         const data = await response.json();
+        onRequest?.({ kind: 'wayback-availability', url, status: response.status, ok: response.ok, error: null, latencyMs: Date.now() - startedAt, bytes: null });
         const snapshot = data?.archived_snapshots?.closest;
         if (snapshot?.available && snapshot.timestamp) {
             return `https://web.archive.org/web/${snapshot.timestamp}id_/${url}`;
         }
     } catch (e) {
+        onRequest?.({ kind: 'wayback-availability', url, status: null, ok: false, error: e?.message || String(e), latencyMs: Date.now() - startedAt, bytes: null });
         console.warn('[CitationVerifier] Wayback availability check failed:', e?.message);
     }
     return null;
@@ -1775,7 +1809,13 @@ async function findWaybackSnapshot(url) {
 // reason when content is null; `status` is the upstream HTTP status code if the
 // proxy reports one (`data.status`), otherwise the proxy's own response status,
 // or null if we never got a response at all.
-async function fetchSourceContent(url, pageNum, { workerBase = 'https://publicai-proxy.alaexis.workers.dev' } = {}) {
+//
+// `archiveFirst` skips the live-publisher fetch entirely and goes straight to
+// the Wayback snapshot lookup — for the Internet Archive load-test runner,
+// which must never send traffic to a third-party publisher (see
+// service/ia-load-test.js). Default behavior (live-first, Wayback as a
+// fallback) is unchanged for the userscript, CLI, and batch pipeline.
+async function fetchSourceContent(url, pageNum, { workerBase = 'https://publicai-proxy.alaexis.workers.dev', archiveFirst = false, onRequest } = {}) {
     if (isGoogleBooksUrl(url)) {
         console.log('[CitationVerifier] Skipping Google Books URL:', url);
         return { content: null, error: 'Google Books URL skipped (no fetchable content)', status: null };
@@ -1785,16 +1825,24 @@ async function fetchSourceContent(url, pageNum, { workerBase = 'https://publicai
     if (archiveInfo) {
         const rawUrl = `https://web.archive.org/web/${archiveInfo.timestamp}id_/${archiveInfo.originalUrl}`;
         console.log('[CitationVerifier] Fetching via Wayback raw endpoint');
-        return fetchViaProxy(rawUrl, pageNum, workerBase, url);
+        return fetchViaProxy(rawUrl, pageNum, workerBase, url, onRequest);
     }
 
-    const result = await fetchViaProxy(url, pageNum, workerBase, url);
+    if (archiveFirst) {
+        const waybackUrl = await findWaybackSnapshot(url, onRequest);
+        if (!waybackUrl) {
+            return { content: null, error: 'No Wayback snapshot available for this URL', status: null };
+        }
+        return fetchViaProxy(waybackUrl, pageNum, workerBase, url, onRequest);
+    }
+
+    const result = await fetchViaProxy(url, pageNum, workerBase, url, onRequest);
 
     if (!result.content) {
-        const waybackUrl = await findWaybackSnapshot(url);
+        const waybackUrl = await findWaybackSnapshot(url, onRequest);
         if (waybackUrl) {
             console.log('[CitationVerifier] Live fetch failed, trying Wayback snapshot');
-            return fetchViaProxy(waybackUrl, pageNum, workerBase, url);
+            return fetchViaProxy(waybackUrl, pageNum, workerBase, url, onRequest);
         }
     }
 
