@@ -1,6 +1,6 @@
-// {{Wikipedia:USync |repo=https://github.com/alex-o-748/citation-checker-script |ref=refs/heads/main|path=main.js}}
+// {{Wikipedia:USync |repo=https://github.com/alex-o-748/citation-checker-script |ref=refs/heads/dev|path=main.js}}
 //Inspired by User:Polygnotus/Scripts/AI_Source_Verification.js
-//Inspired by User:Phlsph7/SourceVerificationAIAssistant.js        
+//Inspired by User:Phlsph7/SourceVerificationAIAssistant.js         
 
 (function() {
     'use strict';
@@ -9,6 +9,17 @@
 // --- core/prompts.js ---
 // Pure prompt-generation logic. Imported by core/ consumers (CLI, benchmark).
 // Also injected byte-identically into main.js between <core-injected> markers.
+
+// Identifies which revision of generateSystemPrompt()'s few-shot examples
+// produced a stored finding. Bump this whenever the prompt text changes —
+// tests/prompts.test.js pins a hash of the assembled prompt against this
+// constant and fails if they drift apart, so "changed the prompt, forgot to
+// bump the version" fails the suite instead of silently poisoning
+// citation_findings.prompt_version (that column is part of the row's unique
+// key — see docs/design-plans/2026-08-07-batch-source-checks-for-edit-suggestions.md
+// §6 — precisely so a prompt change invalidates old findings rather than
+// overwriting them).
+const PROMPT_VERSION = 'v2';
 
 function generateSystemPrompt() {
     return `You are a fact-checking assistant for Wikipedia. Analyze whether claims are supported by the provided source text.
@@ -38,11 +49,11 @@ It is NOT usable if it's:
 
 IMPORTANT: If the source text contains actual article content (paragraphs of text, quotes, factual statements), it IS usable even if it also contains archive navigation, headers, footers, or other page chrome. Only return SOURCE UNAVAILABLE when there is genuinely no article content to analyze.
 
-If the source text is not usable, you MUST return verdict SOURCE UNAVAILABLE with confidence 0. Do not attempt to verify the claim - if you cannot find actual article or book content to quote, the source is unavailable.
+If the source text is not usable, you MUST return verdict SOURCE UNAVAILABLE with support_score 0. Do not attempt to verify the claim - if you cannot find actual article or book content to quote, the source is unavailable.
 
 Respond in JSON format:
 {
-  "confidence": <number 0-100>,
+  "support_score": <number 0-100>,
   "verdict": "<verdict>",
   "reason_type": "<only for NOT SUPPORTED: 'contradiction' or 'omission'>",
   "source_quote": "<the passage from the source text, copied word for word>",
@@ -59,7 +70,7 @@ The "source_quote" field:
 - Use "" (empty string) when there is nothing to quote: SOURCE UNAVAILABLE, and NOT SUPPORTED with reason_type "omission" (the source says nothing about the claim, so no passage can be quoted).
 - Never quote from the claim, and never write a passage the source does not contain. If you cannot find a passage worth quoting, use "".
 
-Confidence guide:
+Support score guide:
 - 80-100: SUPPORTED
 - 50-79: PARTIALLY SUPPORTED
 - 1-49: NOT SUPPORTED
@@ -69,56 +80,56 @@ Confidence guide:
 Claim: "The committee published its findings in 1932."
 Source text: "History of Modern Economics - Economic Research Council - Google Books Sign in Hidden fields Books Try the new Google Books Check out the new look and enjoy easier access to your favorite features Try it now No thanks My library Help Advanced Book Search Download EPUB Download PDF Plain text Read eBook Get this book in print AbeBooks On Demand Books Amazon Find in a library All sellers About this book Terms of Service Plain text PDF EPUB"
 
-{"confidence": 0, "verdict": "SOURCE UNAVAILABLE", "source_quote": "", "comments": "Google Books interface with no actual book content, only navigation and metadata."}
+{"support_score": 0, "verdict": "SOURCE UNAVAILABLE", "source_quote": "", "comments": "Google Books interface with no actual book content, only navigation and metadata."}
 </example>
 
 <example>
 Claim: "The bridge was completed in 1998."
 Source text: "Skip to main content Web Archive toolbar... Capture date: 2015-03-12 ... City Tribune - Local News ... The Morrison Bridge project broke ground in 1994 after years of planning. Construction faced multiple delays due to funding shortages. The bridge was finally opened to traffic in August 2002, four years behind schedule. Mayor Davis called it 'a triumph of persistence.'"
 
-{"confidence": 15, "verdict": "NOT SUPPORTED", "reason_type": "contradiction", "source_quote": "The bridge was finally opened to traffic in August 2002, four years behind schedule.", "comments": "Source says the bridge opened in 2002, not 1998. The article is accessible despite being an Internet Archive capture."}
+{"support_score": 15, "verdict": "NOT SUPPORTED", "reason_type": "contradiction", "source_quote": "The bridge was finally opened to traffic in August 2002, four years behind schedule.", "comments": "Source says the bridge opened in 2002, not 1998. The article is accessible despite being an Internet Archive capture."}
 </example>
 
 <example>
 Claim: "The company was founded in 1985 by John Smith."
 Source text: "Acme Corp was established in 1985. Its founder, John Smith, served as CEO until 2001."
 
-{"confidence": 95, "verdict": "SUPPORTED", "source_quote": "Acme Corp was established in 1985. Its founder, John Smith, served as CEO until 2001.", "comments": "Definitive match with paraphrasing."}
+{"support_score": 95, "verdict": "SUPPORTED", "source_quote": "Acme Corp was established in 1985. Its founder, John Smith, served as CEO until 2001.", "comments": "Definitive match with paraphrasing."}
 </example>
 
 <example>
 Claim: "The treaty was signed by 45 countries."
 Source text: "The treaty, finalized in March, was signed by over 30 nations, though the exact number remains disputed."
 
-{"confidence": 20, "verdict": "NOT SUPPORTED", "reason_type": "contradiction", "source_quote": "The treaty, finalized in March, was signed by over 30 nations, though the exact number remains disputed.", "comments": "Source says \\"over 30,\\" not 45."}
+{"support_score": 20, "verdict": "NOT SUPPORTED", "reason_type": "contradiction", "source_quote": "The treaty, finalized in March, was signed by over 30 nations, though the exact number remains disputed.", "comments": "Source says \\"over 30,\\" not 45."}
 </example>
 
 <example>
 Claim: "The treaty was signed in Paris."
 Source text: "It is believed the treaty was signed in Paris, though some historians dispute this."
 
-{"confidence": 60, "verdict": "PARTIALLY SUPPORTED", "source_quote": "It is believed the treaty was signed in Paris, though some historians dispute this.", "comments": "Source hedges this as uncertain; Wikipedia states it as fact."}
+{"support_score": 60, "verdict": "PARTIALLY SUPPORTED", "source_quote": "It is believed the treaty was signed in Paris, though some historians dispute this.", "comments": "Source hedges this as uncertain; Wikipedia states it as fact."}
 </example>
 
 <example>
 Claim: "The population increased by 12% between 2010 and 2020."
 Source text: "Census data shows significant population growth in the region during the 2010s."
 
-{"confidence": 55, "verdict": "PARTIALLY SUPPORTED", "source_quote": "Census data shows significant population growth in the region during the 2010s.", "comments": "Source confirms growth but doesn't specify 12%."}
+{"support_score": 55, "verdict": "PARTIALLY SUPPORTED", "source_quote": "Census data shows significant population growth in the region during the 2010s.", "comments": "Source confirms growth but doesn't specify 12%."}
 </example>
 
 <example>
 Claim: "The president resigned on March 3."
 Source text: "The president remained in office throughout March."
 
-{"confidence": 5, "verdict": "NOT SUPPORTED", "reason_type": "contradiction", "source_quote": "The president remained in office throughout March.", "comments": "Source directly contradicts the claim."}
+{"support_score": 5, "verdict": "NOT SUPPORTED", "reason_type": "contradiction", "source_quote": "The president remained in office throughout March.", "comments": "Source directly contradicts the claim."}
 </example>
 
 <example>
 Claim: "She received the Nobel Prize in Chemistry in 2015."
 Source text: "Professor Martin completed her PhD at Oxford in 1998 and joined the faculty at Cambridge in 2003. Her research focuses on organic synthesis and catalysis. She has published over 200 papers and received several university teaching awards."
 
-{"confidence": 10, "verdict": "NOT SUPPORTED", "reason_type": "omission", "source_quote": "", "comments": "The source discusses her academic career and publications but makes no mention of a Nobel Prize."}
+{"support_score": 10, "verdict": "NOT SUPPORTED", "reason_type": "omission", "source_quote": "", "comments": "The source discusses her academic career and publications but makes no mention of a Nobel Prize."}
 </example>`;
 }
 
@@ -146,8 +157,6 @@ function extractSourceText(sourceInfo) {
 function generateUserPrompt(claim, sourceInfo) {
     const sourceText = extractSourceText(sourceInfo);
 
-    console.log('[Verifier] Source text (first 2000 chars):', sourceText.substring(0, 2000));
-
     return `Claim: "${claim}"
 
 Source text:
@@ -157,7 +166,7 @@ ${sourceText}`;
 // System prompt for the "adjacent citations" / collective-verification path:
 // one claim is cited by several adjacent sources, and we judge whether the
 // sources TOGETHER support it. Kept deliberately close to generateSystemPrompt
-// (same JSON schema, verdict vocabulary, confidence scale, reason_type rules)
+// (same JSON schema, verdict vocabulary, support score scale, reason_type rules)
 // so verdicts stay comparable; the differences are the "collective" framing and
 // the handling of partially-unavailable source sets. This is a NEW prompt — the
 // single-source benchmark, which uses generateSystemPrompt, is unaffected.
@@ -175,11 +184,11 @@ Rules:
 
 Source text evaluation:
 Some of the provided sources may be unusable — a paywall, login page, library catalog/metadata page (e.g. WorldCat, Google Books, JSTOR preview), cookie/JavaScript notice, 404/redirect, or an explicit "[This source could not be retrieved: ...]" note. Ignore unusable sources and judge the claim against the sources that DO contain usable article/book content.
-Only return verdict SOURCE UNAVAILABLE with confidence 0 if NONE of the provided sources contain usable content.
+Only return verdict SOURCE UNAVAILABLE with support_score 0 if NONE of the provided sources contain usable content.
 
 Respond in JSON format:
 {
-  "confidence": <number 0-100>,
+  "support_score": <number 0-100>,
   "verdict": "<verdict>",
   "reason_type": "<only for NOT SUPPORTED: 'contradiction' or 'omission'>",
   "source_quote": "<the passage from one of the sources, copied word for word>",
@@ -196,7 +205,7 @@ The "source_quote" field:
 - Use "" (empty string) when there is nothing to quote: SOURCE UNAVAILABLE, and NOT SUPPORTED with reason_type "omission".
 - Never quote from the claim, and never write a passage the sources do not contain. If you cannot find a passage worth quoting, use "".
 
-Confidence guide:
+Support score guide:
 - 80-100: SUPPORTED
 - 50-79: PARTIALLY SUPPORTED
 - 1-49: NOT SUPPORTED
@@ -207,7 +216,7 @@ Claim: "The company was founded in 1985 by John Smith, who led it until 2001."
 Source [1] (https://example.com/a): "Acme Corp was established in 1985 in Ohio."
 Source [2] (https://example.com/b): "John Smith founded Acme Corp and served as its chief executive until 2001."
 
-{"confidence": 92, "verdict": "SUPPORTED", "source_quote": "John Smith founded Acme Corp and served as its chief executive until 2001.", "comments": "Source [1] gives the 1985 founding year; source [2] confirms John Smith as founder and his tenure until 2001. Together they support the whole claim."}
+{"support_score": 92, "verdict": "SUPPORTED", "source_quote": "John Smith founded Acme Corp and served as its chief executive until 2001.", "comments": "Source [1] gives the 1985 founding year; source [2] confirms John Smith as founder and his tenure until 2001. Together they support the whole claim."}
 </example>
 
 <example>
@@ -215,7 +224,7 @@ Claim: "The treaty was signed in Paris in 1990."
 Source [1] (https://example.com/a): [This source could not be retrieved: HTTP 403]
 Source [2] (https://example.com/b): "The accord was signed in the French capital in the spring of 1990."
 
-{"confidence": 88, "verdict": "SUPPORTED", "source_quote": "The accord was signed in the French capital in the spring of 1990.", "comments": "Source [1] was unavailable, but source [2] states the accord was signed in the French capital (Paris) in 1990, which supports the claim."}
+{"support_score": 88, "verdict": "SUPPORTED", "source_quote": "The accord was signed in the French capital in the spring of 1990.", "comments": "Source [1] was unavailable, but source [2] states the accord was signed in the French capital (Paris) in 1990, which supports the claim."}
 </example>
 
 <example>
@@ -223,7 +232,7 @@ Claim: "The bridge, built in 1998, cost $200 million."
 Source [1] (https://example.com/a): "The bridge opened to traffic in 1998 after four years of construction."
 Source [2] (https://example.com/b): "Funding for the project came from a mix of state and federal grants."
 
-{"confidence": 55, "verdict": "PARTIALLY SUPPORTED", "source_quote": "The bridge opened to traffic in 1998 after four years of construction.", "comments": "Source [1] supports the 1998 date. Neither source states the $200 million cost, so that part is unverified."}
+{"support_score": 55, "verdict": "PARTIALLY SUPPORTED", "source_quote": "The bridge opened to traffic in 1998 after four years of construction.", "comments": "Source [1] supports the 1998 date. Neither source states the $200 million cost, so that part is unverified."}
 </example>`;
 }
 
@@ -290,7 +299,7 @@ const VERDICTS = Object.freeze({
     SOURCE_UNAVAILABLE:  'SOURCE UNAVAILABLE',
 });
 
-// Ordered by the confidence guide in core/prompts.js. Confusion-matrix
+// Ordered by the support score guide in core/prompts.js. Confusion-matrix
 // rows/columns in analyze_results.js iterate this list.
 const VERDICT_LIST = Object.freeze([
     VERDICTS.SUPPORTED,
@@ -396,7 +405,7 @@ function parseVerificationResult(response) {
         const result = JSON.parse(jsonStr);
         return {
             verdict: result.verdict || 'UNKNOWN',
-            confidence: result.confidence ?? null,
+            support_score: result.support_score ?? null,
             comments: result.comments || '',
             reason_type: result.reason_type || null,
             // Field-name aliases: models occasionally camelCase the key or
@@ -419,13 +428,13 @@ function parseVerificationResult(response) {
     if (match) {
         const verdict = canonicalizeVerdict(match[1]);
         if (verdict) {
-            return { verdict, confidence: null, comments: '<extracted from non-JSON response>', source_quote: '' };
+            return { verdict, support_score: null, comments: '<extracted from non-JSON response>', source_quote: '' };
         }
     }
 
     return {
         verdict: 'PARSE_ERROR',
-        confidence: null,
+        support_score: null,
         comments: `Failed to parse AI response: ${response.substring(0, 200)}`,
         source_quote: ''
     };
@@ -749,12 +758,47 @@ function quoteExpectedFor(verdict, reasonType) {
 const RETRYABLE_STATUS = /^(?:HTTP |[^:()]*API request failed \()(429|500|502|503|504)\b/;
 const RETRYABLE_NETWORK = /timeout|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|socket hang up/i;
 
+// vLLM (Lift Wing's backend for open-weight models) reports a genuine
+// input-validation failure — the prompt exceeds the model's context
+// window — as an HTTP 500, which would otherwise match RETRYABLE_STATUS
+// above. Retrying buys nothing: the same oversized prompt produces the
+// identical error on every attempt, so retrying just burns up to ~30s of
+// backoff before failing anyway, on a request that will never succeed no
+// matter how many times it's sent. Real incident, 2026-08-24: exactly this
+// on a live sweep against tf-llm-router. Exported (not just used inline
+// below) so service/verifier.js can recognize this specific failure after
+// withRetry gives up and record it as a per-citation result instead of
+// treating it as a run-halting error the way an unrecognized failure is.
+const CONTEXT_LENGTH_EXCEEDED = /maximum context length|VLLMValidationError/i;
+
+function isContextLengthError(error) {
+    return CONTEXT_LENGTH_EXCEEDED.test(error?.message ?? '');
+}
+
 function defaultSleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 function isRetryableError(error) {
     const msg = error?.message ?? '';
+
+    if (isContextLengthError(error)) return false;
+
+    // Node's fetch (undici) always throws this exact generic message for a
+    // network/transport-layer failure — DNS, connection reset, refused, TLS
+    // — never for an HTTP-level 4xx/5xx response (those resolve normally
+    // and are turned into the "API request failed (<status>)" shape by our
+    // own provider code, matched below). The actual reason lives one level
+    // down in `error.cause` (e.g. `{ code: 'ENOTFOUND' }` or `ECONNRESET`),
+    // which this function never inspected — so this entire category of
+    // real transient failures skipped retry and went straight to a hard
+    // failure. Real incident, 2026-08-24: a live sweep against
+    // tf-llm-router halted immediately on "fetch failed" with zero retry
+    // attempts. Matched by exact equality, not substring, so this can't
+    // accidentally widen retry to some other error that merely mentions
+    // "fetch failed" in a longer message.
+    if (msg === 'fetch failed') return true;
+
     return RETRYABLE_STATUS.test(msg) || RETRYABLE_NETWORK.test(msg);
 }
 
@@ -990,7 +1034,25 @@ function getCitationGroup(refElement) {
     return refsInContainer.slice(start, end + 1);
 }
 
-function extractClaimText(refElement) {
+// Splits on a sentence-ending mark followed by whitespace and what looks like
+// the start of a new sentence, then returns the last piece. Deliberately
+// naive about abbreviations ("Dr. Smith", "U.S. policy") — for this use
+// (finding where the final sentence of a claim begins), under-splitting an
+// abbreviation into the same sentence is the safer failure than over-
+// splitting mid-abbreviation and truncating the real claim.
+const SENTENCE_SPLIT_RE = /(?<=[.!?])\s+(?=[A-Z0-9"'(À-Ü])/;
+
+// Returns just the final sentence of `text` — the sentence immediately
+// preceding wherever `text` ends. Used for the batch pipeline's stricter
+// claim scope (see extractClaimText's `scope` option); returns the whole
+// string unchanged if no sentence boundary is found.
+function lastSentence(text) {
+    if (!text) return text;
+    const parts = text.split(SENTENCE_SPLIT_RE);
+    return parts[parts.length - 1].trim();
+}
+
+function extractClaimText(refElement, { scope = 'paragraph' } = {}) {
     const document = refElement.ownerDocument;
     const container = refElement.closest('p, li, td, div, section');
     if (!container) {
@@ -1064,6 +1126,13 @@ function extractClaimText(refElement) {
             .trim();
     }
 
+    // Applied last, after the paragraph-scope text is settled (including its
+    // own too-short fallback above) — narrowing to the final sentence is a
+    // separate concern from finding the claim's boundary in the first place.
+    if (scope === 'sentence') {
+        claimText = lastSentence(claimText);
+    }
+
     return claimText;
 }
 
@@ -1101,7 +1170,29 @@ function refIdFromHref(href) {
     return refId || null;
 }
 
-function collectCitations(root, { minClaimLength = MIN_CLAIM_LENGTH } = {}) {
+// Recovers a named <ref name="..."> from its rendered footnote id, when the
+// citation came from one. MediaWiki's Cite extension renders a *named* ref's
+// footnote id as `cite_note-<name>-<n>` — <name> being the ref's `name`
+// attribute, sanitized for HTML-id use (Sanitizer::escapeIdForAttribute:
+// spaces become underscores, and so on), and <n> a global reference counter
+// unrelated to the name, shared across every occurrence of that same named
+// ref. An *unnamed* ref renders as plain `cite_note-<n>`, with no name
+// segment to recover — refId already gives us that whole footnote id
+// (refIdFromHref reads it off the same href this function's caller does), so
+// no extra DOM access is needed to try to recover one.
+//
+// The recovered value is the *sanitized* id-safe form, not necessarily
+// byte-identical to the wikitext attribute (an underscore may have been a
+// space) — acceptable per CLAUDE.md: "ref_name... display only; NOT an
+// identifier". Works identically on browser-skin and Parsoid REST HTML: Cite
+// renders this id the same way on both, unlike the URL/page-number
+// extraction in core/urls.js, which does differ between the two sources.
+function refNameFromNoteId(refId) {
+    const match = /^cite_note-(.+)-\d+$/.exec(refId || '');
+    return match ? match[1] : null;
+}
+
+function collectCitations(root, { minClaimLength = MIN_CLAIM_LENGTH, claimScope = 'paragraph' } = {}) {
     if (!root) return [];
     // A Document has no ownerDocument; an Element does. Either can be the root.
     const doc = root.ownerDocument || root;
@@ -1111,12 +1202,13 @@ function collectCitations(root, { minClaimLength = MIN_CLAIM_LENGTH } = {}) {
         const refId = refIdFromHref(refElement.getAttribute('href'));
         if (!refId) continue;
 
-        const claimText = extractClaimText(refElement);
+        const claimText = extractClaimText(refElement, { scope: claimScope });
         if (!claimText || claimText.length < minClaimLength) continue;
 
         citations.push({
             refElement,
             refId,
+            refName: refNameFromNoteId(refId),
             citationNumber: refElement.textContent.replace(/[\[\]]/g, '').trim(),
             claimText,
             url: extractReferenceUrl(refElement, doc),
@@ -1170,6 +1262,126 @@ function attachGroupMetadata(citations) {
             visited.add(c);
         });
     }
+}
+
+// --- core/groups.js ---
+// Adjacent-citation group semantics: when the collective (multi-source)
+// verification for a group should fire, how a group's members collapse to
+// one entry per distinct source, whether the collective verdict is worth
+// running at all, and how a collective verdict merges with per-source
+// results into one unit per claim.
+//
+// Extracted verbatim from main.js's verifyGroupCollective() and
+// getReportUnits() so the userscript and the Toolforge batch pipeline
+// (service/verifier.js) compute identical group units instead of maintaining
+// two implementations that can silently drift — see docs/design-plans/
+// 2026-08-22-batch-verification-and-persistence.md §2 and docs/design-plans/
+// 2026-08-24-csv-deliverable-and-component-names.md (G4). Pure logic only:
+// no DOM, no fetch, no provider call — callers own all of that.
+
+
+/**
+ * True when `citation` is the last member of its adjacent-citation group —
+ * the point at which the group's collective verification should fire, once
+ * per group rather than once per member. A solo citation (no group, or a
+ * group of one) is never "close".
+ */
+function isGroupClose(citation) {
+    return Boolean(citation && citation.groupSize > 1 && citation.groupIndex === citation.groupSize - 1);
+}
+
+/**
+ * Dedupes an adjacent-citation group's members down to one entry per
+ * distinct source. Two citations backed by the same named `<ref>` (or the
+ * same URL at the same page number) collapse into a single entry carrying
+ * both citation numbers, so the group prompt (assembleGroupSources()) isn't
+ * asked to show the model the same source text twice.
+ *
+ * `sourceFor(member)` resolves one member to its source; callers own *how*,
+ * because that differs by caller: the userscript looks a member up in its
+ * `url|page=N`-keyed sourceCache, while the batch pipeline already carries
+ * each citation's resolved `source` object directly
+ * (service/claim-extractor.js's processArticle output). It must return
+ * `{ key, url, content, error, status }` — `key` is the dedup key; the rest
+ * become the entry's fields the first time that key is seen.
+ *
+ * @param {Array<object>} members - Group members, sharing one groupId.
+ * @param {(member: object) => {key: string, url?: string|null, content?: string|null, error?: string|null, status?: number|null}} sourceFor
+ * @returns {Array<{citationNumbers: (string|number)[], url: string|null, content: string|null, error: string|null, status: number|null}>}
+ */
+function groupSourceEntries(members, sourceFor) {
+    const byKey = new Map();
+    for (const member of members) {
+        const { key, url, content, error, status } = sourceFor(member);
+        let entry = byKey.get(key);
+        if (!entry) {
+            entry = {
+                citationNumbers: [],
+                url: url || null,
+                content: content ?? null,
+                error: error ?? null,
+                status: status ?? null,
+            };
+            byKey.set(key, entry);
+        }
+        entry.citationNumbers.push(member.citationNumber);
+    }
+    return Array.from(byKey.values());
+}
+
+/**
+ * Whether the collective (multi-source) verdict should be skipped in favor
+ * of the group's existing per-source results. True when at most one member
+ * source has usable text — with ≤1 available source, a collective verdict
+ * would just restate the solo one, so running it would burn a model call to
+ * say nothing new.
+ *
+ * @param {ReturnType<typeof groupSourceEntries>} entries
+ */
+function shouldSkipCollective(entries) {
+    const availableCount = entries.filter(e => e.content && extractSourceText(e.content).trim()).length;
+    return availableCount <= 1;
+}
+
+/**
+ * Merges per-source results and collective group verdicts into one entry per
+ * claim, in the order `results` presents them: a solo citation passes
+ * through unchanged; an adjacent group collapses to its collective verdict.
+ * A group whose collective check was skipped (§ shouldSkipCollective) falls
+ * back to its per-source member results instead. A group whose collective
+ * check hasn't completed yet (`groupResults` has no entry for it) is omitted
+ * entirely — a result page that hasn't finished a group shouldn't report a
+ * partial or wrong verdict for it.
+ *
+ * Drives the summary counts and the wikitext/plaintext exporters — this is
+ * the merge that decides which row means "for a group, the collective
+ * verdict is the one to publish" (docs/design-plans/
+ * 2026-08-07-batch-source-checks-for-edit-suggestions.md §6).
+ *
+ * @param {Array<object>} results - Per-source results, one per citation.
+ * @param {Map<string, object>} groupResults - Collective verdicts (or
+ *   `{ skipped: true, groupId }` placeholders), keyed by groupId.
+ */
+function mergeReportUnits(results, groupResults) {
+    const units = [];
+    const seenGroups = new Set();
+    for (const r of results) {
+        if (r.groupSize && r.groupSize > 1) {
+            if (seenGroups.has(r.groupId)) continue;
+            seenGroups.add(r.groupId);
+            const collective = groupResults.get(r.groupId);
+            if (collective && !collective.skipped) {
+                units.push(collective);
+            } else if (collective && collective.skipped) {
+                for (const x of results) {
+                    if (x.groupId === r.groupId) units.push(x);
+                }
+            }
+        } else {
+            units.push(r);
+        }
+    }
+    return units;
 }
 
 // --- core/providers.js ---
@@ -1760,7 +1972,11 @@ function buildLogPayload(fields = {}) {
         provider:        fields.provider ?? null,
         model:           fields.model ?? null,
         verdict:         fields.verdict ?? null,
-        confidence:      fields.confidence ?? null,
+        // Sent as `confidence` — not renamed to match `supportScore` — because
+        // it must line up with the Neon `verification_logs.confidence` column
+        // (see docs/worker-logging-reference.md). Renaming the wire/column
+        // name is a separate DB migration; this only renames the internal name.
+        confidence:      fields.supportScore ?? null,
         reason_type:     fields.reasonType ?? null,
         // Without these two a thumbs-down is uninterpretable: you know the
         // check was wrong but not what it claimed or why it decided that.
@@ -2162,6 +2378,11 @@ function useToolforgeSourceFetcher() {
         'API key required for {name}': 'Clé API requise pour {name}',
         'Results are logged for research. Your username is not recorded.':
             'Les résultats sont enregistrés à des fins de recherche. Votre nom d’utilisateur n’est pas enregistré.',
+        'Claim scope': 'Portée de l’affirmation',
+        'Full claim': 'Affirmation complète',
+        'Last sentence only': 'Dernière phrase uniquement',
+        '"Last sentence only" avoids flagging a multi-sentence claim as unsupported just because an earlier sentence lacks a citation.':
+            '« Dernière phrase uniquement » évite de signaler une affirmation de plusieurs phrases comme non étayée simplement parce qu’une phrase précédente manque de source.',
 
         // Verifier tab + first-run notification
         'Verify': 'Vérifier',
@@ -2292,6 +2513,8 @@ function useToolforgeSourceFetcher() {
         "''(Source is long, only partially checked.)''":
             "''(Source longue, vérifiée partiellement seulement.)''",
         '(combined)': '(combinées)',
+        // Link text for the source column of the wikitext table: [url source]
+        'source': 'source',
         "'''Summary:''' {supported} supported, {partial} partially supported, {notSupported} not supported, {unavailable} source unavailable out of {claims}.":
             "'''Résumé :''' {supported} confirmées, {partial} partiellement confirmées, {notSupported} non confirmées, {unavailable} sources indisponibles sur {claims}.",
         '{count} citations': '{count} citations',
@@ -2400,7 +2623,6 @@ function useToolforgeSourceFetcher() {
     // possessive "tu", and «angle quotes» over "".
     const ES_MESSAGES = {
         // Sidebar structure
-        'Source Verifier': 'Verificador de fuentes',
         'Selected Claim': 'Afirmación seleccionada',
         'Click on a reference number [1] next to a claim to verify it against its source.':
             'Se puede hacer clic en un número de referencia [1] junto a una afirmación para verificarla con su fuente.',
@@ -2426,6 +2648,17 @@ function useToolforgeSourceFetcher() {
         'Back to Report': 'Volver al informe',
         'Save': 'Guardar',
         'Give feedback': 'Enviar comentarios',
+
+        // Feedback controls
+        'Was this right?': '¿Es correcto?',
+        'Yes': 'Sí',
+        'No': 'No',
+        'This verdict looks right': 'El veredicto parece correcto',
+        'This verdict looks wrong': 'El veredicto parece incorrecto',
+        'What should it have been?': '¿Cuál habría sido el veredicto correcto?',
+        'Thanks — recorded.': 'Gracias, registrado.',
+        'Could not record that, sorry.': 'No se ha podido registrar. Disculpas.',
+        'Comment': 'Comentario',
         'Edit Section': 'Editar la sección',
         'Copy Report (Wikitext)': 'Copiar el informe (wikitexto)',
         'Copy Report (Plain Text)': 'Copiar el informe (texto plano)',
@@ -2439,6 +2672,11 @@ function useToolforgeSourceFetcher() {
         'API key required for {name}': 'Se necesita una clave API para {name}',
         'Results are logged for research. Your username is not recorded.':
             'Los resultados se registran con fines de investigación. El nombre de usuario no se registra.',
+        'Claim scope': 'Alcance de la afirmación',
+        'Full claim': 'Afirmación completa',
+        'Last sentence only': 'Solo la última frase',
+        '"Last sentence only" avoids flagging a multi-sentence claim as unsupported just because an earlier sentence lacks a citation.':
+            'Con «Solo la última frase» se evita marcar como no respaldada una afirmación de varias frases solo porque a una frase anterior le falta una fuente.',
 
         // Verifier tab + first-run notification
         'Verify': 'Verificar',
@@ -2580,6 +2818,8 @@ function useToolforgeSourceFetcher() {
         'a PublicAI-hosted open-source LLM': 'un LLM de código abierto alojado por PublicAI',
         'a HuggingFace-hosted open-source LLM ({model})':
             'un LLM de código abierto alojado por HuggingFace ({model})',
+        'a Wikimedia Lift Wing-hosted open-source LLM ({model})':
+            'un LLM de código abierto alojado por Wikimedia Lift Wing ({model})',
         'Generated by [[User:Alaexis/AI_Source_Verification|Citation Verifier]] using {model} on ~~~~~.':
             'Generado por [[:en:User:Alaexis/AI_Source_Verification|Citation Verifier]] con {model} el ~~~~~.',
         ' Tokens used: {input} input, {output} output.':
@@ -2762,6 +3002,14 @@ function useToolforgeSourceFetcher() {
                 localStorage.setItem('source_verifier_provider', 'huggingface');
             }
             this.currentProvider = storedProvider || 'huggingface';
+            // 'paragraph' (default) is the full "between citations" span, which
+            // can include multiple sentences — same scope the batch pipeline
+            // used before it moved to 'sentence' by default (see CLAUDE.md).
+            // Exposed here for the same reason: a multi-sentence claim can flag
+            // NOT SUPPORTED because only its first sentence lacks a citation,
+            // and 'sentence' narrows to just the sentence next to the ref.
+            const storedClaimScope = localStorage.getItem('verifier_claim_scope');
+            this.claimScope = storedClaimScope === 'sentence' ? 'sentence' : 'paragraph';
             this.sidebarWidth = localStorage.getItem('verifier_sidebar_width') || '400px';
             this.isVisible = localStorage.getItem('verifier_sidebar_visible') === 'true';
             this.buttons = {};
@@ -2890,6 +3138,9 @@ function useToolforgeSourceFetcher() {
                         <div id="verifier-provider-container"></div>
                         <div id="verifier-provider-info"></div>
                         <div id="verifier-key-buttons"></div>
+                        <div id="verifier-claim-scope-label">${this.t('Claim scope')}</div>
+                        <div id="verifier-claim-scope-container"></div>
+                        <div id="verifier-claim-scope-note">${this.t('"Last sentence only" avoids flagging a multi-sentence claim as unsupported just because an earlier sentence lacks a citation.')}</div>
                         <div id="verifier-accuracy-note"></div>
                         <div id="verifier-privacy-note">${this.t('Results are logged for research. Your username is not recorded.')}</div>
                         <div id="verifier-settings-done-container"></div>
@@ -3550,6 +3801,20 @@ function useToolforgeSourceFetcher() {
                 #verifier-provider-info.free-provider a {
                     color: inherit;
                     text-decoration: underline;
+                }
+                #verifier-claim-scope-label {
+                    font-size: 12px;
+                    font-weight: bold;
+                    color: var(--sv-ink-4);
+                    margin-bottom: 4px;
+                }
+                #verifier-claim-scope-container {
+                    margin-bottom: 6px;
+                }
+                #verifier-claim-scope-note {
+                    font-size: 12px;
+                    color: var(--sv-ink-4);
+                    margin-bottom: 10px;
                 }
                 #verifier-buttons-container {
                     display: flex;
@@ -4332,7 +4597,18 @@ function useToolforgeSourceFetcher() {
                 }
             });
             this.buttons.providerSelect.getMenu().selectItemByData(this.currentProvider);
-            
+
+            // Claim scope selector
+            this.buttons.claimScopeSelect = new OO.ui.DropdownWidget({
+                menu: {
+                    items: [
+                        new OO.ui.MenuOptionWidget({ data: 'paragraph', label: this.t('Full claim') }),
+                        new OO.ui.MenuOptionWidget({ data: 'sentence', label: this.t('Last sentence only') })
+                    ]
+                }
+            });
+            this.buttons.claimScopeSelect.getMenu().selectItemByData(this.claimScope);
+
             this.buttons.setKey = new OO.ui.ButtonWidget({
                 label: this.t('Set API Key'),
                 flags: ['primary', 'progressive'],
@@ -4411,6 +4687,7 @@ function useToolforgeSourceFetcher() {
             document.getElementById('verifier-close-btn-container').appendChild(this.buttons.close.$element[0]);
             document.getElementById('verifier-settings-btn-container').appendChild(this.buttons.settings.$element[0]);
             document.getElementById('verifier-provider-container').appendChild(this.buttons.providerSelect.$element[0]);
+            document.getElementById('verifier-claim-scope-container').appendChild(this.buttons.claimScopeSelect.$element[0]);
             document.getElementById('verifier-settings-done-container').appendChild(this.buttons.settingsDone.$element[0]);
 
             this.updateProviderInfo();
@@ -4897,7 +5174,7 @@ function useToolforgeSourceFetcher() {
         }
 
         extractClaimText(refElement) {
-            return extractClaimText(refElement);
+            return extractClaimText(refElement, { scope: this.claimScope });
         }
 
         getCitationGroup(refElement) {
@@ -5045,7 +5322,12 @@ function useToolforgeSourceFetcher() {
                 this.updateTheme();
                 this.updateStatus(this.t('Switched to {name}', { name: this.providers[this.currentProvider].name }));
             });
-            
+
+            this.buttons.claimScopeSelect.getMenu().on('select', (item) => {
+                this.claimScope = item.getData();
+                localStorage.setItem('verifier_claim_scope', this.claimScope);
+            });
+
             this.buttons.setKey.on('click', () => {
                 this.setApiKey();
             });
@@ -5242,7 +5524,7 @@ function useToolforgeSourceFetcher() {
         // user can see gets one — including the ones that never reached an
         // LLM — so the feedback controls are uniformly available.
         //
-        // `parsed` is the verdict object ({ verdict, confidence, comments,
+        // `parsed` is the verdict object ({ verdict, support_score, comments,
         // reason_type }); `context` overrides the active-citation fields for
         // the batch paths, which verify citations other than the selected one.
         //
@@ -5270,7 +5552,7 @@ function useToolforgeSourceFetcher() {
                 provider: this.currentProvider,
                 model: provider.model || null,
                 verdict: parsed?.verdict,
-                confidence: parsed?.confidence,
+                supportScore: parsed?.support_score,
                 reasonType: parsed?.reason_type ?? null,
                 claimText: fromContext('claimText', this.activeClaim),
                 comments: parsed?.comments,
@@ -5489,7 +5771,7 @@ function useToolforgeSourceFetcher() {
             // Footnote backlinks use .mw-cite-backlink, not .reference, so no
             // dedup is needed. The batch runner passes a Parsoid document as the
             // root instead; see core/citations.js.
-            return collectCitations(document.getElementById('mw-content-text'));
+            return collectCitations(document.getElementById('mw-content-text'), { claimScope: this.claimScope });
         }
 
         attachGroupMetadata(citations) {
@@ -6217,35 +6499,23 @@ function useToolforgeSourceFetcher() {
 
             // Dedupe by cache key so a source cited twice in the group (named
             // refs) is sent once, with both citation numbers on its label.
-            const byKey = new Map();
-            for (const m of members) {
+            // Shared with the batch pipeline via core/groups.js — see that
+            // file's header for why this isn't reimplemented per caller.
+            const entries = groupSourceEntries(members, m => {
                 const cacheKey = m.url
                     ? (m.pageNum ? `${m.url}|page=${m.pageNum}` : m.url)
                     : `__nourl_${m.citationNumber}`;
-                let entry = byKey.get(cacheKey);
-                if (!entry) {
-                    const fetchResult = m.url
-                        ? (this.sourceCache.get(cacheKey) || { content: null, error: null, status: null })
-                        : { content: null, error: 'No URL found in reference', status: null };
-                    entry = {
-                        citationNumbers: [],
-                        url: m.url || null,
-                        content: fetchResult.content,
-                        error: fetchResult.error,
-                        status: fetchResult.status,
-                    };
-                    byKey.set(cacheKey, entry);
-                }
-                entry.citationNumbers.push(m.citationNumber);
-            }
-            const entries = Array.from(byKey.values());
+                const fetchResult = m.url
+                    ? (this.sourceCache.get(cacheKey) || { content: null, error: null, status: null })
+                    : { content: null, error: 'No URL found in reference', status: null };
+                return { key: cacheKey, url: m.url || null, content: fetchResult.content, error: fetchResult.error, status: fetchResult.status };
+            });
             const truncated = entries.some(e => e.content && e.content.includes('\nTruncated: true'));
             const { text: assembledText, anyAvailable } = assembleGroupSources(entries);
 
             // When only one source is available the collective verdict would
             // duplicate the individual per-source result, so skip it.
-            const availableCount = entries.filter(e => e.content && extractSourceText(e.content).trim()).length;
-            if (availableCount <= 1) {
+            if (shouldSkipCollective(entries)) {
                 this.reportGroupResults.set(groupId, { skipped: true, groupId });
                 this.hideGroupCollectiveSlot(groupId);
                 // Marking the group skipped changes what getReportUnits()
@@ -6277,7 +6547,7 @@ function useToolforgeSourceFetcher() {
 
             let result;
             if (!anyAvailable) {
-                result = { ...base, verdict: 'SOURCE UNAVAILABLE', confidence: 0, comments: this.t('None of the grouped sources could be retrieved.') };
+                result = { ...base, verdict: 'SOURCE UNAVAILABLE', support_score: 0, comments: this.t('None of the grouped sources could be retrieved.') };
             } else {
                 try {
                     const apiResult = await withRetry(
@@ -6309,7 +6579,7 @@ function useToolforgeSourceFetcher() {
                     result = {
                         ...base,
                         verdict: parsed.verdict,
-                        confidence: parsed.confidence,
+                        support_score: parsed.support_score,
                         comments: parsed.comments,
                         reason_type: parsed.reason_type,
                         sourceQuote: quoteView.quote,
@@ -6318,7 +6588,7 @@ function useToolforgeSourceFetcher() {
                         quoteStatus: quoteView.status,
                     };
                 } catch (e) {
-                    result = { ...base, verdict: 'ERROR', confidence: null, comments: e.message };
+                    result = { ...base, verdict: 'ERROR', support_score: null, comments: e.message };
                 }
             }
 
@@ -6355,26 +6625,10 @@ function useToolforgeSourceFetcher() {
         // adjacent group collapses to its collective verdict. Groups whose
         // collective check hasn't completed yet are omitted until it does.
         // Used by the summary counts and the wikitext/plaintext exporters.
+        // Shared with the batch pipeline via core/groups.js's
+        // mergeReportUnits() — see that file's header.
         getReportUnits() {
-            const units = [];
-            const seenGroups = new Set();
-            for (const r of this.reportResults) {
-                if (r.groupSize && r.groupSize > 1) {
-                    if (seenGroups.has(r.groupId)) continue;
-                    seenGroups.add(r.groupId);
-                    const collective = this.reportGroupResults.get(r.groupId);
-                    if (collective && !collective.skipped) {
-                        units.push(collective);
-                    } else if (collective && collective.skipped) {
-                        for (const x of this.reportResults) {
-                            if (x.groupId === r.groupId) units.push(x);
-                        }
-                    }
-                } else {
-                    units.push(r);
-                }
-            }
-            return units;
+            return mergeReportUnits(this.reportResults, this.reportGroupResults);
         }
 
         async verifyAllCitations() {
@@ -6460,7 +6714,7 @@ function useToolforgeSourceFetcher() {
                         url: null,
                         refElement: citation.refElement,
                         verdict: 'SOURCE UNAVAILABLE',
-                        confidence: 0,
+                        support_score: 0,
                         comments: this.t('No URL found in reference'),
                         truncated: false
                     };
@@ -6499,7 +6753,7 @@ function useToolforgeSourceFetcher() {
                             url: citation.url,
                             refElement: citation.refElement,
                             verdict: 'SOURCE UNAVAILABLE',
-                            confidence: 0,
+                            support_score: 0,
                             comments,
                             fetchStatus: fetchResult.status,
                             fetchError: fetchResult.error,
@@ -6554,7 +6808,7 @@ function useToolforgeSourceFetcher() {
                                 url: citation.url,
                                 refElement: citation.refElement,
                                 verdict: parsed.verdict,
-                                confidence: parsed.confidence,
+                                support_score: parsed.support_score,
                                 comments: parsed.comments,
                                 reason_type: parsed.reason_type,
                                 sourceQuote: quoteView.quote,
@@ -6580,7 +6834,7 @@ function useToolforgeSourceFetcher() {
                                 url: citation.url,
                                 refElement: citation.refElement,
                                 verdict: 'ERROR',
-                                confidence: null,
+                                support_score: null,
                                 comments: e.message,
                                 truncated: sourceTruncated
                             };
@@ -6619,7 +6873,7 @@ function useToolforgeSourceFetcher() {
                 // collective check: the whole group's sources are cached by now
                 // (group members are contiguous and processed in order), so we
                 // assemble them and ask for a single verdict over the combination.
-                if (citation.groupSize > 1 && citation.groupIndex === citation.groupSize - 1 && !this.reportCancelled) {
+                if (isGroupClose(citation) && !this.reportCancelled) {
                     const groupToken = (citation.groupCitationNumbers || []).map(n => `[${n}]`).join('');
                     this.updateReportProgress(completed, progressTotal, this.t('Checking combined sources {token}', { token: groupToken }), startTime);
                     await this.verifyGroupCollective(citation, citations, startTime, delayBetweenCalls, completed, progressTotal);

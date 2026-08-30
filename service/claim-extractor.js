@@ -27,7 +27,7 @@ export const ARTICLE_OUTCOMES = Object.freeze({
 /**
  * Runs one article through stages 1-3.
  *
- * `candidate` is a row from service/selection.js: { pageId, title, revisionId }.
+ * `candidate` is a row from service/article-picker.js: { pageId, title, revisionId }.
  *
  * Returns a record per article rather than throwing, because a batch run must
  * survive a single bad article — a 404 from a page deleted between selection
@@ -38,6 +38,15 @@ export async function processArticle(candidate, {
     fetchSource,
     fetchArticle = fetchArticleHtml,
     sourceCache = new Map(),
+    // The batch pipeline defaults to sentence-scope claims: unlike the
+    // interactive userscript, nobody is there to read a two-sentence claim
+    // and recognize that only its first sentence is unsupported. At
+    // paragraph scope that reads as a false NOT SUPPORTED — the sentence
+    // that's actually supported drags along a citation-needed sentence that
+    // isn't. Narrowing to the sentence immediately preceding the reference
+    // keeps flags meaning "this citation doesn't support what's right next
+    // to it" rather than "something in this whole span isn't supported".
+    claimScope = 'sentence',
     signal,
 } = {}) {
     if (typeof parseHtml !== 'function') {
@@ -64,7 +73,7 @@ export async function processArticle(candidate, {
 
     // Parsoid output has no #mw-content-text wrapper, so the document is the
     // root — see core/citations.js.
-    const citations = collectCitations(parseHtml(html));
+    const citations = collectCitations(parseHtml(html), { claimScope });
     if (citations.length === 0) {
         return { ...base, outcome: ARTICLE_OUTCOMES.NO_CITATIONS, citations: [] };
     }
@@ -74,6 +83,7 @@ export async function processArticle(candidate, {
         if (signal?.aborted) break;
         results.push({
             citationNumber: citation.citationNumber,
+            refName: citation.refName,
             claimText: citation.claimText,
             url: citation.url,
             pageNum: citation.pageNum,

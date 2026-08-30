@@ -16,7 +16,7 @@ test('VERDICTS exposes the four canonical UPPERCASE strings', () => {
     assert.equal(VERDICTS.SOURCE_UNAVAILABLE,  'SOURCE UNAVAILABLE');
 });
 
-test('VERDICT_LIST iterates in confidence-guide order', () => {
+test('VERDICT_LIST iterates in support-score-guide order', () => {
     assert.deepEqual(VERDICT_LIST, [
         'SUPPORTED',
         'PARTIALLY SUPPORTED',

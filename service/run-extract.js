@@ -9,19 +9,22 @@
 // per its own README, unattended fetching of third-party publisher URLs from
 // Wikimedia infrastructure has not yet been cleared with WMCS — so no batch
 // job may be pointed at it as a matter of course. Pass --live-source-fetch to
-// opt in for a one-off manual smoke test (e.g. from a Toolforge bastion,
-// after checking WMCS clearance); every other run stays stubbed.
+// opt in for a one-off manual, attended run — from a laptop or any host with
+// open egress this needs no clearance at all (docs/design-plans/
+// 2026-08-24-csv-deliverable-and-component-names.md, G3); only running it
+// unattended, at volume, from Toolforge itself is the part still gated on
+// WMCS. Every other run stays stubbed.
 //
 // Usage (on a Toolforge bastion, inside the tool account):
-//   node service/extract-articles.js
-//   node service/extract-articles.js --criterion citation-needed --max 5
-//   node service/extract-articles.js --live-source-fetch --max 1
+//   node service/run-extract.js
+//   node service/run-extract.js --criterion citation-needed --max 5
+//   node service/run-extract.js --live-source-fetch --max 1
 
 import { JSDOM } from 'jsdom';
 import { parseArgs } from 'node:util';
 import { openReplicaConnection, makeQueryFn } from './replicas.js';
-import { selectCandidates, CRITERIA } from './selection.js';
-import { runBatch, ARTICLE_OUTCOMES } from './pipeline.js';
+import { selectCandidates, CRITERIA } from './article-picker.js';
+import { runBatch, ARTICLE_OUTCOMES } from './claim-extractor.js';
 import { fetchArticleHtml } from '../core/wikipedia.js';
 import { fetchSourceContent } from '../core/worker.js';
 
@@ -52,7 +55,7 @@ function parseCliArgs(argv) {
     };
 }
 
-const HELP_TEXT = `usage: node service/extract-articles.js [options]
+const HELP_TEXT = `usage: node service/run-extract.js [options]
 
 Selects candidate articles from Wiki Replicas, fetches each one's real
 rendered HTML, and extracts its citations and claims. Source fetching (stage

@@ -135,7 +135,7 @@ def get_existing_issue_titles() -> list[str]:
 # --- LLM extraction ---
 EXTRACTION_PROMPT = """You are helping maintain a GitHub issue tracker for a Wikipedia userscript called "AI Source Verification" (also known as the citation checker script).
 
-The tool helps Wikipedia editors verify whether cited sources actually support the claims they're attached to. It uses AI (Claude, GPT-4, Gemini) to check citations and returns confidence scores with verdicts.
+The tool helps Wikipedia editors verify whether cited sources actually support the claims they're attached to. It uses AI (Claude, GPT-4, Gemini) to check citations and returns support scores with verdicts.
 
 Below is content from one section of the Wikipedia Talk page for this userscript. It may contain feature requests, bug reports, questions, or general discussion from Wikipedia editors who use the tool.
 

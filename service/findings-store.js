@@ -6,6 +6,16 @@
 // cannot be meaningfully tested here (ToolsDB is unreachable from outside
 // Wikimedia Cloud infrastructure), so it stays small and every external call
 // is injectable, matching the pattern in service/replicas.js.
+//
+// source_quote / quote_status (added in service/migrations/
+// 002-add-quote-columns.sql — run by hand on the bastion before this module's
+// upsert can succeed against the live table, same as the original schema) are
+// written unconditionally, whatever the quote's status — mirroring
+// core/worker.js's logVerification(), not the UI's display-time filtering.
+// Per CLAUDE.md's "Source quotes are verified before they are shown": the
+// log/store layer keeps a not-found quote because that is exactly the row
+// worth inspecting later; only the UI hides one, to avoid implying a verdict
+// is less trustworthy than measured.
 
 import { claimHash, sourceUrlHash } from '../core/anchor.js';
 
@@ -22,7 +32,7 @@ export function buildUpsertQuery(finding) {
     // Compute hashes internally — do not make the caller compute these
     const claim_hash = claimHash(finding.claimText);
     const source_url_hash = sourceUrlHash(finding.sourceUrl);
-    
+
     const sql = `
         INSERT INTO citation_findings (
             wiki, page_id, page_title, revision_id,
@@ -30,10 +40,11 @@ export function buildUpsertQuery(finding) {
             source_url, source_url_hash, fetched_at,
             group_id, is_collective,
             verdict, confidence, reason_type, rationale,
+            source_quote, quote_status,
             provider, model, prompt_version,
             fetch_status, source_truncated, tokens_in, tokens_out,
             expires_at, published
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON DUPLICATE KEY UPDATE
             page_title = VALUES(page_title),
             revision_id = VALUES(revision_id),
@@ -48,6 +59,8 @@ export function buildUpsertQuery(finding) {
             confidence = VALUES(confidence),
             reason_type = VALUES(reason_type),
             rationale = VALUES(rationale),
+            source_quote = VALUES(source_quote),
+            quote_status = VALUES(quote_status),
             provider = VALUES(provider),
             model = VALUES(model),
             fetch_status = VALUES(fetch_status),
@@ -73,9 +86,14 @@ export function buildUpsertQuery(finding) {
         finding.groupId,
         finding.isCollective ? 1 : 0,
         finding.verdict,
-        finding.confidence,
+        // Column is still named `confidence` (see service/migrations/
+        // 001-create-citation-findings.sql) — unmigrated for now, so the
+        // internal `supportScore` field is mapped back to it here.
+        finding.supportScore,
         finding.reasonType,
         finding.rationale,
+        finding.sourceQuote,
+        finding.quoteStatus,
         finding.provider,
         finding.model,
         finding.promptVersion,

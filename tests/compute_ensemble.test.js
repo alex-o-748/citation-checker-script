@@ -10,7 +10,7 @@ function row(entry_id, provider, predicted_verdict, ground_truth, opts = {}) {
         model: provider.replace('openrouter-', ''),
         ground_truth,
         predicted_verdict,
-        confidence: 90,
+        support_score: 90,
         comments: '',
         latency_ms: opts.latency_ms ?? 1000,
         cost_usd: opts.cost_usd ?? 0.0001,

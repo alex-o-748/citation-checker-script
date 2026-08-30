@@ -51,8 +51,13 @@ const LANGS = Object.keys(MESSAGES);
 
 // Placeholders are substituted by t() via a literal `{name}` split, so a
 // translation that drops or renames one silently leaves `{count}` on screen.
+// `{{template}}` (double-braced MediaWiki template calls, e.g. '{{tick}}')
+// is a different thing entirely — literal wikitext never passed through
+// t()'s params, and it may legitimately need a different template name per
+// language (e.g. fr's '{{Oui-}}' in place of '{{tick}}') — so it's excluded
+// via the lookaround guards.
 function placeholders(s) {
-  return new Set([...String(s).matchAll(/\{([a-zA-Z]+)\}/g)].map((m) => m[1]));
+  return new Set([...String(s).matchAll(/(?<!\{)\{([a-zA-Z]+)\}(?!\})/g)].map((m) => m[1]));
 }
 
 test('Spanish is a registered UI language', () => {
@@ -96,7 +101,7 @@ test('translations are non-empty and actually differ from English', () => {
   }
   // A handful of strings are genuinely the same word in Spanish. Anything else
   // matching English means a key was copied over without being translated.
-  const SAME_IN_SPANISH = ['ERROR', 'Error: {message}'];
+  const SAME_IN_SPANISH = ['No', 'ERROR', 'Error: {message}'];
   const untranslated = Object.entries(MESSAGES.es).filter(([en, es]) => en === es);
   assert.deepEqual(untranslated.map(([en]) => en), SAME_IN_SPANISH, 'untranslated Spanish strings');
 });
