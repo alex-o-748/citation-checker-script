@@ -86,7 +86,10 @@ export function buildUpsertQuery(finding) {
         finding.groupId,
         finding.isCollective ? 1 : 0,
         finding.verdict,
-        finding.confidence,
+        // Column is still named `confidence` (see service/migrations/
+        // 001-create-citation-findings.sql) — unmigrated for now, so the
+        // internal `supportScore` field is mapped back to it here.
+        finding.supportScore,
         finding.reasonType,
         finding.rationale,
         finding.sourceQuote,

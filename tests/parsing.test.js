@@ -3,23 +3,23 @@ import assert from 'node:assert/strict';
 import { parseVerificationResult } from '../core/parsing.js';
 
 test('parses bare JSON', () => {
-  const raw = JSON.stringify({ verdict: 'SUPPORTED', confidence: 'High', comments: 'ok' });
+  const raw = JSON.stringify({ verdict: 'SUPPORTED', support_score: 'High', comments: 'ok' });
   const out = parseVerificationResult(raw);
   assert.equal(out.verdict, 'SUPPORTED');
-  assert.equal(out.confidence, 'High');
+  assert.equal(out.support_score, 'High');
 });
 
 test('parses JSON inside ```json code fence', () => {
-  const raw = '```json\n{"verdict":"NOT SUPPORTED","confidence":"Medium","comments":"c"}\n```';
+  const raw = '```json\n{"verdict":"NOT SUPPORTED","support_score":"Medium","comments":"c"}\n```';
   const out = parseVerificationResult(raw);
   assert.equal(out.verdict, 'NOT SUPPORTED');
 });
 
 test('parses JSON surrounded by prose (legacy {...} extraction)', () => {
-  const raw = 'Here is my answer:\n{"verdict":"SUPPORTED","confidence":80,"comments":"matches"}\nThanks.';
+  const raw = 'Here is my answer:\n{"verdict":"SUPPORTED","support_score":80,"comments":"matches"}\nThanks.';
   const out = parseVerificationResult(raw);
   assert.equal(out.verdict, 'SUPPORTED');
-  assert.equal(out.confidence, 80);
+  assert.equal(out.support_score, 80);
 });
 
 test('recovers verdict from Granite-style **Verdict:** SUPPORTED prose', () => {
@@ -36,7 +36,7 @@ test('recovers verdict from Granite-style **Verdict:** SUPPORTED prose', () => {
 `;
   const out = parseVerificationResult(raw);
   assert.equal(out.verdict, 'SUPPORTED');
-  assert.equal(out.confidence, null);
+  assert.equal(out.support_score, null);
   assert.match(out.comments, /non-JSON/);
 });
 
@@ -68,21 +68,21 @@ test('fallback preserves PARTIALLY SUPPORTED', () => {
 test('returns PARSE_ERROR sentinel on pure prose with no verdict marker', () => {
   const out = parseVerificationResult('I cannot determine whether this claim is accurate.');
   assert.equal(out.verdict, 'PARSE_ERROR');
-  assert.equal(out.confidence, null);
+  assert.equal(out.support_score, null);
   assert.match(out.comments, /Failed to parse/);
 });
 
 test('returns PARSE_ERROR sentinel on completely malformed input', () => {
   const out = parseVerificationResult('not json at all');
   assert.equal(out.verdict, 'PARSE_ERROR');
-  assert.equal(out.confidence, null);
+  assert.equal(out.support_score, null);
   assert.match(out.comments, /Failed to parse/);
 });
 
 test('extracts reason_type from NOT SUPPORTED JSON response', () => {
   const raw = JSON.stringify({
     verdict: 'NOT SUPPORTED',
-    confidence: 15,
+    support_score: 15,
     reason_type: 'contradiction',
     comments: 'Source says 2002, not 1998.'
   });
@@ -94,7 +94,7 @@ test('extracts reason_type from NOT SUPPORTED JSON response', () => {
 test('reason_type defaults to null when not present', () => {
   const raw = JSON.stringify({
     verdict: 'SUPPORTED',
-    confidence: 90,
+    support_score: 90,
     comments: 'Matches.'
   });
   const out = parseVerificationResult(raw);
@@ -106,7 +106,7 @@ test('reason_type defaults to null when not present', () => {
 test('parses source_quote from the JSON response', () => {
   const raw = JSON.stringify({
     verdict: 'SUPPORTED',
-    confidence: 90,
+    support_score: 90,
     source_quote: 'Acme Corp was established in 1985.',
     comments: 'Definitive match.',
   });

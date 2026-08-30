@@ -92,7 +92,11 @@ export function buildLogPayload(fields = {}) {
         provider:        fields.provider ?? null,
         model:           fields.model ?? null,
         verdict:         fields.verdict ?? null,
-        confidence:      fields.confidence ?? null,
+        // Sent as `confidence` — not renamed to match `supportScore` — because
+        // it must line up with the Neon `verification_logs.confidence` column
+        // (see docs/worker-logging-reference.md). Renaming the wire/column
+        // name is a separate DB migration; this only renames the internal name.
+        confidence:      fields.supportScore ?? null,
         reason_type:     fields.reasonType ?? null,
         // Without these two a thumbs-down is uninterpretable: you know the
         // check was wrong but not what it claimed or why it decided that.

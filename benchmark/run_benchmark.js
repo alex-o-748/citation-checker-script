@@ -331,7 +331,7 @@ function getSystemPrompt() {
  * (single source of truth shared with main.js + cli/verify.js); the runner
  * adds env-var auth, latency timing, retry, and error-to-verdict-shape conversion.
  *
- * Return shape: { verdict, confidence, comments, raw_response, usage, latency, error }
+ * Return shape: { verdict, support_score, comments, raw_response, usage, latency, error }
  *   usage: { input, output, cost_usd } — cost_usd is null where the upstream
  *   API doesn't surface per-call cost (everything except OpenRouter today).
  */
@@ -355,7 +355,7 @@ export async function callProvider(provider, systemPrompt, userPrompt) {
     } catch (error) {
         return {
             verdict: 'ERROR',
-            confidence: 0,
+            support_score: 0,
             comments: error.message,
             source_quote: '',
             latency: Date.now() - startTime,
@@ -371,14 +371,14 @@ export async function callProvider(provider, systemPrompt, userPrompt) {
 // shared with main.js + cli/verify.js). The runner then post-processes the
 // core parser's output: title-cases the verdict via the benchmark-local
 // normalizeVerdict ('SUPPORTED' → 'Supported') for results.json schema
-// compatibility, defaults missing confidence to 0 (the benchmark's
+// compatibility, defaults missing support_score to 0 (the benchmark's
 // historical default; core returns null), and stitches in raw_response /
 // usage for downstream analysis.
 export function shapeResult({ text, usage }) {
     const parsed = parseVerificationResult(text);
     return {
         verdict: normalizeVerdict(parsed.verdict),
-        confidence: parsed.confidence ?? 0,
+        support_score: parsed.support_score ?? 0,
         comments: parsed.comments,
         source_quote: parsed.source_quote ?? '',
         raw_response: text,
@@ -771,7 +771,7 @@ async function main() {
                     model: PROVIDERS[provider].model,
                     ground_truth: entry.ground_truth,
                     predicted_verdict: result.verdict,
-                    confidence: result.confidence,
+                    support_score: result.support_score,
                     comments: result.comments,
                     // The quote as returned, plus whether it was located in
                     // the source text this entry was scored against. Storing

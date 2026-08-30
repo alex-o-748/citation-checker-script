@@ -24,7 +24,7 @@ export function parseVerificationResult(response) {
         const result = JSON.parse(jsonStr);
         return {
             verdict: result.verdict || 'UNKNOWN',
-            confidence: result.confidence ?? null,
+            support_score: result.support_score ?? null,
             comments: result.comments || '',
             reason_type: result.reason_type || null,
             // Field-name aliases: models occasionally camelCase the key or
@@ -47,13 +47,13 @@ export function parseVerificationResult(response) {
     if (match) {
         const verdict = canonicalizeVerdict(match[1]);
         if (verdict) {
-            return { verdict, confidence: null, comments: '<extracted from non-JSON response>', source_quote: '' };
+            return { verdict, support_score: null, comments: '<extracted from non-JSON response>', source_quote: '' };
         }
     }
 
     return {
         verdict: 'PARSE_ERROR',
-        confidence: null,
+        support_score: null,
         comments: `Failed to parse AI response: ${response.substring(0, 200)}`,
         source_quote: ''
     };

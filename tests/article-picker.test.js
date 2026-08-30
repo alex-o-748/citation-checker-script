@@ -10,7 +10,7 @@ import {
     normalizeRow,
     resolveCriterion,
     selectCandidates,
-} from '../service/selection.js';
+} from '../service/article-picker.js';
 
 test('resolveCriterion returns known criteria and rejects unknown ones', () => {
     assert.equal(resolveCriterion('failed-verification').template, 'Failed_verification');

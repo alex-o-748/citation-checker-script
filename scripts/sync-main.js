@@ -22,6 +22,7 @@ const CORE_ORDER = [
   'urls.js',
   'claim.js',
   'citations.js',
+  'groups.js',
   'providers.js',
   'worker.js',
   'feedback.js',

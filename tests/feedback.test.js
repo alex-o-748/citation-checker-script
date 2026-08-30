@@ -99,7 +99,7 @@ test('buildLogPayload maps camelCase fields onto the snake_case columns', () => 
     provider: 'claude',
     model: 'claude-sonnet-4-6',
     verdict: 'NOT SUPPORTED',
-    confidence: 80,
+    supportScore: 80,
     reasonType: 'omission',
     claimText: 'The sky is blue.',
     comments: 'Source never mentions the sky.',
@@ -199,10 +199,10 @@ test('buildLogPayload nulls absent fields rather than dropping the keys', () => 
   }
 });
 
-test('buildLogPayload preserves a confidence of 0 instead of nulling it', () => {
-  // SOURCE UNAVAILABLE rows log confidence: 0 — a ?? chain that treated 0 as
-  // absent would silently drop it.
-  assert.equal(buildLogPayload({ confidence: 0 }).confidence, 0);
+test('buildLogPayload preserves a support score of 0 instead of nulling it', () => {
+  // SOURCE UNAVAILABLE rows log support_score: 0 — a ?? chain that treated 0
+  // as absent would silently drop it.
+  assert.equal(buildLogPayload({ supportScore: 0 }).confidence, 0);
 });
 
 // --- ratings ------------------------------------------------------------

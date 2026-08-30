@@ -33,22 +33,50 @@ export function refIdFromHref(href) {
     return refId || null;
 }
 
-export function collectCitations(root, { minClaimLength = MIN_CLAIM_LENGTH } = {}) {
+// Recovers a named <ref name="..."> from its rendered footnote id, when the
+// citation came from one. MediaWiki's Cite extension renders a *named* ref's
+// footnote id as `cite_note-<name>-<n>` — <name> being the ref's `name`
+// attribute, sanitized for HTML-id use (Sanitizer::escapeIdForAttribute:
+// spaces become underscores, and so on), and <n> a global reference counter
+// unrelated to the name, shared across every occurrence of that same named
+// ref. An *unnamed* ref renders as plain `cite_note-<n>`, with no name
+// segment to recover — refId already gives us that whole footnote id
+// (refIdFromHref reads it off the same href this function's caller does), so
+// no extra DOM access is needed to try to recover one.
+//
+// The recovered value is the *sanitized* id-safe form, not necessarily
+// byte-identical to the wikitext attribute (an underscore may have been a
+// space) — acceptable per CLAUDE.md: "ref_name... display only; NOT an
+// identifier". Works identically on browser-skin and Parsoid REST HTML: Cite
+// renders this id the same way on both, unlike the URL/page-number
+// extraction in core/urls.js, which does differ between the two sources.
+export function refNameFromNoteId(refId) {
+    const match = /^cite_note-(.+)-\d+$/.exec(refId || '');
+    return match ? match[1] : null;
+}
+
+export function collectCitations(root, { minClaimLength = MIN_CLAIM_LENGTH, claimScope = 'paragraph' } = {}) {
     if (!root) return [];
-    // A Document has no ownerDocument; an Element does. Either can be the root.
-    const doc = root.ownerDocument || root;
+    // Document and DocumentFragment both answer getElementById directly and
+    // must be used as-is: a DocumentFragment's .ownerDocument is a separate,
+    // empty shell document that does not contain the fragment's own content,
+    // so getElementById on it never finds anything even though the id exists
+    // right there in the fragment. A plain Element has no getElementById of
+    // its own, so that case still needs its owning document.
+    const doc = typeof root.getElementById === 'function' ? root : root.ownerDocument;
 
     const citations = [];
     for (const refElement of root.querySelectorAll('.reference a')) {
         const refId = refIdFromHref(refElement.getAttribute('href'));
         if (!refId) continue;
 
-        const claimText = extractClaimText(refElement);
+        const claimText = extractClaimText(refElement, { scope: claimScope });
         if (!claimText || claimText.length < minClaimLength) continue;
 
         citations.push({
             refElement,
             refId,
+            refName: refNameFromNoteId(refId),
             citationNumber: refElement.textContent.replace(/[\[\]]/g, '').trim(),
             claimText,
             url: extractReferenceUrl(refElement, doc),

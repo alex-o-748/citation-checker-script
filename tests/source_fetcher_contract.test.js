@@ -12,7 +12,7 @@
 // fixture responses here to match its new README before assuming this client
 // still works against it.
 //
-// service/extract-articles.js's --live-source-fetch flag is the only caller
+// service/run-extract.js's --live-source-fetch flag is the only caller
 // of this contract in this repo today.
 
 import { test, beforeEach, afterEach } from 'node:test';

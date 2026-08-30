@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { buildUpsertQuery, upsertFinding } from '../service/findings.js';
+import { buildUpsertQuery, upsertFinding } from '../service/findings-store.js';
 import { claimHash, sourceUrlHash } from '../core/anchor.js';
 
 test('buildUpsertQuery binds all values and computes hashes internally', () => {
@@ -18,7 +18,7 @@ test('buildUpsertQuery binds all values and computes hashes internally', () => {
         groupId: 'group1',
         isCollective: false,
         verdict: 'SUPPORTED',
-        confidence: 95,
+        supportScore: 95,
         reasonType: null,
         rationale: 'Clear evidence in source',
         sourceQuote: 'The sky appears blue due to Rayleigh scattering.',
@@ -78,7 +78,7 @@ test('buildUpsertQuery handles collective group findings', () => {
         groupId: 'group1',
         isCollective: true,
         verdict: 'PARTIALLY SUPPORTED',
-        confidence: 75,
+        supportScore: 75,
         reasonType: 'omission',
         rationale: 'Some evidence missing',
         sourceQuote: null,
@@ -133,7 +133,7 @@ test('buildUpsertQuery handles no-URL findings with empty-string hash', () => {
         groupId: null,
         isCollective: false,
         verdict: 'SOURCE UNAVAILABLE',
-        confidence: 0,
+        supportScore: 0,
         reasonType: 'no_url',
         rationale: 'No URL found in reference',
         sourceQuote: null,
@@ -191,7 +191,7 @@ test('upsertFinding calls query with the constructed SQL and parameters', async 
         groupId: null,
         isCollective: false,
         verdict: 'SUPPORTED',
-        confidence: 95,
+        supportScore: 95,
         reasonType: null,
         rationale: 'Clear evidence in source',
         sourceQuote: 'Clear evidence in source.',
