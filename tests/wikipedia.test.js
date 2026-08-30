@@ -74,6 +74,26 @@ test('a network failure reports a null status, distinguishing it from an HTTP er
     assert.match(result.error, /ETIMEDOUT/);
 });
 
+test('fetchArticleHtml times out a stalled connection rather than hanging forever', async () => {
+    const result = await fetchArticleHtml({ title: 'Foo' }, {
+        timeoutMs: 5,
+        fetchImpl: (_url, init) => new Promise((resolve, reject) => {
+            // Simulate a stalled connection: never resolves on its own, only
+            // reacts to the abort signal our timeout fires — matching how a
+            // real fetch() behaves when told to abort mid-flight.
+            init.signal.addEventListener('abort', () => {
+                const err = new Error('This operation was aborted');
+                err.name = 'AbortError';
+                reject(err);
+            });
+        }),
+    });
+
+    assert.equal(result.html, null);
+    assert.equal(result.status, null);
+    assert.match(result.error, /timed out after 5ms/);
+});
+
 test('a bad title is reported rather than thrown', async () => {
     const result = await fetchArticleHtml({}, { fetchImpl: async () => { throw new Error('unreachable'); } });
 

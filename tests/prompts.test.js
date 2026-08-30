@@ -136,7 +136,7 @@ test('both system prompts specify the source_quote field', () => {
 
 test('every few-shot example in both prompts includes a source_quote key', () => {
   for (const prompt of [generateSystemPrompt(), generateGroupSystemPrompt()]) {
-    const examples = prompt.match(/^\{"confidence[^\n]*\}$/gm) || [];
+    const examples = prompt.match(/^\{"support_score[^\n]*\}$/gm) || [];
     assert.ok(examples.length >= 3, 'examples should be discoverable');
     for (const example of examples) {
       const parsed = JSON.parse(example);
@@ -152,7 +152,7 @@ test('few-shot quotes are copied verbatim from their own example source text', (
   for (const prompt of [generateSystemPrompt(), generateGroupSystemPrompt()]) {
     const blocks = prompt.split('<example>').slice(1).map(b => b.split('</example>')[0]);
     for (const block of blocks) {
-      const jsonLine = (block.match(/^\{"confidence[^\n]*\}$/m) || [])[0];
+      const jsonLine = (block.match(/^\{"support_score[^\n]*\}$/m) || [])[0];
       if (!jsonLine) continue;
       const quote = JSON.parse(jsonLine).source_quote;
       if (!quote) continue;
@@ -169,7 +169,7 @@ test('few-shot quotes are copied verbatim from their own example source text', (
 
 test('omission and source-unavailable examples carry an empty source_quote', () => {
   const prompt = generateSystemPrompt();
-  const examples = (prompt.match(/^\{"confidence[^\n]*\}$/gm) || []).map(e => JSON.parse(e));
+  const examples = (prompt.match(/^\{"support_score[^\n]*\}$/gm) || []).map(e => JSON.parse(e));
   const omission = examples.find(e => e.reason_type === 'omission');
   const unavailable = examples.find(e => e.verdict === 'SOURCE UNAVAILABLE');
   assert.equal(omission.source_quote, '');
@@ -187,7 +187,7 @@ test('omission and source-unavailable examples carry an empty source_quote', () 
 // then replace EXPECTED_HASH below with the value this test's failure
 // message reports.
 test('PROMPT_VERSION is bumped whenever the system prompt text changes', () => {
-  const EXPECTED_HASH = '37ed065d07fe628b794b31e8cb08699730ecedd130245f80aef065277354121f';
+  const EXPECTED_HASH = '0d151a226f7f1e0262e1ded8cb158b1e7876472f8ef858cecef7c611a3870b89';
   const actual = createHash('sha256').update(generateSystemPrompt(), 'utf8').digest('hex');
   assert.equal(
     actual,

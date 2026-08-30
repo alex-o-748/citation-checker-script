@@ -68,7 +68,7 @@
           "min": 5064,
           "max": 24405
         },
-        "confidence": {
+        "support_score": {
           "avg": 56.3448275862069,
           "avgWhenCorrect": 61.419642857142854,
           "avgWhenWrong": 41.785714285714285,
@@ -134,7 +134,7 @@
           "min": 694,
           "max": 18690
         },
-        "confidence": {
+        "support_score": {
           "avg": 61.17977528089887,
           "avgWhenCorrect": 64.1743119266055,
           "avgWhenWrong": 54.09722222222222,

@@ -291,7 +291,7 @@ test('runVerify: success path prints verdict and returns 0', async () => {
       match: (url, opts) => String(url) === 'https://publicai-proxy.alaexis.workers.dev' && opts?.method === 'POST',
       respond: async () => ({
         ok: true, status: 200, json: async () => ({
-          choices: [{ message: { content: '{"verdict": "SUPPORTED", "confidence": 92, "comments": "matches source"}' } }],
+          choices: [{ message: { content: '{"verdict": "SUPPORTED", "support_score": 92, "comments": "matches source"}' } }],
           usage: { prompt_tokens: 50, completion_tokens: 20 },
         }),
       }),
@@ -310,7 +310,7 @@ test('runVerify: success path prints verdict and returns 0', async () => {
     );
     assert.equal(code, 0, `stderr: ${stderr.value()}`);
     assert.match(stdout.value(), /Verdict:\s+SUPPORTED/);
-    assert.match(stdout.value(), /Confidence:\s+92/);
+    assert.match(stdout.value(), /Support score:\s+92/);
   } finally {
     mock.restore();
   }
@@ -386,7 +386,7 @@ test('runVerify: provider=huggingface without HF_API_KEY routes via worker /hf',
           'proxy path must not forward an Authorization header');
         return {
           ok: true, status: 200, json: async () => ({
-            choices: [{ message: { content: '{"verdict":"SUPPORTED","confidence":80,"comments":"ok"}' } }],
+            choices: [{ message: { content: '{"verdict":"SUPPORTED","support_score":80,"comments":"ok"}' } }],
             usage: { prompt_tokens: 10, completion_tokens: 5 },
           }),
         };
@@ -422,7 +422,7 @@ test('runVerify: provider=huggingface with HF_API_KEY hits HF router with Bearer
         assert.equal(opts.headers['Authorization'], 'Bearer hf_test_key');
         return {
           ok: true, status: 200, json: async () => ({
-            choices: [{ message: { content: '{"verdict":"SUPPORTED","confidence":80,"comments":"ok"}' } }],
+            choices: [{ message: { content: '{"verdict":"SUPPORTED","support_score":80,"comments":"ok"}' } }],
             usage: { prompt_tokens: 10, completion_tokens: 5 },
           }),
         };
@@ -519,7 +519,7 @@ test('runVerify: logs to /log endpoint when noLog is false', async () => {
       match: (url, opts) => String(url) === 'https://publicai-proxy.alaexis.workers.dev' && opts?.method === 'POST',
       respond: async () => ({
         ok: true, status: 200, json: async () => ({
-          choices: [{ message: { content: '{"verdict": "SUPPORTED", "confidence": 90, "comments": "ok"}' } }],
+          choices: [{ message: { content: '{"verdict": "SUPPORTED", "support_score": 90, "comments": "ok"}' } }],
           usage: { prompt_tokens: 10, completion_tokens: 5 },
         }),
       }),
@@ -573,7 +573,7 @@ test('runVerify: logs article title with literal percent character correctly', a
       match: (url, opts) => String(url) === 'https://publicai-proxy.alaexis.workers.dev' && opts?.method === 'POST',
       respond: async () => ({
         ok: true, status: 200, json: async () => ({
-          choices: [{ message: { content: '{"verdict": "SUPPORTED", "confidence": 85, "comments": "ok"}' } }],
+          choices: [{ message: { content: '{"verdict": "SUPPORTED", "support_score": 85, "comments": "ok"}' } }],
           usage: { prompt_tokens: 10, completion_tokens: 5 },
         }),
       }),
@@ -640,7 +640,7 @@ test('runVerify: DOM traversal chain works against a realistic Wikipedia fixture
         assert.doesNotMatch(userMessage, /sea level/i, 'user prompt should NOT contain the [1] claim');
         return {
           ok: true, status: 200, json: async () => ({
-            choices: [{ message: { content: '{"verdict": "SUPPORTED", "confidence": 88, "comments": "matches"}' } }],
+            choices: [{ message: { content: '{"verdict": "SUPPORTED", "support_score": 88, "comments": "matches"}' } }],
             usage: { prompt_tokens: 50, completion_tokens: 10 },
           }),
         };

@@ -30,8 +30,8 @@ const STATUS = argVal('status', 'wrong'); // exact | partial | wrong | error | a
 const LIMIT = parseInt(argVal('limit', '20'), 10);
 const FULL = args.includes('--full');
 
-const DATASET_PATH = path.join(__dirname, 'dataset.json');
-const RESULTS_PATH = path.join(__dirname, 'results.json');
+const DATASET_PATH = path.resolve(__dirname, argVal('dataset', 'dataset.json'));
+const RESULTS_PATH = path.resolve(__dirname, argVal('results', 'results.json'));
 
 const dataset = loadRows(DATASET_PATH);
 const datasetById = new Map(dataset.map(e => [e.id, e]));
@@ -56,7 +56,7 @@ for (const r of rows.slice(0, LIMIT)) {
     console.log('─'.repeat(72));
     console.log(`${r.entry_id}  ·  ${r.provider}`);
     console.log(`  ground truth : ${r.ground_truth}`);
-    console.log(`  predicted    : ${r.predicted_verdict}  (confidence ${r.confidence ?? 'n/a'})`);
+    console.log(`  predicted    : ${r.predicted_verdict}  (support score ${r.support_score ?? 'n/a'})`);
     if (r.error) console.log(`  error        : ${r.error}`);
     console.log(`  claim        : ${FULL ? claim : truncate(claim)}`);
     if (r.comments) console.log(`  model says   : ${FULL ? r.comments : truncate(r.comments)}`);
@@ -67,3 +67,4 @@ console.log('─'.repeat(72));
 if (rows.length > LIMIT) {
     console.log(`\n(${rows.length - LIMIT} more not shown — raise --limit or narrow with --provider)`);
 }
+

@@ -304,7 +304,7 @@ receives `Claim: "<claim>"\n\nSource text:\n<text>` — never the URL.
 - **Exact Accuracy**: Predicted verdict exactly matches ground truth
 - **Lenient Accuracy**: Includes cases where "Supported" ↔ "Partially supported"
 - **Binary Accuracy**: Correct on support vs. no support (ignoring partial)
-- **Confidence Calibration**: Higher confidence on correct predictions = better calibrated
+- **Support Score Calibration**: Higher support score on correct predictions = better calibrated
 
 ## Handling Multiple Occurrences
 

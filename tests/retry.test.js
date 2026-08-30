@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { withRetry, isRetryableError } from '../core/retry.js';
+import { withRetry, isRetryableError, isContextLengthError } from '../core/retry.js';
 
 const noSleep = () => Promise.resolve();
 
@@ -254,4 +254,87 @@ test('isRetryableError: a permanent status is not overridden by a 5xx in the res
 test('isRetryableError: non-provider error shapes are unchanged by the provider-shape fix', () => {
     assert.equal(isRetryableError(new Error('Feedback failed: HTTP 429')), false);
     assert.equal(isRetryableError(new Error('Proxy returned non-JSON response (HTTP 503)')), false);
+});
+
+// ---- isRetryableError: undici's generic "fetch failed" wrapper -------------
+// Node's fetch throws this exact top-level message for every network/
+// transport-layer failure (DNS, connection reset, refused, TLS); the real
+// reason (e.g. `{ code: 'ENOTFOUND' }`) lives one level down in `.cause`,
+// which isRetryableError never inspected. Real incident, 2026-08-24: a live
+// sweep against tf-llm-router halted immediately on "fetch failed" with zero
+// retry attempts — a transient DNS/connection hiccup got treated as
+// permanently fatal instead of retried like any other network error.
+
+test('isRetryableError: true for undici\'s generic "fetch failed", regardless of the cause', () => {
+    const dnsFailure = new TypeError('fetch failed');
+    dnsFailure.cause = Object.assign(new Error('getaddrinfo ENOTFOUND llm-router.toolforge.org'), { code: 'ENOTFOUND' });
+    assert.equal(isRetryableError(dnsFailure), true);
+
+    // Even with no .cause at all (defensive — every real occurrence has one)
+    // or a cause that names nothing recognizable, it's still a transport
+    // failure by fetch's own semantics, not an application error.
+    assert.equal(isRetryableError(new TypeError('fetch failed')), true);
+    const opaqueCause = new TypeError('fetch failed');
+    opaqueCause.cause = new Error('something unrecognizable');
+    assert.equal(isRetryableError(opaqueCause), true);
+});
+
+test('isRetryableError: only the exact "fetch failed" message triggers this, not a longer message containing it', () => {
+    assert.equal(isRetryableError(new Error('proxy: fetch failed for https://example.com')), false);
+});
+
+test('withRetry: retries on undici\'s "fetch failed" and eventually succeeds', async () => {
+    let calls = 0;
+    const result = await withRetry(async () => {
+        calls++;
+        if (calls < 2) {
+            const err = new TypeError('fetch failed');
+            err.cause = Object.assign(new Error('getaddrinfo ENOTFOUND'), { code: 'ENOTFOUND' });
+            throw err;
+        }
+        return 'ok';
+    }, { sleepFn: noSleep });
+    assert.equal(result, 'ok');
+    assert.equal(calls, 2);
+});
+
+// ---- isContextLengthError / the vLLM context-length carve-out --------------
+// vLLM (Lift Wing's open-weight-model backend) reports "the prompt is too
+// big for this model" as an HTTP 500 — which RETRYABLE_STATUS would
+// otherwise treat as transient. It isn't: the same oversized prompt fails
+// identically on every attempt, so retrying just burns backoff time before
+// failing anyway. Real incident, 2026-08-24: exactly this on a live sweep
+// against tf-llm-router — service/verifier.js now catches this specific
+// shape and returns a per-citation ERROR result instead of letting it
+// propagate, but that only works if it's excluded from retry first.
+
+test('isContextLengthError: recognizes vLLM\'s validation error regardless of the surrounding status/label', () => {
+    assert.equal(isContextLengthError(new Error(
+        'Lift Wing API request failed (500): {"error":"VLLMValidationError : This model\'s maximum context length is 32768 tokens."}'
+    )), true);
+    assert.equal(isContextLengthError(new Error('some backend: VLLMValidationError happened')), true);
+    assert.equal(isContextLengthError(new Error('API request failed (500): internal error')), false);
+    assert.equal(isContextLengthError(null), false);
+});
+
+test('isRetryableError: false for a context-length-exceeded 500, even though 500 is normally retryable', () => {
+    const err = new Error(
+        'Lift Wing API request failed (500): {"error":"VLLMValidationError : This model\'s maximum context length is 32768 tokens."}'
+    );
+    assert.equal(isRetryableError(err), false);
+    // Sanity check the premise: an *ordinary* 500 from the same provider is
+    // still retryable — only the context-length shape is carved out.
+    assert.equal(isRetryableError(new Error('Lift Wing API request failed (500): internal error')), true);
+});
+
+test('withRetry: does NOT retry a context-length-exceeded failure', async () => {
+    let calls = 0;
+    await assert.rejects(
+        withRetry(async () => {
+            calls++;
+            throw new Error('Lift Wing API request failed (500): VLLMValidationError: maximum context length is 32768 tokens');
+        }, { sleepFn: noSleep }),
+        /maximum context length/
+    );
+    assert.equal(calls, 1);
 });

@@ -39,6 +39,7 @@ benchmark/
   analysis_v1.json               # Frozen v1 analysis snapshot
   analysis_v3.json               # Frozen v3 analysis snapshot
 Benchmarking_data_Citations.csv  # Source ground truth data (Dataset version + WMF override columns)
+service/                         # Toolforge batch pipeline: select -> extract -> fetch -> verify -> store (see Batch Pipeline below)
 .github/workflows/               # Scheduled talk-page scraper (not test/build CI)
 docs/                            # Reference docs + design plans (see docs/README.md)
 ```
@@ -139,6 +140,32 @@ WiCE also has no `Source unavailable` rows and ships frozen 2023 Common Crawl ev
 - `GEMINI_API_KEY` - Gemini
 - `PUBLICAI_API_KEY` - PublicAI models
 
+## Batch Pipeline (`service/`)
+
+A separate, Toolforge-hosted pipeline that runs citation verification unattended, at scale, over a queue of articles rather than one citation a user clicked — the WMF "Edit Suggestions" integration described in `docs/design-plans/2026-08-07-batch-source-checks-for-edit-suggestions.md`. It imports `core/` directly (like `benchmark/` and `cli/` do) and shares no code with `main.js` beyond that.
+
+**Now a single runnable pipeline** (`service/run-sweep.js`, landed 2026-08-24): select → extract → fetch → verify → assemble → CSV, in one command. Every stage is built; source fetching (stage 3) is still stubbed by default, so a default run's findings are all `SOURCE UNAVAILABLE` until `--live-source-fetch` is passed. That flag needs no permission for a small, attended run from anywhere with open internet — only unattended, production-volume fetching *from Toolforge itself* waits on WMCS (see `docs/design-plans/2026-08-24-csv-deliverable-and-component-names.md`'s G3). See that doc for what else is still open (the publication filter; the read API stage 6 was originally specified as).
+
+One noun per component; anything runnable is prefixed `run-`:
+
+| Stage | Component | File | Does |
+|---|---|---|---|
+| 1 Select | **Article Picker** | `service/article-picker.js` + `service/replicas.js` | Builds and runs the Wiki Replicas query that picks candidate articles (e.g. pages carrying `{{Failed verification}}`) |
+| 2 Extract | **Claim Extractor** | `service/claim-extractor.js` | Fetches an article's rendered HTML at a pinned revision and pulls out each citation's claim text, `<ref name="...">` when present, and adjacent-citation group metadata (`core/citations.js`) |
+| 3 Fetch | **Source Fetcher** | `tf-source-fetcher` (separate Toolforge tool), reached via `core/worker.js` | Retrieves the cited source's content. **Stubbed by default** — unattended fetching of third-party URLs from Toolforge isn't yet cleared with WMCS; opt in per-run with `--live-source-fetch` |
+| 4 Verify | **Verifier** | `service/verifier.js` | One model call per claim → verdict (`verifyCitation`), plus one collective call per adjacent-citation group (`verifyGroup`, using `core/groups.js`'s dedup/skip rules — shared with the userscript's own group verification) — via `core/prompts.js` / `core/providers.js` / `core/parsing.js`. Calls the **LLM Router** (`tf-llm-router`, a separate Toolforge tool) for the model call itself. Halts the whole run (doesn't just log) on a 401/402/403 from the model, so a spent API budget can't silently turn into a queue of wrong "source unavailable" rows |
+| 5 Store | **Finding Builder** + **Findings Store** | `service/finding-builder.js` + `service/findings-store.js` + `service/toolsdb.js` | Turns a verdict (solo or collective — `assembleFinding` / `assembleGroupFinding`) into a row (claim hash, TTL, `published:false` pending a precision threshold — see the design doc) and upserts it into ToolsDB's `citation_findings` table |
+| 6 Report | **Findings Report** | `service/csv-report.js` | Turns computed findings into a shareable CSV — the default sink for `service/run-sweep.js`. A read API (the parent design's original stage 6 spec) is still gated on the Suggestions team answering how claim text maps to a wikitext location |
+
+Runnable entry points, each a thin wiring layer over the components above:
+
+| Runner | Does | Outbound network |
+|---|---|---|
+| `service/run-pick.js` | Stage 1 only, prints selected articles as JSON | Wiki Replicas |
+| `service/run-extract.js` | Stages 1-3, prints a citations/URLs/fetched/failed funnel | Wiki Replicas, Wikipedia REST, source fetcher (opt-in) |
+| `service/run-replay.js` | Stages 4-5 over `benchmark/dataset.json`'s stored claim/source pairs instead of live fetching — the integration test for verify+store with zero third-party requests | Model API only (+ Wikipedia REST to resolve page IDs) |
+| `service/run-sweep.js` | **All six stages**, writing a CSV by default and (with `--store`) also upserting into ToolsDB | Wiki Replicas, Wikipedia REST, model API, source fetcher (opt-in) |
+
 ## Development Workflow
 
 - **Tests:** `node --test` via `npm test` from the repo root, runs everything in `tests/**/*.test.js`. New helpers should get a sibling `*.test.js` file. Behavioral validation also goes through the benchmark suite against the human-labeled citation dataset.
@@ -155,6 +182,83 @@ WiCE also has no `Source unavailable` rows and ships frozen 2023 Common Crawl ev
 - API keys are stored in `localStorage`, never hardcoded
 - The system prompt contains carefully tuned few-shot examples — changes affect benchmark accuracy
 - Claim extraction uses "between citations" logic by design (not full sentences) for precision
+- `extractClaimText(refElement, { scope })` (`core/claim.js`) supports two claim scopes. `scope: 'paragraph'` (the default, used by `main.js` and the CLI/benchmark) is the full "between citations" span, which can include multiple sentences when the previous citation is more than one sentence back. `scope: 'sentence'` narrows that span to only its final sentence (via `lastSentence()`) — `core/citations.js`'s `collectCitations(root, { claimScope })` threads this through, and `service/claim-extractor.js`'s `processArticle()` defaults `claimScope` to `'sentence'` for the batch pipeline. This matters because in an unattended batch run, a multi-sentence claim where only the first sentence lacks support reads as a false NOT SUPPORTED on the whole span — there's no editor present to notice that only part of the claim is a "citation needed" case, not an "unsupported" one. The interactive userscript defaults to paragraph scope, where a human reads the full claim and isn't misled by that ambiguity — but it also exposes a "Claim scope" setting (Settings panel, persisted to `localStorage` as `verifier_claim_scope`) letting an editor switch to sentence scope for both single-citation checks and "Verify All Citations", for the same false-positive reason batch mode defaults to it.
+
+### Claim extraction must not use DOM Range (read before touching `core/claim.js`)
+
+`core/claim.js` walks the DOM directly (`textBetween`) to get the text between
+two citation markers. The obvious implementation — a `Range` with
+`setStartAfter` / `setEndBefore` / `toString()` — is what it used to do, and it
+is a trap: **under JSDOM, every Range boundary comparison is O(document).**
+jsdom's `isFollowing(a, b)` walks forward from `b` through the rest of the
+document looking for `a`, so when `a` precedes `b` it scans to the end of the
+page and returns false. `Range.toString()` runs that twice per text node, and
+`setStart`/`setEnd` run it too.
+
+Claim extraction calls this once per citation plus once per adjacent pair, so
+the cost was **quadratic in article length**. Measured on Parsoid-shaped HTML:
+
+| Citations | HTML | Range-based | Walk-based |
+|---|---|---|---|
+| 240 | 110 KB | 1.3 s | 18 ms |
+| 480 | 220 KB | 6.0 s | 35 ms |
+| 960 | 440 KB | 40.2 s | 67 ms |
+
+A browser hides this completely — `Range` is native there, and the userscript
+only ever handles one article — which is why the cost only appeared once the
+same code was reused by the benchmark and the Toolforge batch runner.
+
+Two tests in `tests/claim.test.js` pin it: one stubs `document.createRange()` to
+throw (structural, deterministic), and one asserts per-citation cost stays flat
+as the article grows 8× (catches any other O(document) step). Both fail against
+the old implementation.
+
+The remaining per-article cost is JSDOM parsing plus URL resolution, both
+linear. If extraction needs to get faster again, that is where to look — not
+here.
+
+### Batch pipeline parses with `JSDOM.fragment()`, not `new JSDOM(html).window` (read before touching `parseHtml` or `core/citations.js`'s root handling)
+
+`service/run-extract.js`, `service/ia-load-test.js`, and `service/run-sweep.js`
+all parse article HTML with `JSDOM.fragment(html)` rather than
+`new JSDOM(html).window.document`. This is deliberate, and going back to
+`new JSDOM()` in a loop will OOM a batch run:
+
+Constructing a full `Window`/browsing context (CSSOM, timers, navigator, the
+works) retains several MB per article that `global.gc()` never reclaims —
+measured at **~5.6 MB/article, growing perfectly linearly with no plateau**,
+confirmed identical whether or not `.window.close()` is called, and confirmed
+to reproduce with zero application code involved (bare `new JSDOM(html)` in a
+loop, discarding the result, still leaks at the same rate). `JSDOM.fragment()`
+skips building a `Window` entirely and measured flat (~0.07 MB/article,
+noise) on the same workload — that's the actual fix, not anything in
+`core/claim.js` or `core/citations.js`. At a few hundred articles in one
+process, `new JSDOM()` is a multi-GB leak; Toolforge job pods don't have
+that.
+
+This is *why* `collectCitations(root)` (`core/citations.js`) resolves its
+`doc` with `typeof root.getElementById === 'function' ? root : root.ownerDocument`
+rather than the simpler `root.ownerDocument || root` it used to have. A
+`DocumentFragment`'s `.ownerDocument` is a separate, empty shell document —
+the fragment's own content was never attached to it — so
+`fragment.ownerDocument.getElementById(id)` silently returns `null` for an id
+that's right there in the fragment, which breaks URL and page-number
+resolution (both look up the footnote by id from the inline citation marker).
+Calling `getElementById` on the fragment itself works correctly; a
+`DocumentFragment` supports it directly, same as `Document` does — only a
+plain `Element` root (the userscript's `#mw-content-text` case) lacks it and
+needs `.ownerDocument`. The `typeof` check dispatches correctly for all three
+root shapes `collectCitations` is ever called with.
+
+`tests/citations.test.js` pins a `JSDOM.fragment()` root resolving URL and
+page number correctly — it fails against the old `root.ownerDocument || root`
+logic (returns 0 citations found, silently, not an error) and passes against
+the current one.
+
+The userscript (`main.js`) is unaffected: it only ever processes the one
+article it's running inside, in a real browser where the `new JSDOM()` leak
+doesn't apply and `#mw-content-text` is always an `Element` root, not a
+`Document` or `DocumentFragment`.
 
 ### Benchmark row_id fragility (read before reordering the CSV)
 
@@ -265,10 +369,13 @@ The sidebar UI is localized (currently French and Spanish); the LLM prompts in `
 | `FR_MESSAGES` / `ES_MESSAGES` | Translations, keyed by the **English source string** |
 | `MESSAGES` / `PROMPT_LANGUAGES` | Registry of language code → table, and → the language's name as given to the LLM |
 | `detectUiLang()` | Maps `wgContentLanguage` (then `wgUserLanguage`) to a registry key, else `'en'` |
+| `detectArticleLangCode()` | The wiki's raw content-language code, unrestricted to `MESSAGES` keys — feeds `localizeSystemPrompt()` only |
 
 `this.t('Verify Claim')` looks the string up in the active table and falls back to the English key, so a missing translation degrades to English rather than showing a key. Interpolate with `{name}` placeholders: `this.t('Set {name} API Key', { name })`.
 
 **To add a user-facing string:** wrap it in `this.t()` and add it to *every* table. **To add a language:** write its table, register it in `MESSAGES` and `PROMPT_LANGUAGES`; `detectUiLang()` and `localizeSystemPrompt()` pick it up with no further wiring.
+
+**LLM comment language is not gated on a full UI translation.** `localizeSystemPrompt()` names the language explicitly for `fr`/`es` (via `PROMPT_LANGUAGES`, matching the sidebar), but for any other non-English wiki — one with no `MESSAGES` table at all — it falls back to a generic "write in the same language as the claim and source text" directive driven by `detectArticleLangCode()`. So a claim checked on, say, de.wikipedia gets German comments even though the sidebar itself stays English. Only `source_quote` is exempt in all cases: it must stay verbatim in the source's own language, since it's checked character-for-character against the source text.
 
 **Register:** Spanish never addresses the reader in the second person — `tú`, `vos` and `usted` are each regionally marked, so es.wikipedia's own interface avoids all three. Which impersonal form to use depends on what the string *is*:
 

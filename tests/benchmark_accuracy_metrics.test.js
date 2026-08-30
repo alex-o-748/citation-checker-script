@@ -8,7 +8,7 @@ function row(predicted_verdict, ground_truth, overrides = {}) {
     return {
         predicted_verdict,
         ground_truth,
-        confidence: 90,
+        support_score: 90,
         latency_ms: 100,
         error: null,
         ...overrides,

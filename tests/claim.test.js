@@ -1,10 +1,31 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
-import { extractClaimText, getCitationGroup, MAINTENANCE_MARKER_RE } from '../core/claim.js';
+import { extractClaimText, getCitationGroup, hasTextBetween, lastSentence, MAINTENANCE_MARKER_RE } from '../core/claim.js';
 
 function mkDoc(html) {
   return new JSDOM(`<!DOCTYPE html><body>${html}</body>`).window.document;
+}
+
+// Builds an article of `paragraphs` paragraphs, each carrying `refsPerPara`
+// citations, for the scaling guard below.
+function mkArticle(paragraphs, refsPerPara = 3) {
+  const filler = 'lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod tempor '.repeat(3);
+  let n = 0;
+  let html = '';
+  for (let p = 0; p < paragraphs; p++) {
+    html += '<section><h2>Section</h2><p>';
+    for (let r = 0; r < refsPerPara; r++) {
+      n++;
+      html += `${filler}.<sup id="cite_ref-${n}" class="reference"><a href="#cite_note-${n}">[${n}]</a></sup>`;
+    }
+    html += '</p></section>';
+  }
+  html += '<ol class="mw-references">';
+  for (let i = 1; i <= n; i++) {
+    html += `<li id="cite_note-${i}"><cite>Author ${i}. <a href="https://example.com/${i}">Title</a>.</cite></li>`;
+  }
+  return { doc: mkDoc(html + '</ol>'), refCount: n };
 }
 
 function refIds(group) {
@@ -91,6 +112,35 @@ test('extractClaimText returns the same claim for every citation in a [1][2][3] 
   assert.ok(claim1.includes('boiling point of water is 100 degrees Celsius'));
 });
 
+test('lastSentence returns the final sentence of a multi-sentence claim', () => {
+  const text = 'Water boils at 100 degrees Celsius. It freezes at 0 degrees Celsius.';
+  assert.equal(lastSentence(text), 'It freezes at 0 degrees Celsius.');
+});
+
+test('lastSentence returns the whole string when it is a single sentence', () => {
+  const text = 'Water boils at 100 degrees Celsius.';
+  assert.equal(lastSentence(text), text);
+});
+
+test('extractClaimText with scope "sentence" narrows a two-sentence claim to the last sentence', () => {
+  const doc = mkDoc(`
+    <p>Paris is the capital of France. It is on the Seine.<sup id="cite_ref-1" class="reference"><a href="#cite_note-1">[1]</a></sup></p>
+  `);
+  const ref = doc.getElementById('cite_ref-1');
+  const fullClaim = extractClaimText(ref);
+  const sentenceClaim = extractClaimText(ref, { scope: 'sentence' });
+  assert.ok(fullClaim.includes('Paris is the capital of France'), `full-scope claim lost the first sentence: ${fullClaim}`);
+  assert.equal(sentenceClaim, 'It is on the Seine.');
+});
+
+test('extractClaimText with scope "sentence" returns the same text as default scope for a single-sentence claim', () => {
+  const doc = mkDoc(`
+    <p>The boiling point of water is 100 degrees Celsius.<sup id="cite_ref-1" class="reference"><a href="#cite_note-1">[1]</a></sup></p>
+  `);
+  const ref = doc.getElementById('cite_ref-1');
+  assert.equal(extractClaimText(ref, { scope: 'sentence' }), extractClaimText(ref));
+});
+
 test('getCitationGroup returns all three refs for a [1][2][3] run regardless of which is passed', () => {
   const doc = mkDoc(`
     <p>The boiling point of water is 100 degrees Celsius.<sup id="cite_ref-1" class="reference"><a href="#cite_note-1">[1]</a></sup><sup id="cite_ref-2" class="reference"><a href="#cite_note-2">[2]</a></sup><sup id="cite_ref-3" class="reference"><a href="#cite_note-3">[3]</a></sup></p>
@@ -149,6 +199,48 @@ test('getCitationGroup returns distinct wrappers for named-ref reuses', () => {
   // The two reuses must surface as distinct DOM wrappers — not the same
   // element — so downstream code can pair each one with its own citation row.
   assert.notEqual(groupA[0], groupB[0]);
+});
+
+test('claim extraction never constructs a DOM Range', () => {
+  // Range.toString() and the setStart/setEnd boundary checks behind it are
+  // O(document) under JSDOM — jsdom's boundary comparison walks forward from
+  // one node through the rest of the document looking for the other. Calling
+  // that once per citation made batch extraction quadratic in article length
+  // (a 960-citation article spent ~40s here; the walk in core/claim.js does it
+  // in ~70ms). A browser's native Range would hide the cost, so the guard is
+  // structural rather than a timing assertion: if a Range comes back into this
+  // path, this fails immediately instead of at Toolforge scale.
+  const { doc } = mkArticle(4);
+  doc.createRange = () => { throw new Error('claim extraction must not use Range — see core/claim.js'); };
+
+  for (const ref of doc.querySelectorAll('.reference')) {
+    extractClaimText(ref);
+    getCitationGroup(ref);
+  }
+  const refs = Array.from(doc.querySelectorAll('.reference'));
+  hasTextBetween(refs[0], refs[1]);
+});
+
+test('claim extraction cost per citation stays flat as the article grows', () => {
+  // Companion to the Range guard: pins the *scaling*, so a future change that
+  // reintroduces an O(document) step by some other route is still caught. The
+  // margin is deliberately loose — this asserts "not quadratic", not a
+  // millisecond budget. The Range implementation grew ~30x here.
+  const perRef = [];
+  for (const paragraphs of [10, 80]) {
+    const { doc, refCount } = mkArticle(paragraphs);
+    const refs = Array.from(doc.querySelectorAll('.reference'));
+    const started = performance.now();
+    for (const ref of refs) {
+      extractClaimText(ref);
+      getCitationGroup(ref);
+    }
+    perRef.push((performance.now() - started) / refCount);
+  }
+
+  const growth = perRef[1] / perRef[0];
+  assert.ok(growth < 5,
+    `per-citation cost grew ${growth.toFixed(1)}x when the article grew 8x — extraction is superlinear again`);
 });
 
 test('getCitationGroup handles mixed groups and singletons in the same paragraph', () => {

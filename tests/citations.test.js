@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 
-import { collectCitations, attachGroupMetadata, refIdFromHref } from '../core/citations.js';
+import { collectCitations, attachGroupMetadata, refIdFromHref, refNameFromNoteId } from '../core/citations.js';
 
 // Builds a document shaped like rendered Wikipedia article HTML: inline
 // <sup class="reference"> anchors in the prose, and a footnote list whose <li>
@@ -51,9 +51,52 @@ test('collects a solo citation with its claim, url and page number', () => {
     assert.equal(c.url, 'https://example.com/bridge');
     assert.equal(c.pageNum, 42);
     assert.equal(c.refId, 'cite_note-1');
+    assert.equal(c.refName, null, 'an unnamed ref has no name to recover');
     // A lone citation is still a group, of size one.
     assert.equal(c.groupSize, 1);
     assert.equal(c.groupIndex, 0);
+});
+
+test('refNameFromNoteId recovers a named ref\'s sanitized name from its footnote id', () => {
+    assert.equal(refNameFromNoteId('cite_note-smith2001-1'), 'smith2001');
+    assert.equal(refNameFromNoteId('cite_note-John_Smith_2001-3'), 'John_Smith_2001');
+});
+
+test('refNameFromNoteId returns null for an unnamed ref\'s plain numbered id', () => {
+    assert.equal(refNameFromNoteId('cite_note-1'), null);
+    assert.equal(refNameFromNoteId('cite_note-42'), null);
+});
+
+test('refNameFromNoteId handles a purely numeric name via the trailing counter split', () => {
+    // <ref name="2"> renders as cite_note-2-5 (name "2", counter 5) — still
+    // recoverable, distinct from the unnamed cite_note-5 case above.
+    assert.equal(refNameFromNoteId('cite_note-2-5'), '2');
+});
+
+test('refNameFromNoteId handles empty and missing input without throwing', () => {
+    assert.equal(refNameFromNoteId(''), null);
+    assert.equal(refNameFromNoteId(null), null);
+    assert.equal(refNameFromNoteId(undefined), null);
+});
+
+test('a named ref cited once collects its ref name from the footnote id', () => {
+    const doc = buildDoc(
+        '<p>The bridge opened in 1998.@@smith2001-1@@</p>',
+        { 'smith2001-1': `Smith, J. ${link('https://example.com/bridge')}` }
+    );
+    const [c] = collectCitations(doc.getElementById('mw-content-text'));
+    assert.equal(c.refName, 'smith2001');
+});
+
+test('a named ref cited twice carries the same ref name on both occurrences', () => {
+    const doc = buildDoc(
+        `<p>First claim about the bridge.@@smith2001-1@@ Second, separate claim.@@smith2001-1@@</p>`,
+        { 'smith2001-1': `Smith, J. ${link('https://example.com/bridge')}` }
+    );
+    const citations = collectCitations(doc.getElementById('mw-content-text'));
+    assert.equal(citations.length, 2);
+    assert.equal(citations[0].refName, 'smith2001');
+    assert.equal(citations[1].refName, 'smith2001');
 });
 
 test('adjacent citations share one group; a text break starts a new one', () => {
@@ -156,6 +199,19 @@ test('minClaimLength is configurable', () => {
     assert.equal(collectCitations(root, { minClaimLength: 1 }).length, 1);
 });
 
+test('claimScope "sentence" narrows a two-sentence claim to the last sentence', () => {
+    const doc = buildDoc(
+        '<p>Paris is the capital of France. It is on the Seine.@@1@@</p>',
+        { 1: link('https://example.com/paris') }
+    );
+
+    const root = doc.getElementById('mw-content-text');
+    const [fullScope] = collectCitations(root);
+    const [sentenceScope] = collectCitations(root, { claimScope: 'sentence' });
+    assert.ok(fullScope.claimText.includes('Paris is the capital of France'));
+    assert.equal(sentenceScope.claimText, 'It is on the Seine.');
+});
+
 test('a citation with no fetchable URL is kept, with url null', () => {
     const doc = buildDoc(
         '<p>The bridge opened to traffic in 1998.@@1@@</p>',
@@ -184,6 +240,37 @@ test('the same named ref cited twice yields two distinct citations', () => {
     );
     assert.equal(citations[0].groupSize, 1);
     assert.equal(citations[1].groupSize, 1);
+});
+
+test('resolves URL and page number when the root is a DocumentFragment, not a Document', () => {
+    // The batch pipeline (service/run-extract.js, ia-load-test.js,
+    // run-sweep.js) parses article HTML with JSDOM.fragment() rather than
+    // new JSDOM(html).window.document, specifically to avoid a severe
+    // memory leak: constructing a full Window/browsing context per article
+    // (CSSOM, timers, navigator, ...) retains several MB per article that
+    // global.gc() never reclaims, which OOMs a run of more than a couple
+    // hundred candidates. JSDOM.fragment() sidesteps that because it never
+    // builds a Window at all.
+    //
+    // That swap is only safe because collectCitations() calls
+    // getElementById directly on whatever root it is given, never through
+    // root.ownerDocument. A DocumentFragment's .ownerDocument is a separate,
+    // empty shell document — the fragment's own content was never attached
+    // to it — so .ownerDocument.getElementById() silently returns null for
+    // ids that are right there in the fragment, which is exactly what broke
+    // URL and page-number resolution the first time this was tried (both
+    // depend on looking up the footnote by id from the inline citation
+    // marker). This test pins that a fragment root resolves correctly.
+    const root = JSDOM.fragment(
+        `<div id="mw-content-text"><p>The bridge opened to traffic in 1998.` +
+        `<sup id="cite_ref-1" class="reference"><a href="#cite_note-1">[1]</a></sup></p>` +
+        `<ol class="references"><li id="cite_note-1">${link('https://example.com/bridge')} p. 42.</li></ol></div>`
+    );
+
+    const citations = collectCitations(root);
+    assert.equal(citations.length, 1);
+    assert.equal(citations[0].url, 'https://example.com/bridge');
+    assert.equal(citations[0].pageNum, 42);
 });
 
 test('returns an empty array for a root with no citations, and for no root', () => {
