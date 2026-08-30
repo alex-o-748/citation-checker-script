@@ -113,7 +113,14 @@ Options:
   --help, -h              Show this help and exit.
 `;
 
-const parseHtml = html => new JSDOM(html).window.document;
+// JSDOM.fragment() parses without building a full Window/browsing context
+// (CSSOM, timers, navigator, ...) -- new JSDOM(html).window leaks several MB
+// per article that global.gc() never reclaims, which OOMs a run processing
+// hundreds of candidates in one process. core/citations.js's
+// collectCitations() calls getElementById directly on whatever root it's
+// given (never through .ownerDocument), which is what makes a fragment root
+// safe here.
+const parseHtml = html => JSDOM.fragment(html);
 
 // Extraction-only pass over the candidate articles: reuses runBatch's article
 // fetch + citation/claim extraction, with a no-op fetchSource so it never

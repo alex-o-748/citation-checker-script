@@ -217,6 +217,49 @@ The remaining per-article cost is JSDOM parsing plus URL resolution, both
 linear. If extraction needs to get faster again, that is where to look — not
 here.
 
+### Batch pipeline parses with `JSDOM.fragment()`, not `new JSDOM(html).window` (read before touching `parseHtml` or `core/citations.js`'s root handling)
+
+`service/run-extract.js`, `service/ia-load-test.js`, and `service/run-sweep.js`
+all parse article HTML with `JSDOM.fragment(html)` rather than
+`new JSDOM(html).window.document`. This is deliberate, and going back to
+`new JSDOM()` in a loop will OOM a batch run:
+
+Constructing a full `Window`/browsing context (CSSOM, timers, navigator, the
+works) retains several MB per article that `global.gc()` never reclaims —
+measured at **~5.6 MB/article, growing perfectly linearly with no plateau**,
+confirmed identical whether or not `.window.close()` is called, and confirmed
+to reproduce with zero application code involved (bare `new JSDOM(html)` in a
+loop, discarding the result, still leaks at the same rate). `JSDOM.fragment()`
+skips building a `Window` entirely and measured flat (~0.07 MB/article,
+noise) on the same workload — that's the actual fix, not anything in
+`core/claim.js` or `core/citations.js`. At a few hundred articles in one
+process, `new JSDOM()` is a multi-GB leak; Toolforge job pods don't have
+that.
+
+This is *why* `collectCitations(root)` (`core/citations.js`) resolves its
+`doc` with `typeof root.getElementById === 'function' ? root : root.ownerDocument`
+rather than the simpler `root.ownerDocument || root` it used to have. A
+`DocumentFragment`'s `.ownerDocument` is a separate, empty shell document —
+the fragment's own content was never attached to it — so
+`fragment.ownerDocument.getElementById(id)` silently returns `null` for an id
+that's right there in the fragment, which breaks URL and page-number
+resolution (both look up the footnote by id from the inline citation marker).
+Calling `getElementById` on the fragment itself works correctly; a
+`DocumentFragment` supports it directly, same as `Document` does — only a
+plain `Element` root (the userscript's `#mw-content-text` case) lacks it and
+needs `.ownerDocument`. The `typeof` check dispatches correctly for all three
+root shapes `collectCitations` is ever called with.
+
+`tests/citations.test.js` pins a `JSDOM.fragment()` root resolving URL and
+page number correctly — it fails against the old `root.ownerDocument || root`
+logic (returns 0 citations found, silently, not an error) and passes against
+the current one.
+
+The userscript (`main.js`) is unaffected: it only ever processes the one
+article it's running inside, in a real browser where the `new JSDOM()` leak
+doesn't apply and `#mw-content-text` is always an `Element` root, not a
+`Document` or `DocumentFragment`.
+
 ### Benchmark row_id fragility (read before reordering the CSV)
 
 `extract_dataset.js` derives each row's stable id as `row_<csv_line>`, where `csv_line` is the line number in `Benchmarking_data_Citations.csv` (`_rowIndex = index + 2`, accounting for the header). Two consequences a future regenerate must handle:

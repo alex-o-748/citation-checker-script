@@ -1244,8 +1244,13 @@ function refNameFromNoteId(refId) {
 
 function collectCitations(root, { minClaimLength = MIN_CLAIM_LENGTH, claimScope = 'paragraph' } = {}) {
     if (!root) return [];
-    // A Document has no ownerDocument; an Element does. Either can be the root.
-    const doc = root.ownerDocument || root;
+    // Document and DocumentFragment both answer getElementById directly and
+    // must be used as-is: a DocumentFragment's .ownerDocument is a separate,
+    // empty shell document that does not contain the fragment's own content,
+    // so getElementById on it never finds anything even though the id exists
+    // right there in the fragment. A plain Element has no getElementById of
+    // its own, so that case still needs its owning document.
+    const doc = typeof root.getElementById === 'function' ? root : root.ownerDocument;
 
     const citations = [];
     for (const refElement of root.querySelectorAll('.reference a')) {
