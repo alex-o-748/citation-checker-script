@@ -242,6 +242,37 @@ test('the same named ref cited twice yields two distinct citations', () => {
     assert.equal(citations[1].groupSize, 1);
 });
 
+test('resolves URL and page number when the root is a DocumentFragment, not a Document', () => {
+    // The batch pipeline (service/run-extract.js, ia-load-test.js,
+    // run-sweep.js) parses article HTML with JSDOM.fragment() rather than
+    // new JSDOM(html).window.document, specifically to avoid a severe
+    // memory leak: constructing a full Window/browsing context per article
+    // (CSSOM, timers, navigator, ...) retains several MB per article that
+    // global.gc() never reclaims, which OOMs a run of more than a couple
+    // hundred candidates. JSDOM.fragment() sidesteps that because it never
+    // builds a Window at all.
+    //
+    // That swap is only safe because collectCitations() calls
+    // getElementById directly on whatever root it is given, never through
+    // root.ownerDocument. A DocumentFragment's .ownerDocument is a separate,
+    // empty shell document — the fragment's own content was never attached
+    // to it — so .ownerDocument.getElementById() silently returns null for
+    // ids that are right there in the fragment, which is exactly what broke
+    // URL and page-number resolution the first time this was tried (both
+    // depend on looking up the footnote by id from the inline citation
+    // marker). This test pins that a fragment root resolves correctly.
+    const root = JSDOM.fragment(
+        `<div id="mw-content-text"><p>The bridge opened to traffic in 1998.` +
+        `<sup id="cite_ref-1" class="reference"><a href="#cite_note-1">[1]</a></sup></p>` +
+        `<ol class="references"><li id="cite_note-1">${link('https://example.com/bridge')} p. 42.</li></ol></div>`
+    );
+
+    const citations = collectCitations(root);
+    assert.equal(citations.length, 1);
+    assert.equal(citations[0].url, 'https://example.com/bridge');
+    assert.equal(citations[0].pageNum, 42);
+});
+
 test('returns an empty array for a root with no citations, and for no root', () => {
     const doc = buildDoc('<p>Nothing cited here at all.</p>', {});
     assert.deepEqual(collectCitations(doc.getElementById('mw-content-text')), []);

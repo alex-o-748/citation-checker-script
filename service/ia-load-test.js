@@ -13,9 +13,10 @@
 // and WMF — see service/analyze-ia-load-test.js.
 //
 // Article fetch + citation/claim extraction (stages 1-2 of the batch
-// pipeline) are reused as-is from service/pipeline.js's runBatch(), with a
-// no-op fetchSource — this script owns stage 3 (source fetch) itself, since
-// that's the part under test: ramp control, per-request telemetry, resume.
+// pipeline) are reused as-is from service/claim-extractor.js's
+// processArticle(), with a no-op fetchSource — this script owns stage 3
+// (source fetch) itself, since that's the part under test: ramp control,
+// per-request telemetry, resume.
 //
 // Usage:
 //   # once, wherever Wiki Replicas is reachable (a Toolforge bastion):
@@ -38,7 +39,7 @@ import fs from 'node:fs';
 import { JSDOM } from 'jsdom';
 import { fetchArticleHtml } from '../core/wikipedia.js';
 import { fetchSourceContent } from '../core/worker.js';
-import { runBatch, sourceCacheKey } from './pipeline.js';
+import { processArticle, sourceCacheKey } from './claim-extractor.js';
 
 // Ramp table: each step attempts up to `requests` not-yet-attempted unique
 // sources at `concurrency` in flight. Deliberately fixed steps rather than an
@@ -112,34 +113,44 @@ Options:
   --help, -h              Show this help and exit.
 `;
 
-const parseHtml = html => new JSDOM(html).window.document;
+// JSDOM.fragment() parses without building a full Window/browsing context
+// (CSSOM, timers, navigator, ...) -- new JSDOM(html).window leaks several MB
+// per article that global.gc() never reclaims, which OOMs a run processing
+// hundreds of candidates in one process. core/citations.js's
+// collectCitations() calls getElementById directly on whatever root it's
+// given (never through .ownerDocument), which is what makes a fragment root
+// safe here.
+const parseHtml = html => JSDOM.fragment(html);
 
-// Extraction-only pass over the candidate articles: reuses runBatch's article
-// fetch + citation/claim extraction, with a no-op fetchSource so it never
-// resolves a source itself — this script controls that phase separately.
-// Returns one task per *unique* (url, pageNum), each carrying every citation
-// across the candidate pool that cites it (a source is often shared across
-// articles, and de-duping here is a request we don't have to spend on IA).
+// Extraction-only pass over the candidate articles: reuses processArticle's
+// article fetch + citation/claim extraction, with a no-op fetchSource so it
+// never resolves a source itself — this script controls that phase
+// separately. Returns one task per *unique* (url, pageNum), each carrying
+// every citation across the candidate pool that cites it (a source is often
+// shared across articles, and de-duping here is a request we don't have to
+// spend on IA).
 // `onProgress(articlesDone, articlesTotal, uniqueSourcesSoFar)`, when
 // supplied, fires after each article — this loop is sequential (one real
 // Wikipedia REST fetch per candidate, not parallelized), so on a few hundred
 // candidates it can run for minutes with nothing else to show for it. Without
 // this a caller watching the log sees one line and then silence, which is
 // indistinguishable from a hang.
-export async function extractTasks(candidates, { fetchArticle = fetchArticleHtml, onProgress } = {}) {
+export async function extractTasks(candidates, { fetchArticle = fetchArticleHtml, onProgress, onArticleStart } = {}) {
     const tasks = [];
     const byKey = new Map();
     const noopFetchSource = async () => ({ content: null, status: null, error: null });
+    // Throwaway cache: the no-op result must never leak into the real fetch
+    // phase, which keys its own dedup off this task list.
+    const sourceCache = new Map();
 
     let articlesDone = 0;
-    for await (const result of runBatch(candidates, {
-        parseHtml,
-        fetchArticle,
-        fetchSource: noopFetchSource,
-        // Throwaway cache: the no-op result must never leak into the real
-        // fetch phase, which keys its own dedup off this task list.
-        sourceCache: new Map(),
-    })) {
+    for (const candidate of candidates) {
+        // Fires before the (possibly large) article fetch+parse, not after --
+        // an OOM kill is abrupt and never lets the process log anything of
+        // its own, so this is what lets the last line of a truncated log
+        // name the article that was in flight when it died.
+        onArticleStart?.(articlesDone + 1, candidates.length, candidate.title);
+        const result = await processArticle(candidate, { parseHtml, fetchArticle, fetchSource: noopFetchSource, sourceCache });
         articlesDone++;
         if (result.outcome !== 'ok') {
             onProgress?.(articlesDone, candidates.length, tasks.length);
@@ -222,6 +233,36 @@ export function makeBreaker(windowSize) {
 // after the fact. A leading blank line (used for visual spacing between
 // steps) is kept before the timestamp rather than after it, so spacing still
 // reads naturally.
+// Best-effort cgroup memory limit -- read once, since it can't change for
+// the life of the pod. cgroup v2 (memory.max) is tried first, then the v1
+// path; "max" (v2's spelling of "no limit") and any read failure (wrong
+// cgroup version, no permission, not actually in a container) are folded
+// into null so callers don't need to know which case they hit.
+const CGROUP_MEMORY_LIMIT_MB = (() => {
+    for (const p of ['/sys/fs/cgroup/memory.max', '/sys/fs/cgroup/memory/memory.limit_in_bytes']) {
+        try {
+            const raw = fs.readFileSync(p, 'utf8').trim();
+            if (raw === 'max') return null;
+            const bytes = Number(raw);
+            if (Number.isFinite(bytes) && bytes > 0 && bytes < Number.MAX_SAFE_INTEGER) {
+                return Math.round(bytes / 1024 / 1024);
+            }
+        } catch {
+            // try the next path
+        }
+    }
+    return null;
+})();
+
+// One-line memory snapshot for log lines: current RSS against the pod's
+// cgroup ceiling (when readable), so a log doesn't just show memory
+// climbing -- it shows how close to the wall it is. Exported for tests.
+export function memSummary() {
+    const rssMB = Math.round(process.memoryUsage().rss / 1024 / 1024);
+    const limit = CGROUP_MEMORY_LIMIT_MB ? `${CGROUP_MEMORY_LIMIT_MB}MB limit` : 'limit unknown';
+    return `[mem: ${rssMB}MB rss / ${limit}]`;
+}
+
 export function timestampedLog(msg) {
     const leading = msg.match(/^\n+/)?.[0] ?? '';
     const rest = msg.slice(leading.length);
@@ -328,6 +369,7 @@ export async function runLoadTest({
 }
 
 async function main(argv) {
+    timestampedLog(`ia-load-test starting. ${memSummary()}\n`);
     const opts = parseCliArgs(argv);
     if (opts.help) {
         process.stdout.write(HELP_TEXT);
@@ -346,6 +388,7 @@ async function main(argv) {
         return 1;
     }
 
+    timestampedLog(`${candidates.length} candidate(s) loaded from ${opts.candidates}. ${memSummary()}\n`);
     timestampedLog('extracting citations from candidate articles...\n');
     // core/urls.js logs one console.log per citation it examines — fine for a
     // human watching one article in devtools, unusable noise across hundreds.
@@ -354,12 +397,20 @@ async function main(argv) {
     let tasks;
     try {
         tasks = await extractTasks(candidates, {
-            // Every 10 articles (and always the last one) rather than every
-            // single one — enough to prove it's alive without flooding the
-            // log across a few hundred candidates.
+            // Logged before each article's fetch+parse, not after: an OOM
+            // kill is abrupt (SIGKILL, no chance for the process to log
+            // anything of its own), so this is what lets the last line of a
+            // truncated log name the article that was in flight when it
+            // died, rather than only ever proving the *previous* one
+            // finished. Unthrottled on purpose while this is the live
+            // question being debugged — see CLAUDE.md's batch-pipeline
+            // memory section.
+            onArticleStart: (n, total, title) => {
+                timestampedLog(`  [${n}/${total}] starting "${title}". ${memSummary()}\n`);
+            },
             onProgress: (done, total, uniqueSoFar) => {
                 if (done % 10 === 0 || done === total) {
-                    timestampedLog(`  ${done}/${total} article(s) processed, ${uniqueSoFar} unique source(s) found so far\n`);
+                    timestampedLog(`  ${done}/${total} article(s) processed, ${uniqueSoFar} unique source(s) found so far. ${memSummary()}\n`);
                 }
             },
         });

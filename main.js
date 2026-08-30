@@ -993,18 +993,77 @@ function isGoogleBooksUrl(url) {
 
 const MAINTENANCE_MARKER_RE = /\[(failed verification|verification needed|citation needed|better source[^\]]*|dubious[^\]]*|unreliable source[^\]]*|clarification needed|disputed[^\]]*|page needed|when\??|where\??|who\??|why\??|by whom\??|according to whom\??|original research[^\]]*|specify[^\]]*|vague|opinion|fact)\]/gi;
 
+const TEXT_NODE = 3;
+
+// --- Text-between-two-points, without Range -------------------------------
+//
+// This file used to express "the text between these two nodes" with a DOM
+// Range (setStartAfter / setEndBefore / toString). That reads well and is fast
+// in a browser, where Range is native. Under JSDOM — which is what the batch
+// runner and the benchmark use — it is quadratic in the size of the article:
+// Range.toString() tests every text node for containment, containment compares
+// boundary points, and jsdom's boundary comparison walks forward from one node
+// through the rest of the document looking for the other. Each call is
+// therefore O(document), and it is made once per citation plus once per
+// adjacent citation pair, so extraction cost grew with the square of the
+// article's length.
+//
+// The walk below is bounded by the two endpoints instead of by the document,
+// which makes it O(text actually spanned). It is also faster in the browser,
+// since it allocates nothing.
+
+// Next node in document order, descending into children.
+function following(node, root) {
+    if (node.firstChild) return node.firstChild;
+    return followingSkippingSubtree(node, root);
+}
+
+// Next node in document order that is not inside `node`'s own subtree.
+function followingSkippingSubtree(node, root) {
+    for (let n = node; n && n !== root; n = n.parentNode) {
+        if (n.nextSibling) return n.nextSibling;
+    }
+    return null;
+}
+
+// Nearest common ancestor of two nodes, used to bound a walk to the smallest
+// subtree that can contain the text between them.
+function commonAncestor(a, b) {
+    const ancestors = new Set();
+    for (let n = a; n; n = n.parentNode) ancestors.add(n);
+    for (let n = b; n; n = n.parentNode) {
+        if (ancestors.has(n)) return n;
+    }
+    return null;
+}
+
+// Concatenates the text of every node strictly between two points, in document
+// order: after `startAfter` (or from the start of `root`, when null) and before
+// `endBefore`.
+//
+// Equivalent to the Range this replaces: both boundaries fall *between* nodes
+// rather than inside a text node, so no text node is ever partially covered and
+// "every text node the range contains" is exactly "every text node in this
+// walk".
+function textBetween(startAfter, endBefore, root) {
+    let node = startAfter ? followingSkippingSubtree(startAfter, root) : root.firstChild;
+    let text = '';
+    while (node && node !== endBefore) {
+        if (node.nodeType === TEXT_NODE) text += node.data;
+        node = following(node, root);
+    }
+    return text;
+}
+
 // True iff the DOM range strictly between two .reference wrapper elements (in
 // document order: refA before refB) contains no non-whitespace text. This is
 // the rule that defines whether two adjacent citations attach to the same
 // claim — a comma or any other punctuation between them counts as text and
 // breaks the group.
 function hasTextBetween(refA, refB) {
-    const document = refA.ownerDocument;
-    const range = document.createRange();
-    range.setStartAfter(refA);
-    range.setEndBefore(refB);
-    const between = range.toString().replace(/\s+/g, '').trim();
-    return between.length > 0;
+    const root = commonAncestor(refA, refB);
+    if (!root) return false;
+    return textBetween(refA, refB, root).replace(/\s+/g, '').length > 0;
 }
 
 // Returns the contiguous run of .reference wrapper elements (in DOM order)
@@ -1053,7 +1112,6 @@ function lastSentence(text) {
 }
 
 function extractClaimText(refElement, { scope = 'paragraph' } = {}) {
-    const document = refElement.ownerDocument;
     const container = refElement.closest('p, li, td, div, section');
     if (!container) {
         return '';
@@ -1089,19 +1147,11 @@ function extractClaimText(refElement, { scope = 'paragraph' } = {}) {
         }
     }
 
-    // Extract the text from the boundary to the current reference
-    const extractionRange = document.createRange();
-
-    if (claimStartNode) {
-        extractionRange.setStartAfter(claimStartNode);
-    } else {
-        // No previous ref boundary - start from beginning of container
-        extractionRange.setStart(container, 0);
-    }
-    extractionRange.setEndBefore(currentRef);
-
-    // Get the text content
-    let claimText = extractionRange.toString();
+    // Extract the text from the boundary to the current reference. With no
+    // previous-ref boundary, that means the whole container up to this point.
+    let claimText = claimStartNode
+        ? textBetween(claimStartNode, currentRef, commonAncestor(claimStartNode, currentRef))
+        : textBetween(null, currentRef, container);
 
     // Clean up the text. Whitespace must be normalized BEFORE the marker
     // strip (Wikipedia's {{failed verification}} et al. use white-space:nowrap
@@ -1194,8 +1244,13 @@ function refNameFromNoteId(refId) {
 
 function collectCitations(root, { minClaimLength = MIN_CLAIM_LENGTH, claimScope = 'paragraph' } = {}) {
     if (!root) return [];
-    // A Document has no ownerDocument; an Element does. Either can be the root.
-    const doc = root.ownerDocument || root;
+    // Document and DocumentFragment both answer getElementById directly and
+    // must be used as-is: a DocumentFragment's .ownerDocument is a separate,
+    // empty shell document that does not contain the fragment's own content,
+    // so getElementById on it never finds anything even though the id exists
+    // right there in the fragment. A plain Element has no getElementById of
+    // its own, so that case still needs its owning document.
+    const doc = typeof root.getElementById === 'function' ? root : root.ownerDocument;
 
     const citations = [];
     for (const refElement of root.querySelectorAll('.reference a')) {
@@ -2937,11 +2992,31 @@ function useToolforgeSourceFetcher() {
         return 'en';
     }
 
+    // The wiki's raw content-language code, unrestricted to the languages
+    // MESSAGES has a full UI translation for. detectUiLang() stays scoped to
+    // MESSAGES so an unsupported UI language still falls back to English
+    // strings rather than a half-translated sidebar; this is used only to
+    // tell the LLM which language the article (and therefore the claim) is
+    // in, which localizeSystemPrompt() needs for every wiki, not just the
+    // ones with a full sidebar translation.
+    function detectArticleLangCode() {
+        try {
+            if (typeof mw !== 'undefined') {
+                const lang = mw.config.get('wgContentLanguage') || mw.config.get('wgUserLanguage');
+                if (lang) return String(lang).toLowerCase();
+            }
+        } catch (e) { /* non-MediaWiki context: no article language to report */ }
+        return null;
+    }
+
     class WikipediaSourceVerifier {
         constructor() {
             // UI language: a key of MESSAGES on wikis in that language,
             // 'en' everywhere else.
             this.lang = detectUiLang();
+            // Raw wiki content-language code (e.g. 'de', 'ja'), used only to
+            // steer the LLM's comment language — see detectArticleLangCode().
+            this.articleLangCode = detectArticleLangCode();
 
             this.providers = {
                 publicai: {
@@ -5502,19 +5577,26 @@ function useToolforgeSourceFetcher() {
             return generateUserPrompt(claim, sourceInfo);
         }
 
-        // When the UI is localized, ask the model to write its free-text
-        // explanation in that language so the "comments" shown next to each
-        // verdict match the rest of the interface. The verdict and reason_type
-        // values are parsed programmatically, so they must stay in the English
-        // enum; the directive is appended (not spliced) to leave the
-        // benchmark-tuned few-shot prompt in core/prompts.js untouched. English
-        // wikis get the prompt verbatim.
+        // Ask the model to write its free-text explanation in the article's
+        // language, so the "comments" shown next to each verdict aren't stuck
+        // in English on a non-English wiki. Two cases:
+        //  - A fully-localized UI (fr, es): name the language explicitly, using
+        //    the same curated name shown to editors elsewhere.
+        //  - Any other non-English wiki: a generic "match the source" directive,
+        //    so this isn't gated on having a full sidebar translation table.
+        // The verdict and reason_type values are parsed programmatically, so
+        // they must stay in the English enum; the directive is appended (not
+        // spliced) to leave the benchmark-tuned few-shot prompt in
+        // core/prompts.js untouched. English wikis get the prompt verbatim.
         localizeSystemPrompt(prompt) {
             const language = PROMPT_LANGUAGES[this.lang];
-            if (!language) return prompt;
-            return prompt + `\n\nLANGUAGE: Write the "comments" field in ${language}. `
+            const languageInstruction = language
+                ? `Write the "comments" field in ${language}.`
+                : 'Write the "comments" field in the same language as the claim and source text above, not in English.';
+            if (!language && (!this.articleLangCode || this.articleLangCode === 'en')) return prompt;
+            return prompt + `\n\nLANGUAGE: ${languageInstruction} `
                 + 'The "source_quote" field is an exception: it must stay in the source\'s own language, copied verbatim. Never translate it — it is checked against the source text character for character. '
-                + `You may quote the source verbatim in its original language, but write your own explanation in ${language}. `
+                + 'You may quote the source verbatim in its original language, but write your own explanation in that language. '
                 + 'Keep the "verdict" and "reason_type" values exactly as specified above, in English '
                 + '(SUPPORTED, PARTIALLY SUPPORTED, NOT SUPPORTED, SOURCE UNAVAILABLE, contradiction, omission).';
         }

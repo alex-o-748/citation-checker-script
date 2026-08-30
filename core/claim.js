@@ -3,18 +3,77 @@
 
 export const MAINTENANCE_MARKER_RE = /\[(failed verification|verification needed|citation needed|better source[^\]]*|dubious[^\]]*|unreliable source[^\]]*|clarification needed|disputed[^\]]*|page needed|when\??|where\??|who\??|why\??|by whom\??|according to whom\??|original research[^\]]*|specify[^\]]*|vague|opinion|fact)\]/gi;
 
+const TEXT_NODE = 3;
+
+// --- Text-between-two-points, without Range -------------------------------
+//
+// This file used to express "the text between these two nodes" with a DOM
+// Range (setStartAfter / setEndBefore / toString). That reads well and is fast
+// in a browser, where Range is native. Under JSDOM — which is what the batch
+// runner and the benchmark use — it is quadratic in the size of the article:
+// Range.toString() tests every text node for containment, containment compares
+// boundary points, and jsdom's boundary comparison walks forward from one node
+// through the rest of the document looking for the other. Each call is
+// therefore O(document), and it is made once per citation plus once per
+// adjacent citation pair, so extraction cost grew with the square of the
+// article's length.
+//
+// The walk below is bounded by the two endpoints instead of by the document,
+// which makes it O(text actually spanned). It is also faster in the browser,
+// since it allocates nothing.
+
+// Next node in document order, descending into children.
+function following(node, root) {
+    if (node.firstChild) return node.firstChild;
+    return followingSkippingSubtree(node, root);
+}
+
+// Next node in document order that is not inside `node`'s own subtree.
+function followingSkippingSubtree(node, root) {
+    for (let n = node; n && n !== root; n = n.parentNode) {
+        if (n.nextSibling) return n.nextSibling;
+    }
+    return null;
+}
+
+// Nearest common ancestor of two nodes, used to bound a walk to the smallest
+// subtree that can contain the text between them.
+function commonAncestor(a, b) {
+    const ancestors = new Set();
+    for (let n = a; n; n = n.parentNode) ancestors.add(n);
+    for (let n = b; n; n = n.parentNode) {
+        if (ancestors.has(n)) return n;
+    }
+    return null;
+}
+
+// Concatenates the text of every node strictly between two points, in document
+// order: after `startAfter` (or from the start of `root`, when null) and before
+// `endBefore`.
+//
+// Equivalent to the Range this replaces: both boundaries fall *between* nodes
+// rather than inside a text node, so no text node is ever partially covered and
+// "every text node the range contains" is exactly "every text node in this
+// walk".
+export function textBetween(startAfter, endBefore, root) {
+    let node = startAfter ? followingSkippingSubtree(startAfter, root) : root.firstChild;
+    let text = '';
+    while (node && node !== endBefore) {
+        if (node.nodeType === TEXT_NODE) text += node.data;
+        node = following(node, root);
+    }
+    return text;
+}
+
 // True iff the DOM range strictly between two .reference wrapper elements (in
 // document order: refA before refB) contains no non-whitespace text. This is
 // the rule that defines whether two adjacent citations attach to the same
 // claim — a comma or any other punctuation between them counts as text and
 // breaks the group.
 export function hasTextBetween(refA, refB) {
-    const document = refA.ownerDocument;
-    const range = document.createRange();
-    range.setStartAfter(refA);
-    range.setEndBefore(refB);
-    const between = range.toString().replace(/\s+/g, '').trim();
-    return between.length > 0;
+    const root = commonAncestor(refA, refB);
+    if (!root) return false;
+    return textBetween(refA, refB, root).replace(/\s+/g, '').length > 0;
 }
 
 // Returns the contiguous run of .reference wrapper elements (in DOM order)
@@ -63,7 +122,6 @@ export function lastSentence(text) {
 }
 
 export function extractClaimText(refElement, { scope = 'paragraph' } = {}) {
-    const document = refElement.ownerDocument;
     const container = refElement.closest('p, li, td, div, section');
     if (!container) {
         return '';
@@ -99,19 +157,11 @@ export function extractClaimText(refElement, { scope = 'paragraph' } = {}) {
         }
     }
 
-    // Extract the text from the boundary to the current reference
-    const extractionRange = document.createRange();
-
-    if (claimStartNode) {
-        extractionRange.setStartAfter(claimStartNode);
-    } else {
-        // No previous ref boundary - start from beginning of container
-        extractionRange.setStart(container, 0);
-    }
-    extractionRange.setEndBefore(currentRef);
-
-    // Get the text content
-    let claimText = extractionRange.toString();
+    // Extract the text from the boundary to the current reference. With no
+    // previous-ref boundary, that means the whole container up to this point.
+    let claimText = claimStartNode
+        ? textBetween(claimStartNode, currentRef, commonAncestor(claimStartNode, currentRef))
+        : textBetween(null, currentRef, container);
 
     // Clean up the text. Whitespace must be normalized BEFORE the marker
     // strip (Wikipedia's {{failed verification}} et al. use white-space:nowrap

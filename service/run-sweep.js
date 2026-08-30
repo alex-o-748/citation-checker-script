@@ -239,7 +239,13 @@ export async function runSweep(opts, {
     fetchSourceFn,
     makeModelCallerFn = makeModelCaller,
     writeCsvReportFn = writeCsvReport,
-    parseHtml = html => new JSDOM(html).window.document,
+    // JSDOM.fragment() parses without building a full Window/browsing
+    // context (CSSOM, timers, navigator, ...) -- new JSDOM(html).window
+    // leaks several MB per article that global.gc() never reclaims, which
+    // OOMs a long batch sweep. core/citations.js's collectCitations() calls
+    // getElementById directly on whatever root it's given (never through
+    // .ownerDocument), which is what makes a fragment root safe here.
+    parseHtml = html => JSDOM.fragment(html),
     readFile,
 } = {}) {
     if (!Number.isInteger(opts.max) || opts.max < 1) {
