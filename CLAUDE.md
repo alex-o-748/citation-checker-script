@@ -265,10 +265,13 @@ The sidebar UI is localized (currently French and Spanish); the LLM prompts in `
 | `FR_MESSAGES` / `ES_MESSAGES` | Translations, keyed by the **English source string** |
 | `MESSAGES` / `PROMPT_LANGUAGES` | Registry of language code → table, and → the language's name as given to the LLM |
 | `detectUiLang()` | Maps `wgContentLanguage` (then `wgUserLanguage`) to a registry key, else `'en'` |
+| `detectArticleLangCode()` | The wiki's raw content-language code, unrestricted to `MESSAGES` keys — feeds `localizeSystemPrompt()` only |
 
 `this.t('Verify Claim')` looks the string up in the active table and falls back to the English key, so a missing translation degrades to English rather than showing a key. Interpolate with `{name}` placeholders: `this.t('Set {name} API Key', { name })`.
 
 **To add a user-facing string:** wrap it in `this.t()` and add it to *every* table. **To add a language:** write its table, register it in `MESSAGES` and `PROMPT_LANGUAGES`; `detectUiLang()` and `localizeSystemPrompt()` pick it up with no further wiring.
+
+**LLM comment language is not gated on a full UI translation.** `localizeSystemPrompt()` names the language explicitly for `fr`/`es` (via `PROMPT_LANGUAGES`, matching the sidebar), but for any other non-English wiki — one with no `MESSAGES` table at all — it falls back to a generic "write in the same language as the claim and source text" directive driven by `detectArticleLangCode()`. So a claim checked on, say, de.wikipedia gets German comments even though the sidebar itself stays English. Only `source_quote` is exempt in all cases: it must stay verbatim in the source's own language, since it's checked character-for-character against the source text.
 
 **Register:** Spanish never addresses the reader in the second person — `tú`, `vos` and `usted` are each regionally marked, so es.wikipedia's own interface avoids all three. Which impersonal form to use depends on what the string *is*:
 

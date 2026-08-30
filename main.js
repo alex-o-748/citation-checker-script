@@ -2661,11 +2661,31 @@ function useToolforgeSourceFetcher() {
         return 'en';
     }
 
+    // The wiki's raw content-language code, unrestricted to the languages
+    // MESSAGES has a full UI translation for. detectUiLang() stays scoped to
+    // MESSAGES so an unsupported UI language still falls back to English
+    // strings rather than a half-translated sidebar; this is used only to
+    // tell the LLM which language the article (and therefore the claim) is
+    // in, which localizeSystemPrompt() needs for every wiki, not just the
+    // ones with a full sidebar translation.
+    function detectArticleLangCode() {
+        try {
+            if (typeof mw !== 'undefined') {
+                const lang = mw.config.get('wgContentLanguage') || mw.config.get('wgUserLanguage');
+                if (lang) return String(lang).toLowerCase();
+            }
+        } catch (e) { /* non-MediaWiki context: no article language to report */ }
+        return null;
+    }
+
     class WikipediaSourceVerifier {
         constructor() {
             // UI language: a key of MESSAGES on wikis in that language,
             // 'en' everywhere else.
             this.lang = detectUiLang();
+            // Raw wiki content-language code (e.g. 'de', 'ja'), used only to
+            // steer the LLM's comment language — see detectArticleLangCode().
+            this.articleLangCode = detectArticleLangCode();
 
             this.providers = {
                 publicai: {
@@ -5184,19 +5204,26 @@ function useToolforgeSourceFetcher() {
             return generateUserPrompt(claim, sourceInfo);
         }
 
-        // When the UI is localized, ask the model to write its free-text
-        // explanation in that language so the "comments" shown next to each
-        // verdict match the rest of the interface. The verdict and reason_type
-        // values are parsed programmatically, so they must stay in the English
-        // enum; the directive is appended (not spliced) to leave the
-        // benchmark-tuned few-shot prompt in core/prompts.js untouched. English
-        // wikis get the prompt verbatim.
+        // Ask the model to write its free-text explanation in the article's
+        // language, so the "comments" shown next to each verdict aren't stuck
+        // in English on a non-English wiki. Two cases:
+        //  - A fully-localized UI (fr, es): name the language explicitly, using
+        //    the same curated name shown to editors elsewhere.
+        //  - Any other non-English wiki: a generic "match the source" directive,
+        //    so this isn't gated on having a full sidebar translation table.
+        // The verdict and reason_type values are parsed programmatically, so
+        // they must stay in the English enum; the directive is appended (not
+        // spliced) to leave the benchmark-tuned few-shot prompt in
+        // core/prompts.js untouched. English wikis get the prompt verbatim.
         localizeSystemPrompt(prompt) {
             const language = PROMPT_LANGUAGES[this.lang];
-            if (!language) return prompt;
-            return prompt + `\n\nLANGUAGE: Write the "comments" field in ${language}. `
+            const languageInstruction = language
+                ? `Write the "comments" field in ${language}.`
+                : 'Write the "comments" field in the same language as the claim and source text above, not in English.';
+            if (!language && (!this.articleLangCode || this.articleLangCode === 'en')) return prompt;
+            return prompt + `\n\nLANGUAGE: ${languageInstruction} `
                 + 'The "source_quote" field is an exception: it must stay in the source\'s own language, copied verbatim. Never translate it — it is checked against the source text character for character. '
-                + `You may quote the source verbatim in its original language, but write your own explanation in ${language}. `
+                + 'You may quote the source verbatim in its original language, but write your own explanation in that language. '
                 + 'Keep the "verdict" and "reason_type" values exactly as specified above, in English '
                 + '(SUPPORTED, PARTIALLY SUPPORTED, NOT SUPPORTED, SOURCE UNAVAILABLE, contradiction, omission).';
         }

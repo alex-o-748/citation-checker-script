@@ -33,11 +33,14 @@ function loadI18n(mwStub) {
   const build = new Function('mw', `
 ${I18N_BLOCK}
     class Harness {
-      constructor(lang) { this.lang = lang === undefined ? detectUiLang() : lang; }
+      constructor(lang, articleLangCode) {
+        this.lang = lang === undefined ? detectUiLang() : lang;
+        this.articleLangCode = articleLangCode === undefined ? detectArticleLangCode() : articleLangCode;
+      }
 ${T_METHOD}
 ${LOCALIZE_METHOD}
     }
-    return { MESSAGES, PROMPT_LANGUAGES, detectUiLang, Harness };
+    return { MESSAGES, PROMPT_LANGUAGES, detectUiLang, detectArticleLangCode, Harness };
   `);
   return build(mwStub);
 }
@@ -46,7 +49,7 @@ function wikiWithLang(contentLanguage, userLanguage) {
   return { config: { get: (k) => (k === 'wgContentLanguage' ? contentLanguage : userLanguage) } };
 }
 
-const { MESSAGES, PROMPT_LANGUAGES, Harness } = loadI18n(undefined);
+const { MESSAGES, PROMPT_LANGUAGES, detectArticleLangCode, Harness } = loadI18n(undefined);
 const LANGS = Object.keys(MESSAGES);
 
 // Placeholders are substituted by t() via a literal `{name}` split, so a
@@ -188,17 +191,41 @@ test('t() translates, falls back to English, and interpolates', () => {
   assert.equal(en.t('Provider: {name}', { name: 'Claude' }), 'Provider: Claude');
 });
 
-test('localizeSystemPrompt appends a language directive only for localized UIs', () => {
+test('localizeSystemPrompt names the language for localized UIs', () => {
   const base = 'SYSTEM PROMPT';
-  assert.equal(new Harness('en').localizeSystemPrompt(base), base, 'English must get the prompt verbatim');
+  // English wiki, no article-language signal: prompt stays verbatim.
+  assert.equal(new Harness('en', 'en').localizeSystemPrompt(base), base, 'English must get the prompt verbatim');
+  assert.equal(new Harness('en', null).localizeSystemPrompt(base), base, 'no detected article language: prompt verbatim');
 
   for (const lang of LANGS) {
-    const out = new Harness(lang).localizeSystemPrompt(base);
+    const out = new Harness(lang, lang).localizeSystemPrompt(base);
     assert.ok(out.startsWith(base), `${lang}: the benchmark-tuned prompt must be left intact`);
     assert.ok(out.includes(PROMPT_LANGUAGES[lang]), `${lang}: directive does not name the language`);
     // The verdict enum is parsed programmatically and must stay English.
     assert.ok(out.includes('SOURCE UNAVAILABLE'), `${lang}: directive drops the English verdict enum`);
   }
 
-  assert.ok(new Harness('es').localizeSystemPrompt(base).includes('Spanish (español)'));
+  assert.ok(new Harness('es', 'es').localizeSystemPrompt(base).includes('Spanish (español)'));
+});
+
+// Non-English wikis with no full sidebar translation (e.g. de, ja) still get
+// a language directive — just a generic one, since there's no curated name
+// to plug in. This is the fix for comments coming back in English "no matter
+// which language article is being checked".
+test('localizeSystemPrompt falls back to a generic directive for wikis without a UI table', () => {
+  const base = 'SYSTEM PROMPT';
+  for (const code of ['de', 'ja', 'pt-br', 'zh']) {
+    const out = new Harness('en', code).localizeSystemPrompt(base);
+    assert.ok(out.startsWith(base), `${code}: the benchmark-tuned prompt must be left intact`);
+    assert.ok(/same language as the claim/i.test(out), `${code}: expected a generic language directive`);
+    assert.ok(out.includes('SOURCE UNAVAILABLE'), `${code}: directive drops the English verdict enum`);
+  }
+});
+
+test('detectArticleLangCode reads the raw wiki content language, unrestricted to UI-translated languages', () => {
+  assert.equal(loadI18n(wikiWithLang('de', 'en')).detectArticleLangCode(), 'de');
+  assert.equal(loadI18n(wikiWithLang('es', 'en')).detectArticleLangCode(), 'es');
+  assert.equal(loadI18n(wikiWithLang(null, 'ja')).detectArticleLangCode(), 'ja');
+  assert.equal(loadI18n(wikiWithLang(null, null)).detectArticleLangCode(), null);
+  assert.equal(loadI18n(undefined).detectArticleLangCode(), null, 'non-MediaWiki context has no article language');
 });
