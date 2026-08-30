@@ -1,7 +1,19 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { deriveRestUrl, fetchArticleHtml, DEFAULT_USER_AGENT } from '../core/wikipedia.js';
+import { deriveRestUrl, fetchArticleHtml, apiHostForWikiDb, DEFAULT_USER_AGENT } from '../core/wikipedia.js';
+
+test('apiHostForWikiDb derives the REST host from the wiki database name', () => {
+    assert.equal(apiHostForWikiDb('enwiki'), 'en.wikipedia.org');
+    assert.equal(apiHostForWikiDb('ruwiki'), 'ru.wikipedia.org');
+    assert.equal(apiHostForWikiDb('simplewiki'), 'simple.wikipedia.org');
+});
+
+test('apiHostForWikiDb rejects names that do not end in "wiki"', () => {
+    assert.throws(() => apiHostForWikiDb('enwiktionary'), RangeError);
+    assert.throws(() => apiHostForWikiDb(''), RangeError);
+    assert.throws(() => apiHostForWikiDb(undefined), RangeError);
+});
 
 test('deriveRestUrl builds the REST path, pinning a revision when given', () => {
     assert.equal(

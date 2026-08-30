@@ -70,16 +70,26 @@ export function resolveCriterion(name) {
  */
 export function buildCandidateQuery({
     criterion = 'failed-verification',
+    template,
     limit = 500,
     afterPageId = 0,
 } = {}) {
-    const { template } = resolveCriterion(criterion);
+    // CRITERIA's template titles are enwiki-specific. `template` lets a caller
+    // supply the equivalent title on another wiki (e.g. ruwiki's "citation
+    // needed" template is not literally "Citation_needed") while keeping the
+    // same criterion label for the description/logging. Without an override,
+    // running a criterion against a non-English wiki matches zero pages rather
+    // than erroring, since the query is otherwise well-formed.
+    const resolvedTemplate = template ?? resolveCriterion(criterion).template;
 
     if (!Number.isInteger(limit) || limit < 1 || limit > 5000) {
         throw new RangeError(`limit must be an integer in 1..5000 (got: ${limit})`);
     }
     if (!Number.isInteger(afterPageId) || afterPageId < 0) {
         throw new RangeError(`afterPageId must be a non-negative integer (got: ${afterPageId})`);
+    }
+    if (resolvedTemplate.includes(' ')) {
+        throw new RangeError(`template must use underscores, not spaces (got: "${resolvedTemplate}")`);
     }
 
     // tl_from_namespace is a denormalized column on templatelinks specifically
@@ -106,7 +116,7 @@ export function buildCandidateQuery({
 
     return {
         sql,
-        params: [NS_TEMPLATE, template, NS_MAIN, NS_MAIN, afterPageId, limit],
+        params: [NS_TEMPLATE, resolvedTemplate, NS_MAIN, NS_MAIN, afterPageId, limit],
     };
 }
 
@@ -132,6 +142,7 @@ export function normalizeRow(row) {
  */
 export async function selectCandidates(query, {
     criterion = 'failed-verification',
+    template,
     max = 500,
     pageSize = 500,
 } = {}) {
@@ -140,7 +151,7 @@ export async function selectCandidates(query, {
 
     while (out.length < max) {
         const limit = Math.min(pageSize, max - out.length);
-        const { sql, params } = buildCandidateQuery({ criterion, limit, afterPageId });
+        const { sql, params } = buildCandidateQuery({ criterion, template, limit, afterPageId });
         const rows = await query(sql, params);
         if (!rows || rows.length === 0) break;
 

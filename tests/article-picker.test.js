@@ -58,6 +58,33 @@ test('the query filters to non-redirect articles and pages by keyset', () => {
     assert.match(sql, /ORDER BY p\.page_id/);
 });
 
+test('buildCandidateQuery honours a template override over the criterion default', () => {
+    const { params } = buildCandidateQuery({
+        criterion: 'citation-needed',
+        template: 'Нет_источника',
+        limit: 10,
+        afterPageId: 0,
+    });
+
+    assert.equal(params[1], 'Нет_источника');
+});
+
+test('buildCandidateQuery rejects a template override containing spaces', () => {
+    assert.throws(
+        () => buildCandidateQuery({ criterion: 'citation-needed', template: 'Нет источника' }),
+        RangeError
+    );
+});
+
+test('selectCandidates threads a template override through to the query', async () => {
+    const seen = [];
+    const query = async (sql, params) => { seen.push(params[1]); return []; };
+
+    await selectCandidates(query, { criterion: 'citation-needed', template: 'Custom_Title', max: 10 });
+
+    assert.deepEqual(seen, ['Custom_Title']);
+});
+
 test('buildCandidateQuery rejects out-of-range paging arguments', () => {
     assert.throws(() => buildCandidateQuery({ limit: 0 }), RangeError);
     assert.throws(() => buildCandidateQuery({ limit: 5001 }), RangeError);

@@ -23,6 +23,7 @@ function parseCliArgs(argv) {
         options: {
             criterion: { type: 'string', default: 'failed-verification' },
             wiki:      { type: 'string', default: 'enwiki' },
+            template:  { type: 'string' },
             max:       { type: 'string', default: '20' },
             help:      { type: 'boolean', short: 'h', default: false },
         },
@@ -33,6 +34,7 @@ function parseCliArgs(argv) {
         help: values.help,
         criterion: values.criterion,
         wiki: values.wiki,
+        template: values.template,
         max: Number(values.max),
     };
 }
@@ -42,7 +44,12 @@ const HELP_TEXT = `usage: node service/run-pick.js [options]
 Options:
   --criterion <name>  Selection criterion. One of: ${Object.keys(CRITERIA).join(', ')}
                        (default: failed-verification)
-  --wiki <db>          Wiki database name, e.g. enwiki, frwiki (default: enwiki)
+  --wiki <db>          Wiki database name, e.g. enwiki, frwiki, ruwiki (default: enwiki)
+  --template <title>   Override the criterion's template title (underscores, no
+                        namespace prefix) — CRITERIA's names are enwiki-specific,
+                        so a non-English --wiki needs its own equivalent title
+                        here (e.g. the ruwiki version of "citation needed"),
+                        or the query matches zero pages rather than erroring.
   --max <n>            Maximum articles to select (default: 20)
   --help, -h           Show this help and exit.
 `;
@@ -57,6 +64,15 @@ async function main(argv) {
         process.stderr.write(`error: --max must be a positive integer (got: ${opts.max})\n`);
         return 2;
     }
+    if (opts.wiki !== 'enwiki' && !opts.template) {
+        process.stderr.write(
+            `WARNING: --wiki ${opts.wiki} with the default "${opts.criterion}" template ` +
+            `(${CRITERIA[opts.criterion]?.template ?? opts.criterion}, an enwiki title). ` +
+            `That template almost certainly does not exist on ${opts.wiki} under this name — ` +
+            `the query will most likely match zero pages rather than error. Pass --template ` +
+            `with the equivalent title on ${opts.wiki} to select real candidates.\n`
+        );
+    }
 
     let connection;
     try {
@@ -69,6 +85,7 @@ async function main(argv) {
     try {
         const candidates = await selectCandidates(makeQueryFn(connection), {
             criterion: opts.criterion,
+            template: opts.template,
             max: opts.max,
         });
         process.stdout.write(JSON.stringify(candidates, null, 2) + '\n');

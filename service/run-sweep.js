@@ -58,7 +58,7 @@ import { parseArgs } from 'node:util';
 import { openReplicaConnection, makeQueryFn } from './replicas.js';
 import { selectCandidates, CRITERIA } from './article-picker.js';
 import { runBatch, ARTICLE_OUTCOMES } from './claim-extractor.js';
-import { fetchArticleHtml } from '../core/wikipedia.js';
+import { fetchArticleHtml, apiHostForWikiDb } from '../core/wikipedia.js';
 import { fetchSourceContent } from '../core/worker.js';
 import { verifyCitation, verifyGroup, makeModelCaller, ProviderAuthError } from './verifier.js';
 import { assembleFinding, assembleGroupFinding } from './finding-builder.js';
@@ -95,6 +95,7 @@ export function parseCliArgs(argv) {
         options: {
             criterion:           { type: 'string', default: 'failed-verification' },
             wiki:                { type: 'string', default: 'enwiki' },
+            template:            { type: 'string' },
             max:                 { type: 'string', default: '5' },
             provider:            { type: 'string', default: 'liftwing' },
             model:               { type: 'string' },
@@ -113,6 +114,7 @@ export function parseCliArgs(argv) {
         help: values.help,
         criterion: values.criterion,
         wiki: values.wiki,
+        template: values.template,
         max: Number(values.max),
         provider: values.provider,
         model: values.model || PROVIDER_MODELS[values.provider],
@@ -135,7 +137,13 @@ be SOURCE UNAVAILABLE until you opt in.
 Options:
   --criterion <name>   Selection criterion. One of: ${Object.keys(CRITERIA).join(', ')}
                         (default: failed-verification)
-  --wiki <db>           Wiki database name, e.g. enwiki, frwiki (default: enwiki)
+  --wiki <db>           Wiki database name, e.g. enwiki, frwiki, ruwiki (default: enwiki).
+                         Also determines the Wikipedia REST API host used to fetch
+                         each article's rendered HTML (ruwiki -> ru.wikipedia.org).
+  --template <title>    Override the criterion's template title (underscores, no
+                         namespace prefix) — CRITERIA's names are enwiki-specific,
+                         so a non-English --wiki needs its own equivalent title
+                         here, or selection matches zero pages rather than erroring.
   --max <n>             Maximum articles to process (default: 5)
   --provider <name>     One of: ${Object.keys(PROVIDER_MODELS).join(', ')} (default: liftwing)
   --model <id>          Override the provider's default model
@@ -257,6 +265,24 @@ export async function runSweep(opts, {
         return 2;
     }
 
+    let host;
+    try {
+        host = apiHostForWikiDb(opts.wiki);
+    } catch (error) {
+        stderr.write(`sweep: ${error.message}\n`);
+        return 2;
+    }
+    if (opts.wiki !== 'enwiki' && !opts.template) {
+        stderr.write(
+            `sweep: WARNING — --wiki ${opts.wiki} with the default "${opts.criterion}" template ` +
+            `(${CRITERIA[opts.criterion]?.template ?? opts.criterion}, an enwiki title). ` +
+            `That template almost certainly does not exist on ${opts.wiki} under this name — ` +
+            `selection will most likely match zero pages rather than error. Pass --template ` +
+            `with the equivalent title on ${opts.wiki} to select real candidates.\n`
+        );
+    }
+    const fetchArticleWithHost = article => fetchArticle(article, { host });
+
     const envVar = PROVIDER_ENV_VARS[opts.provider];
     const apiKey = envVar ? env[envVar] : undefined;
     if (envVar && !apiKey) {
@@ -276,6 +302,7 @@ export async function runSweep(opts, {
     try {
         candidates = await selectCandidates(makeQueryFn(replicaConnection), {
             criterion: opts.criterion,
+            template: opts.template,
             max: opts.max,
         });
     } catch (error) {
@@ -284,7 +311,7 @@ export async function runSweep(opts, {
     } finally {
         await replicaConnection.end();
     }
-    stderr.write(`sweep: selected ${candidates.length} article(s)\n`);
+    stderr.write(`sweep: selected ${candidates.length} article(s) from ${opts.wiki} (${host})\n`);
 
     let toolsDbConnection = null;
     let toolsDbQuery = null;
@@ -437,7 +464,7 @@ export async function runSweep(opts, {
         // article's worth of fetching slip through after halting before it
         // took effect. Driving runBatch's iterator by hand puts the check
         // before each fetch instead of after.
-        const articles = runBatch(candidates, { parseHtml, fetchArticle, fetchSource });
+        const articles = runBatch(candidates, { parseHtml, fetchArticle: fetchArticleWithHost, fetchSource });
         while (true) {
             if (halted) return;
             const fetchStartedAt = Date.now();

@@ -25,7 +25,7 @@ import { parseArgs } from 'node:util';
 import { openReplicaConnection, makeQueryFn } from './replicas.js';
 import { selectCandidates, CRITERIA } from './article-picker.js';
 import { runBatch, ARTICLE_OUTCOMES } from './claim-extractor.js';
-import { fetchArticleHtml } from '../core/wikipedia.js';
+import { fetchArticleHtml, apiHostForWikiDb } from '../core/wikipedia.js';
 import { fetchSourceContent } from '../core/worker.js';
 
 // Same contract, same query shape (?fetch=&page=), same Google-Books-skip and
@@ -39,6 +39,7 @@ function parseCliArgs(argv) {
         options: {
             criterion:        { type: 'string', default: 'failed-verification' },
             wiki:             { type: 'string', default: 'enwiki' },
+            template:         { type: 'string' },
             max:              { type: 'string', default: '3' },
             'live-source-fetch': { type: 'boolean', default: false },
             help:             { type: 'boolean', short: 'h', default: false },
@@ -50,6 +51,7 @@ function parseCliArgs(argv) {
         help: values.help,
         criterion: values.criterion,
         wiki: values.wiki,
+        template: values.template,
         max: Number(values.max),
         liveSourceFetch: values['live-source-fetch'],
     };
@@ -67,7 +69,13 @@ README, it is not yet cleared by WMCS for unattended production traffic, so
 Options:
   --criterion <name>  Selection criterion. One of: ${Object.keys(CRITERIA).join(', ')}
                        (default: failed-verification)
-  --wiki <db>          Wiki database name, e.g. enwiki, frwiki (default: enwiki)
+  --wiki <db>          Wiki database name, e.g. enwiki, frwiki, ruwiki (default: enwiki).
+                        Also determines the Wikipedia REST API host used to fetch
+                        each article's rendered HTML (ruwiki -> ru.wikipedia.org).
+  --template <title>   Override the criterion's template title (underscores, no
+                        namespace prefix) — CRITERIA's names are enwiki-specific,
+                        so a non-English --wiki needs its own equivalent title
+                        here, or selection matches zero pages rather than erroring.
   --max <n>            Maximum articles to process (default: 3)
   --live-source-fetch  Fetch real sources via tf-source-fetcher instead of the
                         stub. Manual smoke-test use only (see above).
@@ -152,6 +160,24 @@ async function main(argv) {
         return 2;
     }
 
+    let host;
+    try {
+        host = apiHostForWikiDb(opts.wiki);
+    } catch (error) {
+        process.stderr.write(`error: ${error.message}\n`);
+        return 2;
+    }
+
+    if (opts.wiki !== 'enwiki' && !opts.template) {
+        process.stderr.write(
+            `WARNING: --wiki ${opts.wiki} with the default "${opts.criterion}" template ` +
+            `(${CRITERIA[opts.criterion]?.template ?? opts.criterion}, an enwiki title). ` +
+            `That template almost certainly does not exist on ${opts.wiki} under this name — ` +
+            `selection will most likely match zero pages rather than error. Pass --template ` +
+            `with the equivalent title on ${opts.wiki} to select real candidates.\n`
+        );
+    }
+
     let connection;
     try {
         connection = await openReplicaConnection({ wikiDb: opts.wiki });
@@ -164,6 +190,7 @@ async function main(argv) {
     try {
         candidates = await selectCandidates(makeQueryFn(connection), {
             criterion: opts.criterion,
+            template: opts.template,
             max: opts.max,
         });
     } catch (error) {
@@ -182,7 +209,7 @@ async function main(argv) {
         );
     }
 
-    process.stderr.write(`selected ${candidates.length} article(s); fetching and extracting...\n\n`);
+    process.stderr.write(`selected ${candidates.length} article(s) from ${opts.wiki} (${host}); fetching and extracting...\n\n`);
 
     let totalCitations = 0;
     let totalWithUrl = 0;
@@ -201,7 +228,7 @@ async function main(argv) {
     try {
         for await (const result of runBatch(candidates, {
             parseHtml,
-            fetchArticle: fetchArticleHtml,
+            fetchArticle: article => fetchArticleHtml(article, { host }),
             fetchSource: opts.liveSourceFetch ? liveFetchSource : stubFetchSource,
         })) {
             const { citations, withUrl, fetched, failed } = printArticle(result);

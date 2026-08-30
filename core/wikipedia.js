@@ -14,6 +14,27 @@ export const DEFAULT_USER_AGENT =
     'citation-checker-script (https://github.com/alex-o-748/citation-checker-script)';
 
 /**
+ * Derives the Wikipedia REST API host from a wiki database name, following
+ * the MediaWiki convention that a Wikipedia language edition's wikiDb is
+ * `<language-code>wiki` (enwiki, ruwiki, simplewiki, ...) and its REST host is
+ * `<language-code>.wikipedia.org`.
+ *
+ * Callers that select candidates via --wiki (service/run-pick.js,
+ * service/run-extract.js) must feed this into fetchArticleHtml's `host`
+ * option — otherwise the REST fetch silently stays on DEFAULT_WIKI_HOST
+ * regardless of which wiki the candidates came from, and titles selected from
+ * e.g. ruwiki 404 against en.wikipedia.org instead of fetching the intended
+ * article.
+ */
+export function apiHostForWikiDb(wikiDb) {
+    const match = /^(.+)wiki$/.exec(String(wikiDb ?? ''));
+    if (!match) {
+        throw new RangeError(`cannot derive a Wikipedia REST host from wiki database name: "${wikiDb}"`);
+    }
+    return `${match[1]}.wikipedia.org`;
+}
+
+/**
  * Builds the REST URL for an article's rendered HTML.
  *
  * `revisionId` pins a specific revision, which the batch runner always supplies:
