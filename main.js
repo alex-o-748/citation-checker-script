@@ -3123,9 +3123,9 @@ function useToolforgeSourceFetcher() {
         'This will verify {citations} citations from {sources} unique sources.{groupNote}\n\nEstimated time: ~{minutes} minute.\n\nContinue?':
             'Будет проверено {citations} сносок из {sources} уникальных источников.{groupNote}\n\nПримерное время: ~{minutes} мин.\n\nПродолжить?',
         '\n\nThis includes {count} combined-source checks for adjacent citation groups.':
-            '\n\nВключая {count} проверок объединённых источников для групп соседних сносок.',
+            '\n\nТакже будет сделано {count} проверок объединённых источников для групп соседних сносок.',
         '\n\nThis includes {count} combined-source check for adjacent citation groups.':
-            '\n\nВключая {count} проверку объединённых источников для групп соседних сносок.',
+            '\n\nТакже будет сделана {count} проверка объединённых источников для групп соседних сносок.',
 
         // Generated result comments
         'No URL found in reference': 'В сноске не найден URL',
