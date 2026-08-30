@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 
 import { rowsToCsv, findingToCsvRow, writeCsvReport } from '../service/csv-report.js';
 
+const CSV_BOM = '﻿';
+
 const baseFinding = () => ({
     wiki: 'enwiki',
     pageId: 42,
@@ -129,6 +131,18 @@ test('writeCsvReport writes the same content rowsToCsv produces, via the injecte
         },
     });
     assert.equal(written.path, '/tmp/findings.csv');
-    assert.equal(written.content, rowsToCsv([baseFinding()]));
+    assert.equal(written.content, CSV_BOM + rowsToCsv([baseFinding()]));
     assert.equal(written.encoding, 'utf8');
+});
+
+test('writeCsvReport prepends a UTF-8 BOM so Excel does not mis-decode non-ASCII text', async () => {
+    let written;
+    await writeCsvReport([baseFinding()], '/tmp/findings.csv', {
+        writeFile: async (path, content) => { written = content; },
+    });
+    assert.ok(written.startsWith(CSV_BOM), 'written content must start with the BOM');
+    // rowsToCsv() itself stays BOM-free — it's the pure string builder;
+    // writeCsvReport() is the only place that knows about the file-write
+    // destination's Excel quirk.
+    assert.ok(!rowsToCsv([baseFinding()]).startsWith(CSV_BOM));
 });

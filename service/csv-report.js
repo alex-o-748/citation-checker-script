@@ -89,11 +89,22 @@ export function rowsToCsv(findings) {
     return lines.map(row => row.map(csvCell).join(',')).join('\n') + '\n';
 }
 
+// Excel (and some other spreadsheet tools) has no way to detect a CSV's
+// encoding other than a byte-order mark, and defaults to the system's legacy
+// codepage (Windows-1252/ANSI) without one — every byte of UTF-8 non-ASCII
+// text then gets shown as mojibake (Cyrillic, Greek, accented Latin, all of
+// it) despite the file on disk being perfectly valid UTF-8. The BOM is inert
+// for every other consumer this CSV has (rowsToCsv's own tests, `cat`, Node's
+// own CSV/JSON tooling all either strip it or ignore it), so there is no
+// downside to always including it — this file is the "share it with someone"
+// deliverable, and that someone is likely opening it in a spreadsheet app.
+const CSV_BOM = '﻿';
+
 /**
  * Writes findings to a CSV file. `writeFile` is injected, matching the
  * pattern in service/replicas.js and service/toolsdb.js, so this is
  * testable without touching disk.
  */
 export async function writeCsvReport(findings, path, { writeFile = fsWriteFile } = {}) {
-    await writeFile(path, rowsToCsv(findings), 'utf8');
+    await writeFile(path, CSV_BOM + rowsToCsv(findings), 'utf8');
 }
