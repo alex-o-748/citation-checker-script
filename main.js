@@ -2962,18 +2962,310 @@ function useToolforgeSourceFetcher() {
             'la fuente no respalda la afirmación (comprobado con [[:en:User:Alaexis/AI_Source_Verification|Source Verifier]])',
     };
 
+    // Russian. Standard MediaWiki UI register: imperative verb forms for
+    // actions ("Нажмите", "Введите", "Сохранить") rather than a marked
+    // second-person pronoun — this matches ru.wikipedia's own interface and
+    // has none of the tú/vos/usted ambiguity that shapes the Spanish table.
+    const RU_MESSAGES = {
+        // Sidebar structure
+        'Selected Claim': 'Выбранное утверждение',
+        'Click on a reference number [1] next to a claim to verify it against its source.':
+            'Нажмите на номер сноски [1] рядом с утверждением, чтобы проверить его по источнику.',
+        'Source Content': 'Содержимое источника',
+        'No source loaded yet.': 'Источник ещё не загружен.',
+        'Verification Result': 'Результат проверки',
+
+        // Buttons and inputs
+        'Close': 'Закрыть',
+        'Set API Key': 'Указать ключ API',
+        'Verify Claim': 'Проверить утверждение',
+        'Verifying...': 'Проверка…',
+        'Change Key': 'Изменить ключ',
+        'Remove API Key': 'Удалить ключ API',
+        'Paste the source text here...': 'Вставьте сюда текст источника…',
+        'Load Text': 'Загрузить текст',
+        'Cancel': 'Отмена',
+        'Paste source text manually': 'Вставить текст источника вручную',
+        'Replace the fetched source content with text you paste in (e.g., the full article from The Wikipedia Library)':
+            'Заменить полученное содержимое источника вставленным текстом (например, полной статьёй из Библиотеки Википедии)',
+        'Verify All Citations': 'Проверить все сноски',
+        'Stop': 'Остановить',
+        'Back to Report': 'Вернуться к отчёту',
+        'Save': 'Сохранить',
+        'Give feedback': 'Оставить отзыв',
+
+        // Feedback controls
+        'Was this right?': 'Это верно?',
+        'Yes': 'Да',
+        'No': 'Нет',
+        'This verdict looks right': 'Вердикт выглядит верным',
+        'This verdict looks wrong': 'Вердикт выглядит неверным',
+        'What should it have been?': 'Каким должен был быть вердикт?',
+        'Thanks — recorded.': 'Спасибо — записано.',
+        'Could not record that, sorry.': 'Не удалось это записать, извините.',
+        'Comment': 'Комментарий',
+        'Edit Section': 'Редактировать раздел',
+        'Copy Report (Wikitext)': 'Скопировать отчёт (вики-разметка)',
+        'Copy Report (Plain Text)': 'Скопировать отчёт (обычный текст)',
+
+        // Provider info
+        '✓ Using your {name} API key': '✓ Используется ваш ключ API {name}',
+        '✓ Free to use. Optional: ': '✓ Бесплатно. По желанию: ',
+        'add your {name} API key': 'добавить ключ API {name}',
+        '✓ Free to use': '✓ Бесплатно',
+        'API key configured for {name}': 'Ключ API настроен для {name}',
+        'API key required for {name}': 'Для {name} требуется ключ API',
+        'Results are logged for research. Your username is not recorded.':
+            'Результаты записываются для улучшения работы приложения. Имя пользователя не сохраняется.',
+        'Claim scope': 'Границы проверяемого текста',
+        'Full claim': 'До предыдущей сноски или начала абзаца',
+        'Last sentence only': 'Только последнее предложение',
+        '"Last sentence only" avoids flagging a multi-sentence claim as unsupported just because an earlier sentence lacks a citation.':
+            '«Только последнее предложение» позволяет не помечать утверждение из нескольких предложений как неподтверждённое только потому, что в одном из предыдущих предложений нет сноски.',
+
+        // Verifier tab + first-run notification
+        'Verify': 'Проверка',
+        'Verify claims against sources': 'Проверка утверждений по источникам',
+        'Citation Verifier': 'Верификатор',
+        'Citation Verifier installed — click the ':
+            'Верификатор установлен — откройте вкладку ',
+        ' tab to get started.': ', чтобы начать.',
+
+        // Source display
+        '✓ PDF content extracted{pageInfo}': '✓ Текст PDF извлечён{pageInfo}',
+        ' (page {page} of {total})': ' (страница {page} из {total})',
+        ' ({pages} pages)': ' ({pages} стр.)',
+        '✓ Content fetched successfully': '✓ Содержимое успешно получено',
+        'Content will be fetched by AI during verification.':
+            'Содержимое будет получено ИИ во время проверки.',
+        '⚠ The source is long and can only be checked partially.':
+            '⚠ Источник большой и может быть проверен только частично.',
+        'Source URL:': 'URL источника:',
+        'No URL found. Please paste the source text below:':
+            'URL не найден. Вставьте текст источника ниже:',
+        'Manual Source Text:': 'Текст источника (введён вручную):',
+        'No source loaded.': 'Источник не загружен.',
+        'Click "Verify Claim" to verify the selected claim against the source.':
+            'Нажмите «Проверить утверждение», чтобы проверить выбранное утверждение по источнику.',
+        'Part of a group of {count} citations: {numbers}':
+            'Часть группы из {count} сносок: {numbers}',
+
+        // Verdicts (full, shown for a single verification)
+        'SUPPORTED': 'ПОДТВЕРЖДЕНО',
+        'PARTIALLY SUPPORTED': 'ЧАСТИЧНО ПОДТВЕРЖДЕНО',
+        'NOT SUPPORTED': 'НЕ ПОДТВЕРЖДЕНО',
+        'SOURCE UNAVAILABLE': 'ИСТОЧНИК НЕДОСТУПЕН',
+        'ERROR': 'ОШИБКА',
+        // Verdicts (short, shown on report cards/chips)
+        'Supported': 'Подтверждено',
+        'Partial': 'Частично',
+        'Not Supported': 'Не подтверждено',
+        'Unavailable': 'Недоступно',
+        // Reason tag on a 'not supported' verdict
+        'Contradiction': 'Противоречие',
+        'Omission': 'Отсутствие',
+
+        // Report progress
+        'Checking citation [{num}]': 'Проверка сноски [{num}]',
+        'Fetching source for [{num}]': 'Получение источника для [{num}]',
+        'Verifying citation [{num}]': 'Анализ сноски [{num}]',
+        'Rate limited, retrying in {secs}s...':
+            'Превышен лимит запросов, повтор через {secs} с…',
+        'Checking combined sources {token}': 'Проверка объединённых источников {token}',
+        'Completed: {count} citations checked': 'Готово: проверено сносок — {count}',
+        'Completed: {count} citation checked': 'Готово: проверена {count} сноска',
+        'Cancelled after {done} of {total} citations': 'Отменено после проверки {done} из {total} сносок',
+        'Cancelled after {done} of {total} citation': 'Отменено после проверки {done} из {total} сноски',
+        ' · ~{duration} remaining': ' · осталось ~{duration}',
+
+        // Report summary
+        'supported': 'подтверждено',
+        'partial': 'частично',
+        'not supported': 'не подтверждено',
+        'unavailable': 'недоступно',
+        'errors': 'ошибки',
+        'Show {label} citations': 'Показать сноски «{label}»',
+        'Hide {label} citations': 'Скрыть сноски «{label}»',
+        '{count} citations checked': 'Проверено сносок: {count}',
+        '{count} citation checked': 'Проверена {count} сноска',
+        '{citations} citations across {claims} claims':
+            '{citations} сносок в {claims} утверждениях',
+        '{citations} citations across {claims} claim':
+            '{citations} сносок в {claims} утверждении',
+        ' · {count} hidden by filter': ' · {count} скрыто фильтром',
+        ' · {input} input + {output} output tokens':
+            ' · {input} токенов на входе + {output} на выходе',
+        'Revision: ': 'Версия: ',
+
+        // Report cards / groups
+        '⚠ Source is long, only partially checked.':
+            '⚠ Источник большой, проверен только частично.',
+        '⚠ Combined sources are long, only partially checked.':
+            '⚠ Объединённые источники большие, проверены только частично.',
+        'Group of {size} · {numbers}': 'Группа из {size} · {numbers}',
+        'Checking combined sources…': 'Проверка объединённых источников…',
+        'Individual sources': 'Отдельные источники',
+        'Combined verdict': 'Совместный вердикт',
+        'All citations are hidden by the current filters. Click a filter above to show them.':
+            'Все сноски скрыты текущими фильтрами. Нажмите на один из фильтров выше, чтобы показать их.',
+
+        // Notifications / dialogs
+        'Report copied to clipboard!': 'Отчёт скопирован в буфер обмена!',
+        'No citations found on this page.': 'На этой странице сноски не найдены.',
+        'Are you sure you want to remove the stored API key?':
+            'Удалить сохранённый ключ API?',
+        'Enter your {name} API Key...': 'Введите ключ API {name}…',
+        'Set {name} API Key': 'Указать ключ API {name}',
+        'Enter your {name} API Key to enable source verification:':
+            'Введите ключ API {name}, чтобы включить проверку источников:',
+        'This will verify {citations} citations from {sources} unique sources.{groupNote}\n\nEstimated time: ~{minutes} minutes.\n\nContinue?':
+            'Будет проверено {citations} сносок из {sources} уникальных источников.{groupNote}\n\nПримерное время: ~{minutes} мин.\n\nПродолжить?',
+        'This will verify {citations} citations from {sources} unique sources.{groupNote}\n\nEstimated time: ~{minutes} minute.\n\nContinue?':
+            'Будет проверено {citations} сносок из {sources} уникальных источников.{groupNote}\n\nПримерное время: ~{minutes} мин.\n\nПродолжить?',
+        '\n\nThis includes {count} combined-source checks for adjacent citation groups.':
+            '\n\nВключая {count} проверок объединённых источников для групп соседних сносок.',
+        '\n\nThis includes {count} combined-source check for adjacent citation groups.':
+            '\n\nВключая {count} проверку объединённых источников для групп соседних сносок.',
+
+        // Generated result comments
+        'No URL found in reference': 'В сноске не найден URL',
+        'None of the grouped sources could be retrieved.':
+            'Ни один из источников группы не удалось получить.',
+        'Could not fetch source content': 'Не удалось получить содержимое источника',
+
+        // Exported reports (wikitext + plain text)
+        'Submit': 'Отправить',
+        'Citation verification report': 'Отчёт о проверке сносок',
+        'This is an experimental check of the article sources by [[User:Alaexis/AI_Source_Verification|Citation Verifier]]. Treat it with caution, be aware of its [[User:Alaexis/AI_Source_Verification#Limitations|limitations]] and feel free to leave feedback at [[User_talk:Alaexis/AI_Source_Verification|the talk page]].':
+            'Это экспериментальная проверка источников статьи инструментом [[:en:User:Alaexis/AI_Source_Verification|Citation Verifier]]. Относитесь к результатам с осторожностью, учитывайте его [[:en:User:Alaexis/AI_Source_Verification#Limitations|ограничения]] и не стесняйтесь оставлять отзывы на [[:en:User_talk:Alaexis/AI_Source_Verification|странице обсуждения]].',
+        'Revision checked: ': 'Проверенная версия: ',
+        '! # !! Verdict !! Source !! Comments !! class="unsortable" | Submit':
+            '! # !! Вердикт !! Источник !! Комментарии !! class="unsortable" | Отправить',
+        '! # !! Verdict !! Source !! Comments':
+            '! # !! Вердикт !! Источник !! Комментарии',
+        '{{tick}} Supported': '{{tick}} Подтверждено',
+        '{{bang}} Partially supported': '{{bang}} Частично подтверждено',
+        '{{cross}} Not supported': '{{cross}} Не подтверждено',
+        '{{hmmm}} Source unavailable': '{{hmmm}} Источник недоступен',
+        "''(Combined sources are long, only partially checked.)''":
+            "''(Объединённые источники большие, проверены только частично.)''",
+        "''(Source is long, only partially checked.)''":
+            "''(Источник большой, проверен только частично.)''",
+        '(combined)': '(объединено)',
+        // Link text for the source column of the wikitext table: [url source]
+        'source': 'источник',
+        "'''Summary:''' {supported} supported, {partial} partially supported, {notSupported} not supported, {unavailable} source unavailable out of {claims}.":
+            "'''Итог:''' подтверждено — {supported}, частично подтверждено — {partial}, не подтверждено — {notSupported}, источник недоступен — {unavailable} из {claims}.",
+        '{count} citations': '{count} сносок',
+        '{count} citation': '{count} сноска',
+        '{claims} claims ({citations} citations)': '{claims} утверждений ({citations} сносок)',
+        '{claims} claim ({citations} citations)': '{claims} утверждение ({citations} сносок)',
+        'a PublicAI-hosted open-source LLM': 'LLM с открытым исходным кодом на базе PublicAI',
+        'a HuggingFace-hosted open-source LLM ({model})':
+            'LLM с открытым исходным кодом на базе HuggingFace ({model})',
+        'a Wikimedia Lift Wing-hosted open-source LLM ({model})':
+            'LLM с открытым исходным кодом на базе Wikimedia Lift Wing ({model})',
+        'Generated by [[User:Alaexis/AI_Source_Verification|Citation Verifier]] using {model} on ~~~~~.':
+            'Сформировано [[:en:User:Alaexis/AI_Source_Verification|Citation Verifier]] с использованием {model}, ~~~~~.',
+        ' Tokens used: {input} input, {output} output.':
+            ' Использовано токенов: {input} на входе, {output} на выходе.',
+        'Citation Verification Report: {title}': 'Отчёт о проверке сносок: {title}',
+        'Provider: {name}': 'Провайдер: {name}',
+        'Revision: {rev}': 'Версия: {rev}',
+        'Claim: {text}': 'Утверждение: {text}',
+        'Sources: {urls}': 'Источники: {urls}',
+        'Source: {url}': 'Источник: {url}',
+        'Quote: "{text}"': 'Цитата: «{text}»',
+        'Comments: {text}': 'Комментарии: {text}',
+        'From the source': 'Из источника',
+        'Note: Combined sources are long, only partially checked.':
+            'Примечание: объединённые источники большие, проверены только частично.',
+        'Note: Source is long, only partially checked.':
+            'Примечание: источник большой, проверен только частично.',
+        'Tokens used: {input} input, {output} output':
+            'Использовано токенов: {input} на входе, {output} на выходе',
+        // Sidebar chrome and the state-driven panel
+        'Settings': 'Настройки',
+        'Done': 'Готово',
+        'Open settings': 'Открыть настройки',
+        'Upload PDF': 'Загрузить PDF',
+        'or paste the text below': 'или вставьте текст ниже',
+        'Click any citation number in the article to check whether its source actually supports the claim.':
+            'Нажмите на любой номер сноски в статье, чтобы проверить, действительно ли источник подтверждает утверждение.',
+        'Ready · free, no setup needed': 'Готово к работе · бесплатно, настройка не требуется',
+        'Ready · using your API key': 'Готово к работе · используется ваш ключ API',
+        'Add an API key in settings to start':
+            'Добавьте ключ API в настройках, чтобы начать',
+        'Checking citations…': 'Проверка сносок…',
+        'Model: {model}': 'Модель: {model}',
+        // Verdict framing: the assessment is attributed, and each verdict says
+        // what the editor should do next.
+        'AI assessment': 'Оценка ИИ',
+        'Read the source before changing the article — this is a machine reading, not a fact.':
+            'Прочитайте источник, прежде чем изменять статью — это оценка ИИ, а не факт.',
+        'Spot-check the source yourself — this is a machine reading, not a fact.':
+            'Проверьте источник самостоятельно — это оценка ИИ, а не факт.',
+        'The tool could not read this source. Try pasting the text or uploading a PDF.':
+            'Приложению не удалось прочитать этот источник. Попробуйте вставить текст или загрузить PDF.',
+        'How accurate is this?': 'Насколько это точно?',
+        'Measured against 186 human-labelled citations, a "not supported" flag was confirmed by a reviewer roughly two thirds of the time. Treat every verdict as a reason to read the source, not as a conclusion.':
+            'На выборке из 186 сносок, размеченных вручную, пометка «не подтверждено» подтверждалась рецензентом примерно в двух третях случаев. Рассматривайте любой вердикт как повод прочитать источник, а не как окончательный вывод.',
+
+        // Status strip
+        'Could not extract claim text': 'Не удалось извлечь текст утверждения',
+        'No URL found in reference. Please paste the source text below.':
+            'В сноске не найден URL. Вставьте текст источника ниже.',
+        'Google Books sources cannot be fetched. Please paste the source text below.':
+            'Источники Google Books получить нельзя. Вставьте текст источника ниже.',
+        'Fetching source content...': 'Получение содержимого источника…',
+        'Could not fetch source{status}{reason}. Please paste the source text below.':
+            'Не удалось получить источник{status}{reason}. Вставьте текст источника ниже.',
+        'Source fetched. Ready to verify.': 'Источник получен. Готово к проверке.',
+        'Ready to verify claim against source': 'Готово к проверке утверждения по источнику',
+        'Error: {message}': 'Ошибка: {message}',
+        'Please enter some source text': 'Введите текст источника',
+        'Source text loaded (trimmed to {count} characters). Ready to verify.':
+            'Текст источника загружен (обрезан до {count} символов). Готово к проверке.',
+        'Source text loaded. Ready to verify.': 'Текст источника загружен. Готово к проверке.',
+        'Cancelled': 'Отменено',
+        'Please choose a PDF file.': 'Выберите файл PDF.',
+        'Reading {name}…': 'Чтение {name}…',
+        'This PDF has no selectable text (it looks scanned). Please paste the relevant passage instead.':
+            'В этом PDF нет выделяемого текста (похоже, это скан). Вставьте нужный фрагмент вручную.',
+        'Loaded text from {name}. Ready to verify.': 'Текст загружен из {name}. Готово к проверке.',
+        'Could not read that PDF: {message}. Try pasting the text instead.':
+            'Не удалось прочитать этот PDF: {message}. Попробуйте вставить текст вручную.',
+        'Switched to {name}': 'Выполнено переключение на {name}',
+        'Paste replacement source text below, then click Load Text.':
+            'Вставьте новый текст источника ниже, затем нажмите «Загрузить текст».',
+        'This provider does not require an API key.': 'Этот провайдер не требует ключа API.',
+        'API key set successfully!': 'Ключ API успешно сохранён!',
+        'This provider does not use a stored API key.': 'Этот провайдер не использует сохранённый ключ API.',
+        'API key removed successfully!': 'Ключ API успешно удалён!',
+        'Missing API key (for this provider), claim, or source content':
+            'Отсутствует ключ API (для этого провайдера), утверждение или содержимое источника',
+        'Verifying claim against source...': 'Проверка утверждения по источнику…',
+        'Verification complete!': 'Проверка завершена!',
+
+        // Pre-filled wiki edit summary
+        'source does not support claim (checked with [[User:Alaexis/AI_Source_Verification|Source Verifier]])':
+            'источник не подтверждает утверждение (проверено с помощью [[:en:User:Alaexis/AI_Source_Verification|Source Verifier]])',
+    };
+
     // Registered UI languages, keyed by the MediaWiki language-code prefix that
     // selects them. English is the absence of a table, not an entry here.
     const MESSAGES = {
         fr: FR_MESSAGES,
-        es: ES_MESSAGES
+        es: ES_MESSAGES,
+        ru: RU_MESSAGES
     };
 
     // How each localized language is named to the LLM when asking it to write
     // its free-text "comments" in that language. Keys must match MESSAGES.
     const PROMPT_LANGUAGES = {
         fr: 'French (français)',
-        es: 'Spanish (español)'
+        es: 'Spanish (español)',
+        ru: 'Russian (русский)'
     };
 
     // Pick the UI language from the wiki's content language, falling back to the
