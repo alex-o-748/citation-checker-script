@@ -109,7 +109,23 @@ export function getCitationGroup(refElement) {
 // (finding where the final sentence of a claim begins), under-splitting an
 // abbreviation into the same sentence is the safer failure than over-
 // splitting mid-abbreviation and truncating the real claim.
-const SENTENCE_SPLIT_RE = /(?<=[.!?])\s+(?=[A-Z0-9"'(À-Ü])/;
+//
+// \p{Lu} (Unicode "uppercase letter") rather than a hand-enumerated Latin
+// range: the previous [A-Z0-9"'(À-Ü] matched only Latin (plus the Latin-1
+// Supplement block added for French/German/Spanish) and silently missed
+// every other cased script — Cyrillic capitals included. On fully-Cyrillic
+// text that meant the regex never matched at all, so lastSentence() always
+// fell through to its "no boundary found" fallback and returned the whole
+// multi-sentence span, defeating sentence-scope claim narrowing entirely on
+// e.g. ru.wikipedia (confirmed against a real batch-pipeline run there,
+// 2026-08-31). \p{Lu} covers Cyrillic, Greek, Armenian, and any other cased
+// script generically; scripts with no case distinction (CJK, Arabic, Hebrew,
+// Thai, ...) still can't match here, same as before this fix — that's an
+// inherent limit of "does the next sentence start with a capital", not
+// something this regex can special-case its way out of, and it degrades the
+// same safe way the header above already describes (whole span kept, not
+// truncated).
+const SENTENCE_SPLIT_RE = /(?<=[.!?])\s+(?=[\p{Lu}0-9"'(])/u;
 
 // Returns just the final sentence of `text` — the sentence immediately
 // preceding wherever `text` ends. Used for the batch pipeline's stricter

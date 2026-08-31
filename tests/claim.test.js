@@ -122,6 +122,15 @@ test('lastSentence returns the whole string when it is a single sentence', () =>
   assert.equal(lastSentence(text), text);
 });
 
+test('lastSentence splits Cyrillic (and other non-Latin cased) text, not just Latin', () => {
+  // Regression for a real ruwiki batch run (2026-08-31): the old regex's
+  // lookahead was Latin-only ([A-Z0-9"'(À-Ü]), so it never matched a sentence
+  // boundary in Russian text and silently returned the whole multi-sentence
+  // span instead of narrowing to the last sentence.
+  const text = 'Вода кипит при 100 градусах Цельсия. Она замерзает при 0 градусах Цельсия.';
+  assert.equal(lastSentence(text), 'Она замерзает при 0 градусах Цельсия.');
+});
+
 test('extractClaimText with scope "sentence" narrows a two-sentence claim to the last sentence', () => {
   const doc = mkDoc(`
     <p>Paris is the capital of France. It is on the Seine.<sup id="cite_ref-1" class="reference"><a href="#cite_note-1">[1]</a></sup></p>
