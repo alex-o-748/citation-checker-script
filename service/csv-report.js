@@ -15,11 +15,16 @@
 // where no model ran (no URL, fetch failed) is still a citation someone
 // looked at, and dropping it would overstate coverage to exactly the
 // audience most likely to be misled by that (G2's "include the rows where no
-// model ran"). The internal identity hashes (claim_hash, source_url_hash)
-// are dropped — they mean nothing to a reader and exist only to dedupe rows
-// in ToolsDB.
+// model ran"). ToolsDB's own claim_hash/source_url_hash columns are never
+// exposed directly — they mean nothing to a reader on their own. check_id
+// (below) is a different thing: a reader-facing identifier so a specific row
+// can be referenced in conversation ("row a1b2c3..."), derived from the same
+// identity fields ToolsDB's own uniq_finding key uses, not the raw hashes
+// themselves.
 
+import { createHash } from 'node:crypto';
 import { writeFile as fsWriteFile } from 'node:fs/promises';
+import { claimHash, sourceUrlHash } from '../core/anchor.js';
 
 // service/article-picker.js queries a Wiki Replicas database name ('enwiki',
 // 'frwiki', ...), not a domain. Only enwiki exists in practice today (per
@@ -39,10 +44,44 @@ function permalink(finding) {
     return `https://${wikiDomain(finding.wiki)}/w/index.php?curid=${finding.pageId}&oldid=${finding.revisionId}`;
 }
 
+// Deterministic per-finding reference id, for pointing at one specific row
+// in conversation ("check a1b2c3d4e5f6") — not present anywhere else in the
+// system today (unlike main.js's logVerification()'s check_id, a Neon-side
+// id from the live userscript's entirely separate logging path, unrelated to
+// this batch pipeline). Reuses ToolsDB's own uniq_finding identity —
+// (wiki, page_id, claim_hash, source_url_hash, provider, prompt_version) —
+// computed independently here from fields already on the finding object,
+// not by exposing findings-store.js's stored hashes. Deterministic on
+// purpose: the same claim, source, provider, and prompt version always
+// produce the same id, with or without --store, so a citation re-verified in
+// a later run (unchanged) is still recognizably "the same row" — something a
+// fresh ToolsDB auto-increment id could never give a CSV-only run.
+//
+// Truncated to 12 hex chars (48 bits) — short enough to read aloud or paste
+// into a sentence; collision risk at the scale one sweep's CSV holds
+// (thousands of rows, not billions) is negligible.
+function checkId(finding) {
+    const composite = createHash('sha256')
+        .update(String(finding.wiki ?? ''))
+        .update('\0')
+        .update(String(finding.pageId ?? ''))
+        .update('\0')
+        .update(claimHash(finding.claimText))
+        .update('\0')
+        .update(sourceUrlHash(finding.sourceUrl))
+        .update('\0')
+        .update(String(finding.provider ?? ''))
+        .update('\0')
+        .update(String(finding.promptVersion ?? ''))
+        .digest('hex');
+    return composite.slice(0, 12);
+}
+
 // [csv header, finding -> cell value]. Order is the column order in the
 // file. Kept as a flat list (rather than Object.entries on some template)
 // so the header and the extraction logic can't drift apart.
 const COLUMNS = [
+    ['check_id', f => checkId(f)],
     ['page_title', f => f.pageTitle],
     ['page_id', f => f.pageId],
     ['revision_id', f => f.revisionId],
