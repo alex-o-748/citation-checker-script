@@ -40,6 +40,7 @@ function parseCliArgs(argv) {
             criterion:        { type: 'string', default: 'failed-verification' },
             wiki:             { type: 'string', default: 'enwiki' },
             template:         { type: 'string' },
+            'claim-scope':    { type: 'string', default: 'sentence' },
             max:              { type: 'string', default: '3' },
             'live-source-fetch': { type: 'boolean', default: false },
             help:             { type: 'boolean', short: 'h', default: false },
@@ -52,6 +53,7 @@ function parseCliArgs(argv) {
         criterion: values.criterion,
         wiki: values.wiki,
         template: values.template,
+        claimScope: values['claim-scope'],
         max: Number(values.max),
         liveSourceFetch: values['live-source-fetch'],
     };
@@ -76,6 +78,9 @@ Options:
                         namespace prefix) — CRITERIA's names are enwiki-specific,
                         so a non-English --wiki needs its own equivalent title
                         here, or selection matches zero pages rather than erroring.
+  --claim-scope <name> One of: sentence, paragraph (default: sentence). See
+                        CLAUDE.md's "Important Constraints" for why the batch
+                        pipeline defaults to sentence scope.
   --max <n>            Maximum articles to process (default: 3)
   --live-source-fetch  Fetch real sources via tf-source-fetcher instead of the
                         stub. Manual smoke-test use only (see above).
@@ -159,6 +164,10 @@ async function main(argv) {
         process.stderr.write(`error: --max must be a positive integer (got: ${opts.max})\n`);
         return 2;
     }
+    if (!['sentence', 'paragraph'].includes(opts.claimScope)) {
+        process.stderr.write(`error: --claim-scope must be "sentence" or "paragraph" (got: ${opts.claimScope})\n`);
+        return 2;
+    }
 
     let host;
     try {
@@ -230,6 +239,7 @@ async function main(argv) {
             parseHtml,
             fetchArticle: article => fetchArticleHtml(article, { host }),
             fetchSource: opts.liveSourceFetch ? liveFetchSource : stubFetchSource,
+            claimScope: opts.claimScope,
         })) {
             const { citations, withUrl, fetched, failed } = printArticle(result);
             totalCitations += citations;

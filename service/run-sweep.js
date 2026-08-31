@@ -96,6 +96,7 @@ export function parseCliArgs(argv) {
             criterion:           { type: 'string', default: 'failed-verification' },
             wiki:                { type: 'string', default: 'enwiki' },
             template:            { type: 'string' },
+            'claim-scope':       { type: 'string', default: 'sentence' },
             max:                 { type: 'string', default: '5' },
             provider:            { type: 'string', default: 'liftwing' },
             model:               { type: 'string' },
@@ -115,6 +116,7 @@ export function parseCliArgs(argv) {
         criterion: values.criterion,
         wiki: values.wiki,
         template: values.template,
+        claimScope: values['claim-scope'],
         max: Number(values.max),
         provider: values.provider,
         model: values.model || PROVIDER_MODELS[values.provider],
@@ -144,6 +146,12 @@ Options:
                          namespace prefix) — CRITERIA's names are enwiki-specific,
                          so a non-English --wiki needs its own equivalent title
                          here, or selection matches zero pages rather than erroring.
+  --claim-scope <name>  One of: sentence, paragraph (default: sentence). See
+                         CLAUDE.md's "Important Constraints" — sentence scope is
+                         the batch-pipeline default because nobody is present to
+                         notice when only part of a multi-sentence claim lacks
+                         support; paragraph is the interactive userscript's
+                         default, where a human reads the whole span.
   --max <n>             Maximum articles to process (default: 5)
   --provider <name>     One of: ${Object.keys(PROVIDER_MODELS).join(', ')} (default: liftwing)
   --model <id>          Override the provider's default model
@@ -262,6 +270,10 @@ export async function runSweep(opts, {
     }
     if (!Number.isInteger(opts.concurrency) || opts.concurrency < 1) {
         stderr.write(`sweep: --concurrency must be a positive integer (got: ${opts.concurrency})\n`);
+        return 2;
+    }
+    if (!['sentence', 'paragraph'].includes(opts.claimScope)) {
+        stderr.write(`sweep: --claim-scope must be "sentence" or "paragraph" (got: ${opts.claimScope})\n`);
         return 2;
     }
 
@@ -464,7 +476,9 @@ export async function runSweep(opts, {
         // article's worth of fetching slip through after halting before it
         // took effect. Driving runBatch's iterator by hand puts the check
         // before each fetch instead of after.
-        const articles = runBatch(candidates, { parseHtml, fetchArticle: fetchArticleWithHost, fetchSource });
+        const articles = runBatch(candidates, {
+            parseHtml, fetchArticle: fetchArticleWithHost, fetchSource, claimScope: opts.claimScope,
+        });
         while (true) {
             if (halted) return;
             const fetchStartedAt = Date.now();

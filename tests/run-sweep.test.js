@@ -24,6 +24,12 @@ test('parseCliArgs defaults match run-replay.js\'s conventions (liftwing, no key
     assert.equal(opts.liveLlmRouter, false);
     assert.equal(opts.store, false);
     assert.equal(opts.out, 'findings.csv');
+    assert.equal(opts.claimScope, 'sentence');
+});
+
+test('parseCliArgs applies --claim-scope', () => {
+    const opts = parseCliArgs(['node', 'sweep.js', '--claim-scope', 'paragraph']);
+    assert.equal(opts.claimScope, 'paragraph');
 });
 
 test('parseCliArgs applies --live-llm-router', () => {
@@ -141,7 +147,7 @@ const baseIo = (overrides = {}) => ({
 const baseOpts = (overrides = {}) => ({
     criterion: 'failed-verification', wiki: 'enwiki', max: 1,
     provider: 'liftwing', model: 'llm-qwen36-27b', delayMs: 0, concurrency: 1,
-    liveSourceFetch: false, store: false, out: 'findings.csv',
+    liveSourceFetch: false, store: false, out: 'findings.csv', claimScope: 'sentence',
     ...overrides,
 });
 
@@ -272,6 +278,16 @@ test('a non-positive-integer --concurrency is rejected before any connection is 
     let connected = false;
     const code = await runSweep(
         baseOpts({ concurrency: 0 }),
+        baseIo({ connectReplicas: async () => { connected = true; return fakeReplicaConnection([]); } })
+    );
+    assert.equal(code, 2);
+    assert.equal(connected, false);
+});
+
+test('an invalid --claim-scope is rejected before any connection is made', async () => {
+    let connected = false;
+    const code = await runSweep(
+        baseOpts({ claimScope: 'article' }),
         baseIo({ connectReplicas: async () => { connected = true; return fakeReplicaConnection([]); } })
     );
     assert.equal(code, 2);
