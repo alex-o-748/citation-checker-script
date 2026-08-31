@@ -53,6 +53,16 @@ test('parseCliArgs applies overrides', () => {
     assert.equal(opts.out, 'out.csv');
 });
 
+test('parseCliArgs applies --title', () => {
+    const opts = parseCliArgs(['node', 'sweep.js', '--title', 'Asia']);
+    assert.equal(opts.title, 'Asia');
+});
+
+test('parseCliArgs leaves --title undefined by default', () => {
+    const opts = parseCliArgs(['node', 'sweep.js']);
+    assert.equal(opts.title, undefined);
+});
+
 test('stubFetchSource never resolves content and names why', async () => {
     const result = await stubFetchSource('https://example.com', null);
     assert.equal(result.content, null);
@@ -338,6 +348,54 @@ test('a Wiki Replicas connection failure is a fatal error', async () => {
         connectReplicas: async () => { throw new Error('ECONNREFUSED'); },
     }));
     assert.equal(code, 1);
+});
+
+test('--title skips Wiki Replicas entirely and runs against exactly the resolved article', async () => {
+    let replicasConnected = false;
+    let resolvedWith;
+    const code = await runSweep(baseOpts({ title: 'Asia', max: undefined }), baseIo({
+        connectReplicas: async () => { replicasConnected = true; return fakeReplicaConnection([]); },
+        resolveArticleRefFn: async title => {
+            resolvedWith = title;
+            return { pageId: 815, title: 'Asia', revisionId: 1234567 };
+        },
+    }));
+    assert.equal(code, 0);
+    assert.equal(replicasConnected, false, '--title must never touch Wiki Replicas');
+    assert.equal(resolvedWith, 'Asia');
+});
+
+test('--title bypasses --max validation, even with no --max or an invalid one', async () => {
+    const code = await runSweep(baseOpts({ title: 'Asia', max: 0 }), baseIo({
+        resolveArticleRefFn: async () => ({ pageId: 815, title: 'Asia', revisionId: 1234567 }),
+    }));
+    assert.equal(code, 0);
+});
+
+test('--title reports a fatal error when the article does not resolve', async () => {
+    const code = await runSweep(baseOpts({ title: 'Not A Real Article Title Xyz' }), baseIo({
+        resolveArticleRefFn: async () => null,
+    }));
+    assert.equal(code, 1);
+});
+
+test('--title reports a fatal error when resolution itself fails', async () => {
+    const code = await runSweep(baseOpts({ title: 'Asia' }), baseIo({
+        resolveArticleRefFn: async () => { throw new Error('Wikipedia API returned HTTP 503'); },
+    }));
+    assert.equal(code, 1);
+});
+
+test('--title resolves against the --wiki-derived host, not always en.wikipedia.org', async () => {
+    let seenOptions;
+    const code = await runSweep(baseOpts({ wiki: 'ruwiki', title: 'Азия', max: undefined }), baseIo({
+        resolveArticleRefFn: async (title, options) => {
+            seenOptions = options;
+            return { pageId: 1, title: 'Азия', revisionId: 1 };
+        },
+    }));
+    assert.equal(code, 0);
+    assert.equal(seenOptions.host, 'ru.wikipedia.org');
 });
 
 test('a ProviderAuthError halts the sweep and still writes the CSV with what was computed so far', async () => {
