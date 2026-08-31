@@ -28,18 +28,29 @@
 const RETRYABLE_STATUS = /^(?:HTTP |[^:()]*API request failed \()(429|500|502|503|504)\b/;
 const RETRYABLE_NETWORK = /timeout|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|socket hang up/i;
 
-// vLLM (Lift Wing's backend for open-weight models) reports a genuine
-// input-validation failure — the prompt exceeds the model's context
-// window — as an HTTP 500, which would otherwise match RETRYABLE_STATUS
-// above. Retrying buys nothing: the same oversized prompt produces the
-// identical error on every attempt, so retrying just burns up to ~30s of
-// backoff before failing anyway, on a request that will never succeed no
-// matter how many times it's sent. Real incident, 2026-08-24: exactly this
-// on a live sweep against tf-llm-router. Exported (not just used inline
-// below) so service/verifier.js can recognize this specific failure after
-// withRetry gives up and record it as a per-citation result instead of
-// treating it as a run-halting error the way an unrecognized failure is.
-const CONTEXT_LENGTH_EXCEEDED = /maximum context length|VLLMValidationError/i;
+// Two distinct failure modes, same practical consequence — "this citation's
+// source cannot be sent to this model/provider as-is, and never will be no
+// matter how many times we try":
+//   - vLLM (Lift Wing's backend for open-weight models) reports a genuine
+//     input-validation failure — the prompt exceeds the model's context
+//     window — as an HTTP 500, which would otherwise match RETRYABLE_STATUS
+//     above. Real incident, 2026-08-24: exactly this on a live sweep against
+//     tf-llm-router.
+//   - core/providers.js's own 413 handler ("the source is too large to
+//     send"): a proxy-level request-body byte cap rejects the request
+//     before the model ever sees it — a transport limit, not a model one,
+//     but exactly as permanent for this one source. Real incident,
+//     2026-08-31: this one halted a whole ruwiki sweep after 202 findings,
+//     because — unlike the vLLM case — nothing recognized its message shape,
+//     so it fell through to the same treatment as a genuinely unknown,
+//     run-halting error.
+// Retrying either buys nothing: the same oversized prompt/source produces
+// the identical error on every attempt, so retrying just burns up to ~30s of
+// backoff before failing anyway. Exported (not just used inline below) so
+// service/verifier.js can recognize this after withRetry gives up and
+// record it as a per-citation result instead of treating it as a
+// run-halting error the way a genuinely unrecognized failure is.
+const CONTEXT_LENGTH_EXCEEDED = /maximum context length|VLLMValidationError|too large to send/i;
 
 export function isContextLengthError(error) {
     return CONTEXT_LENGTH_EXCEEDED.test(error?.message ?? '');

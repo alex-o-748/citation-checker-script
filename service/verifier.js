@@ -96,13 +96,15 @@ export function makeModelCaller({ provider, apiKey, model, workerBase }) {
  * (runners) must halt the whole batch on this rather than record it as a
  * per-citation failure.
  *
- * A prompt that exceeds the model's context window (vLLM/Lift Wing's
- * "maximum context length" validation error) does NOT throw — it's
- * data-dependent and permanent for this one citation's source, unrelated to
- * whether any other citation will succeed, so it's returned as a normal
- * `verdict: 'ERROR'` result instead, same as the no-content short-circuit
- * above. core/retry.js declines to retry it for the same reason (the same
- * oversized prompt fails identically every time).
+ * A source too large to send does NOT throw — whether that's the model
+ * rejecting it (vLLM/Lift Wing's "maximum context length" validation error)
+ * or the CORS proxy itself rejecting the request body first (a 413, "the
+ * source is too large to send" — core/providers.js), both are data-dependent
+ * and permanent for this one citation's source, unrelated to whether any
+ * other citation will succeed. Returned as a normal `verdict: 'ERROR'`
+ * result instead, same as the no-content short-circuit above. core/retry.js
+ * declines to retry either shape for the same reason (the same oversized
+ * source fails identically every time) — see isContextLengthError() there.
  *
  * `langCode` (a wiki language code, e.g. 'ru' — service/run-sweep.js derives
  * it from --wiki via core/wikipedia.js's langCodeForWikiDb()) is passed
@@ -162,7 +164,7 @@ export async function verifyCitation(claimText, source, {
                 verdict: 'ERROR',
                 supportScore: null,
                 reasonType: 'context_length',
-                rationale: `Source too large for the model's context window: ${error.message}`,
+                rationale: `Source too large to verify: ${error.message}`,
                 sourceQuote: null,
                 quoteStatus: null,
                 usage: null,
@@ -278,7 +280,7 @@ export async function verifyGroup(members, {
                 verdict: 'ERROR',
                 supportScore: null,
                 reasonType: 'context_length',
-                rationale: `Source too large for the model's context window: ${error.message}`,
+                rationale: `Source too large to verify: ${error.message}`,
                 sourceQuote: null,
                 quoteStatus: null,
                 usage: null,

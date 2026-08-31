@@ -317,6 +317,17 @@ test('isContextLengthError: recognizes vLLM\'s validation error regardless of th
     assert.equal(isContextLengthError(null), false);
 });
 
+// Regression, 2026-08-31: a real ruwiki sweep halted after 202 findings on
+// this exact message — core/providers.js's own 413 handler ("the source is
+// too large to send"), a CORS-proxy request-body cap rather than a vLLM
+// context-length error, wasn't recognized here and so fell through to a
+// run-halting throw instead of a per-citation ERROR result.
+test('isContextLengthError: also recognizes the CORS-proxy\'s 413 "too large to send" message', () => {
+    assert.equal(isContextLengthError(new Error(
+        'Lift Wing: the source is too large to send. Trim the source text, or switch to a provider that calls its API directly (Claude, Gemini, or OpenAI).'
+    )), true);
+});
+
 test('isRetryableError: false for a context-length-exceeded 500, even though 500 is normally retryable', () => {
     const err = new Error(
         'Lift Wing API request failed (500): {"error":"VLLMValidationError : This model\'s maximum context length is 32768 tokens."}'

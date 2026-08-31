@@ -178,6 +178,51 @@ test('a context-length-exceeded failure resolves to a per-citation ERROR result,
     assert.equal(result.quoteStatus, null);
 });
 
+test('a proxy 413 ("source too large to send") also resolves to a per-citation ERROR, not a run-halting throw', async () => {
+    // Regression for a real ruwiki sweep, 2026-08-31: this is a *different*
+    // message shape than the vLLM context-length case above (a CORS-proxy
+    // request-body cap, thrown by core/providers.js on a raw 413 — see that
+    // file's own comment), and it was NOT recognized by isContextLengthError,
+    // so it fell through to a run-halting throw after 202 findings were
+    // already computed. Same practical failure ("this source can never be
+    // sent"), so it must degrade the same way.
+    let attempts = 0;
+    const src = source('Source URL: https://example.com\n\nSource Content:\nSome very long text about a bridge.');
+    const result = await verifyCitation('claim', src, {
+        callModel: async () => {
+            attempts++;
+            throw new Error(
+                'Lift Wing: the source is too large to send. Trim the source text, or switch to a provider ' +
+                'that calls its API directly (Claude, Gemini, or OpenAI).'
+            );
+        },
+        retry: { maxRetries: 5, minBackoffMs: 0, maxBackoffMs: 0, jitterMs: 0, sleepFn: async () => {} },
+    });
+
+    assert.equal(attempts, 1, 'a 413 is permanent for this exact source — retrying it is pointless');
+    assert.equal(result.verdict, 'ERROR');
+    assert.equal(result.reasonType, 'context_length');
+    assert.match(result.rationale, /too large to send/);
+    assert.equal(result.usage, null);
+});
+
+test('verifyGroup: a proxy 413 ("source too large to send") also resolves to a per-group ERROR, not a throw', async () => {
+    const members = [
+        member('5', { groupIndex: 0, url: 'https://a.example', content: withContent('A'.repeat(200)) }),
+        member('6', { groupIndex: 1, url: 'https://b.example', content: withContent('B'.repeat(200)) }),
+    ];
+    const result = await verifyGroup(members, {
+        callModel: async () => {
+            throw new Error('Lift Wing: the source is too large to send. Trim the source text, or switch to a provider that calls its API directly (Claude, Gemini, or OpenAI).');
+        },
+        retry: { maxRetries: 5, minBackoffMs: 0, maxBackoffMs: 0, jitterMs: 0, sleepFn: async () => {} },
+    });
+
+    assert.equal(result.skipped, false);
+    assert.equal(result.verdict, 'ERROR');
+    assert.equal(result.reasonType, 'context_length');
+});
+
 test('verifyGroup: a context-length-exceeded failure resolves to a per-group ERROR result, not a throw', async () => {
     const members = [
         member('5', { groupIndex: 0, url: 'https://a.example', content: withContent('A'.repeat(200)) }),
