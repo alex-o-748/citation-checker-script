@@ -362,20 +362,24 @@ Rationale and the outstanding benchmark re-run: `docs/design-plans/2026-08-04-so
 
 ### UI localization — every user-facing string goes through `this.t()`
 
-The sidebar UI is localized (currently French and Spanish); the LLM prompts in `core/prompts.js` stay English, because the few-shot examples are tuned against the benchmark. Three pieces in `main.js`, all just above the `WikipediaSourceVerifier` class:
+The sidebar UI is localized (currently French, Spanish, and Russian); the LLM prompts in `core/prompts.js` stay English, because the few-shot examples are tuned against the benchmark. Three pieces in `main.js`, all just above the `WikipediaSourceVerifier` class:
 
 | Piece | Holds |
 |-------|-------|
-| `FR_MESSAGES` / `ES_MESSAGES` | Translations, keyed by the **English source string** |
-| `MESSAGES` / `PROMPT_LANGUAGES` | Registry of language code → table, and → the language's name as given to the LLM |
+| `FR_MESSAGES` / `ES_MESSAGES` / `RU_MESSAGES` | Translations, keyed by the **English source string** |
+| `MESSAGES` | Registry of language code → table |
 | `detectUiLang()` | Maps `wgContentLanguage` (then `wgUserLanguage`) to a registry key, else `'en'` |
 | `detectArticleLangCode()` | The wiki's raw content-language code, unrestricted to `MESSAGES` keys — feeds `localizeSystemPrompt()` only |
 
+`PROMPT_LANGUAGES` (language code → the language's name as given to the LLM) and `localizeSystemPrompt()` itself live in `core/prompts.js`, not `main.js` — moved there 2026-08-31 so the batch pipeline could share them (below), not just the interactive userscript. `main.js`'s own `localizeSystemPrompt(prompt)` method is a one-line delegation to the injected core function, passing `this.lang` and `this.articleLangCode` — same pattern as `generateSystemPrompt()`.
+
 `this.t('Verify Claim')` looks the string up in the active table and falls back to the English key, so a missing translation degrades to English rather than showing a key. Interpolate with `{name}` placeholders: `this.t('Set {name} API Key', { name })`.
 
-**To add a user-facing string:** wrap it in `this.t()` and add it to *every* table. **To add a language:** write its table, register it in `MESSAGES` and `PROMPT_LANGUAGES`; `detectUiLang()` and `localizeSystemPrompt()` pick it up with no further wiring.
+**To add a user-facing string:** wrap it in `this.t()` and add it to *every* table. **To add a language:** write its table, register it in `MESSAGES` (`main.js`) and `PROMPT_LANGUAGES` (`core/prompts.js`); `detectUiLang()` and `localizeSystemPrompt()` pick it up with no further wiring.
 
-**LLM comment language is not gated on a full UI translation.** `localizeSystemPrompt()` names the language explicitly for `fr`/`es` (via `PROMPT_LANGUAGES`, matching the sidebar), but for any other non-English wiki — one with no `MESSAGES` table at all — it falls back to a generic "write in the same language as the claim and source text" directive driven by `detectArticleLangCode()`. So a claim checked on, say, de.wikipedia gets German comments even though the sidebar itself stays English. Only `source_quote` is exempt in all cases: it must stay verbatim in the source's own language, since it's checked character-for-character against the source text.
+**LLM comment language is not gated on a full UI translation.** `localizeSystemPrompt()` names the language explicitly for a curated code (`fr`/`es`/`ru`, via `PROMPT_LANGUAGES`, matching the sidebar), but for any other non-English wiki — one with no `MESSAGES` table at all — it falls back to a generic "write in the same language as the claim and source text" directive driven by `detectArticleLangCode()`. So a claim checked on, say, de.wikipedia gets German comments even though the sidebar itself stays English. Only `source_quote` is exempt in all cases: it must stay verbatim in the source's own language, since it's checked character-for-character against the source text.
+
+**The batch pipeline localizes too, from a single wiki language code.** `service/verifier.js`'s `verifyCitation()` / `verifyGroup()` take an optional `langCode`, passed to `localizeSystemPrompt(prompt, { lang: langCode, articleLangCode: langCode })` — the same function `main.js` calls, just with one code filling both params instead of two (there's no separate "UI language" in a script with no sidebar). `service/run-sweep.js` derives it from `--wiki` via `core/wikipedia.js`'s `langCodeForWikiDb()` (`ruwiki` → `'ru'`) and threads it into every `verifyCitation()`/`verifyGroup()` call. Before this, a batch run's `comments` came back in English regardless of which wiki was being checked — found via a real `--wiki ruwiki` run whose CSV showed English rationale next to Russian claims.
 
 **Register:** Spanish never addresses the reader in the second person — `tú`, `vos` and `usted` are each regionally marked, so es.wikipedia's own interface avoids all three. Which impersonal form to use depends on what the string *is*:
 

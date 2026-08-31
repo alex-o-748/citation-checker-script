@@ -213,6 +213,45 @@ test('a full sweep writes one finding per solo citation plus one per completed g
     assert.equal(collective.sourceUrl, 'https://b.example/x\nhttps://c.example/x');
 });
 
+test('a ruwiki sweep localizes the system prompt for every model call, solo and group alike', async () => {
+    const seenSystemPrompts = [];
+    const code = await runSweep(baseOpts({ wiki: 'ruwiki' }), baseIo({
+        makeModelCallerFn: () => async (systemPrompt) => {
+            seenSystemPrompts.push(systemPrompt);
+            return {
+                text: JSON.stringify({ support_score: 90, verdict: 'SUPPORTED', source_quote: '', comments: 'ok' }),
+                usage: { input: 10, output: 5 },
+            };
+        },
+    }));
+
+    assert.equal(code, 0);
+    // Every citation gets its own per-source call (3, for [1][2][3]) plus one
+    // collective call for the [2][3] group — same 4-call shape the plain
+    // "full sweep" test above asserts on for findings.
+    assert.equal(seenSystemPrompts.length, 4);
+    for (const prompt of seenSystemPrompts) {
+        assert.match(prompt, /Russian \(русский\)/, 'ruwiki sweep must localize every model call, not just some');
+    }
+});
+
+test('an enwiki sweep leaves the system prompt in English (no langCode wired for the default wiki)', async () => {
+    const seenSystemPrompts = [];
+    await runSweep(baseOpts(), baseIo({
+        makeModelCallerFn: () => async (systemPrompt) => {
+            seenSystemPrompts.push(systemPrompt);
+            return {
+                text: JSON.stringify({ support_score: 90, verdict: 'SUPPORTED', source_quote: '', comments: 'ok' }),
+                usage: { input: 10, output: 5 },
+            };
+        },
+    }));
+
+    for (const prompt of seenSystemPrompts) {
+        assert.doesNotMatch(prompt, /LANGUAGE:/);
+    }
+});
+
 test('the funnel counts citations, not verification calls, so it stays monotonic', async () => {
     const stderrChunks = [];
     await runSweep(baseOpts(), baseIo({ stderr: { write: s => stderrChunks.push(s) } }));

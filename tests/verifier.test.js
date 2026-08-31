@@ -8,6 +8,7 @@ import {
     ProviderAuthError,
     makeModelCaller,
 } from '../service/verifier.js';
+import { PROMPT_LANGUAGES } from '../core/prompts.js';
 
 const okResponse = (body) => async () => ({
     text: JSON.stringify(body),
@@ -66,6 +67,31 @@ test('a supported verdict carries a verified quote', async () => {
     assert.equal(result.quoteStatus, 'exact');
     assert.equal(result.sourceQuote, 'Acme Corp was founded in 1985 by John Smith.');
     assert.deepEqual(result.usage, { input: 120, output: 30 });
+});
+
+test('verifyCitation localizes the system prompt when langCode is given', async () => {
+    const src = source('Source URL: https://example.com\n\nSource Content:\nAcme Corp was founded in 1985.');
+    let seenSystemPrompt;
+    await verifyCitation('The company was founded in 1985.', src, {
+        langCode: 'ru',
+        callModel: async (systemPrompt, userContent) => {
+            seenSystemPrompt = systemPrompt;
+            return { text: JSON.stringify({ support_score: 90, verdict: 'SUPPORTED', source_quote: '', comments: '' }), usage: {} };
+        },
+    });
+    assert.ok(seenSystemPrompt.includes(PROMPT_LANGUAGES.ru), 'system prompt must carry the Russian language directive');
+});
+
+test('verifyCitation leaves the system prompt in English when langCode is omitted', async () => {
+    const src = source('Source URL: https://example.com\n\nSource Content:\nAcme Corp was founded in 1985.');
+    let seenSystemPrompt;
+    await verifyCitation('The company was founded in 1985.', src, {
+        callModel: async (systemPrompt, userContent) => {
+            seenSystemPrompt = systemPrompt;
+            return { text: JSON.stringify({ support_score: 90, verdict: 'SUPPORTED', source_quote: '', comments: '' }), usage: {} };
+        },
+    });
+    assert.doesNotMatch(seenSystemPrompt, /LANGUAGE:/, 'no langCode means the prompt is unchanged');
 });
 
 test('a quote the source does not contain is still recorded, with its own status', async () => {
@@ -234,6 +260,22 @@ test('verifyGroup calls the model with assembled sources when two or more are us
     assert.equal(result.verdict, 'PARTIALLY SUPPORTED');
     assert.equal(result.quoteStatus, 'exact');
     assert.deepEqual(result.usage, { input: 120, output: 30 });
+});
+
+test('verifyGroup localizes the system prompt when langCode is given', async () => {
+    const members = [
+        member('5', { groupIndex: 0, url: 'https://a.example', content: withContent('The bridge opened in 1998.') }),
+        member('6', { groupIndex: 1, url: 'https://b.example', content: withContent('Funding came from state and federal grants.') }),
+    ];
+    let seenSystemPrompt;
+    await verifyGroup(members, {
+        langCode: 'ru',
+        callModel: async (systemPrompt, userContent) => {
+            seenSystemPrompt = systemPrompt;
+            return { text: JSON.stringify({ support_score: 80, verdict: 'SUPPORTED', source_quote: '', comments: '' }), usage: {} };
+        },
+    });
+    assert.ok(seenSystemPrompt.includes(PROMPT_LANGUAGES.ru), 'group system prompt must carry the Russian language directive');
 });
 
 test('verifyGroup dedupes members sharing the same URL into one source block', async () => {

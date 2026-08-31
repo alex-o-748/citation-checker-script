@@ -58,7 +58,7 @@ import { parseArgs } from 'node:util';
 import { openReplicaConnection, makeQueryFn } from './replicas.js';
 import { selectCandidates, CRITERIA } from './article-picker.js';
 import { runBatch, ARTICLE_OUTCOMES } from './claim-extractor.js';
-import { fetchArticleHtml, apiHostForWikiDb } from '../core/wikipedia.js';
+import { fetchArticleHtml, apiHostForWikiDb, langCodeForWikiDb } from '../core/wikipedia.js';
 import { fetchSourceContent } from '../core/worker.js';
 import { verifyCitation, verifyGroup, makeModelCaller, ProviderAuthError } from './verifier.js';
 import { assembleFinding, assembleGroupFinding } from './finding-builder.js';
@@ -278,8 +278,10 @@ export async function runSweep(opts, {
     }
 
     let host;
+    let langCode;
     try {
         host = apiHostForWikiDb(opts.wiki);
+        langCode = langCodeForWikiDb(opts.wiki);
     } catch (error) {
         stderr.write(`sweep: ${error.message}\n`);
         return 2;
@@ -516,7 +518,7 @@ export async function runSweep(opts, {
                 const verifyStartedAt = Date.now();
                 const { onAttemptFailed, finish } = trackRetries();
                 try {
-                    verification = await verifyCitation(task.citation.claimText, task.citation.source, { callModel, retry: { onAttemptFailed } });
+                    verification = await verifyCitation(task.citation.claimText, task.citation.source, { callModel, retry: { onAttemptFailed }, langCode });
                 } catch (error) {
                     recordVerifyDuration(verifyStartedAt);
                     finish();
@@ -537,7 +539,7 @@ export async function runSweep(opts, {
                 const verifyStartedAt = Date.now();
                 const { onAttemptFailed, finish } = trackRetries();
                 try {
-                    verification = await verifyGroup(task.members, { callModel, retry: { onAttemptFailed } });
+                    verification = await verifyGroup(task.members, { callModel, retry: { onAttemptFailed }, langCode });
                 } catch (error) {
                     recordVerifyDuration(verifyStartedAt);
                     finish();

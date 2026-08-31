@@ -14,10 +14,26 @@ export const DEFAULT_USER_AGENT =
     'citation-checker-script (https://github.com/alex-o-748/citation-checker-script)';
 
 /**
- * Derives the Wikipedia REST API host from a wiki database name, following
- * the MediaWiki convention that a Wikipedia language edition's wikiDb is
- * `<language-code>wiki` (enwiki, ruwiki, simplewiki, ...) and its REST host is
- * `<language-code>.wikipedia.org`.
+ * Derives the language code from a wiki database name, following the
+ * MediaWiki convention that a Wikipedia language edition's wikiDb is
+ * `<language-code>wiki` (enwiki, ruwiki, simplewiki, ...). Note this is a
+ * *project* code, not always a real BCP-47 language tag (simplewiki -> the
+ * non-standard "simple") — fine for the two things callers use it for
+ * (an REST API subdomain, or core/prompts.js's localizeSystemPrompt(), which
+ * only special-cases a handful of curated codes and otherwise falls back to
+ * a generic "match the source" directive for anything that isn't 'en').
+ */
+export function langCodeForWikiDb(wikiDb) {
+    const match = /^(.+)wiki$/.exec(String(wikiDb ?? ''));
+    if (!match) {
+        throw new RangeError(`cannot derive a language code from wiki database name: "${wikiDb}"`);
+    }
+    return match[1];
+}
+
+/**
+ * Derives the Wikipedia REST API host from a wiki database name (ruwiki ->
+ * ru.wikipedia.org).
  *
  * Callers that select candidates via --wiki (service/run-pick.js,
  * service/run-extract.js) must feed this into fetchArticleHtml's `host`
@@ -27,11 +43,7 @@ export const DEFAULT_USER_AGENT =
  * article.
  */
 export function apiHostForWikiDb(wikiDb) {
-    const match = /^(.+)wiki$/.exec(String(wikiDb ?? ''));
-    if (!match) {
-        throw new RangeError(`cannot derive a Wikipedia REST host from wiki database name: "${wikiDb}"`);
-    }
-    return `${match[1]}.wikipedia.org`;
+    return `${langCodeForWikiDb(wikiDb)}.wikipedia.org`;
 }
 
 /**

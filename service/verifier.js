@@ -18,6 +18,7 @@
 import {
     generateSystemPrompt, generateUserPrompt, extractSourceText,
     generateGroupSystemPrompt, generateGroupUserPrompt, assembleGroupSources,
+    localizeSystemPrompt,
 } from '../core/prompts.js';
 import { callProviderAPI } from '../core/providers.js';
 import { parseVerificationResult } from '../core/parsing.js';
@@ -102,11 +103,21 @@ export function makeModelCaller({ provider, apiKey, model, workerBase }) {
  * `verdict: 'ERROR'` result instead, same as the no-content short-circuit
  * above. core/retry.js declines to retry it for the same reason (the same
  * oversized prompt fails identically every time).
+ *
+ * `langCode` (a wiki language code, e.g. 'ru' — service/run-sweep.js derives
+ * it from --wiki via core/wikipedia.js's langCodeForWikiDb()) is passed
+ * straight through to core/prompts.js's localizeSystemPrompt() as both its
+ * `lang` and `articleLangCode` params: the batch pipeline has no separate
+ * "UI language" vs "article language" distinction the way main.js does
+ * (there's no sidebar), so one code serves both. Omit it (or pass 'en') to
+ * get the prompt verbatim, matching prior behavior before this parameter
+ * existed.
  */
 export async function verifyCitation(claimText, source, {
     callModel,
     signal,
     retry = {},
+    langCode,
 } = {}) {
     if (typeof callModel !== 'function') {
         throw new TypeError('verifyCitation requires a callModel(systemPrompt, userContent) function');
@@ -125,7 +136,7 @@ export async function verifyCitation(claimText, source, {
         };
     }
 
-    const systemPrompt = generateSystemPrompt();
+    const systemPrompt = localizeSystemPrompt(generateSystemPrompt(), { lang: langCode, articleLangCode: langCode });
     const userContent = generateUserPrompt(claimText, source.content);
 
     const retryOptions = { ...retry };
@@ -199,11 +210,14 @@ export async function verifyCitation(claimText, source, {
  * callers must halt the whole batch on this rather than record it as a
  * per-group failure. A context-length failure, same as verifyCitation(),
  * does not throw — returned as `{ skipped: false, verdict: 'ERROR', ... }`.
+ *
+ * `langCode`: see verifyCitation()'s doc comment — same param, same meaning.
  */
 export async function verifyGroup(members, {
     callModel,
     signal,
     retry = {},
+    langCode,
 } = {}) {
     if (typeof callModel !== 'function') {
         throw new TypeError('verifyGroup requires a callModel(systemPrompt, userContent) function');
@@ -237,7 +251,7 @@ export async function verifyGroup(members, {
     }
 
     const { text: assembledText } = assembleGroupSources(entries);
-    const systemPrompt = generateGroupSystemPrompt();
+    const systemPrompt = localizeSystemPrompt(generateGroupSystemPrompt(), { lang: langCode, articleLangCode: langCode });
     const userContent = generateGroupUserPrompt(claimText, assembledText);
 
     const retryOptions = { ...retry };

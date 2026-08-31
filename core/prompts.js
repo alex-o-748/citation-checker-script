@@ -124,6 +124,51 @@ Source text: "Professor Martin completed her PhD at Oxford in 1998 and joined th
 </example>`;
 }
 
+// How each curated language is named to the LLM when asking it to write its
+// free-text "comments" in that language. Keys are UI language codes — main.js
+// keeps this in sync with its MESSAGES table (tests/i18n.test.js pins that
+// invariant); the batch pipeline (service/verifier.js) has no sidebar and
+// just passes a wiki's raw language code through both localizeSystemPrompt()
+// params below.
+export const PROMPT_LANGUAGES = {
+    fr: 'French (français)',
+    es: 'Spanish (español)',
+    ru: 'Russian (русский)',
+};
+
+// Ask the model to write its free-text explanation in the article's
+// language, so the "comments" shown next to each verdict aren't stuck in
+// English on a non-English wiki. Two cases:
+//  - A curated language (fr, es, ru — PROMPT_LANGUAGES): name it explicitly,
+//    using the same curated name shown to editors elsewhere.
+//  - Any other non-English wiki: a generic "match the source" directive, so
+//    this isn't gated on having a curated name for every possible wiki.
+// The verdict and reason_type values are parsed programmatically, so they
+// must stay in the English enum; the directive is appended (not spliced) to
+// leave the benchmark-tuned few-shot prompt above untouched. English (or
+// unknown) wikis get the prompt verbatim.
+//
+// `lang` and `articleLangCode` are separate params because main.js's caller
+// has two distinct signals: `lang` is the UI language (constrained to
+// PROMPT_LANGUAGES' keys — only set when there's a curated name to use, via
+// detectUiLang()), `articleLangCode` is the wiki's raw, unconstrained content
+// language (via detectArticleLangCode()) used only to decide whether *some*
+// non-English directive is owed even without a curated name. A caller with
+// only one language signal (e.g. the batch pipeline, deriving a language
+// code from --wiki) passes the same value for both.
+export function localizeSystemPrompt(prompt, { lang, articleLangCode } = {}) {
+    const language = PROMPT_LANGUAGES[lang];
+    const languageInstruction = language
+        ? `Write the "comments" field in ${language}.`
+        : 'Write the "comments" field in the same language as the claim and source text above, not in English.';
+    if (!language && (!articleLangCode || articleLangCode === 'en')) return prompt;
+    return prompt + `\n\nLANGUAGE: ${languageInstruction} `
+        + 'The "source_quote" field is an exception: it must stay in the source\'s own language, copied verbatim. Never translate it — it is checked against the source text character for character. '
+        + 'You may quote the source verbatim in its original language, but write your own explanation in that language. '
+        + 'Keep the "verdict" and "reason_type" values exactly as specified above, in English '
+        + '(SUPPORTED, PARTIALLY SUPPORTED, NOT SUPPORTED, SOURCE UNAVAILABLE, contradiction, omission).';
+}
+
 // Strips the "Source URL: ... Source Content:\n" / "Manual source text:\n"
 // framing that fetchSourceContent and the manual-paste path wrap around the
 // actual source body, returning just the body. Shared by the single-source

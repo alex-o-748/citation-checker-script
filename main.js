@@ -133,6 +133,51 @@ Source text: "Professor Martin completed her PhD at Oxford in 1998 and joined th
 </example>`;
 }
 
+// How each curated language is named to the LLM when asking it to write its
+// free-text "comments" in that language. Keys are UI language codes — main.js
+// keeps this in sync with its MESSAGES table (tests/i18n.test.js pins that
+// invariant); the batch pipeline (service/verifier.js) has no sidebar and
+// just passes a wiki's raw language code through both localizeSystemPrompt()
+// params below.
+const PROMPT_LANGUAGES = {
+    fr: 'French (français)',
+    es: 'Spanish (español)',
+    ru: 'Russian (русский)',
+};
+
+// Ask the model to write its free-text explanation in the article's
+// language, so the "comments" shown next to each verdict aren't stuck in
+// English on a non-English wiki. Two cases:
+//  - A curated language (fr, es, ru — PROMPT_LANGUAGES): name it explicitly,
+//    using the same curated name shown to editors elsewhere.
+//  - Any other non-English wiki: a generic "match the source" directive, so
+//    this isn't gated on having a curated name for every possible wiki.
+// The verdict and reason_type values are parsed programmatically, so they
+// must stay in the English enum; the directive is appended (not spliced) to
+// leave the benchmark-tuned few-shot prompt above untouched. English (or
+// unknown) wikis get the prompt verbatim.
+//
+// `lang` and `articleLangCode` are separate params because main.js's caller
+// has two distinct signals: `lang` is the UI language (constrained to
+// PROMPT_LANGUAGES' keys — only set when there's a curated name to use, via
+// detectUiLang()), `articleLangCode` is the wiki's raw, unconstrained content
+// language (via detectArticleLangCode()) used only to decide whether *some*
+// non-English directive is owed even without a curated name. A caller with
+// only one language signal (e.g. the batch pipeline, deriving a language
+// code from --wiki) passes the same value for both.
+function localizeSystemPrompt(prompt, { lang, articleLangCode } = {}) {
+    const language = PROMPT_LANGUAGES[lang];
+    const languageInstruction = language
+        ? `Write the "comments" field in ${language}.`
+        : 'Write the "comments" field in the same language as the claim and source text above, not in English.';
+    if (!language && (!articleLangCode || articleLangCode === 'en')) return prompt;
+    return prompt + `\n\nLANGUAGE: ${languageInstruction} `
+        + 'The "source_quote" field is an exception: it must stay in the source\'s own language, copied verbatim. Never translate it — it is checked against the source text character for character. '
+        + 'You may quote the source verbatim in its original language, but write your own explanation in that language. '
+        + 'Keep the "verdict" and "reason_type" values exactly as specified above, in English '
+        + '(SUPPORTED, PARTIALLY SUPPORTED, NOT SUPPORTED, SOURCE UNAVAILABLE, contradiction, omission).';
+}
+
 // Strips the "Source URL: ... Source Content:\n" / "Manual source text:\n"
 // framing that fetchSourceContent and the manual-paste path wrap around the
 // actual source body, returning just the body. Shared by the single-source
@@ -1099,7 +1144,23 @@ function getCitationGroup(refElement) {
 // (finding where the final sentence of a claim begins), under-splitting an
 // abbreviation into the same sentence is the safer failure than over-
 // splitting mid-abbreviation and truncating the real claim.
-const SENTENCE_SPLIT_RE = /(?<=[.!?])\s+(?=[A-Z0-9"'(À-Ü])/;
+//
+// \p{Lu} (Unicode "uppercase letter") rather than a hand-enumerated Latin
+// range: the previous [A-Z0-9"'(À-Ü] matched only Latin (plus the Latin-1
+// Supplement block added for French/German/Spanish) and silently missed
+// every other cased script — Cyrillic capitals included. On fully-Cyrillic
+// text that meant the regex never matched at all, so lastSentence() always
+// fell through to its "no boundary found" fallback and returned the whole
+// multi-sentence span, defeating sentence-scope claim narrowing entirely on
+// e.g. ru.wikipedia (confirmed against a real batch-pipeline run there,
+// 2026-08-31). \p{Lu} covers Cyrillic, Greek, Armenian, and any other cased
+// script generically; scripts with no case distinction (CJK, Arabic, Hebrew,
+// Thai, ...) still can't match here, same as before this fix — that's an
+// inherent limit of "does the next sentence start with a capital", not
+// something this regex can special-case its way out of, and it degrades the
+// same safe way the header above already describes (whole span kept, not
+// truncated).
+const SENTENCE_SPLIT_RE = /(?<=[.!?])\s+(?=[\p{Lu}0-9"'(])/u;
 
 // Returns just the final sentence of `text` — the sentence immediately
 // preceding wherever `text` ends. Used for the batch pipeline's stricter
@@ -3260,13 +3321,11 @@ function useToolforgeSourceFetcher() {
         ru: RU_MESSAGES
     };
 
-    // How each localized language is named to the LLM when asking it to write
-    // its free-text "comments" in that language. Keys must match MESSAGES.
-    const PROMPT_LANGUAGES = {
-        fr: 'French (français)',
-        es: 'Spanish (español)',
-        ru: 'Russian (русский)'
-    };
+    // PROMPT_LANGUAGES itself now lives in core/prompts.js (injected above,
+    // between the <core-injected> markers) — localizeSystemPrompt() below
+    // delegates to that module's pure function, the same pattern used for
+    // generateSystemPrompt(). Keys must match MESSAGES (tests/i18n.test.js
+    // pins this).
 
     // Pick the UI language from the wiki's content language, falling back to the
     // user's interface language. Matching is by prefix, so regional variants
@@ -5869,28 +5928,14 @@ function useToolforgeSourceFetcher() {
             return generateUserPrompt(claim, sourceInfo);
         }
 
-        // Ask the model to write its free-text explanation in the article's
-        // language, so the "comments" shown next to each verdict aren't stuck
-        // in English on a non-English wiki. Two cases:
-        //  - A fully-localized UI (fr, es): name the language explicitly, using
-        //    the same curated name shown to editors elsewhere.
-        //  - Any other non-English wiki: a generic "match the source" directive,
-        //    so this isn't gated on having a full sidebar translation table.
-        // The verdict and reason_type values are parsed programmatically, so
-        // they must stay in the English enum; the directive is appended (not
-        // spliced) to leave the benchmark-tuned few-shot prompt in
-        // core/prompts.js untouched. English wikis get the prompt verbatim.
+        // Delegates to core/prompts.js's pure localizeSystemPrompt() (injected
+        // above), passing this.lang (UI language, constrained to a curated
+        // PROMPT_LANGUAGES name) and this.articleLangCode (the wiki's raw,
+        // unconstrained content language) as its two params — see that
+        // function's own doc comment for why they're separate. Same
+        // delegation pattern as generateSystemPrompt() above.
         localizeSystemPrompt(prompt) {
-            const language = PROMPT_LANGUAGES[this.lang];
-            const languageInstruction = language
-                ? `Write the "comments" field in ${language}.`
-                : 'Write the "comments" field in the same language as the claim and source text above, not in English.';
-            if (!language && (!this.articleLangCode || this.articleLangCode === 'en')) return prompt;
-            return prompt + `\n\nLANGUAGE: ${languageInstruction} `
-                + 'The "source_quote" field is an exception: it must stay in the source\'s own language, copied verbatim. Never translate it — it is checked against the source text character for character. '
-                + 'You may quote the source verbatim in its original language, but write your own explanation in that language. '
-                + 'Keep the "verdict" and "reason_type" values exactly as specified above, in English '
-                + '(SUPPORTED, PARTIALLY SUPPORTED, NOT SUPPORTED, SOURCE UNAVAILABLE, contradiction, omission).';
+            return localizeSystemPrompt(prompt, { lang: this.lang, articleLangCode: this.articleLangCode });
         }
 
         // Mints the check id, fires the log, and hands the id back so the

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { PROMPT_LANGUAGES, localizeSystemPrompt } from '../core/prompts.js';
 
 const MAIN_JS = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'main.js');
 const SRC = fs.readFileSync(MAIN_JS, 'utf8');
@@ -29,8 +30,15 @@ const LOCALIZE_METHOD = sliceMethod('localizeSystemPrompt', '        localizeSys
 
 // `mw` is a constructor parameter rather than a global, so passing `undefined`
 // exercises detectUiLang()'s non-MediaWiki fallback path faithfully.
+//
+// `localizeSystemPrompt` is passed in as a real parameter (imported from
+// core/prompts.js above) rather than sliced out of main.js's text: it no
+// longer lives in the i18n block since it moved to core/ — main.js's own
+// copy (LOCALIZE_METHOD, sliced below) is now just a one-line delegation to
+// it, and this makes the sandbox's lexical scope resolve that delegation's
+// call to the real function, exactly as it does in the running userscript.
 function loadI18n(mwStub) {
-  const build = new Function('mw', `
+  const build = new Function('mw', 'localizeSystemPrompt', `
 ${I18N_BLOCK}
     class Harness {
       constructor(lang, articleLangCode) {
@@ -40,16 +48,16 @@ ${I18N_BLOCK}
 ${T_METHOD}
 ${LOCALIZE_METHOD}
     }
-    return { MESSAGES, PROMPT_LANGUAGES, detectUiLang, detectArticleLangCode, Harness };
+    return { MESSAGES, detectUiLang, detectArticleLangCode, Harness };
   `);
-  return build(mwStub);
+  return build(mwStub, localizeSystemPrompt);
 }
 
 function wikiWithLang(contentLanguage, userLanguage) {
   return { config: { get: (k) => (k === 'wgContentLanguage' ? contentLanguage : userLanguage) } };
 }
 
-const { MESSAGES, PROMPT_LANGUAGES, detectArticleLangCode, Harness } = loadI18n(undefined);
+const { MESSAGES, detectArticleLangCode, Harness } = loadI18n(undefined);
 const LANGS = Object.keys(MESSAGES);
 
 // Placeholders are substituted by t() via a literal `{name}` split, so a

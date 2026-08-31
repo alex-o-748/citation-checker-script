@@ -9,6 +9,8 @@ import {
   generateGroupUserPrompt,
   assembleGroupSources,
   PROMPT_VERSION,
+  PROMPT_LANGUAGES,
+  localizeSystemPrompt,
 } from '../core/prompts.js';
 
 test('generateSystemPrompt returns a non-empty string', () => {
@@ -174,6 +176,42 @@ test('omission and source-unavailable examples carry an empty source_quote', () 
   const unavailable = examples.find(e => e.verdict === 'SOURCE UNAVAILABLE');
   assert.equal(omission.source_quote, '');
   assert.equal(unavailable.source_quote, '');
+});
+
+// --- localizeSystemPrompt / PROMPT_LANGUAGES ---
+// Pulled out of main.js (2026-08-31) so the batch pipeline can localize
+// comments too, not just the interactive userscript — service/verifier.js
+// calls this with a single wiki language code passed as both `lang` and
+// `articleLangCode`, unlike main.js's caller (main.js has a distinct UI
+// language vs. raw article language; see the function's own doc comment).
+
+test('localizeSystemPrompt returns the prompt verbatim for English or unknown language', () => {
+  const base = 'SYSTEM PROMPT';
+  assert.equal(localizeSystemPrompt(base, { lang: 'en', articleLangCode: 'en' }), base);
+  assert.equal(localizeSystemPrompt(base, {}), base);
+  assert.equal(localizeSystemPrompt(base), base);
+});
+
+test('localizeSystemPrompt names the language for a curated code, from a single langCode param', () => {
+  const base = 'SYSTEM PROMPT';
+  for (const [code, name] of Object.entries(PROMPT_LANGUAGES)) {
+    const out = localizeSystemPrompt(base, { lang: code, articleLangCode: code });
+    assert.ok(out.startsWith(base), `${code}: the benchmark-tuned prompt must be left intact`);
+    assert.ok(out.includes(name), `${code}: directive does not name the language`);
+    assert.ok(out.includes('SOURCE UNAVAILABLE'), `${code}: directive drops the English verdict enum`);
+  }
+});
+
+test('localizeSystemPrompt falls back to a generic directive for a non-curated, non-English code', () => {
+  const base = 'SYSTEM PROMPT';
+  const out = localizeSystemPrompt(base, { lang: 'de', articleLangCode: 'de' });
+  assert.ok(out.startsWith(base));
+  assert.match(out, /same language as the claim/i);
+});
+
+test('localizeSystemPrompt keeps source_quote verbatim-in-source-language even when localized', () => {
+  const out = localizeSystemPrompt('SYSTEM PROMPT', { lang: 'ru', articleLangCode: 'ru' });
+  assert.match(out, /source_quote.*verbatim/i);
 });
 
 // citation_findings.prompt_version (ToolsDB) is part of that table's unique

@@ -1,7 +1,19 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { deriveRestUrl, fetchArticleHtml, apiHostForWikiDb, DEFAULT_USER_AGENT } from '../core/wikipedia.js';
+import { deriveRestUrl, fetchArticleHtml, apiHostForWikiDb, langCodeForWikiDb, DEFAULT_USER_AGENT } from '../core/wikipedia.js';
+
+test('langCodeForWikiDb derives the language code from the wiki database name', () => {
+    assert.equal(langCodeForWikiDb('enwiki'), 'en');
+    assert.equal(langCodeForWikiDb('ruwiki'), 'ru');
+    assert.equal(langCodeForWikiDb('simplewiki'), 'simple');
+});
+
+test('langCodeForWikiDb rejects names that do not end in "wiki"', () => {
+    assert.throws(() => langCodeForWikiDb('enwiktionary'), RangeError);
+    assert.throws(() => langCodeForWikiDb(''), RangeError);
+    assert.throws(() => langCodeForWikiDb(undefined), RangeError);
+});
 
 test('apiHostForWikiDb derives the REST host from the wiki database name', () => {
     assert.equal(apiHostForWikiDb('enwiki'), 'en.wikipedia.org');
