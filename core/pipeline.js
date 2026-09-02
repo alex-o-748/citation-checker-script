@@ -44,9 +44,9 @@ export const VERIFY_STAGES = Object.freeze({
  * on programmer error (a missing claim or provider).
  *
  * @returns {Promise<
- *   { ok: true, provider, model, verdict, supportScore, comments, reasonType,
- *     sourceQuote, quote, sourceUrl, sourceContent, sourceText, sourceStatus,
- *     usage, raw }
+ *   { ok: true, claimText, provider, model, verdict, supportScore, comments,
+ *     reasonType, sourceQuote, quote, sourceUrl, sourceContent, sourceText,
+ *     sourceStatus, usage, raw }
  *   | { ok: false, stage, error, status?, cause?, raw?, sourceUrl,
  *       sourceContent?, usage? }>}
  */
@@ -146,6 +146,10 @@ export async function verifyCitation({
 
     return {
         ok: true,
+        // Echoed back so the result is self-describing: the verification log
+        // stores the claim that was judged, and a caller that fanned out over
+        // many citations would otherwise have to correlate it back by hand.
+        claimText,
         provider,
         model,
         verdict: parsed.verdict,

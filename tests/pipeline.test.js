@@ -34,6 +34,7 @@ test('a supported claim comes back with the verdict, score and located quote', a
   });
 
   assert.equal(result.ok, true);
+  assert.equal(result.claimText, 'The company was founded in 1985 by John Smith.');
   assert.equal(result.verdict, VERDICTS.SUPPORTED);
   assert.equal(result.supportScore, 95);
   assert.equal(result.comments, 'Definitive match.');
