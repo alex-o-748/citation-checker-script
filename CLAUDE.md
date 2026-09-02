@@ -13,8 +13,10 @@ Wikipedia citation verification user script. An AI-powered sidebar tool that let
 ```
 main.js                          # Main Wikipedia user script (~2,700 lines, single class)
 package.json                     # Top-level deps + `npm test` / `npm run build` scripts
-core/                            # Shared pure logic, imported by both benchmark/ and main.js (via sync)
+core/                            # Shared logic, imported by benchmark/, cli/, service/, the web UI, and main.js (via sync)
   claim.js, feedback.js, parsing.js, prompts.js, providers.js, quote.js, submission.js, urls.js, worker.js
+  models.js                      # Provider/model registry — the one place a model id is named
+  pipeline.js                    # verifyCitation(): fetch -> prompt -> model -> parse -> quote, in one call
 cli/verify.js                    # Node CLI front-end (verify a single citation from the command line)
 bin/ccs                          # Executable shim for the CLI
 scripts/sync-main.js             # Inlines core/ modules into main.js for the userscript build
@@ -127,6 +129,21 @@ It is **gitignored and regenerated** (`npm run wice:convert`), not committed —
 **Read `docs/wice-benchmark.md` before quoting a WiCE number.** The one thing to know going in: WiCE's annotators labeled *subclaims*, and claim-level labels are projected from them (all-supported → supported, all-not-supported → not-supported, anything mixed → partially-supported). That rule is not our rubric, and it is why ~57% of rows are `Partially supported`. The converter therefore records `wice_label_projection` per row — `unanimous` (subclaims agreed; the label means what ours means) or `mixed` (the label is an artifact of the rule) — and `analyze_results.js --projection unanimous|mixed` scores either subset. A verifier that does well on `unanimous` and badly on `mixed` is likely applying our rubric correctly and being marked wrong by WiCE's projection.
 
 WiCE also has no `Source unavailable` rows and ships frozen 2023 Common Crawl evidence rather than live URLs, so a WiCE run exercises the prompt and model but **not** the CORS-proxy fetch path.
+
+### One provider table, one verification sequence (`core/models.js`, `core/pipeline.js`)
+
+Two things used to be re-stated by every front end, and drifted:
+
+- **Which model each provider calls.** `main.js`'s `this.providers` literal and `cli/verify.js`'s `PROVIDER_MODELS` each held a copy, and the standalone web tool (`alex-o-748/citation-checker`) held a third that had gone stale — pinned to `gemini-1.5-flash` and to `claude-sonnet-4-5-20250514`, a model id that does not exist. `core/models.js` is now the only place a model id is written down. `main.js` does `this.providers = PROVIDERS`, `cli/verify.js` calls `modelFor(provider)`, and the web tool imports the table directly.
+- **The five steps of a check** — fetch the source, build the prompts, call the model, parse the verdict, verify the quote. `core/pipeline.js`'s `verifyCitation()` is that sequence. `cli/verify.js` is now argv parsing, exit codes and stdout around one call to it; the web tool is React around the same call. It never throws for an expected failure — a dead source, a 429, unreadable model output all come back as `{ ok: false, stage }` (`VERIFY_STAGES`), because each front end maps those onto a different surface (exit codes, a toast).
+
+`pipeline.js` is deliberately **not** in `scripts/sync-main.js`'s `CORE_ORDER`. `main.js`'s flow is interleaved with sidebar state — cancellation ids, the per-source cache, the manual-paste override, group verification — and does not collapse into a single call yet. It still shares the parts below the pipeline (`prompts.js`, `providers.js`, `parsing.js`, `quote.js`), so there is no second prompt or second parser, only a second sequencer.
+
+### Downstream consumer: the standalone web tool
+
+`alex-o-748/citation-checker` is a React/Vite single-page app that verifies a citation from a Wikipedia URL, outside the userscript. It is a **UI shell only**: it depends on this repo as an npm package (`github:alex-o-748/citation-checker-script`) and holds no prompt, no provider call, no parser, no model id of its own. Everything it does runs in the browser through `core/` — the same path `main.js` takes, so the web tool cannot drift from the userscript's verdicts.
+
+Practical consequence for changes here: `core/` is now a **published interface**, not just an internal one. Renaming an export or changing a return shape in `models.js`, `pipeline.js`, `citations.js`, `claim.js`, `urls.js`, `quote.js`, `verdicts.js`, `worker.js` or `feedback.js` breaks that app's build. Its `client/src/types/citation-checker-script.d.ts` mirrors those signatures by hand, so a signature change needs a matching edit there.
 
 ### Module system and shared logic
 
@@ -412,7 +429,9 @@ Provider-tinted values use the `--sv-accent` token, which tracks `getCurrentColo
 
 **Modifying the user script:** Edit `main.js` directly. Test by loading on Wikipedia via the browser console or user script page.
 
-**Adding a new LLM provider:** Add provider config to `this.providers` in the constructor, implement a `callXxxAPI()` method, and add routing in `callProviderAPI()`.
+**Adding a new LLM provider:** Add an entry to `PROVIDERS` in `core/models.js`, implement a `callXxxAPI()` in `core/providers.js`, and add a `case` for it in `callProviderAPI()`. `tests/models.test.js` fails if the table and the dispatch switch disagree. Every front end (userscript, CLI, web UI) picks the provider up from the table with no further wiring.
+
+**Bumping a model:** Change it in `core/models.js` only. `tests/models.test.js` fails if a model id reappears as a literal in `main.js`.
 
 **Updating the benchmark:** Edit `dataset.json` or re-extract with `npm run extract`, then run `npm run benchmark` and `npm run analyze`. Results carry `source_quote` / `quote_status` / `quote_verified` per row; `npm run analyze` reports per-provider quote offer rate and fidelity (share of offered quotes actually found in the source).
 

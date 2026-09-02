@@ -7,11 +7,9 @@ import { parseArgs } from 'node:util';
 import { JSDOM } from 'jsdom';
 import { extractClaimText } from '../core/claim.js';
 import { extractReferenceUrl, extractPageNumber } from '../core/urls.js';
-import { fetchSourceContent, logVerification } from '../core/worker.js';
-import { generateSystemPrompt, generateUserPrompt, extractSourceText } from '../core/prompts.js';
-import { callProviderAPI } from '../core/providers.js';
-import { parseVerificationResult } from '../core/parsing.js';
-import { verifyQuote } from '../core/quote.js';
+import { logVerification } from '../core/worker.js';
+import { modelFor } from '../core/models.js';
+import { verifyCitation, VERIFY_STAGES } from '../core/pipeline.js';
 import { parseCompareArgs, COMPARE_HELP_TEXT, runCompare } from './compare.js';
 
 const KNOWN_PROVIDERS = ['publicai', 'huggingface', 'claude', 'gemini', 'openai'];
@@ -165,14 +163,6 @@ export function classifyProviderError(err) {
     // No status in message => treat as network/5xx-class failure.
     return 10;
 }
-
-const PROVIDER_MODELS = {
-    publicai:    'aisingapore/Qwen-SEA-LION-v4-32B-IT',
-    huggingface: 'openai/gpt-oss-20b',
-    claude:      'claude-sonnet-4-6',
-    gemini:      'gemini-flash-latest',
-    openai:      'gpt-4o',
-};
 
 const PROVIDER_ENV_VARS = {
     publicai:    null, // routed through the worker proxy; no client-side key
@@ -332,54 +322,46 @@ export async function runVerify(opts, { stdout = process.stdout, stderr = proces
         return 6;
     }
 
-    // 8. Fetch the source content via the worker proxy.
-    const fetchResult = await fetchSourceContent(sourceUrl, pageNum);
-    if (!fetchResult.content) {
-        const detail = fetchResult.status != null ? ` (HTTP ${fetchResult.status})` : '';
-        const reason = fetchResult.error ? `: ${fetchResult.error}` : '';
-        stderr.write(`ccs: source unavailable${detail}${reason}\n  url: ${sourceUrl}\n`);
-        return 7;
-    }
-
-    // 9. Build prompts and call the LLM.
-    //    fetchSourceContent returns { content, error, status }; on success
-    //    `content` is shaped "Source URL: <u>\n\nSource Content:\n<body>",
-    //    which generateUserPrompt parses, so we pass it through unchanged.
-    //    callProviderAPI returns { text, usage } on success; extra keys in
-    //    providerConfig are ignored by the destructure so it's safe to
-    //    include apiKey for publicai (which won't read it).
-    const systemPrompt = generateSystemPrompt();
-    const userContent = generateUserPrompt(claim, fetchResult.content);
+    // 8-10. Fetch the source, prompt the model, parse the verdict and check
+    //       the quote — all of it core/pipeline.js's verifyCitation(), which
+    //       the userscript and the standalone web tool run too. This file
+    //       keeps only what is CLI-specific: env-var key lookup, the
+    //       tf-llm-router override, exit codes, and stdout formatting.
     const optionalEnvVar = PROVIDER_OPTIONAL_ENV_VARS[provider];
     const apiKey = envVar
         ? env[envVar]
         : (optionalEnvVar ? env[optionalEnvVar] : undefined);
-    const providerConfig = {
-        model: PROVIDER_MODELS[provider],
-        systemPrompt,
-        userContent,
-        apiKey,
-    };
 
     // See TOOLFORGE_LLM_ROUTER_BASE above: only meaningful for the proxy-routed
     // huggingface call (no apiKey — a direct HF call ignores workerBase entirely).
+    let workerBase;
     if (liveLlmRouter && provider === 'huggingface' && !apiKey) {
         stderr.write(`ccs: routing huggingface via ${TOOLFORGE_LLM_ROUTER_BASE}\n`);
-        providerConfig.workerBase = TOOLFORGE_LLM_ROUTER_BASE;
+        workerBase = TOOLFORGE_LLM_ROUTER_BASE;
     }
 
-    let providerResult;
-    try {
-        providerResult = await callProviderAPI(provider, providerConfig);
-    } catch (err) {
-        stderr.write(`ccs: provider call failed: ${err.message}\n`);
-        return classifyProviderError(err);
-    }
+    const result = await verifyCitation({
+        claimText: claim,
+        sourceUrl,
+        pageNum,
+        provider,
+        model: modelFor(provider),
+        apiKey,
+        workerBase,
+    });
 
-    // 10. Parse the verdict.
-    const verdict = parseVerificationResult(providerResult.text);
-    if (verdict.verdict === 'PARSE_ERROR') {
-        stderr.write(`ccs: LLM returned malformed JSON. Raw (first 200 chars): ${providerResult.text.slice(0, 200)}\n`);
+    if (!result.ok) {
+        if (result.stage === VERIFY_STAGES.SOURCE) {
+            const detail = result.status != null ? ` (HTTP ${result.status})` : '';
+            const reason = result.error ? `: ${result.error}` : '';
+            stderr.write(`ccs: source unavailable${detail}${reason}\n  url: ${sourceUrl}\n`);
+            return 7;
+        }
+        if (result.stage === VERIFY_STAGES.PROVIDER) {
+            stderr.write(`ccs: provider call failed: ${result.error}\n`);
+            return classifyProviderError(result.cause);
+        }
+        stderr.write(`ccs: LLM returned malformed JSON. Raw (first 200 chars): ${result.raw.slice(0, 200)}\n`);
         return 11;
     }
 
@@ -392,27 +374,26 @@ export async function runVerify(opts, { stdout = process.stdout, stderr = proces
             citation_number: String(citationNumber),
             source_url: sourceUrl,
             provider,
-            verdict: verdict.verdict,
+            verdict: result.verdict,
             // Wire/column name stays `confidence` (see core/feedback.js's
             // buildLogPayload) — it's the Neon column, unmigrated for now.
-            confidence: verdict.support_score,
+            confidence: result.supportScore,
         });
     }
 
     // 12. Print the result. The quote is printed only once it has been found
     //     in the fetched source (core/quote.js) — an unlocated quote is
     //     reported as such rather than shown.
-    const quoteCheck = verifyQuote(extractSourceText(fetchResult.content), verdict.source_quote);
-    stdout.write(`Verdict:    ${verdict.verdict}\n`);
-    stdout.write(`Support score: ${verdict.support_score ?? 'n/a'}\n`);
+    stdout.write(`Verdict:    ${result.verdict}\n`);
+    stdout.write(`Support score: ${result.supportScore ?? 'n/a'}\n`);
     stdout.write(`Claim:      ${claim}\n`);
     stdout.write(`Source:     ${sourceUrl}\n`);
-    if (verdict.source_quote) {
-        stdout.write(quoteCheck.verified
-            ? `Quote:      "${verdict.source_quote}"\n`
-            : `Quote:      (not found in source: ${quoteCheck.status})\n`);
+    if (result.sourceQuote) {
+        stdout.write(result.quote.verified
+            ? `Quote:      "${result.sourceQuote}"\n`
+            : `Quote:      (not found in source: ${result.quote.status})\n`);
     }
-    stdout.write(`\n${verdict.comments}\n`);
+    stdout.write(`\n${result.comments}\n`);
     return 0;
 }
 
