@@ -87,10 +87,23 @@ test('assembleGroupSources labels each source and reports availability', () => {
     { citationNumbers: ['2'], url: 'https://b.com', content: 'Source Content:\nBeta body.' },
   ]);
   assert.equal(anyAvailable, true);
-  assert.ok(text.includes('Source [1] (https://a.com):'));
+  assert.ok(text.includes('Source (https://a.com):'));
   assert.ok(text.includes('Alpha body.'));
-  assert.ok(text.includes('Source [2] (https://b.com):'));
+  assert.ok(text.includes('Source (https://b.com):'));
   assert.ok(text.includes('Beta body.'));
+});
+
+test('assembleGroupSources does not label sources with a bracketed citation number', () => {
+  // citationNumbers is still passed through (see groupSourceEntries() in
+  // core/groups.js, which other consumers rely on), but the prompt label
+  // must never surface it: citation numbers are the article's live footnote
+  // numbers and can shift as the article is edited, so the model is asked to
+  // refer to sources by name/URL in its comments instead - which only works
+  // if the prompt never shows it a number to lean on in the first place.
+  const { text } = assembleGroupSources([
+    { citationNumbers: ['7', '9'], url: 'https://shared.com', content: 'Source Content:\nShared body.' },
+  ]);
+  assert.ok(!/\[\d+\]/.test(text), `label should not contain a bracketed number: ${text}`);
 });
 
 test('assembleGroupSources marks unfetched sources as unavailable with a reason', () => {
@@ -109,13 +122,6 @@ test('assembleGroupSources flags anyAvailable when at least one source has conte
     { citationNumbers: ['6'], url: 'https://y.com', content: 'Source Content:\nUsable.' },
   ]);
   assert.equal(anyAvailable, true);
-});
-
-test('assembleGroupSources merges citation numbers for a shared source', () => {
-  const { text } = assembleGroupSources([
-    { citationNumbers: ['7', '9'], url: 'https://shared.com', content: 'Source Content:\nShared body.' },
-  ]);
-  assert.ok(text.includes('Source [7][9] (https://shared.com):'));
 });
 
 test('assembleGroupSources treats whitespace-only content as unavailable', () => {
@@ -158,7 +164,7 @@ test('few-shot quotes are copied verbatim from their own example source text', (
       if (!jsonLine) continue;
       const quote = JSON.parse(jsonLine).source_quote;
       if (!quote) continue;
-      const sourceLines = block.split('\n').filter(l => /^Source( \[|\stext:)/.test(l)).join(' ');
+      const sourceLines = block.split('\n').filter(l => /^Source( \(|\stext:)/.test(l)).join(' ');
       for (const segment of quote.split(' ... ')) {
         assert.ok(
           sourceLines.includes(segment),

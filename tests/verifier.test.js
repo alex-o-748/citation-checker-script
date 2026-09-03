@@ -342,8 +342,13 @@ test('verifyGroup dedupes members sharing the same URL into one source block', a
 
     assert.equal(result.skipped, false);
     assert.deepEqual(result.memberCitationNumbers, ['5', '6', '7']);
-    assert.match(seenUserContent, /\[5\]\[6\]/, 'both citation numbers label the shared source');
-    assert.equal((seenUserContent.match(/Source \[/g) || []).length, 2, 'the shared source contributes one block, not two');
+    // The label is by URL, not citation number (citation numbers are the
+    // article's live footnote numbers and can go stale - see
+    // assembleGroupSources() in core/prompts.js), so the shared source
+    // shows up once, keyed by its URL.
+    assert.equal((seenUserContent.match(/Source \(https:\/\/shared\.example\):/g) || []).length, 1, 'the shared source contributes one block, not two');
+    assert.match(seenUserContent, /Source \(https:\/\/distinct\.example\):/, 'the distinct source gets its own block');
+    assert.ok(!/\[\d+\]/.test(seenUserContent), 'no bracketed citation number should reach the model');
 });
 
 test('verifyGroup verifies a quote against any member source, not just the first', async () => {

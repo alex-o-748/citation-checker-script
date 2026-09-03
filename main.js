@@ -1,6 +1,6 @@
-// {{Wikipedia:USync |repo=https://github.com/alex-o-748/citation-checker-script |ref=refs/heads/dev|path=main.js}}
+// {{Wikipedia:USync |repo=https://github.com/alex-o-748/citation-checker-script |ref=refs/heads/main|path=main.js}}
 //Inspired by User:Polygnotus/Scripts/AI_Source_Verification.js
-//Inspired by User:Phlsph7/SourceVerificationAIAssistant.js         
+//Inspired by User:Phlsph7/SourceVerificationAIAssistant.js          
 
 (function() {
     'use strict';
@@ -216,7 +216,7 @@ ${sourceText}`;
 // the handling of partially-unavailable source sets. This is a NEW prompt — the
 // single-source benchmark, which uses generateSystemPrompt, is unaffected.
 function generateGroupSystemPrompt() {
-    return `You are a fact-checking assistant for Wikipedia. A single claim is cited by MULTIPLE sources, provided below and each labeled with its citation number(s). Analyze whether the claim is supported by the sources taken TOGETHER.
+    return `You are a fact-checking assistant for Wikipedia. A single claim is cited by MULTIPLE sources, provided below and each labeled with its URL. Analyze whether the claim is supported by the sources taken TOGETHER.
 
 Rules:
 - ONLY use the provided source texts. Never use outside knowledge.
@@ -237,14 +237,14 @@ Respond in JSON format:
   "verdict": "<verdict>",
   "reason_type": "<only for NOT SUPPORTED: 'contradiction' or 'omission'>",
   "source_quote": "<the passage from one of the sources, copied word for word>",
-  "comments": "<note which source(s) support or contradict which part of the claim>"
+  "comments": "<note which source, by a short name (its publication, or bare domain — never the full URL), supports or contradicts which part of the claim>"
 }
 
 For NOT SUPPORTED verdicts, include a "reason_type" field: use "contradiction" when a source explicitly states something incompatible with the claim, or "omission" when the sources simply do not mention or address the claim. If both apply, use "contradiction". Do not include reason_type for other verdicts.
 
 The "source_quote" field:
 - Copy the passage EXACTLY as it appears in the source text, character for character. Do not paraphrase, summarize, correct spelling or punctuation, translate, or fill in ellipses. It is checked automatically against the sources, and a quote that does not appear in them verbatim is discarded.
-- Quote the single most decisive passage across all the sources: the one that best supports the claim (SUPPORTED, PARTIALLY SUPPORTED) or the one that conflicts with it (NOT SUPPORTED with reason_type "contradiction"). Name the source it came from in "comments", not inside the quote itself — do not prefix the quote with "[2]" or a URL.
+- Quote the single most decisive passage across all the sources: the one that best supports the claim (SUPPORTED, PARTIALLY SUPPORTED) or the one that conflicts with it (NOT SUPPORTED with reason_type "contradiction"). Name the source it came from in "comments" with a short name — the publication if you recognize it (e.g. "the New York Times") or otherwise its bare domain (e.g. "the acme.org source") — never the full URL with its path or query string, and not inside the quote itself. Never refer to a source by a bracketed number like "[2]": those would be the article's live footnote numbers, which can shift whenever the article is edited, so a number written into your comment can point at the wrong source later.
 - Keep it short — normally one sentence, at most two, and never more than about 50 words.
 - To join two non-adjacent passages, separate them with " ... ". Each part must still be copied verbatim.
 - Use "" (empty string) when there is nothing to quote: SOURCE UNAVAILABLE, and NOT SUPPORTED with reason_type "omission".
@@ -258,26 +258,26 @@ Support score guide:
 
 <example>
 Claim: "The company was founded in 1985 by John Smith, who led it until 2001."
-Source [1] (https://example.com/a): "Acme Corp was established in 1985 in Ohio."
-Source [2] (https://example.com/b): "John Smith founded Acme Corp and served as its chief executive until 2001."
+Source (https://example.com/history/acme-corp-1985): "Acme Corp was established in 1985 in Ohio."
+Source (https://example.org/business/acme-leadership): "John Smith founded Acme Corp and served as its chief executive until 2001."
 
-{"support_score": 92, "verdict": "SUPPORTED", "source_quote": "John Smith founded Acme Corp and served as its chief executive until 2001.", "comments": "Source [1] gives the 1985 founding year; source [2] confirms John Smith as founder and his tenure until 2001. Together they support the whole claim."}
+{"support_score": 92, "verdict": "SUPPORTED", "source_quote": "John Smith founded Acme Corp and served as its chief executive until 2001.", "comments": "The example.com source gives the 1985 founding year; the example.org source confirms John Smith as founder and his tenure until 2001. Together they support the whole claim."}
 </example>
 
 <example>
 Claim: "The treaty was signed in Paris in 1990."
-Source [1] (https://example.com/a): [This source could not be retrieved: HTTP 403]
-Source [2] (https://example.com/b): "The accord was signed in the French capital in the spring of 1990."
+Source (https://example.com/archive/treaty-coverage): [This source could not be retrieved: HTTP 403]
+Source (https://example.org/world/1990-accord): "The accord was signed in the French capital in the spring of 1990."
 
-{"support_score": 88, "verdict": "SUPPORTED", "source_quote": "The accord was signed in the French capital in the spring of 1990.", "comments": "Source [1] was unavailable, but source [2] states the accord was signed in the French capital (Paris) in 1990, which supports the claim."}
+{"support_score": 88, "verdict": "SUPPORTED", "source_quote": "The accord was signed in the French capital in the spring of 1990.", "comments": "The example.com source was unavailable, but the example.org source states the accord was signed in the French capital (Paris) in 1990, which supports the claim."}
 </example>
 
 <example>
 Claim: "The bridge, built in 1998, cost $200 million."
-Source [1] (https://example.com/a): "The bridge opened to traffic in 1998 after four years of construction."
-Source [2] (https://example.com/b): "Funding for the project came from a mix of state and federal grants."
+Source (https://example.com/local/bridge-opening-1998): "The bridge opened to traffic in 1998 after four years of construction."
+Source (https://example.org/infrastructure/funding-report): "Funding for the project came from a mix of state and federal grants."
 
-{"support_score": 55, "verdict": "PARTIALLY SUPPORTED", "source_quote": "The bridge opened to traffic in 1998 after four years of construction.", "comments": "Source [1] supports the 1998 date. Neither source states the $200 million cost, so that part is unverified."}
+{"support_score": 55, "verdict": "PARTIALLY SUPPORTED", "source_quote": "The bridge opened to traffic in 1998 after four years of construction.", "comments": "The example.com source supports the 1998 date. Neither source states the $200 million cost, so that part is unverified."}
 </example>`;
 }
 
@@ -299,11 +299,16 @@ ${assembledText}`;
  * Assembles the per-source fetch results of an adjacent-citation group into a
  * single labeled blob for the collective prompt. Unavailable sources are kept
  * (labeled) rather than dropped, so the model can reason about partial coverage.
+ * Sources are labeled by URL only, deliberately not by citation number:
+ * entries carry citationNumbers (see groupSourceEntries() in core/groups.js)
+ * for the UI's own bookkeeping, but that number is never shown to the model —
+ * the model is asked to refer to sources by name/URL in "comments" instead,
+ * since a bracketed citation number baked into that text can go stale once
+ * the article is re-numbered by a later edit.
  *
- * @param {Array<{citationNumbers: string[], url?: string, content?: string|null,
+ * @param {Array<{citationNumbers?: (string|number)[], url?: string, content?: string|null,
  *   error?: string|null, status?: number|null}>} entries - one per distinct
- *   source (callers should dedupe sources shared by named refs, merging their
- *   citation numbers into citationNumbers).
+ *   source (callers should dedupe sources shared by named refs).
  * @returns {{text: string, anyAvailable: boolean}} Combined text and whether at
  *   least one source contributed usable content.
  */
@@ -311,8 +316,7 @@ function assembleGroupSources(entries) {
     const blocks = [];
     let anyAvailable = false;
     for (const e of entries) {
-        const nums = (e.citationNumbers || []).map(n => `[${n}]`).join('');
-        const label = `Source ${nums}${e.url ? ` (${e.url})` : ''}:`;
+        const label = `Source${e.url ? ` (${e.url})` : ''}:`;
         const text = e.content ? extractSourceText(e.content).trim() : '';
         if (text) {
             anyAvailable = true;
@@ -3184,9 +3188,9 @@ function useToolforgeSourceFetcher() {
         'This will verify {citations} citations from {sources} unique sources.{groupNote}\n\nEstimated time: ~{minutes} minute.\n\nContinue?':
             'Будет проверено {citations} сносок из {sources} уникальных источников.{groupNote}\n\nПримерное время: ~{minutes} мин.\n\nПродолжить?',
         '\n\nThis includes {count} combined-source checks for adjacent citation groups.':
-            '\n\nВключая {count} проверок объединённых источников для групп соседних сносок.',
+            '\n\nТакже будет сделано {count} проверок объединённых источников для групп соседних сносок.',
         '\n\nThis includes {count} combined-source check for adjacent citation groups.':
-            '\n\nВключая {count} проверку объединённых источников для групп соседних сносок.',
+            '\n\nТакже будет сделана {count} проверка объединённых источников для групп соседних сносок.',
 
         // Generated result comments
         'No URL found in reference': 'В сноске не найден URL',
