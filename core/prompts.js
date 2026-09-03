@@ -183,14 +183,14 @@ Respond in JSON format:
   "verdict": "<verdict>",
   "reason_type": "<only for NOT SUPPORTED: 'contradiction' or 'omission'>",
   "source_quote": "<the passage from one of the sources, copied word for word>",
-  "comments": "<note which source, by name (e.g. its site or publication), supports or contradicts which part of the claim>"
+  "comments": "<note which source, by a short name (its publication, or bare domain — never the full URL), supports or contradicts which part of the claim>"
 }
 
 For NOT SUPPORTED verdicts, include a "reason_type" field: use "contradiction" when a source explicitly states something incompatible with the claim, or "omission" when the sources simply do not mention or address the claim. If both apply, use "contradiction". Do not include reason_type for other verdicts.
 
 The "source_quote" field:
 - Copy the passage EXACTLY as it appears in the source text, character for character. Do not paraphrase, summarize, correct spelling or punctuation, translate, or fill in ellipses. It is checked automatically against the sources, and a quote that does not appear in them verbatim is discarded.
-- Quote the single most decisive passage across all the sources: the one that best supports the claim (SUPPORTED, PARTIALLY SUPPORTED) or the one that conflicts with it (NOT SUPPORTED with reason_type "contradiction"). Name the source it came from in "comments" — the site or publication it's from (e.g. "the New York Times article", "the acme.org source") — not inside the quote itself. Never refer to a source by a bracketed number like "[2]": those would be the article's live footnote numbers, which can shift whenever the article is edited, so a number written into your comment can point at the wrong source later.
+- Quote the single most decisive passage across all the sources: the one that best supports the claim (SUPPORTED, PARTIALLY SUPPORTED) or the one that conflicts with it (NOT SUPPORTED with reason_type "contradiction"). Name the source it came from in "comments" with a short name — the publication if you recognize it (e.g. "the New York Times") or otherwise its bare domain (e.g. "the acme.org source") — never the full URL with its path or query string, and not inside the quote itself. Never refer to a source by a bracketed number like "[2]": those would be the article's live footnote numbers, which can shift whenever the article is edited, so a number written into your comment can point at the wrong source later.
 - Keep it short — normally one sentence, at most two, and never more than about 50 words.
 - To join two non-adjacent passages, separate them with " ... ". Each part must still be copied verbatim.
 - Use "" (empty string) when there is nothing to quote: SOURCE UNAVAILABLE, and NOT SUPPORTED with reason_type "omission".
@@ -204,26 +204,26 @@ Support score guide:
 
 <example>
 Claim: "The company was founded in 1985 by John Smith, who led it until 2001."
-Source (https://example.com/a): "Acme Corp was established in 1985 in Ohio."
-Source (https://example.com/b): "John Smith founded Acme Corp and served as its chief executive until 2001."
+Source (https://example.com/history/acme-corp-1985): "Acme Corp was established in 1985 in Ohio."
+Source (https://example.org/business/acme-leadership): "John Smith founded Acme Corp and served as its chief executive until 2001."
 
-{"support_score": 92, "verdict": "SUPPORTED", "source_quote": "John Smith founded Acme Corp and served as its chief executive until 2001.", "comments": "The example.com/a source gives the 1985 founding year; the example.com/b source confirms John Smith as founder and his tenure until 2001. Together they support the whole claim."}
+{"support_score": 92, "verdict": "SUPPORTED", "source_quote": "John Smith founded Acme Corp and served as its chief executive until 2001.", "comments": "The example.com source gives the 1985 founding year; the example.org source confirms John Smith as founder and his tenure until 2001. Together they support the whole claim."}
 </example>
 
 <example>
 Claim: "The treaty was signed in Paris in 1990."
-Source (https://example.com/a): [This source could not be retrieved: HTTP 403]
-Source (https://example.com/b): "The accord was signed in the French capital in the spring of 1990."
+Source (https://example.com/archive/treaty-coverage): [This source could not be retrieved: HTTP 403]
+Source (https://example.org/world/1990-accord): "The accord was signed in the French capital in the spring of 1990."
 
-{"support_score": 88, "verdict": "SUPPORTED", "source_quote": "The accord was signed in the French capital in the spring of 1990.", "comments": "The example.com/a source was unavailable, but the example.com/b source states the accord was signed in the French capital (Paris) in 1990, which supports the claim."}
+{"support_score": 88, "verdict": "SUPPORTED", "source_quote": "The accord was signed in the French capital in the spring of 1990.", "comments": "The example.com source was unavailable, but the example.org source states the accord was signed in the French capital (Paris) in 1990, which supports the claim."}
 </example>
 
 <example>
 Claim: "The bridge, built in 1998, cost $200 million."
-Source (https://example.com/a): "The bridge opened to traffic in 1998 after four years of construction."
-Source (https://example.com/b): "Funding for the project came from a mix of state and federal grants."
+Source (https://example.com/local/bridge-opening-1998): "The bridge opened to traffic in 1998 after four years of construction."
+Source (https://example.org/infrastructure/funding-report): "Funding for the project came from a mix of state and federal grants."
 
-{"support_score": 55, "verdict": "PARTIALLY SUPPORTED", "source_quote": "The bridge opened to traffic in 1998 after four years of construction.", "comments": "The example.com/a source supports the 1998 date. Neither source states the $200 million cost, so that part is unverified."}
+{"support_score": 55, "verdict": "PARTIALLY SUPPORTED", "source_quote": "The bridge opened to traffic in 1998 after four years of construction.", "comments": "The example.com source supports the 1998 date. Neither source states the $200 million cost, so that part is unverified."}
 </example>`;
 }
 
