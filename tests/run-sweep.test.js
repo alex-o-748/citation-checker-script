@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
     parseCliArgs,
+    parseTitlesFile,
     splitCitations,
     runSweep,
     stubFetchSource,
@@ -15,7 +16,8 @@ test('parseCliArgs defaults match run-replay.js\'s conventions (liftwing, no key
     const opts = parseCliArgs(['node', 'sweep.js']);
     assert.equal(opts.criterion, 'failed-verification');
     assert.equal(opts.wiki, 'enwiki');
-    assert.equal(opts.max, 5);
+    assert.equal(opts.max, undefined, 'unset — runSweep resolves this to 5 in the Wiki-Replicas branch');
+    assert.equal(opts.titlesFile, undefined);
     assert.equal(opts.provider, 'liftwing');
     assert.equal(opts.model, 'llm-qwen36-27b');
     assert.equal(opts.delayMs, 1000);
@@ -45,6 +47,17 @@ test('parseCliArgs applies overrides', () => {
     assert.equal(opts.concurrency, 8);
     assert.equal(opts.store, true);
     assert.equal(opts.out, 'out.csv');
+});
+
+test('parseCliArgs applies --titles-file', () => {
+    const opts = parseCliArgs(['node', 'sweep.js', '--titles-file', 'articles.txt']);
+    assert.equal(opts.titlesFile, 'articles.txt');
+    assert.equal(opts.max, undefined);
+});
+
+test('parseTitlesFile skips blank lines and comments, trims whitespace', () => {
+    const titles = parseTitlesFile('Adam A. Zango\n\n# a comment\n  Chiwetel Ejiofor  \n#skip\nJohn Boyega\n');
+    assert.deepEqual(titles, ['Adam A. Zango', 'Chiwetel Ejiofor', 'John Boyega']);
 });
 
 test('stubFetchSource never resolves content and names why', async () => {
@@ -246,6 +259,63 @@ test('without --store, ToolsDB is never touched', async () => {
         connectToolsDb: async () => { connectCalled = true; return fakeToolsDbConnection(); },
     }));
     assert.equal(connectCalled, false);
+});
+
+test('--titles-file bypasses Wiki Replicas entirely and checks the listed titles', async () => {
+    let replicasCalled = false;
+    let written;
+    let seenTitle;
+    const code = await runSweep(baseOpts({ titlesFile: 'articles.txt' }), baseIo({
+        connectReplicas: async () => { replicasCalled = true; return fakeReplicaConnection([]); },
+        readTitlesFile: async path => {
+            assert.equal(path, 'articles.txt');
+            return 'Test Article\n';
+        },
+        fetchArticle: async ({ title, revisionId }) => {
+            seenTitle = { title, revisionId };
+            return { html: okArticleHtml, status: 200, error: null };
+        },
+        writeCsvReportFn: async findings => { written = findings; },
+    }));
+
+    assert.equal(code, 0);
+    assert.equal(replicasCalled, false, 'no Wiki Replicas connection should be opened');
+    assert.deepEqual(seenTitle, { title: 'Test Article', revisionId: null }, 'no revision to pin without a Replicas row');
+    assert.equal(written.length, 4);
+});
+
+test('--titles-file with no explicit --max processes every listed title, not the default 5', async () => {
+    let fetchCount = 0;
+    const code = await runSweep(baseOpts({ titlesFile: 'articles.txt', max: undefined }), baseIo({
+        readTitlesFile: async () => 'A\nB\nC\nD\nE\nF\nG\n',
+        fetchArticle: async () => { fetchCount++; return { html: articleWithSoloCitations(1), status: 200, error: null }; },
+    }));
+    assert.equal(code, 0);
+    assert.equal(fetchCount, 7, 'all 7 titles should be processed despite the criterion-path default of 5');
+});
+
+test('--titles-file with --max caps how many listed titles are processed', async () => {
+    let fetchCount = 0;
+    const code = await runSweep(baseOpts({ titlesFile: 'articles.txt', max: 2 }), baseIo({
+        readTitlesFile: async () => 'A\nB\nC\n',
+        fetchArticle: async () => { fetchCount++; return { html: articleWithSoloCitations(1), status: 200, error: null }; },
+    }));
+    assert.equal(code, 0);
+    assert.equal(fetchCount, 2);
+});
+
+test('an empty --titles-file is a usage error, not a silent no-op sweep', async () => {
+    const code = await runSweep(baseOpts({ titlesFile: 'articles.txt' }), baseIo({
+        readTitlesFile: async () => '\n\n# nothing but comments\n',
+    }));
+    assert.equal(code, 2);
+});
+
+test('a --titles-file that cannot be read is a fatal error', async () => {
+    const code = await runSweep(baseOpts({ titlesFile: 'missing.txt' }), baseIo({
+        readTitlesFile: async () => { throw new Error('ENOENT'); },
+    }));
+    assert.equal(code, 1);
 });
 
 test('a missing required API key is reported and nothing runs', async () => {
