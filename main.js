@@ -2323,94 +2323,6 @@ function buildCommentUrl(fields = {}, {
     params.set('preloadparams[]', buildTalkSectionBody(fields));
     return `${wikiBase}?${params.toString()}`;
 }
-
-// --- core/submission.js ---
-// Dataset-submission helpers. Pure logic for building a prefilled Google Form
-// URL so Wikipedia editors can contribute citation/ground-truth examples
-// without an API or auth. Inlined into main.js between <core-injected>
-// markers, and importable from tests.
-//
-// To activate the feature once a Form exists:
-//   1. Create a Google Form whose questions correspond to the keys in
-//      DATASET_SUBMISSION_ENTRY_IDS (articleUrl, citationNumber, claimText,
-//      sourceUrl, llmVerdict, llmRationale, llmProvider, llmModel,
-//      editorHandle, notes).
-//   2. Use the Form's "Get pre-filled link" tool, fill every field with a
-//      unique sentinel, and copy the resulting URL.
-//   3. Replace DATASET_SUBMISSION_FORM_URL with the /viewform URL, and
-//      replace each `entry.PLACEHOLDER_*` value with the matching
-//      `entry.<numeric-id>` from the pre-filled link.
-//   4. Run `npm run build` so the constants are re-inlined into main.js.
-
-// Sentinel substring that marks scaffolded values as not-yet-configured.
-// isDatasetSubmissionConfigured() looks for this exact token; don't reuse it
-// anywhere else in this file.
-const DATASET_SUBMISSION_PLACEHOLDER = 'PLACEHOLDER';
-
-const DATASET_SUBMISSION_FORM_URL =
-    'https://docs.google.com/forms/d/e/1FAIpQLSdn0mnTHLV7NQZSmEbQXgLRzkJEfd6tcvVffLdInGpVyySkBA/viewform';
-
-const DATASET_SUBMISSION_ENTRY_IDS = {
-    articleUrl:     'entry.1530874375',
-    citationNumber: 'entry.1417860793',
-    claimText:      'entry.1673425995',
-    sourceUrl:      'entry.1675972910',
-    llmVerdict:     'entry.270831712',
-    llmRationale:   'entry.805615048',
-    llmProvider:    'entry.230272168',
-    llmModel:       'entry.166995',
-    // Populated only for SOURCE UNAVAILABLE rows where the proxy reported an
-    // HTTP status — lets the dataset distinguish "we never fetched" from
-    // "we fetched and the source returned 4xx/5xx".
-    fetchStatus:    'entry.375255643',
-    editorHandle:   'entry.362287943',
-    notes:          'entry.133790832',
-    // The verbatim passage the model quoted from the source, and whether it
-    // was found in that source (see core/quote.js). Optional — see
-    // DATASET_SUBMISSION_OPTIONAL_KEYS: until a matching Form question exists
-    // these stay on PLACEHOLDER and are simply left out of the prefilled URL,
-    // rather than disabling the whole submission button.
-    llmQuote:         'entry.PLACEHOLDER_QUOTE',
-    llmQuoteVerified: 'entry.PLACEHOLDER_QUOTE_VERIFIED',
-};
-
-// Keys that isDatasetSubmissionConfigured() does not require. Add a Form
-// question for these, paste in the real entry ids, and they start flowing;
-// leave them and everything else keeps working.
-const DATASET_SUBMISSION_OPTIONAL_KEYS = Object.freeze([
-    'llmQuote',
-    'llmQuoteVerified',
-]);
-
-function isDatasetSubmissionConfigured(
-    formUrl = DATASET_SUBMISSION_FORM_URL,
-    entryIds = DATASET_SUBMISSION_ENTRY_IDS,
-) {
-    if (!formUrl || formUrl.includes(DATASET_SUBMISSION_PLACEHOLDER)) return false;
-    return Object.entries(entryIds).every(
-        ([key, id]) => DATASET_SUBMISSION_OPTIONAL_KEYS.includes(key)
-            || (typeof id === 'string' && id && !id.includes(DATASET_SUBMISSION_PLACEHOLDER))
-    );
-}
-
-function buildDatasetSubmissionUrl(
-    fields,
-    formUrl = DATASET_SUBMISSION_FORM_URL,
-    entryIds = DATASET_SUBMISSION_ENTRY_IDS,
-) {
-    const params = new URLSearchParams();
-    params.set('usp', 'pp_url');
-    for (const key of Object.keys(entryIds)) {
-        const entryId = entryIds[key];
-        // Skip fields whose Form question hasn't been created yet; sending
-        // 'entry.PLACEHOLDER_*' would just add a junk query parameter.
-        if (typeof entryId !== 'string' || !entryId || entryId.includes(DATASET_SUBMISSION_PLACEHOLDER)) continue;
-        const value = fields == null ? undefined : fields[key];
-        if (value === undefined || value === null || value === '') continue;
-        params.set(entryId, String(value));
-    }
-    return `${formUrl}?${params.toString()}`;
-}
 // </core-injected>
 
 // Cap for manually-pasted source text. Unlike fetched sources — which the
@@ -2652,15 +2564,12 @@ function useToolforgeSourceFetcher() {
         'Could not fetch source content': 'Impossible de récupérer le contenu de la source',
 
         // Exported reports (wikitext + plain text)
-        'Submit': 'Signaler',
         'Citation verification report': 'Rapport de vérification des citations',
         'This is an experimental check of the article sources by [[User:Alaexis/AI_Source_Verification|Citation Verifier]]. Treat it with caution, be aware of its [[User:Alaexis/AI_Source_Verification#Limitations|limitations]] and feel free to leave feedback at [[User_talk:Alaexis/AI_Source_Verification|the talk page]].':
             'Ceci est une vérification expérimentale des sources de l’article par [[:en:User:Alaexis/AI_Source_Verification|Citation Verifier]]. Les résultats sont à prendre avec précaution : tenez compte de ses [[:en:User:Alaexis/AI_Source_Verification#Limitations|limites]] et n’hésitez pas à laisser un retour sur [[:en:User_talk:Alaexis/AI_Source_Verification|la page de discussion de l’outil]].',
         'Revision checked: ': 'Révision vérifiée : ',
-        '! # !! Verdict !! Source !! Comments !! class="unsortable" | Submit':
-            '! # !! Verdict !! Source !! Commentaires !! class="unsortable" | Signaler',
-        '! # !! Verdict !! Source !! Comments':
-            '! # !! Verdict !! Source !! Commentaires',
+        '! # !! Verdict !! Source !! Quote !! Comments':
+            '! # !! Verdict !! Source !! Citation !! Commentaires',
         '{{tick}} Supported': '{{Oui-}} Confirmée',
         '{{bang}} Partially supported': 'Partiellement confirmée',
         '{{cross}} Not supported': '{{Non-}} Non confirmée',
@@ -2946,15 +2855,12 @@ function useToolforgeSourceFetcher() {
         'Could not fetch source content': 'No se ha podido obtener el contenido de la fuente',
 
         // Exported reports (wikitext + plain text)
-        'Submit': 'Enviar',
         'Citation verification report': 'Informe de verificación de citas',
         'This is an experimental check of the article sources by [[User:Alaexis/AI_Source_Verification|Citation Verifier]]. Treat it with caution, be aware of its [[User:Alaexis/AI_Source_Verification#Limitations|limitations]] and feel free to leave feedback at [[User_talk:Alaexis/AI_Source_Verification|the talk page]].':
             'Esta es una comprobación experimental de las fuentes del artículo hecha por [[:en:User:Alaexis/AI_Source_Verification|Citation Verifier]]. Conviene tomarla con cautela y tener en cuenta sus [[:en:User:Alaexis/AI_Source_Verification#Limitations|limitaciones]]; los comentarios son bienvenidos en [[:en:User_talk:Alaexis/AI_Source_Verification|la página de discusión]].',
         'Revision checked: ': 'Revisión comprobada: ',
-        '! # !! Verdict !! Source !! Comments !! class="unsortable" | Submit':
-            '! # !! Veredicto !! Fuente !! Comentarios !! class="unsortable" | Enviar',
-        '! # !! Verdict !! Source !! Comments':
-            '! # !! Veredicto !! Fuente !! Comentarios',
+        '! # !! Verdict !! Source !! Quote !! Comments':
+            '! # !! Veredicto !! Fuente !! Cita !! Comentarios',
         '{{tick}} Supported': '{{tick}} Respaldada',
         '{{bang}} Partially supported': '{{bang}} Parcialmente respaldada',
         '{{cross}} Not supported': '{{cross}} No respaldada',
@@ -3236,15 +3142,12 @@ function useToolforgeSourceFetcher() {
         'Could not fetch source content': 'Не удалось получить содержимое источника',
 
         // Exported reports (wikitext + plain text)
-        'Submit': 'Отправить',
         'Citation verification report': 'Отчёт о проверке сносок',
         'This is an experimental check of the article sources by [[User:Alaexis/AI_Source_Verification|Citation Verifier]]. Treat it with caution, be aware of its [[User:Alaexis/AI_Source_Verification#Limitations|limitations]] and feel free to leave feedback at [[User_talk:Alaexis/AI_Source_Verification|the talk page]].':
             'Это экспериментальная проверка источников статьи инструментом [[:en:User:Alaexis/AI_Source_Verification|Citation Verifier]]. Относитесь к результатам с осторожностью, учитывайте его [[:en:User:Alaexis/AI_Source_Verification#Limitations|ограничения]] и не стесняйтесь оставлять отзывы на [[:en:User_talk:Alaexis/AI_Source_Verification|странице обсуждения]].',
         'Revision checked: ': 'Проверенная версия: ',
-        '! # !! Verdict !! Source !! Comments !! class="unsortable" | Submit':
-            '! # !! Вердикт !! Источник !! Комментарии !! class="unsortable" | Отправить',
-        '! # !! Verdict !! Source !! Comments':
-            '! # !! Вердикт !! Источник !! Комментарии',
+        '! # !! Verdict !! Source !! Quote !! Comments':
+            '! # !! Вердикт !! Источник !! Цитата !! Комментарии',
         '{{tick}} Supported': '{{tick}} Подтверждено',
         '{{bang}} Partially supported': '{{bang}} Частично подтверждено',
         '{{cross}} Not supported': '{{cross}} Не подтверждено',
@@ -6081,8 +5984,8 @@ function useToolforgeSourceFetcher() {
         // ========================================
 
         // Checks the model's source_quote against the source text it was
-        // actually shown. Returns the shape the renderers and the dataset
-        // submission both read: { quote, verified, status }.
+        // actually shown. Returns the shape the renderers read:
+        // { quote, verified, status }.
         //
         // sourceInfo is the raw "Source URL: ...\n\nSource Content:\n..."
         // blob (or the assembled multi-source text for a group); it is
@@ -6727,11 +6630,8 @@ function useToolforgeSourceFetcher() {
             if (revId) {
                 wikitext += `${this.t('Revision checked: ')}[[Special:PermanentLink/${revId}|${revId}]]\n\n`;
             }
-            const submissionConfigured = this.isDatasetSubmissionConfigured();
             wikitext += `{| class="wikitable sortable"\n`;
-            wikitext += submissionConfigured
-                ? `|-\n${this.t('! # !! Verdict !! Source !! Comments !! class="unsortable" | Submit')}\n`
-                : `|-\n${this.t('! # !! Verdict !! Source !! Comments')}\n`;
+            wikitext += `|-\n${this.t('! # !! Verdict !! Source !! Quote !! Comments')}\n`;
 
             // Link a citation number to its footnote anchor on the analyzed
             // revision, so clicks from the report jump to the original citation
@@ -6758,19 +6658,15 @@ function useToolforgeSourceFetcher() {
                     case 'SOURCE UNAVAILABLE': verdictWiki = this.t('{{hmmm}} Source unavailable'); break;
                     default: verdictWiki = r.verdict; break;
                 }
-                let commentsClean = (r.comments || '').replace(/\n/g, ' ');
-                // Verified quote first, as the evidence the reader can check;
-                // the model's explanation follows it. Unverified quotes are
-                // left out of the on-wiki report entirely.
+                if (r.verdict === 'NOT SUPPORTED' && r.reason_type) {
+                    verdictWiki += ` (${this.reasonTypeLabel(r.reason_type)})`;
+                }
+                let commentsClean = this.escapeWikitableCell((r.comments || '').replace(/\n/g, ' '));
                 // Quote the located text, not the model's raw quote: on a
                 // partial match the two differ, and only the former is
-                // guaranteed to be in the source.
-                if (r.quoteDisplay) {
-                    commentsClean = `''"${this.escapeWikitableCell(r.quoteDisplay)}"''<br />`
-                        + this.escapeWikitableCell(commentsClean);
-                } else {
-                    commentsClean = this.escapeWikitableCell(commentsClean);
-                }
+                // guaranteed to be in the source. Unverified quotes are left
+                // out of the on-wiki report entirely.
+                const quoteCell = r.quoteDisplay ? `''"${this.escapeWikitableCell(r.quoteDisplay)}"''` : '—';
                 if (r.truncated && r.verdict !== 'SUPPORTED') {
                     const note = r.isGroup
                         ? this.t("''(Combined sources are long, only partially checked.)''")
@@ -6788,14 +6684,7 @@ function useToolforgeSourceFetcher() {
                     citationCell = linkNum(r.citationNumber, r.refElement);
                     sourceStr = r.url ? `[${r.url} ${this.t('source')}]` : '—';
                 }
-                if (submissionConfigured) {
-                    const submitCell = (r.verdict && r.verdict !== 'ERROR')
-                        ? `[${this.buildDatasetSubmissionUrl(r)} ${this.t('Submit')}]`
-                        : '—';
-                    wikitext += `|-\n| ${citationCell} || ${verdictWiki} || ${sourceStr} || ${commentsClean} || ${submitCell}\n`;
-                } else {
-                    wikitext += `|-\n| ${citationCell} || ${verdictWiki} || ${sourceStr} || ${commentsClean}\n`;
-                }
+                wikitext += `|-\n| ${citationCell} || ${verdictWiki} || ${sourceStr} || ${quoteCell} || ${commentsClean}\n`;
             }
 
             wikitext += `|}\n\n`;
@@ -6846,9 +6735,12 @@ function useToolforgeSourceFetcher() {
 
             for (const r of this.getReportUnits()) {
                 const claimExcerpt = `${r.claimText.substring(0, 100)}${r.claimText.length > 100 ? '...' : ''}`;
+                const verdictLabel = (r.verdict === 'NOT SUPPORTED' && r.reason_type)
+                    ? `${this.t(r.verdict)} (${this.reasonTypeLabel(r.reason_type)})`
+                    : this.t(r.verdict);
                 if (r.isGroup) {
                     const token = (r.groupCitationNumbers || []).map(n => `[${n}]`).join('');
-                    text += `${token} ${this.t('(combined)')} ${this.t(r.verdict)}\n`;
+                    text += `${token} ${this.t('(combined)')} ${verdictLabel}\n`;
                     text += `  ${this.t('Claim: {text}', { text: claimExcerpt })}\n`;
                     const urls = (r.members || []).filter(m => m.url).map(m => `[${m.citationNumber}] ${m.url}`);
                     if (urls.length) text += `  ${this.t('Sources: {urls}', { urls: urls.join(' | ') })}\n`;
@@ -6856,7 +6748,7 @@ function useToolforgeSourceFetcher() {
                     if (r.comments) text += `  ${this.t('Comments: {text}', { text: r.comments })}\n`;
                     if (r.truncated && r.verdict !== 'SUPPORTED') text += `  ${this.t('Note: Combined sources are long, only partially checked.')}\n`;
                 } else {
-                    text += `[${r.citationNumber}] ${this.t(r.verdict)}\n`;
+                    text += `[${r.citationNumber}] ${verdictLabel}\n`;
                     text += `  ${this.t('Claim: {text}', { text: claimExcerpt })}\n`;
                     if (r.url) text += `  ${this.t('Source: {url}', { url: r.url })}\n`;
                     if (r.quoteDisplay) text += `  ${this.t('Quote: "{text}"', { text: r.quoteDisplay })}\n`;
@@ -7151,7 +7043,7 @@ function useToolforgeSourceFetcher() {
                 } else {
                     // Fetch source if not cached. Cache value is always the
                     // full { content, error, status } shape so retries on the
-                    // same URL preserve the diagnostic for the submission link.
+                    // same URL preserve the diagnostic for the comments cell.
                     const cacheKey = citation.pageNum ? `${citation.url}|page=${citation.pageNum}` : citation.url;
 
                     if (!this.sourceCache.has(cacheKey)) {
@@ -7185,8 +7077,6 @@ function useToolforgeSourceFetcher() {
                             verdict: 'SOURCE UNAVAILABLE',
                             support_score: 0,
                             comments,
-                            fetchStatus: fetchResult.status,
-                            fetchError: fetchResult.error,
                             truncated: false
                         };
                         // Logged like any other verdict: the user sees it and
@@ -7286,7 +7176,7 @@ function useToolforgeSourceFetcher() {
                     result.groupIndex = citation.groupIndex;
                     result.groupCitationNumbers = citation.groupCitationNumbers;
                     // Snapshot the provider/model used for this row so that
-                    // dataset-submission links stay accurate even if the user
+                    // feedback submitted later stays accurate even if the user
                     // switches providers after the report runs.
                     const providerConfig = this.providers[this.currentProvider] || {};
                     result.providerName = providerConfig.name || this.currentProvider || '';
@@ -7389,32 +7279,6 @@ function useToolforgeSourceFetcher() {
                 comments,
             });
             if (feedback) container.appendChild(feedback);
-        }
-
-        isDatasetSubmissionConfigured() {
-            return isDatasetSubmissionConfigured();
-        }
-
-        buildDatasetSubmissionUrl(result) {
-            const provider = this.providers[this.currentProvider] || {};
-            const articleUrl = (typeof window !== 'undefined' && window.location)
-                ? `${window.location.origin}${window.location.pathname}`
-                : '';
-            return buildDatasetSubmissionUrl({
-                articleUrl,
-                citationNumber: result?.citationNumber ?? '',
-                claimText: result?.claimText ?? '',
-                sourceUrl: result?.url ?? '',
-                llmVerdict: result?.verdict ?? '',
-                llmRationale: result?.comments ?? '',
-                // Only submit a quote we located in the source; an unverified
-                // one would pollute the dataset with possible fabrications.
-                llmQuote: result?.quoteDisplay ?? '',
-                llmQuoteVerified: result?.quoteStatus ?? '',
-                llmProvider: result?.providerName ?? provider.name ?? '',
-                llmModel: result?.model ?? provider.model ?? '',
-                fetchStatus: result?.fetchStatus ?? '',
-            });
         }
 
         // ========================================

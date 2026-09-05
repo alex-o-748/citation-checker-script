@@ -14,7 +14,7 @@ Wikipedia citation verification user script. An AI-powered sidebar tool that let
 main.js                          # Main Wikipedia user script (~2,700 lines, single class)
 package.json                     # Top-level deps + `npm test` / `npm run build` scripts
 core/                            # Shared logic, imported by benchmark/, cli/, service/, the web UI, and main.js (via sync)
-  claim.js, feedback.js, parsing.js, prompts.js, providers.js, quote.js, submission.js, urls.js, worker.js
+  claim.js, feedback.js, parsing.js, prompts.js, providers.js, quote.js, urls.js, worker.js
   models.js                      # Provider/model registry — the one place a model id is named
   pipeline.js                    # verifyCitation(): fetch -> prompt -> model -> parse -> quote, in one call
 cli/verify.js                    # Node CLI front-end (verify a single citation from the command line)
