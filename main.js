@@ -6758,6 +6758,9 @@ function useToolforgeSourceFetcher() {
                     case 'SOURCE UNAVAILABLE': verdictWiki = this.t('{{hmmm}} Source unavailable'); break;
                     default: verdictWiki = r.verdict; break;
                 }
+                if (r.verdict === 'NOT SUPPORTED' && r.reason_type) {
+                    verdictWiki += ` (${this.reasonTypeLabel(r.reason_type)})`;
+                }
                 let commentsClean = (r.comments || '').replace(/\n/g, ' ');
                 // Verified quote first, as the evidence the reader can check;
                 // the model's explanation follows it. Unverified quotes are
@@ -6846,9 +6849,12 @@ function useToolforgeSourceFetcher() {
 
             for (const r of this.getReportUnits()) {
                 const claimExcerpt = `${r.claimText.substring(0, 100)}${r.claimText.length > 100 ? '...' : ''}`;
+                const verdictLabel = (r.verdict === 'NOT SUPPORTED' && r.reason_type)
+                    ? `${this.t(r.verdict)} (${this.reasonTypeLabel(r.reason_type)})`
+                    : this.t(r.verdict);
                 if (r.isGroup) {
                     const token = (r.groupCitationNumbers || []).map(n => `[${n}]`).join('');
-                    text += `${token} ${this.t('(combined)')} ${this.t(r.verdict)}\n`;
+                    text += `${token} ${this.t('(combined)')} ${verdictLabel}\n`;
                     text += `  ${this.t('Claim: {text}', { text: claimExcerpt })}\n`;
                     const urls = (r.members || []).filter(m => m.url).map(m => `[${m.citationNumber}] ${m.url}`);
                     if (urls.length) text += `  ${this.t('Sources: {urls}', { urls: urls.join(' | ') })}\n`;
@@ -6856,7 +6862,7 @@ function useToolforgeSourceFetcher() {
                     if (r.comments) text += `  ${this.t('Comments: {text}', { text: r.comments })}\n`;
                     if (r.truncated && r.verdict !== 'SUPPORTED') text += `  ${this.t('Note: Combined sources are long, only partially checked.')}\n`;
                 } else {
-                    text += `[${r.citationNumber}] ${this.t(r.verdict)}\n`;
+                    text += `[${r.citationNumber}] ${verdictLabel}\n`;
                     text += `  ${this.t('Claim: {text}', { text: claimExcerpt })}\n`;
                     if (r.url) text += `  ${this.t('Source: {url}', { url: r.url })}\n`;
                     if (r.quoteDisplay) text += `  ${this.t('Quote: "{text}"', { text: r.quoteDisplay })}\n`;
