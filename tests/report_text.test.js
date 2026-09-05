@@ -50,8 +50,6 @@ function makeHarness(reportUnits, { revId = null } = {}) {
         if (params) for (const k of Object.keys(params)) s = s.split('{' + k + '}').join(String(params[k]));
         return s;
       }
-      isDatasetSubmissionConfigured() { return false; }
-      buildDatasetSubmissionUrl() { return ''; }
       getReportUnits() { return this.reportUnits; }
       getRevisionPermalinkUrl() { return null; }
 ${methods()}
@@ -100,6 +98,33 @@ test('plain text report tags a contradiction NOT SUPPORTED row', () => {
   const harness = makeHarness([baseUnit({ reason_type: 'contradiction' })]);
   const text = harness.generatePlainTextReport();
   assert.match(text, /^\[1\] NOT SUPPORTED \(Contradiction\)$/m);
+});
+
+test('wikitext report has no Submit column and puts the quote in its own column', () => {
+  const harness = makeHarness([baseUnit({
+    reason_type: 'contradiction',
+    quoteDisplay: 'The bridge opened in August 2002.',
+    comments: 'Source says 2002, not 1998.',
+  })]);
+  const wikitext = harness.generateWikitextReport();
+  assert.doesNotMatch(wikitext, /Submit/);
+  assert.match(wikitext, /! # !! Verdict !! Source !! Quote !! Comments/);
+  // Header has 5 columns, and the data row has 5 cells (four `||` separators).
+  const dataRow = wikitext.split('\n').find(line => line.startsWith('| ['));
+  assert.ok(dataRow, 'expected a data row starting with the citation cell');
+  assert.equal((dataRow.match(/\|\|/g) || []).length, 4);
+  assert.match(dataRow, /\|\| ''"The bridge opened in August 2002\."'' \|\|/);
+  // The quote text is not duplicated into the comments cell.
+  const commentsCell = dataRow.split('||').pop();
+  assert.doesNotMatch(commentsCell, /bridge opened in August 2002/);
+});
+
+test('wikitext report puts an em dash in the Quote column when there is nothing to quote', () => {
+  const harness = makeHarness([baseUnit({ reason_type: 'omission', quoteDisplay: '' })]);
+  const wikitext = harness.generateWikitextReport();
+  const dataRow = wikitext.split('\n').find(line => line.startsWith('| ['));
+  const cells = dataRow.split('||').map(c => c.trim());
+  assert.equal(cells[3], '—');
 });
 
 test('plain text report tags an omission NOT SUPPORTED row for a combined group', () => {
