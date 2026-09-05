@@ -1,0 +1,237 @@
+# Every actor/actress entry from "List of Nigerian actors" as of 2026-09-05
+# (each is one Wikipedia biography article, not a citation on this list page
+# itself — the list page carries no footnotes). For:
+#   node service/run-sweep.js --titles-file service/article-lists/nigerian-actors.txt \
+#     --live-source-fetch --max 232 --out nigerian-actors-findings.csv
+Abubakar Bashir Maishadda
+Adam A. Zango
+Adam Garba
+Adebayo Salami
+Adewale Akinnuoye-Agbaje
+Ado Gwanja
+Afeez Oyetoro
+Akin Lewis
+Ali Jita
+Ali Artwork
+Alex Ekubo
+Alex Usifo
+Ali Nuhu
+Amaka Umeh
+Aminu Shariff
+Aminu Saira
+Aminu Baba Ari
+Antar Laniyan
+Ayo Makun
+Babatunde Omidina
+Bimbo Manuel
+Blossom Chukwujekwu
+Bob-Manuel Udokwu
+Bovi
+Broda Shaggi
+Charles Inojie
+Chet Anekwe
+Chidi Mokeme
+Chinedu Ikedieze
+Chiwetel Ejiofor
+Chiwetalu Agu
+Chris Okagbue
+Clem Ohameze
+Damson Idris
+Daniel Etim Effiong
+David Oyelowo
+Dayo Okeniyi
+Dede One Day
+Dele Odule
+Desmond Elliot
+Deyemi Okanlawon
+Doris Simeon
+Efa Iwara
+Emeka Enyiocha
+Emeka Ike
+Emeka Ossai
+Falalu A Dorayi
+Falz
+Femi Adebayo
+Femi Branch
+Femi Jacobs
+Francis Duru
+Francis Odega
+Fred Amata
+Funso Adeolu
+Gbemisola Adeoti
+Hakeem Kae-Kazim
+Hanks Anuku
+Ibrahim Yekini
+Ifeanyi Emmanuel Igboke
+Ime Bishop Umoh
+Jide Kene Achufusi
+Jide Kosoko
+Jim Iyke
+Jimmie Akinsola
+Jimoh Aliu
+John Boyega
+John Okafor
+Joseph Benjamin
+Kanayo O. Kanayo
+Ken Erics
+Kenneth Okonkwo
+Kola Oyewo
+Kunle Remi
+Lateef Adedimeji
+Malam Nata'ala
+Mike Bamiloye
+Mike Ezuruonye
+Mr Macaroni
+Muyiwa Ademola
+Nazifi Asnanic
+Nkem Owoh
+Nonso Diobi
+Nuhu Abdullahi
+Nura M Inuwa
+O. C. Ukeje
+Odunlade Adekola
+Okey Bakassi
+Olu Jacobs
+Olumide Oworu
+Olumide Bakare
+Onuora Abuah
+Osita Iheme
+Pete Edochie
+Ramsey Nouah
+Richard Mofe Damijo
+Rotimi Salami
+Saheed Balogun
+Saint Obi
+Sam Dede
+Segun Arinze
+Sola Fosudo
+Sunday Omobolanle
+Taiwo Hassan
+Timini Egbuson
+Tobi Bakre
+Tobi Makinde
+Tope Tedela
+Tosin Igho
+Toyin Adewale
+Uzee Usman
+Uzor Arukwe
+Victor Osuagwu
+Wale Ojo
+Wasiu Alabi Pasuma
+Wole Ojo
+Yemi Ajibade
+Yemi Shodimu
+Yinka Quadri
+Yomi Fash-Lanso
+Yul Edochie
+Zack Orji
+Zubby Michael
+Zulu Adigwe
+Abimbola Craig
+Abiodun Duro-Ladipo
+Adebimpe Oyebade
+Adesua Etomi-Wellington
+Adunni Ade
+Alex Asogwa
+Alex Lopez
+Amal Umar
+Amina Amal
+Annie Macaulay-Idibia
+Ayo Adesanya
+Beverly Naya
+Beverly Osu
+Bimbo Ademoye
+Bimbo Oshin
+Biola Adebayo
+Bisi Komolafe
+Bukky Wright
+Carmen Ejogo
+Carol King
+Caroline Danjuma
+Chika Ike
+Chioma Chukwuka
+Chioma Okoye
+Clarion Chukwura
+Darasimi Nadi
+Dolly Nwaduba
+Dorcas Shola-Fapson
+Efe Irele
+Empress Njamah
+Eucharia-Anunobi Ekwu
+Fathia Balogun
+Folake Olowofoyeku
+Funke Akindele
+Gbubemi Ejeye
+Genevieve Nnaji
+Genoveva Umeh
+Hadiza Gabon
+Hafsat Idris
+Helen Paul
+Hilda Dokubo
+Idowu Philips
+Ini Edo
+Iyabo Ojo
+Jamila Nagudu
+Jennifer Eliogu
+Joke Silva
+Kate Henshaw
+Kehinde Bankole
+Kiki Omeili
+Lilian Bach
+Lilian Esoro
+Lisa Omorodion
+Liz Benson
+Liz Da-Silva
+Lola Margaret
+Maryam Yahaya
+Mary Lazarus
+Mary Uranta
+Megalyn Echikunwoke
+Mercy Aigbe
+Mercy Johnson
+Moji Olaiya
+Momee Gombe
+Monalisa Chinda
+Muma Gee
+Nafisa Abdullahi
+Nancy Isime
+Ngozi Ezeonu
+Nikki Amuka-Bird
+Nkiru Sylvanus
+Nse Ikpe Etim
+Oge Okoye
+Oghenekaro Itene
+Omotola Jalade Ekeinde
+Osas Ighodaro
+Patience Ozokwor
+Racheal Oniga
+Rahama Sadau
+Rashida Adamu Abdullah
+Regina Askia
+Regina Daniels
+Rita Dominic
+Rita Nzelu
+Rosaline Meurer
+Rukayya Dawayya
+Ruth Kadiri
+Sandra Achums
+Shan George
+Sharon Ooja
+Simi Drey
+Sola Sobowale
+Sophie Okonedo
+Stella Damasus
+Steph-Nora Okere
+Stephanie Okereke Linus
+Taiwo Ajai Lycett
+Tamara Eteimo
+Tomi Odunsi
+Toni Tones
+Tonto Dikeh
+Toyin Abraham
+Uche Jumbo
+Uyoyou Adia
+Uzo Aduba
+Weruche Opia
+Yvonne Jegede
+Yvonne Orji

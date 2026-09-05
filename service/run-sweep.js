@@ -46,6 +46,7 @@
 //   node service/run-sweep.js --max 50 --live-source-fetch --out findings.csv
 //   node service/run-sweep.js --max 5 --out findings.csv --store   # also ToolsDB
 //   node service/run-sweep.js --max 50 --live-llm-router --concurrency 16 --out findings.csv
+//   node service/run-sweep.js --titles-file articles.txt --live-source-fetch --out findings.csv
 //   node service/run-sweep.js --help
 //
 // --concurrency controls only the verify stage (model calls); fetching stays
@@ -54,6 +55,7 @@
 
 import { JSDOM } from 'jsdom';
 import { parseArgs } from 'node:util';
+import { readFile as fsReadFile } from 'node:fs/promises';
 
 import { openReplicaConnection, makeQueryFn } from './replicas.js';
 import { selectCandidates, CRITERIA } from './article-picker.js';
@@ -95,7 +97,8 @@ export function parseCliArgs(argv) {
         options: {
             criterion:           { type: 'string', default: 'failed-verification' },
             wiki:                { type: 'string', default: 'enwiki' },
-            max:                 { type: 'string', default: '5' },
+            max:                 { type: 'string' },
+            'titles-file':       { type: 'string' },
             provider:            { type: 'string', default: 'liftwing' },
             model:               { type: 'string' },
             'delay-ms':          { type: 'string', default: '1000' },
@@ -109,11 +112,17 @@ export function parseCliArgs(argv) {
         strict: true,
     });
 
+    // No default for --max: with --titles-file, "unset" means "every title
+    // in the file" (resolved once the file is read, since the count isn't
+    // known yet here); without it, the Wiki-Replicas branch falls back to 5.
+    const maxProvided = values.max !== undefined;
+
     return {
         help: values.help,
         criterion: values.criterion,
         wiki: values.wiki,
-        max: Number(values.max),
+        max: maxProvided ? Number(values.max) : undefined,
+        titlesFile: values['titles-file'],
         provider: values.provider,
         model: values.model || PROVIDER_MODELS[values.provider],
         delayMs: Number(values['delay-ms']),
@@ -134,9 +143,19 @@ be SOURCE UNAVAILABLE until you opt in.
 
 Options:
   --criterion <name>   Selection criterion. One of: ${Object.keys(CRITERIA).join(', ')}
-                        (default: failed-verification)
-  --wiki <db>           Wiki database name, e.g. enwiki, frwiki (default: enwiki)
-  --max <n>             Maximum articles to process (default: 5)
+                        (default: failed-verification). Ignored with --titles-file.
+  --wiki <db>           Wiki database name, e.g. enwiki, frwiki (default: enwiki).
+                        With --titles-file this only picks the domain used for
+                        permalinks in the CSV — no Wiki Replicas query is made.
+  --titles-file <path>  Check an explicit list of articles instead of selecting
+                         via Wiki Replicas: a text file, one article title per
+                         line (blank lines and lines starting with # ignored).
+                         Bypasses stage 1 entirely — no Wiki Replicas connection
+                         is opened. Each title is fetched at its *latest*
+                         revision (selection normally pins one, since there is
+                         no separate select step here to race against).
+  --max <n>             Maximum articles to process. Default: 5 without
+                         --titles-file; every listed title with it.
   --provider <name>     One of: ${Object.keys(PROVIDER_MODELS).join(', ')} (default: liftwing)
   --model <id>          Override the provider's default model
   --delay-ms <n>        Delay after each model call, ms (default: 1000)
@@ -180,6 +199,17 @@ halts the same way, exit code 4. Either way the CSV (and, with --store,
 ToolsDB) still gets every finding computed before the halt; nothing already
 written is rolled back.
 `;
+
+// Parses --titles-file's contents: one article title per line, blank lines
+// and comment lines (starting with #) skipped. Kept separate from the actual
+// file read so it's unit-testable without a filesystem, matching csv-report.js's
+// rowsToCsv()/writeCsvReport() split.
+export function parseTitlesFile(text) {
+    return text
+        .split('\n')
+        .map(line => line.trim())
+        .filter(line => line && !line.startsWith('#'));
+}
 
 // Stage 3 stand-in, identical to service/run-extract.js's stubFetchSource.
 // Every citation with a URL resolves to unavailableReason "fetch_failed"
@@ -247,8 +277,13 @@ export async function runSweep(opts, {
     // .ownerDocument), which is what makes a fragment root safe here.
     parseHtml = html => JSDOM.fragment(html),
     readFile,
+    readTitlesFile = path => fsReadFile(path, 'utf8'),
 } = {}) {
-    if (!Number.isInteger(opts.max) || opts.max < 1) {
+    // opts.max is left undefined by parseCliArgs when --titles-file is given
+    // and --max wasn't — the titles-file branch below resolves that to "every
+    // listed title" once it knows the count. An explicit --max (any branch)
+    // is still validated up front, before any I/O.
+    if (opts.max !== undefined && (!Number.isInteger(opts.max) || opts.max < 1)) {
         stderr.write(`sweep: --max must be a positive integer (got: ${opts.max})\n`);
         return 2;
     }
@@ -264,27 +299,52 @@ export async function runSweep(opts, {
         return 2;
     }
 
-    let replicaConnection;
-    try {
-        replicaConnection = await connectReplicas({ wikiDb: opts.wiki });
-    } catch (error) {
-        stderr.write(`sweep: could not connect to Wiki Replicas: ${error.message}\n`);
-        return 1;
-    }
-
     let candidates;
-    try {
-        candidates = await selectCandidates(makeQueryFn(replicaConnection), {
-            criterion: opts.criterion,
-            max: opts.max,
-        });
-    } catch (error) {
-        stderr.write(`sweep: ${error.message}\n`);
-        return 1;
-    } finally {
-        await replicaConnection.end();
+    if (opts.titlesFile) {
+        // Stage 1 replaced entirely: the caller already knows which articles
+        // to check, so there's nothing to select and no Wiki Replicas
+        // connection to open. pageId/revisionId stay null — there is no
+        // Wiki-Replicas row to pin a revision from, so fetchArticleHtml()
+        // (core/wikipedia.js) falls back to the latest revision, and
+        // csv-report.js's permalink() already treats a missing pageId/
+        // revisionId as "omit the link" rather than a broken one.
+        let text;
+        try {
+            text = await readTitlesFile(opts.titlesFile);
+        } catch (error) {
+            stderr.write(`sweep: could not read --titles-file ${opts.titlesFile}: ${error.message}\n`);
+            return 1;
+        }
+        const titles = parseTitlesFile(text);
+        if (titles.length === 0) {
+            stderr.write(`sweep: --titles-file ${opts.titlesFile} contains no titles\n`);
+            return 2;
+        }
+        const max = opts.max ?? titles.length;
+        candidates = titles.slice(0, max).map(title => ({ pageId: null, title, revisionId: null }));
+        stderr.write(`sweep: loaded ${candidates.length} of ${titles.length} article(s) from ${opts.titlesFile}\n`);
+    } else {
+        let replicaConnection;
+        try {
+            replicaConnection = await connectReplicas({ wikiDb: opts.wiki });
+        } catch (error) {
+            stderr.write(`sweep: could not connect to Wiki Replicas: ${error.message}\n`);
+            return 1;
+        }
+
+        try {
+            candidates = await selectCandidates(makeQueryFn(replicaConnection), {
+                criterion: opts.criterion,
+                max: opts.max ?? 5,
+            });
+        } catch (error) {
+            stderr.write(`sweep: ${error.message}\n`);
+            return 1;
+        } finally {
+            await replicaConnection.end();
+        }
+        stderr.write(`sweep: selected ${candidates.length} article(s)\n`);
     }
-    stderr.write(`sweep: selected ${candidates.length} article(s)\n`);
 
     let toolsDbConnection = null;
     let toolsDbQuery = null;
