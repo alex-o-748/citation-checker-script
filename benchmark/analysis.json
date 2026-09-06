@@ -1,5 +1,5 @@
 {
-  "generated": "2026-09-06T08:25:31.635Z",
+  "generated": "2026-09-06T20:30:42.346Z",
   "overview": {
     "datasetVersion": "all",
     "totalEntries": 187,
@@ -41,8 +41,8 @@
         "exactAccuracy": 0.5419354838709678,
         "lenientAccuracy": 0.8387096774193549,
         "binaryAccuracy": 0.8451612903225807,
-        "supportedVsRestCorrect": 97,
-        "supportedVsRestAccuracy": 0.6258064516129033,
+        "supportedVsRestCorrect": 98,
+        "supportedVsRestAccuracy": 0.632258064516129,
         "confusionMatrix": {
           "Supported": {
             "Supported": 50,
@@ -75,10 +75,10 @@
           "max": 9519
         },
         "support_score": {
-          "avg": 0,
-          "avgWhenCorrect": null,
-          "avgWhenWrong": null,
-          "calibration": null
+          "avg": 79.0728476821192,
+          "avgWhenCorrect": 79.82142857142857,
+          "avgWhenWrong": 73.73239436619718,
+          "calibration": 6.0890342052313855
         }
       }
     },
@@ -107,8 +107,8 @@
         "exactAccuracy": 0.6,
         "lenientAccuracy": 0.8580645161290322,
         "binaryAccuracy": 0.8709677419354839,
-        "supportedVsRestCorrect": 99,
-        "supportedVsRestAccuracy": 0.6387096774193548,
+        "supportedVsRestCorrect": 102,
+        "supportedVsRestAccuracy": 0.6580645161290323,
         "confusionMatrix": {
           "Supported": {
             "Supported": 67,
@@ -141,10 +141,10 @@
           "max": 7381
         },
         "support_score": {
-          "avg": 0,
-          "avgWhenCorrect": null,
-          "avgWhenWrong": null,
-          "calibration": null
+          "avg": 77.65517241379311,
+          "avgWhenCorrect": 76.34408602150538,
+          "avgWhenWrong": 67.09677419354838,
+          "calibration": 9.247311827956992
         }
       }
     },
@@ -173,8 +173,8 @@
         "exactAccuracy": 0.489247311827957,
         "lenientAccuracy": 0.6881720430107527,
         "binaryAccuracy": 0.8494623655913979,
-        "supportedVsRestCorrect": 102,
-        "supportedVsRestAccuracy": 0.5483870967741935,
+        "supportedVsRestCorrect": 138,
+        "supportedVsRestAccuracy": 0.7419354838709677,
         "confusionMatrix": {
           "Supported": {
             "Supported": 67,
@@ -207,10 +207,10 @@
           "max": 8974
         },
         "support_score": {
-          "avg": 0,
-          "avgWhenCorrect": null,
-          "avgWhenWrong": null,
-          "calibration": null
+          "avg": 79.93055555555556,
+          "avgWhenCorrect": 81.81318681318682,
+          "avgWhenWrong": 42.78947368421053,
+          "calibration": 39.02371312897629
         }
       }
     },
@@ -239,8 +239,8 @@
         "exactAccuracy": 0.6666666666666666,
         "lenientAccuracy": 0.8548387096774194,
         "binaryAccuracy": 0.8548387096774194,
-        "supportedVsRestCorrect": 141,
-        "supportedVsRestAccuracy": 0.7580645161290323,
+        "supportedVsRestCorrect": 142,
+        "supportedVsRestAccuracy": 0.7634408602150538,
         "confusionMatrix": {
           "Supported": {
             "Supported": 52,
@@ -273,10 +273,10 @@
           "max": 16386
         },
         "support_score": {
-          "avg": 0,
-          "avgWhenCorrect": null,
-          "avgWhenWrong": null,
-          "calibration": null
+          "avg": 60,
+          "avgWhenCorrect": 50.92741935483871,
+          "avgWhenWrong": 39.435483870967744,
+          "calibration": 11.491935483870968
         }
       }
     },
@@ -305,8 +305,8 @@
         "exactAccuracy": 0.5439560439560439,
         "lenientAccuracy": 0.6483516483516484,
         "binaryAccuracy": 0.7362637362637363,
-        "supportedVsRestCorrect": 128,
-        "supportedVsRestAccuracy": 0.7032967032967034,
+        "supportedVsRestCorrect": 148,
+        "supportedVsRestAccuracy": 0.8131868131868132,
         "confusionMatrix": {
           "Supported": {
             "Supported": 53,
@@ -339,10 +339,10 @@
           "max": 10347
         },
         "support_score": {
-          "avg": 0,
-          "avgWhenCorrect": null,
-          "avgWhenWrong": null,
-          "calibration": null
+          "avg": 54.776978417266186,
+          "avgWhenCorrect": 57.86868686868687,
+          "avgWhenWrong": 22.710843373493976,
+          "calibration": 35.15784349519289
         }
       }
     },
@@ -371,8 +371,8 @@
         "exactAccuracy": 0.6705202312138728,
         "lenientAccuracy": 0.7976878612716763,
         "binaryAccuracy": 0.8092485549132948,
-        "supportedVsRestCorrect": 138,
-        "supportedVsRestAccuracy": 0.7976878612716763,
+        "supportedVsRestCorrect": 142,
+        "supportedVsRestAccuracy": 0.8208092485549133,
         "confusionMatrix": {
           "Supported": {
             "Supported": 48,
@@ -405,10 +405,10 @@
           "max": 66666
         },
         "support_score": {
-          "avg": 0,
-          "avgWhenCorrect": null,
-          "avgWhenWrong": null,
-          "calibration": null
+          "avg": 54.74698795180723,
+          "avgWhenCorrect": 58.94827586206897,
+          "avgWhenWrong": 39.473684210526315,
+          "calibration": 19.474591651542653
         }
       }
     },
@@ -437,8 +437,8 @@
         "exactAccuracy": 0.6263736263736264,
         "lenientAccuracy": 0.6978021978021978,
         "binaryAccuracy": 0.6978021978021978,
-        "supportedVsRestCorrect": 143,
-        "supportedVsRestAccuracy": 0.7857142857142857,
+        "supportedVsRestCorrect": 145,
+        "supportedVsRestAccuracy": 0.7967032967032966,
         "confusionMatrix": {
           "Supported": {
             "Supported": 48,
@@ -471,10 +471,10 @@
           "max": 20156
         },
         "support_score": {
-          "avg": 0,
-          "avgWhenCorrect": null,
-          "avgWhenWrong": null,
-          "calibration": null
+          "avg": 60.55865921787709,
+          "avgWhenCorrect": 63.07017543859649,
+          "avgWhenWrong": 53.6764705882353,
+          "calibration": 9.393704850361196
         }
       }
     },
@@ -503,8 +503,8 @@
         "exactAccuracy": 0.4725274725274725,
         "lenientAccuracy": 0.5714285714285714,
         "binaryAccuracy": 0.7032967032967034,
-        "supportedVsRestCorrect": 110,
-        "supportedVsRestAccuracy": 0.6043956043956044,
+        "supportedVsRestCorrect": 143,
+        "supportedVsRestAccuracy": 0.7857142857142857,
         "confusionMatrix": {
           "Supported": {
             "Supported": 60,
