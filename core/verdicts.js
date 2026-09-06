@@ -69,12 +69,35 @@ export function toShortCode(canonical) {
     return SHORT_CODE[canonical] ?? canonical;
 }
 
-// Supported-vs-rest equivalence: SUPPORTED and SOURCE_UNAVAILABLE must match
-// exactly; PARTIALLY_SUPPORTED and NOT_SUPPORTED are forgiven as mutual
-// near-misses, since both mean "an editor has to go look further." This is
-// the grouping docs/llm-benchmarking-overview.md's "Lenient Accuracy" section
+// Supported-vs-rest equivalence: SUPPORTED must match exactly; every other
+// verdict — PARTIALLY_SUPPORTED, NOT_SUPPORTED and SOURCE_UNAVAILABLE — is
+// "rest", and any two of them count as equal, since all three mean the same
+// thing operationally: "an editor has to go look further." This is the
+// grouping docs/llm-benchmarking-overview.md's "Lenient Accuracy" section
 // describes, and the one WiCE's own claim-level binary task uses (see
 // docs/wice-benchmark.md) — SUPPORTED vs. everything else.
+//
+// SOURCE_UNAVAILABLE used to be excluded from that "rest" bucket and required
+// to match exactly, which made this metric mean something other than its name
+// and its own doc comment claimed. No dataset ground truth carries
+// SOURCE_UNAVAILABLE — `Benchmarking_data_Citations.csv` labels only the other
+// three — so "must match exactly" meant a SOURCE_UNAVAILABLE prediction could
+// never be scored right *in any row*, and the metric silently became "did the
+// model avoid saying 'source unavailable', and also get the supported/problem
+// split right." That penalized exactly the models that correctly detect an
+// unusable source, which matters here because a substantial share of
+// dataset.json's rows are truncated at the fetch cap or contain nothing but
+// Internet Archive page chrome. Measured on the 2026-09 run, folding
+// SOURCE_UNAVAILABLE into "rest" moved liftwing-qwen3.6-27b from 60.4% to
+// 78.6% and claude-sonnet-4-5 from 54.8% to 74.2%, while every provider that
+// rarely emits the verdict moved under a point — i.e. the old number was
+// mostly measuring willingness to commit to a verdict, not accuracy.
+//
+// Note this is deliberately *not* symmetric with the confusion matrix or with
+// exactAccuracy, both of which still treat SOURCE_UNAVAILABLE as its own
+// fourth class. Distinguishing "unreadable source" from "source contradicts
+// the claim" is real signal worth keeping — it just isn't the distinction
+// *this* metric exists to draw.
 //
 // Defined here, exported, rather than inline in analyze_results.js (its only
 // current caller): this exact grouping was hand-computed into that doc on
@@ -92,6 +115,8 @@ export function equalSupportedVsRest(a, b) {
     const cb = canonicalizeVerdict(b);
     if (ca === null || cb === null) return false;
     if (ca === cb) return true;
-    const isProblem = v => v === VERDICTS.PARTIALLY_SUPPORTED || v === VERDICTS.NOT_SUPPORTED;
+    const isProblem = v => v === VERDICTS.PARTIALLY_SUPPORTED
+        || v === VERDICTS.NOT_SUPPORTED
+        || v === VERDICTS.SOURCE_UNAVAILABLE;
     return isProblem(ca) && isProblem(cb);
 }

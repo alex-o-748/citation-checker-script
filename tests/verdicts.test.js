@@ -90,10 +90,11 @@ test('toShortCode maps canonical to compare_results short codes', () => {
 
 // --- equalSupportedVsRest ---
 // The grouping docs/llm-benchmarking-overview.md's "Lenient Accuracy" section
-// describes: Supported must match exactly; Partially/Not are forgiven as
-// mutual near-misses. Deliberately the opposite pairing from what
-// analyze_results.js's own `lenientAccuracy` field forgives (Supported <->
-// Partially) — see that field's neighboring comment for why both exist.
+// describes: Supported must match exactly; Partially/Not/Source unavailable
+// are all "rest" and count as mutually equal. Deliberately the opposite
+// pairing from what analyze_results.js's own `lenientAccuracy` field forgives
+// (Supported <-> Partially) — see that field's neighboring comment for why
+// both exist.
 
 test('equalSupportedVsRest requires an exact match on Supported', () => {
     assert.equal(equalSupportedVsRest('Supported', 'Supported'), true);
@@ -108,11 +109,22 @@ test('equalSupportedVsRest forgives Partially supported <-> Not supported in eit
     assert.equal(equalSupportedVsRest('Partially supported', 'Partially supported'), true);
 });
 
-test('equalSupportedVsRest requires an exact match on Source unavailable', () => {
+// Source unavailable belongs to "rest", not to a class of its own. It used to
+// require an exact match, which — since no ground truth row is ever labeled
+// Source unavailable — made every such prediction unscoreable-as-correct and
+// turned this metric into "did the model avoid saying it". See
+// equalSupportedVsRest's comment in core/verdicts.js.
+test('equalSupportedVsRest groups Source unavailable with the other problem verdicts', () => {
     assert.equal(equalSupportedVsRest('Source unavailable', 'Source unavailable'), true);
-    assert.equal(equalSupportedVsRest('Source unavailable', 'Not supported'), false);
-    assert.equal(equalSupportedVsRest('Not supported', 'Source unavailable'), false);
+    assert.equal(equalSupportedVsRest('Source unavailable', 'Not supported'), true);
+    assert.equal(equalSupportedVsRest('Not supported', 'Source unavailable'), true);
+    assert.equal(equalSupportedVsRest('Source unavailable', 'Partially supported'), true);
+    assert.equal(equalSupportedVsRest('Partially supported', 'Source unavailable'), true);
+});
+
+test('equalSupportedVsRest still requires an exact match between Supported and Source unavailable', () => {
     assert.equal(equalSupportedVsRest('Source unavailable', 'Supported'), false);
+    assert.equal(equalSupportedVsRest('Supported', 'Source unavailable'), false);
 });
 
 test('equalSupportedVsRest accepts any input form canonicalizeVerdict accepts', () => {
