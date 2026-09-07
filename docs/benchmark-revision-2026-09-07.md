@@ -62,7 +62,23 @@ figure.
 
 ## Effect on the numbers
 
-Unscoreable rows excluded throughout. Ordered by exact accuracy on the strict set:
+Both columns are the **share of a provider's non-error calls where its verdict counts
+as right** — they differ only in what "right" means:
+
+- **Exact** — the verdict matches the label across all four classes: `Supported`,
+  `Partially supported`, `Not supported`, `Source unavailable`. Nothing is forgiven, so
+  calling a partially-supported claim unsupported is as wrong as calling it supported.
+- **Supported-vs-rest** — `Supported` must still match exactly, but the three ways a
+  citation can fail (`Partially supported`, `Not supported`, `Source unavailable`) count
+  as mutually equivalent. It answers the question an editor actually has: *does this
+  citation carry the claim, yes or no?* — without grading how it fails.
+
+Denominator in both cases is calls that returned a parseable verdict; API errors and
+unparseable responses are dropped, not counted wrong. "All rows" is the 177 scoreable
+rows; "strict" is the 129 with a whole source. Unscoreable rows are excluded from every
+column.
+
+Ordered by exact accuracy on the strict set:
 
 | Provider | Exact (all rows) | Exact (strict) | Supported-vs-rest (strict) |
 |---|---|---|---|
