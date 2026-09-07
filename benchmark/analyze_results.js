@@ -24,7 +24,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
-import { loadRows } from './io.js';
+import { loadRows, rowSupportScore } from './io.js';
 import { canonicalizeVerdict, toTitleCase, VERDICT_LIST, equalSupportedVsRest } from '../core/verdicts.js';
 import { quoteExpectedFor } from '../core/quote.js';
 
@@ -151,8 +151,9 @@ export function calculateMetrics(results) {
         return predPositive === truthPositive;
     }).length;
 
-    // Supported-vs-rest accuracy: SUPPORTED must match exactly; PARTIALLY and
-    // NOT are forgiven as mutual near-misses. This is a different grouping
+    // Supported-vs-rest accuracy: SUPPORTED must match exactly; PARTIALLY,
+    // NOT and SOURCE UNAVAILABLE are all "rest" and count as mutually
+    // equivalent. This is a different grouping
     // than lenientAccuracy below (which forgives SUPPORTED <-> PARTIALLY) —
     // see equalSupportedVsRest's doc comment in core/verdicts.js for why the
     // two coexist under different names rather than one being "the" lenient
@@ -188,8 +189,11 @@ export function calculateMetrics(results) {
     const minLatency = latencies.length > 0 ? Math.min(...latencies) : 0;
     const maxLatency = latencies.length > 0 ? Math.max(...latencies) : 0;
 
-    // Support score stats
-    const supportScores = validResults.map(r => r.support_score).filter(c => c > 0);
+    // Support score stats. Read through rowSupportScore, not r.support_score:
+    // pre-rename rows spell the field `confidence`, and reading only the
+    // current name reported an average of 0 and no calibration gap for every
+    // such provider (see io.js's rowSupportScore).
+    const supportScores = validResults.map(rowSupportScore).filter(c => c > 0);
     const avgSupportScore = supportScores.length > 0
         ? supportScores.reduce((a, b) => a + b, 0) / supportScores.length
         : 0;
@@ -197,10 +201,10 @@ export function calculateMetrics(results) {
     // Support score by correctness
     const correctSupportScores = validResults
         .filter(r => normalizeVerdict(r.predicted_verdict) === normalizeVerdict(r.ground_truth))
-        .map(r => r.support_score);
+        .map(rowSupportScore);
     const wrongSupportScores = validResults
         .filter(r => normalizeVerdict(r.predicted_verdict) !== normalizeVerdict(r.ground_truth))
-        .map(r => r.support_score);
+        .map(rowSupportScore);
 
     const avgSupportScoreCorrect = correctSupportScores.length > 0
         ? correctSupportScores.reduce((a, b) => a + b, 0) / correctSupportScores.length
@@ -322,7 +326,7 @@ function generateMarkdownReport(analysis) {
         md += `- Exact match: ${m.exactMatches}/${m.valid} (${(m.exactAccuracy * 100).toFixed(1)}%)\n`;
         md += `- Lenient (includes partial): ${m.exactMatches + m.partialMatches}/${m.valid} (${(m.lenientAccuracy * 100).toFixed(1)}%)\n`;
         md += `- Binary (support vs not): ${(m.binaryAccuracy * 100).toFixed(1)}%\n`;
-        md += `- Supported-vs-rest (Partial/Not forgiven as mutual near-misses, Supported must be exact): ${m.supportedVsRestCorrect}/${m.valid} (${(m.supportedVsRestAccuracy * 100).toFixed(1)}%)\n`;
+        md += `- Supported-vs-rest (Partial/Not/Unavailable all count as "rest", Supported must be exact): ${m.supportedVsRestCorrect}/${m.valid} (${(m.supportedVsRestAccuracy * 100).toFixed(1)}%)\n`;
         if (m.quotes && m.quotes.eligible > 0) {
             md += `- Quote supplied: ${m.quotes.offered}/${m.quotes.eligible} (${(m.quotes.offerRate * 100).toFixed(1)}% of verdicts that should have one)\n`;
             md += `- Quote found in source: ${m.quotes.verified}/${m.quotes.offered} (${(m.quotes.fidelity * 100).toFixed(1)}%)\n`;

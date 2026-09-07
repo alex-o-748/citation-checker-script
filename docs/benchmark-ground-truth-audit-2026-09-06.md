@@ -20,13 +20,23 @@ The ranking is stable, but the absolute numbers are not.
 > [Status](#status-what-has-been-done) at the end. The labels are untouched and
 > await review.
 >
-> One correction to this document's first version: it counted truncated rows with
-> `source_text.length >= 11900`, which swept in two complete documents
-> (`row_71` at 17,985 chars and `row_139` at 11,990 — both under their cap). The
-> real count is **48, not 50**, and the accuracy gap is **14.3 points, not 14.0**.
-> The conclusion is unchanged. `row_71` being a *complete* source strengthens the
-> case in section A, since its label is contradicted by a whole document rather
-> than a fragment.
+> Two corrections to this document's first version:
+>
+> 1. It counted truncated rows with `source_text.length >= 11900`, which swept in
+>    two complete documents (`row_71` at 17,985 chars and `row_139` at 11,990 —
+>    both under their cap). The real count is **48, not 50**. `row_71` being a
+>    *complete* source strengthens the case in section A, since its label is
+>    contradicted by a whole document rather than a fragment.
+> 2. It reported the truncation gap without noting that **about half of it is
+>    unrewardable `Source unavailable`** — no scoreable row carries that label, so
+>    the verdict is always scored wrong, and models emit it twice as often on
+>    truncated sources. Section D now carries the decomposition. The gap on the
+>    current data is 13.0 points by exact accuracy and 6.5 by supported-vs-rest.
+>
+> This branch is merged with `main` as of `3697f99`, which fixed three metric bugs
+> — including `equalSupportedVsRest` excluding `SOURCE UNAVAILABLE` from "rest".
+> Exact accuracy and the confusion matrix are unaffected by that fix, so every
+> per-provider figure in this document is unchanged by the merge.
 
 ---
 
@@ -147,16 +157,25 @@ Most truncated rows have a label other than `Not supported`, i.e. the label
 asserts the source contains something — which for a fragment is exactly the
 assertion that can't be trusted.
 
-**It costs about 16 points.** What `npm run analyze` now prints, with the
-section-B rows already excluded:
+**It costs about 13 points.** What `npm run analyze` prints, with the section-B rows
+excluded and the six 2026-09-07 label corrections applied:
 
 ```
 === Accuracy by source completeness (pooled) ===
 
-  Full sources:      62.8%  (618/984)
-  Truncated sources: 46.6%  (170/365)
-  Gap:               16.2 points
+  Full sources:      64.0%  (626/978)
+  Truncated sources: 51.0%  (186/365)
+  Gap:               13.0 points
 ```
+
+**Roughly half of that gap is not the model being wrong.** No scoreable row in the
+dataset carries the `Source unavailable` label (the only one, `row_111`, is
+excluded), yet the verdict is emitted on 105 calls — every one scored wrong under
+4-class exact accuracy. Models emit it twice as often on truncated rows (12.3% vs
+6.1%), where it accounts for 25.1% of all errors. Of the 48-error truncation cost,
+23 is unrewardable `Source unavailable` and 25 is genuine misjudgement. Under the
+`equalSupportedVsRest` metric — fixed on `main` in `3697f99` to fold the verdict
+into "rest" — the gap halves to **6.5 points** (78.5% vs 72.1%).
 
 The gap holds within every label class — *Supported* 72.5% vs 64.6%,
 *Not supported* 63.6% vs 50.0%, and widest on *Partially supported* at 46.3% vs
@@ -165,9 +184,10 @@ isn't a composition artifact. (Before excluding the section-B rows the same spli
 reads 60.9% vs 46.6%, a 14.3-point gap; exclusion lifts the full-source side
 because most of those rows sit in it.)
 
-Worse than the accuracy gap: on a truncated source **18.4% of calls falsely
+Worse than the accuracy gap: on a truncated source **16.7% of calls falsely
 report that a citation fails** — the model returns NOT SUPPORTED where the label
-says the source backs the claim fully or partly — against 12.3% on whole sources.
+says the source backs the claim fully or partly — against 11.2% on whole sources.
+(That measure is unaffected by the `Source unavailable` issue above.)
 That is the worst error this tool can make to an editor, and it is concentrated
 in exactly the rows where the evidence was cut off before the model could see it.
 

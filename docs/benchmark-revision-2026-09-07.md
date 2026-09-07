@@ -129,6 +129,41 @@ pooled.
 So a third of the corpus is compromised but only a tenth of the error is. Truncation
 is a real cost, not the dominant one.
 
+### About half the truncation penalty isn't the model being wrong
+
+**No scoreable row in the dataset is labelled `Source unavailable`.** The only one
+(`row_111`) is excluded. But the verdict is emitted on **105 calls (7.8%)**, and under
+4-class exact accuracy every one of them is scored wrong — the answer is unwinnable by
+construction.
+
+That lands disproportionately on truncated rows, where models detect an unusable
+source twice as often:
+
+| | Whole sources | Truncated |
+|---|---|---|
+| Predicts `Source unavailable` | 6.1% (60 calls) | **12.3% (45 calls)** |
+| …as a share of that group's errors | 17.0% | **25.1%** |
+
+Decomposing the 48-error truncation cost: **23 (47%) is excess `Source unavailable`**
+that could never have scored right, and **25 is genuine misjudgement**. So the
+fetch-fixable part is closer to **1.8 accuracy points**, not 3.5.
+
+The same effect shows up in the metric that *does* credit the verdict.
+`equalSupportedVsRest` was fixed on `main` (commit `3697f99`) to fold
+`SOURCE UNAVAILABLE` into "rest" — it previously required an exact match, so the
+metric had quietly become "did the model avoid saying it". Under the corrected
+version the truncation gap **halves**:
+
+| Metric | Whole | Truncated | Gap |
+|---|---|---|---|
+| Exact accuracy (4-class) | 64.0% | 51.0% | 13.0 pts |
+| Supported-vs-rest (fixed) | 78.5% | 72.1% | **6.5 pts** |
+
+Both numbers are honest; they answer different questions. But quoting the 13-point gap
+as "what truncation costs" overstates it, because roughly half of it is the model
+correctly reporting that it cannot read the source and the benchmark having no way to
+say "correct".
+
 **The part that argues for splitting the benchmark:** that share is not constant
 across models.
 

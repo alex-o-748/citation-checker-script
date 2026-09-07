@@ -1,28 +1,38 @@
 import { VERDICTS, canonicalizeVerdict } from '../core/verdicts.js';
+import { rowSupportScore } from './io.js';
 
 /**
  * ROC-curve computation for benchmark verdicts.
  *
  * Verdicts aren't a single probability — a row carries a categorical
  * `predicted_verdict` (SUPPORTED / PARTIALLY SUPPORTED / NOT SUPPORTED /
- * SOURCE UNAVAILABLE) plus a `confidence` (0-100) that's scoped to whichever
- * verdict the model chose (a NOT SUPPORTED row can carry confidence 95 -
- * that's confidence in "not supported", not in "supported"). An ROC curve
- * needs one directional score per row, so `supportedScore` folds verdict
- * polarity and confidence into a single 0-100 "how strongly does this read
- * as SUPPORTED" scale: SUPPORTED pushes above the 50 midpoint (higher
- * confidence -> further above), NOT SUPPORTED / SOURCE UNAVAILABLE push
- * below it, and PARTIALLY SUPPORTED sits at the midpoint (confidence there
- * doesn't carry a supported/not-supported direction to lean on).
+ * SOURCE UNAVAILABLE) plus a `support_score` (0-100) that's scoped to
+ * whichever verdict the model chose (a NOT SUPPORTED row can carry
+ * support_score 95 - that's confidence in "not supported", not in
+ * "supported"). An ROC curve needs one directional score per row, so
+ * `supportedScore` folds verdict polarity and that score into a single
+ * 0-100 "how strongly does this read as SUPPORTED" scale: SUPPORTED pushes
+ * above the 50 midpoint (higher score -> further above), NOT SUPPORTED /
+ * SOURCE UNAVAILABLE push below it, and PARTIALLY SUPPORTED sits at the
+ * midpoint (the score there doesn't carry a supported/not-supported
+ * direction to lean on).
+ *
+ * The per-row score comes from io.js's `rowSupportScore`, never from
+ * `r.support_score` or `r.confidence` directly. This module used to read
+ * `r.confidence` alone, which commit e0706fb had renamed; since 0 collapses
+ * *every* branch below onto the 50 midpoint, that yielded one distinct
+ * threshold and an AUC of exactly 0.500 for any current-schema run —
+ * chance, and silent. The first liftwing-qwen3.6-27b run scored 0.500 that
+ * way against a real 0.774.
  *
  * Positive class is ground_truth === SUPPORTED - i.e. "is this citation
  * actually fine", which is the operational question the sidebar's verdict
  * exists to answer for an editor deciding whether to flag it.
  */
 
-export function supportedScore(predictedVerdict, confidence) {
+export function supportedScore(predictedVerdict, supportScore) {
     const v = canonicalizeVerdict(predictedVerdict);
-    const c = Math.max(0, Math.min(100, confidence ?? 0));
+    const c = Math.max(0, Math.min(100, supportScore ?? 0));
     if (v === VERDICTS.NOT_SUPPORTED || v === VERDICTS.SOURCE_UNAVAILABLE) return 50 - c / 2;
     if (v === VERDICTS.SUPPORTED) return 50 + c / 2;
     // PARTIALLY_SUPPORTED and unrecognized verdicts sit at the midpoint —
@@ -42,7 +52,7 @@ function scoreRows(rows) {
     return rows
         .filter(r => !r.error && canonicalizeVerdict(r.ground_truth) !== null && r.predicted_verdict)
         .map(r => ({
-            score: supportedScore(r.predicted_verdict, r.confidence),
+            score: supportedScore(r.predicted_verdict, rowSupportScore(r)),
             predictedPositive: canonicalizeVerdict(r.predicted_verdict) === VERDICTS.SUPPORTED,
             positive: isPositiveGroundTruth(r.ground_truth),
         }));

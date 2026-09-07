@@ -7,6 +7,7 @@ import {
     computeRocCurvesByProvider,
     computeVerdictOperatingPoint,
 } from '../benchmark/roc.js';
+import { rowSupportScore } from '../benchmark/io.js';
 
 test('supportedScore pushes SUPPORTED above 50 and NOT SUPPORTED/SOURCE UNAVAILABLE below it', () => {
     assert.equal(supportedScore('Supported', 100), 100);
@@ -125,6 +126,60 @@ test('computeRocCurve includes the matching verdictOperatingPoint', () => {
     ];
     const { verdictOperatingPoint } = computeRocCurve(rows);
     assert.deepEqual(verdictOperatingPoint, { fpr: 0, tpr: 0.5 });
+});
+
+// --- support_score / confidence field tolerance ---
+// Every test above builds rows spelled `confidence`, which is why the field
+// rename in e0706fb slipped through: roc.js read `r.confidence`, the suite
+// only ever handed it `r.confidence`, and the mismatch only showed up against
+// real results.json rows. These tests use the current `support_score`
+// spelling, so the suite now exercises the shape run_benchmark.js writes.
+
+test('scores rows written with the current support_score field', () => {
+    const rows = [
+        { ground_truth: 'Supported', predicted_verdict: 'Supported', support_score: 90 },
+        { ground_truth: 'Not supported', predicted_verdict: 'Not supported', support_score: 90 },
+    ];
+    assert.equal(computeRocCurve(rows).auc, 1);
+});
+
+// The regression itself: reading only `confidence` made support_score rows
+// fall back to 0, which collapses SUPPORTED, NOT SUPPORTED and SOURCE
+// UNAVAILABLE alike onto the 50 midpoint — one distinct threshold, AUC
+// exactly 0.5, indistinguishable from a useless model. Fails against the
+// pre-fix roc.js.
+test('support_score rows do not collapse to a single midpoint threshold', () => {
+    const rows = [
+        { ground_truth: 'Supported', predicted_verdict: 'Supported', support_score: 95 },
+        { ground_truth: 'Supported', predicted_verdict: 'Supported', support_score: 70 },
+        { ground_truth: 'Not supported', predicted_verdict: 'Not supported', support_score: 80 },
+        { ground_truth: 'Not supported', predicted_verdict: 'Source unavailable', support_score: 60 },
+    ];
+    const scores = new Set(rows.map(r => supportedScore(r.predicted_verdict, rowSupportScore(r))));
+    assert.ok(scores.size > 1, 'every row collapsed onto one score');
+    assert.notEqual(computeRocCurve(rows).auc, 0.5);
+});
+
+test('support_score and confidence spellings score identically', () => {
+    const asNew = [
+        { ground_truth: 'Supported', predicted_verdict: 'Supported', support_score: 90 },
+        { ground_truth: 'Not supported', predicted_verdict: 'Not supported', support_score: 70 },
+        { ground_truth: 'Supported', predicted_verdict: 'Not supported', support_score: 55 },
+    ];
+    const asOld = asNew.map(({ support_score, ...rest }) => ({ ...rest, confidence: support_score }));
+    assert.equal(computeRocCurve(asNew).auc, computeRocCurve(asOld).auc);
+});
+
+test('rowSupportScore prefers support_score, falls back to confidence, else 0', () => {
+    assert.equal(rowSupportScore({ support_score: 80 }), 80);
+    assert.equal(rowSupportScore({ confidence: 60 }), 60);
+    assert.equal(rowSupportScore({ support_score: 80, confidence: 60 }), 80);
+    assert.equal(rowSupportScore({}), 0);
+    assert.equal(rowSupportScore(undefined), 0);
+});
+
+test('rowSupportScore preserves an explicit zero rather than treating it as missing', () => {
+    assert.equal(rowSupportScore({ support_score: 0, confidence: 90 }), 0);
 });
 
 test('computeRocCurvesByProvider splits rows by provider', () => {

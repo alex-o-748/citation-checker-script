@@ -77,10 +77,26 @@ test('lenientAccuracy and supportedVsRestAccuracy diverge on the two near-miss r
     assert.equal(m.supportedVsRestCorrect, 1);  // forgives row 2 (Not/Partially) only
 });
 
-test('supportedVsRestAccuracy requires Source unavailable to match exactly', () => {
+// Source unavailable is part of "rest": against a Not supported / Partially
+// supported ground truth it scores as correct, because all three mean the same
+// thing to an editor. It used to require an exact match, which — since the
+// dataset never labels a row Source unavailable — made the metric penalize
+// models for correctly reporting an unusable source. See
+// equalSupportedVsRest in core/verdicts.js.
+test('supportedVsRestAccuracy counts Source unavailable as part of "rest"', () => {
     const m = calculateMetrics([
         row('Source unavailable', 'Not supported'),
         row('Not supported', 'Source unavailable'),
+        row('Source unavailable', 'Partially supported'),
+    ]);
+    assert.equal(m.supportedVsRestCorrect, 3);
+    assert.equal(m.supportedVsRestAccuracy, 1);
+});
+
+test('supportedVsRestAccuracy still separates Source unavailable from Supported', () => {
+    const m = calculateMetrics([
+        row('Source unavailable', 'Supported'),
+        row('Supported', 'Source unavailable'),
     ]);
     assert.equal(m.supportedVsRestCorrect, 0);
     assert.equal(m.supportedVsRestAccuracy, 0);

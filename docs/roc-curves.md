@@ -11,18 +11,27 @@ and whether the model's own confidence score is worth thresholding on at all.
 
 A benchmark row isn't a single probability. It's a categorical
 `predicted_verdict` (SUPPORTED / PARTIALLY SUPPORTED / NOT SUPPORTED / SOURCE
-UNAVAILABLE) plus a `confidence` (0-100) that's scoped to whichever verdict
-the model chose — a NOT SUPPORTED row can carry confidence 95, and that's
+UNAVAILABLE) plus a `support_score` (0-100) that's scoped to whichever verdict
+the model chose — a NOT SUPPORTED row can carry support_score 95, and that's
 confidence in "not supported," not in "supported." An ROC curve needs one
 directional score per row, so `supportedScore` (`benchmark/roc.js`) folds
-verdict polarity and confidence into a single 0-100 "how strongly does this
+verdict polarity and that score into a single 0-100 "how strongly does this
 read as SUPPORTED" scale:
 
 | Verdict | Score |
 |---|---|
-| SUPPORTED | `50 + confidence / 2` (pushes above the midpoint) |
-| NOT SUPPORTED / SOURCE UNAVAILABLE | `50 - confidence / 2` (pushes below the midpoint) |
-| PARTIALLY SUPPORTED | `50` (confidence there doesn't carry a supported/not-supported direction to lean on) |
+| SUPPORTED | `50 + support_score / 2` (pushes above the midpoint) |
+| NOT SUPPORTED / SOURCE UNAVAILABLE | `50 - support_score / 2` (pushes below the midpoint) |
+| PARTIALLY SUPPORTED | `50` (the score there doesn't carry a supported/not-supported direction to lean on) |
+
+The field was spelled `confidence` before commit e0706fb. Read it through
+`rowSupportScore` (`benchmark/io.js`), which accepts either spelling — never
+`row.support_score` or `row.confidence` directly. Reaching for one name
+directly is not a cosmetic slip: because a missing field reads as `0`, and `0`
+collapses all three rows of the table above onto the 50 midpoint, `roc.js`
+reading the stale name produced a single threshold and an AUC of exactly
+0.500 for every current-schema run — chance, with no error raised.
+`tests/io.test.js` now fails on any such direct read.
 
 Positive class is ground truth `SUPPORTED` — "is this citation actually
 fine," the operational question the sidebar's verdict exists to answer for an
