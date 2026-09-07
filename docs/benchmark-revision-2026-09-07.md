@@ -6,6 +6,10 @@ source is incomplete, and **six ground-truth corrections**.
 
 Model predictions are unchanged. Only the scoring set and six right-answer labels moved.
 
+**The short version:** the corpus is **68.3% support-testable and 31.7% everything
+else** — but by *error* the ratio is 91% / 9%. Both numbers, and why they differ, are
+under [Support vs everything else](#support-vs-everything-else--683--317).
+
 ---
 
 ## 1. The strict set — 129 of 189 rows
@@ -102,9 +106,11 @@ Strict-set label mix: 56 Supported / 37 Partially supported / 36 Not supported.
 
 ---
 
-## How much of this is actually the model?
+## Support vs everything else — 68.3% / 31.7%
 
-Two ways to read the same data, and they disagree usefully.
+How much of this benchmark actually measures the model's judgement, and how much
+measures whether we could fetch and read the page? Two ways to count it, and they
+disagree usefully.
 
 **By row — what the corpus is made of:**
 
