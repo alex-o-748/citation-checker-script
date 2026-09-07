@@ -1,5 +1,5 @@
 {
-  "generated": "2026-09-07T20:05:23.534Z",
+  "generated": "2026-09-07T21:01:40.605Z",
   "overview": {
     "datasetVersion": "all",
     "truncation": "all",
@@ -38,28 +38,28 @@
           "unverifiedRows": 0,
           "gap": 0
         },
-        "exactMatches": 77,
-        "partialMatches": 44,
-        "exactAccuracy": 0.5273972602739726,
-        "lenientAccuracy": 0.8287671232876712,
-        "binaryAccuracy": 0.8356164383561644,
-        "supportedVsRestCorrect": 90,
-        "supportedVsRestAccuracy": 0.6164383561643836,
+        "exactMatches": 79,
+        "partialMatches": 41,
+        "exactAccuracy": 0.541095890410959,
+        "lenientAccuracy": 0.821917808219178,
+        "binaryAccuracy": 0.8287671232876712,
+        "supportedVsRestCorrect": 91,
+        "supportedVsRestAccuracy": 0.6232876712328768,
         "confusionMatrix": {
           "Supported": {
-            "Supported": 48,
-            "Partially supported": 20,
-            "Not supported": 7,
+            "Supported": 49,
+            "Partially supported": 19,
+            "Not supported": 8,
             "Source unavailable": 2
           },
           "Partially supported": {
-            "Supported": 24,
-            "Partially supported": 21,
-            "Not supported": 2,
+            "Supported": 22,
+            "Partially supported": 22,
+            "Not supported": 1,
             "Source unavailable": 0
           },
           "Not supported": {
-            "Supported": 2,
+            "Supported": 3,
             "Partially supported": 11,
             "Not supported": 8,
             "Source unavailable": 1
@@ -104,28 +104,28 @@
           "unverifiedRows": 0,
           "gap": 0
         },
-        "exactMatches": 89,
-        "partialMatches": 37,
-        "exactAccuracy": 0.6095890410958904,
-        "lenientAccuracy": 0.863013698630137,
-        "binaryAccuracy": 0.8767123287671232,
-        "supportedVsRestCorrect": 95,
-        "supportedVsRestAccuracy": 0.6506849315068494,
+        "exactMatches": 91,
+        "partialMatches": 34,
+        "exactAccuracy": 0.6232876712328768,
+        "lenientAccuracy": 0.8561643835616438,
+        "binaryAccuracy": 0.8698630136986302,
+        "supportedVsRestCorrect": 96,
+        "supportedVsRestAccuracy": 0.6575342465753424,
         "confusionMatrix": {
           "Supported": {
-            "Supported": 66,
-            "Partially supported": 4,
-            "Not supported": 2,
+            "Supported": 67,
+            "Partially supported": 3,
+            "Not supported": 3,
             "Source unavailable": 5
           },
           "Partially supported": {
-            "Supported": 33,
-            "Partially supported": 11,
-            "Not supported": 3,
+            "Supported": 31,
+            "Partially supported": 12,
+            "Not supported": 2,
             "Source unavailable": 0
           },
           "Not supported": {
-            "Supported": 5,
+            "Supported": 6,
             "Partially supported": 3,
             "Not supported": 12,
             "Source unavailable": 2
@@ -170,31 +170,31 @@
           "unverifiedRows": 0,
           "gap": 0
         },
-        "exactMatches": 88,
-        "partialMatches": 34,
-        "exactAccuracy": 0.4971751412429379,
+        "exactMatches": 90,
+        "partialMatches": 32,
+        "exactAccuracy": 0.5084745762711864,
         "lenientAccuracy": 0.6892655367231638,
-        "binaryAccuracy": 0.8531073446327684,
-        "supportedVsRestCorrect": 99,
-        "supportedVsRestAccuracy": 0.559322033898305,
+        "binaryAccuracy": 0.847457627118644,
+        "supportedVsRestCorrect": 101,
+        "supportedVsRestAccuracy": 0.5706214689265536,
         "confusionMatrix": {
           "Supported": {
-            "Supported": 66,
-            "Partially supported": 6,
+            "Supported": 67,
+            "Partially supported": 5,
             "Not supported": 2,
-            "Source unavailable": 4
+            "Source unavailable": 5
           },
           "Partially supported": {
-            "Supported": 28,
+            "Supported": 27,
             "Partially supported": 15,
-            "Not supported": 5,
+            "Not supported": 4,
             "Source unavailable": 5
           },
           "Not supported": {
             "Supported": 4,
-            "Partially supported": 6,
-            "Not supported": 7,
-            "Source unavailable": 29
+            "Partially supported": 7,
+            "Not supported": 8,
+            "Source unavailable": 28
           },
           "Source unavailable": {
             "Supported": 0,
@@ -236,30 +236,30 @@
           "unverifiedRows": 0,
           "gap": 0
         },
-        "exactMatches": 119,
-        "partialMatches": 33,
-        "exactAccuracy": 0.672316384180791,
-        "lenientAccuracy": 0.8587570621468926,
-        "binaryAccuracy": 0.8587570621468926,
-        "supportedVsRestCorrect": 136,
-        "supportedVsRestAccuracy": 0.768361581920904,
+        "exactMatches": 122,
+        "partialMatches": 31,
+        "exactAccuracy": 0.6892655367231638,
+        "lenientAccuracy": 0.864406779661017,
+        "binaryAccuracy": 0.864406779661017,
+        "supportedVsRestCorrect": 137,
+        "supportedVsRestAccuracy": 0.7740112994350282,
         "confusionMatrix": {
           "Supported": {
-            "Supported": 51,
-            "Partially supported": 20,
-            "Not supported": 6,
+            "Supported": 52,
+            "Partially supported": 19,
+            "Not supported": 7,
             "Source unavailable": 1
           },
           "Partially supported": {
-            "Supported": 13,
-            "Partially supported": 30,
-            "Not supported": 10,
+            "Supported": 12,
+            "Partially supported": 31,
+            "Not supported": 8,
             "Source unavailable": 0
           },
           "Not supported": {
             "Supported": 1,
             "Partially supported": 7,
-            "Not supported": 38,
+            "Not supported": 39,
             "Source unavailable": 0
           },
           "Source unavailable": {
@@ -296,36 +296,36 @@
           "verified": 85,
           "offerRate": 0.989247311827957,
           "fidelity": 0.9239130434782609,
-          "accuracyWhenQuoteVerified": 0.7764705882352941,
+          "accuracyWhenQuoteVerified": 0.8,
           "accuracyWhenQuoteUnverified": 0.7142857142857143,
           "verifiedRows": 85,
           "unverifiedRows": 7,
-          "gap": 0.06218487394957983
+          "gap": 0.08571428571428574
         },
-        "exactMatches": 99,
-        "partialMatches": 18,
-        "exactAccuracy": 0.5561797752808989,
-        "lenientAccuracy": 0.6573033707865169,
-        "binaryAccuracy": 0.7471910112359551,
-        "supportedVsRestCorrect": 128,
-        "supportedVsRestAccuracy": 0.7191011235955056,
+        "exactMatches": 104,
+        "partialMatches": 17,
+        "exactAccuracy": 0.5842696629213483,
+        "lenientAccuracy": 0.6797752808988764,
+        "binaryAccuracy": 0.7696629213483146,
+        "supportedVsRestCorrect": 130,
+        "supportedVsRestAccuracy": 0.7303370786516854,
         "confusionMatrix": {
           "Supported": {
-            "Supported": 53,
+            "Supported": 54,
             "Partially supported": 12,
-            "Not supported": 11,
+            "Not supported": 10,
             "Source unavailable": 3
           },
           "Partially supported": {
-            "Supported": 6,
-            "Partially supported": 19,
-            "Not supported": 26,
+            "Supported": 5,
+            "Partially supported": 20,
+            "Not supported": 24,
             "Source unavailable": 2
           },
           "Not supported": {
             "Supported": 0,
-            "Partially supported": 3,
-            "Not supported": 27,
+            "Partially supported": 2,
+            "Not supported": 30,
             "Source unavailable": 16
           },
           "Source unavailable": {
@@ -362,17 +362,17 @@
           "verified": 100,
           "offerRate": 1,
           "fidelity": 0.9803921568627451,
-          "accuracyWhenQuoteVerified": 0.76,
+          "accuracyWhenQuoteVerified": 0.77,
           "accuracyWhenQuoteUnverified": 0.5,
           "verifiedRows": 100,
           "unverifiedRows": 2,
-          "gap": 0.26
+          "gap": 0.27
         },
-        "exactMatches": 116,
+        "exactMatches": 120,
         "partialMatches": 21,
-        "exactAccuracy": 0.6863905325443787,
-        "lenientAccuracy": 0.8106508875739645,
-        "binaryAccuracy": 0.8224852071005917,
+        "exactAccuracy": 0.7100591715976331,
+        "lenientAccuracy": 0.834319526627219,
+        "binaryAccuracy": 0.8461538461538461,
         "supportedVsRestCorrect": 138,
         "supportedVsRestAccuracy": 0.8165680473372781,
         "confusionMatrix": {
@@ -384,14 +384,14 @@
           },
           "Partially supported": {
             "Supported": 2,
-            "Partially supported": 29,
-            "Not supported": 18,
+            "Partially supported": 30,
+            "Not supported": 15,
             "Source unavailable": 0
           },
           "Not supported": {
             "Supported": 0,
-            "Partially supported": 4,
-            "Not supported": 39,
+            "Partially supported": 3,
+            "Not supported": 42,
             "Source unavailable": 2
           },
           "Source unavailable": {
@@ -428,36 +428,36 @@
           "verified": 71,
           "offerRate": 1,
           "fidelity": 0.8255813953488372,
-          "accuracyWhenQuoteVerified": 0.8309859154929577,
+          "accuracyWhenQuoteVerified": 0.8591549295774648,
           "accuracyWhenQuoteUnverified": 0.8,
           "verifiedRows": 71,
           "unverifiedRows": 15,
-          "gap": 0.030985915492957705
+          "gap": 0.05915492957746471
         },
-        "exactMatches": 114,
-        "partialMatches": 12,
-        "exactAccuracy": 0.6404494382022472,
-        "lenientAccuracy": 0.7078651685393258,
-        "binaryAccuracy": 0.7078651685393258,
-        "supportedVsRestCorrect": 143,
-        "supportedVsRestAccuracy": 0.8033707865168539,
+        "exactMatches": 119,
+        "partialMatches": 11,
+        "exactAccuracy": 0.6685393258426966,
+        "lenientAccuracy": 0.7303370786516854,
+        "binaryAccuracy": 0.7303370786516854,
+        "supportedVsRestCorrect": 145,
+        "supportedVsRestAccuracy": 0.8146067415730337,
         "confusionMatrix": {
           "Supported": {
-            "Supported": 48,
+            "Supported": 49,
             "Partially supported": 9,
-            "Not supported": 22,
+            "Not supported": 21,
             "Source unavailable": 0
           },
           "Partially supported": {
-            "Supported": 3,
-            "Partially supported": 23,
-            "Not supported": 27,
+            "Supported": 2,
+            "Partially supported": 24,
+            "Not supported": 25,
             "Source unavailable": 0
           },
           "Not supported": {
             "Supported": 1,
-            "Partially supported": 2,
-            "Not supported": 43,
+            "Partially supported": 1,
+            "Not supported": 46,
             "Source unavailable": 0
           },
           "Source unavailable": {
@@ -494,36 +494,36 @@
           "verified": 76,
           "offerRate": 0.9770114942528736,
           "fidelity": 0.8941176470588236,
-          "accuracyWhenQuoteVerified": 0.7894736842105263,
+          "accuracyWhenQuoteVerified": 0.8026315789473685,
           "accuracyWhenQuoteUnverified": 0.6666666666666666,
           "verifiedRows": 76,
           "unverifiedRows": 9,
-          "gap": 0.1228070175438597
+          "gap": 0.13596491228070184
         },
-        "exactMatches": 86,
+        "exactMatches": 90,
         "partialMatches": 17,
-        "exactAccuracy": 0.48314606741573035,
-        "lenientAccuracy": 0.5786516853932584,
-        "binaryAccuracy": 0.7134831460674157,
-        "supportedVsRestCorrect": 110,
-        "supportedVsRestAccuracy": 0.6179775280898876,
+        "exactAccuracy": 0.5056179775280899,
+        "lenientAccuracy": 0.601123595505618,
+        "binaryAccuracy": 0.7359550561797753,
+        "supportedVsRestCorrect": 112,
+        "supportedVsRestAccuracy": 0.6292134831460674,
         "confusionMatrix": {
           "Supported": {
-            "Supported": 60,
+            "Supported": 61,
             "Partially supported": 2,
-            "Not supported": 14,
+            "Not supported": 13,
             "Source unavailable": 3
           },
           "Partially supported": {
             "Supported": 15,
             "Partially supported": 7,
-            "Not supported": 24,
+            "Not supported": 22,
             "Source unavailable": 7
           },
           "Not supported": {
-            "Supported": 3,
+            "Supported": 2,
             "Partially supported": 0,
-            "Not supported": 19,
+            "Not supported": 22,
             "Source unavailable": 24
           },
           "Source unavailable": {
@@ -540,9 +540,9 @@
         },
         "support_score": {
           "avg": 70.41666666666667,
-          "avgWhenCorrect": 73.0813953488372,
-          "avgWhenWrong": 23.532608695652176,
-          "calibration": 49.54878665318503
+          "avgWhenCorrect": 71.05555555555556,
+          "avgWhenWrong": 23.352272727272727,
+          "calibration": 47.70328282828283
         }
       }
     }
