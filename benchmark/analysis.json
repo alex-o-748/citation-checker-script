@@ -1,9 +1,11 @@
 {
-  "generated": "2026-09-06T08:25:31.635Z",
+  "generated": "2026-09-07T20:05:23.534Z",
   "overview": {
     "datasetVersion": "all",
-    "totalEntries": 187,
-    "totalCalls": 1472,
+    "truncation": "all",
+    "excludedResults": 52,
+    "totalEntries": 178,
+    "totalCalls": 1420,
     "providers": [
       "apertus-70b",
       "qwen-sealion",
@@ -19,13 +21,13 @@
     "apertus-70b": {
       "name": "Apertus-70b",
       "model": "swiss-ai/apertus-70b-instruct",
-      "sampleCount": 186,
+      "sampleCount": 177,
       "metrics": {
-        "total": 186,
-        "valid": 155,
+        "total": 177,
+        "valid": 146,
         "errors": 31,
         "quotes": {
-          "eligible": 134,
+          "eligible": 126,
           "offered": 0,
           "verified": 0,
           "offerRate": 0,
@@ -36,30 +38,30 @@
           "unverifiedRows": 0,
           "gap": 0
         },
-        "exactMatches": 84,
-        "partialMatches": 46,
-        "exactAccuracy": 0.5419354838709678,
-        "lenientAccuracy": 0.8387096774193549,
-        "binaryAccuracy": 0.8451612903225807,
-        "supportedVsRestCorrect": 97,
-        "supportedVsRestAccuracy": 0.6258064516129033,
+        "exactMatches": 77,
+        "partialMatches": 44,
+        "exactAccuracy": 0.5273972602739726,
+        "lenientAccuracy": 0.8287671232876712,
+        "binaryAccuracy": 0.8356164383561644,
+        "supportedVsRestCorrect": 90,
+        "supportedVsRestAccuracy": 0.6164383561643836,
         "confusionMatrix": {
           "Supported": {
-            "Supported": 50,
+            "Supported": 48,
             "Partially supported": 20,
             "Not supported": 7,
             "Source unavailable": 2
           },
           "Partially supported": {
-            "Supported": 26,
-            "Partially supported": 25,
+            "Supported": 24,
+            "Partially supported": 21,
             "Not supported": 2,
             "Source unavailable": 0
           },
           "Not supported": {
             "Supported": 2,
             "Partially supported": 11,
-            "Not supported": 9,
+            "Not supported": 8,
             "Source unavailable": 1
           },
           "Source unavailable": {
@@ -70,7 +72,7 @@
           }
         },
         "latency": {
-          "avg": 3443.1774193548385,
+          "avg": 3421.6553672316386,
           "min": 504,
           "max": 9519
         },
@@ -85,13 +87,13 @@
     "qwen-sealion": {
       "name": "Qwen-sealion",
       "model": "aisingapore/Qwen-SEA-LION-v4-32B-IT",
-      "sampleCount": 186,
+      "sampleCount": 177,
       "metrics": {
-        "total": 186,
-        "valid": 155,
+        "total": 177,
+        "valid": 146,
         "errors": 31,
         "quotes": {
-          "eligible": 128,
+          "eligible": 122,
           "offered": 0,
           "verified": 0,
           "offerRate": 0,
@@ -102,30 +104,30 @@
           "unverifiedRows": 0,
           "gap": 0
         },
-        "exactMatches": 93,
-        "partialMatches": 40,
-        "exactAccuracy": 0.6,
-        "lenientAccuracy": 0.8580645161290322,
-        "binaryAccuracy": 0.8709677419354839,
-        "supportedVsRestCorrect": 99,
-        "supportedVsRestAccuracy": 0.6387096774193548,
+        "exactMatches": 89,
+        "partialMatches": 37,
+        "exactAccuracy": 0.6095890410958904,
+        "lenientAccuracy": 0.863013698630137,
+        "binaryAccuracy": 0.8767123287671232,
+        "supportedVsRestCorrect": 95,
+        "supportedVsRestAccuracy": 0.6506849315068494,
         "confusionMatrix": {
           "Supported": {
-            "Supported": 67,
+            "Supported": 66,
             "Partially supported": 4,
             "Not supported": 2,
-            "Source unavailable": 6
+            "Source unavailable": 5
           },
           "Partially supported": {
-            "Supported": 36,
-            "Partially supported": 13,
+            "Supported": 33,
+            "Partially supported": 11,
             "Not supported": 3,
-            "Source unavailable": 1
+            "Source unavailable": 0
           },
           "Not supported": {
             "Supported": 5,
             "Partially supported": 3,
-            "Not supported": 13,
+            "Not supported": 12,
             "Source unavailable": 2
           },
           "Source unavailable": {
@@ -136,7 +138,7 @@
           }
         },
         "latency": {
-          "avg": 3425.2741935483873,
+          "avg": 3414.124293785311,
           "min": 458,
           "max": 7381
         },
@@ -151,13 +153,13 @@
     "claude-sonnet-4-5": {
       "name": "Claude-sonnet-4-5",
       "model": "claude-sonnet-4-5-20250929",
-      "sampleCount": 186,
+      "sampleCount": 177,
       "metrics": {
-        "total": 186,
-        "valid": 186,
+        "total": 177,
+        "valid": 177,
         "errors": 0,
         "quotes": {
-          "eligible": 131,
+          "eligible": 125,
           "offered": 0,
           "verified": 0,
           "offerRate": 0,
@@ -168,31 +170,31 @@
           "unverifiedRows": 0,
           "gap": 0
         },
-        "exactMatches": 91,
-        "partialMatches": 37,
-        "exactAccuracy": 0.489247311827957,
-        "lenientAccuracy": 0.6881720430107527,
-        "binaryAccuracy": 0.8494623655913979,
-        "supportedVsRestCorrect": 102,
-        "supportedVsRestAccuracy": 0.5483870967741935,
+        "exactMatches": 88,
+        "partialMatches": 34,
+        "exactAccuracy": 0.4971751412429379,
+        "lenientAccuracy": 0.6892655367231638,
+        "binaryAccuracy": 0.8531073446327684,
+        "supportedVsRestCorrect": 99,
+        "supportedVsRestAccuracy": 0.559322033898305,
         "confusionMatrix": {
           "Supported": {
-            "Supported": 67,
+            "Supported": 66,
             "Partially supported": 6,
             "Not supported": 2,
-            "Source unavailable": 5
+            "Source unavailable": 4
           },
           "Partially supported": {
-            "Supported": 31,
-            "Partially supported": 17,
+            "Supported": 28,
+            "Partially supported": 15,
             "Not supported": 5,
-            "Source unavailable": 6
+            "Source unavailable": 5
           },
           "Not supported": {
             "Supported": 4,
             "Partially supported": 6,
             "Not supported": 7,
-            "Source unavailable": 30
+            "Source unavailable": 29
           },
           "Source unavailable": {
             "Supported": 0,
@@ -202,7 +204,7 @@
           }
         },
         "latency": {
-          "avg": 4021.1182795698924,
+          "avg": 4032.124293785311,
           "min": 2377,
           "max": 8974
         },
@@ -217,13 +219,13 @@
     "gemini-2.5-flash": {
       "name": "Gemini-2.5-flash",
       "model": "gemini-2.5-flash",
-      "sampleCount": 186,
+      "sampleCount": 177,
       "metrics": {
-        "total": 186,
-        "valid": 186,
+        "total": 177,
+        "valid": 177,
         "errors": 0,
         "quotes": {
-          "eligible": 128,
+          "eligible": 122,
           "offered": 0,
           "verified": 0,
           "offerRate": 0,
@@ -234,30 +236,30 @@
           "unverifiedRows": 0,
           "gap": 0
         },
-        "exactMatches": 124,
-        "partialMatches": 35,
-        "exactAccuracy": 0.6666666666666666,
-        "lenientAccuracy": 0.8548387096774194,
-        "binaryAccuracy": 0.8548387096774194,
-        "supportedVsRestCorrect": 141,
-        "supportedVsRestAccuracy": 0.7580645161290323,
+        "exactMatches": 119,
+        "partialMatches": 33,
+        "exactAccuracy": 0.672316384180791,
+        "lenientAccuracy": 0.8587570621468926,
+        "binaryAccuracy": 0.8587570621468926,
+        "supportedVsRestCorrect": 136,
+        "supportedVsRestAccuracy": 0.768361581920904,
         "confusionMatrix": {
           "Supported": {
-            "Supported": 52,
+            "Supported": 51,
             "Partially supported": 20,
             "Not supported": 6,
-            "Source unavailable": 2
+            "Source unavailable": 1
           },
           "Partially supported": {
-            "Supported": 15,
-            "Partially supported": 33,
+            "Supported": 13,
+            "Partially supported": 30,
             "Not supported": 10,
-            "Source unavailable": 1
+            "Source unavailable": 0
           },
           "Not supported": {
             "Supported": 1,
             "Partially supported": 7,
-            "Not supported": 39,
+            "Not supported": 38,
             "Source unavailable": 0
           },
           "Source unavailable": {
@@ -268,7 +270,7 @@
           }
         },
         "latency": {
-          "avg": 3742.1989247311826,
+          "avg": 3756.186440677966,
           "min": 1358,
           "max": 16386
         },
@@ -283,42 +285,42 @@
     "claude-sonnet-5": {
       "name": "Claude-sonnet-5",
       "model": "claude-sonnet-5",
-      "sampleCount": 182,
+      "sampleCount": 178,
       "metrics": {
-        "total": 182,
-        "valid": 182,
+        "total": 178,
+        "valid": 178,
         "errors": 0,
         "quotes": {
-          "eligible": 94,
-          "offered": 93,
-          "verified": 86,
-          "offerRate": 0.9893617021276596,
-          "fidelity": 0.9247311827956989,
-          "accuracyWhenQuoteVerified": 0.7674418604651163,
+          "eligible": 93,
+          "offered": 92,
+          "verified": 85,
+          "offerRate": 0.989247311827957,
+          "fidelity": 0.9239130434782609,
+          "accuracyWhenQuoteVerified": 0.7764705882352941,
           "accuracyWhenQuoteUnverified": 0.7142857142857143,
-          "verifiedRows": 86,
+          "verifiedRows": 85,
           "unverifiedRows": 7,
-          "gap": 0.05315614617940201
+          "gap": 0.06218487394957983
         },
         "exactMatches": 99,
-        "partialMatches": 19,
-        "exactAccuracy": 0.5439560439560439,
-        "lenientAccuracy": 0.6483516483516484,
-        "binaryAccuracy": 0.7362637362637363,
+        "partialMatches": 18,
+        "exactAccuracy": 0.5561797752808989,
+        "lenientAccuracy": 0.6573033707865169,
+        "binaryAccuracy": 0.7471910112359551,
         "supportedVsRestCorrect": 128,
-        "supportedVsRestAccuracy": 0.7032967032967034,
+        "supportedVsRestAccuracy": 0.7191011235955056,
         "confusionMatrix": {
           "Supported": {
             "Supported": 53,
             "Partially supported": 12,
             "Not supported": 11,
-            "Source unavailable": 4
+            "Source unavailable": 3
           },
           "Partially supported": {
-            "Supported": 7,
+            "Supported": 6,
             "Partially supported": 19,
             "Not supported": 26,
-            "Source unavailable": 4
+            "Source unavailable": 2
           },
           "Not supported": {
             "Supported": 0,
@@ -334,7 +336,7 @@
           }
         },
         "latency": {
-          "avg": 3443.6923076923076,
+          "avg": 3472.112359550562,
           "min": 1705,
           "max": 10347
         },
@@ -349,42 +351,42 @@
     "gemini-3.7-flash": {
       "name": "Gemini-3.7-flash",
       "model": "gemini-3.7-flash",
-      "sampleCount": 182,
+      "sampleCount": 178,
       "metrics": {
-        "total": 182,
-        "valid": 173,
+        "total": 178,
+        "valid": 169,
         "errors": 9,
         "quotes": {
-          "eligible": 103,
-          "offered": 103,
-          "verified": 101,
+          "eligible": 102,
+          "offered": 102,
+          "verified": 100,
           "offerRate": 1,
-          "fidelity": 0.9805825242718447,
-          "accuracyWhenQuoteVerified": 0.7524752475247525,
+          "fidelity": 0.9803921568627451,
+          "accuracyWhenQuoteVerified": 0.76,
           "accuracyWhenQuoteUnverified": 0.5,
-          "verifiedRows": 101,
+          "verifiedRows": 100,
           "unverifiedRows": 2,
-          "gap": 0.2524752475247525
+          "gap": 0.26
         },
         "exactMatches": 116,
-        "partialMatches": 22,
-        "exactAccuracy": 0.6705202312138728,
-        "lenientAccuracy": 0.7976878612716763,
-        "binaryAccuracy": 0.8092485549132948,
+        "partialMatches": 21,
+        "exactAccuracy": 0.6863905325443787,
+        "lenientAccuracy": 0.8106508875739645,
+        "binaryAccuracy": 0.8224852071005917,
         "supportedVsRestCorrect": 138,
-        "supportedVsRestAccuracy": 0.7976878612716763,
+        "supportedVsRestAccuracy": 0.8165680473372781,
         "confusionMatrix": {
           "Supported": {
             "Supported": 48,
             "Partially supported": 19,
             "Not supported": 6,
-            "Source unavailable": 3
+            "Source unavailable": 2
           },
           "Partially supported": {
-            "Supported": 3,
+            "Supported": 2,
             "Partially supported": 29,
             "Not supported": 18,
-            "Source unavailable": 2
+            "Source unavailable": 0
           },
           "Not supported": {
             "Supported": 0,
@@ -400,7 +402,7 @@
           }
         },
         "latency": {
-          "avg": 13067.021978021978,
+          "avg": 13219.016853932584,
           "min": 1328,
           "max": 66666
         },
@@ -415,42 +417,42 @@
     "hf-gpt-oss-20b": {
       "name": "Hf-gpt-oss-20b",
       "model": "openai/gpt-oss-20b",
-      "sampleCount": 182,
+      "sampleCount": 178,
       "metrics": {
-        "total": 182,
-        "valid": 182,
+        "total": 178,
+        "valid": 178,
         "errors": 0,
         "quotes": {
-          "eligible": 87,
-          "offered": 87,
-          "verified": 72,
+          "eligible": 86,
+          "offered": 86,
+          "verified": 71,
           "offerRate": 1,
-          "fidelity": 0.8275862068965517,
-          "accuracyWhenQuoteVerified": 0.8194444444444444,
+          "fidelity": 0.8255813953488372,
+          "accuracyWhenQuoteVerified": 0.8309859154929577,
           "accuracyWhenQuoteUnverified": 0.8,
-          "verifiedRows": 72,
+          "verifiedRows": 71,
           "unverifiedRows": 15,
-          "gap": 0.019444444444444375
+          "gap": 0.030985915492957705
         },
         "exactMatches": 114,
-        "partialMatches": 13,
-        "exactAccuracy": 0.6263736263736264,
-        "lenientAccuracy": 0.6978021978021978,
-        "binaryAccuracy": 0.6978021978021978,
+        "partialMatches": 12,
+        "exactAccuracy": 0.6404494382022472,
+        "lenientAccuracy": 0.7078651685393258,
+        "binaryAccuracy": 0.7078651685393258,
         "supportedVsRestCorrect": 143,
-        "supportedVsRestAccuracy": 0.7857142857142857,
+        "supportedVsRestAccuracy": 0.8033707865168539,
         "confusionMatrix": {
           "Supported": {
             "Supported": 48,
             "Partially supported": 9,
             "Not supported": 22,
-            "Source unavailable": 1
+            "Source unavailable": 0
           },
           "Partially supported": {
-            "Supported": 4,
+            "Supported": 3,
             "Partially supported": 23,
             "Not supported": 27,
-            "Source unavailable": 2
+            "Source unavailable": 0
           },
           "Not supported": {
             "Supported": 1,
@@ -466,7 +468,7 @@
           }
         },
         "latency": {
-          "avg": 3048.0714285714284,
+          "avg": 3002.7359550561796,
           "min": 550,
           "max": 20156
         },
@@ -481,42 +483,42 @@
     "liftwing-qwen3.6-27b": {
       "name": "Liftwing-qwen3.6-27b",
       "model": "llm-qwen36-27b",
-      "sampleCount": 182,
+      "sampleCount": 178,
       "metrics": {
-        "total": 182,
-        "valid": 182,
+        "total": 178,
+        "valid": 178,
         "errors": 0,
         "quotes": {
-          "eligible": 88,
-          "offered": 86,
-          "verified": 77,
-          "offerRate": 0.9772727272727273,
-          "fidelity": 0.8953488372093024,
-          "accuracyWhenQuoteVerified": 0.7792207792207793,
+          "eligible": 87,
+          "offered": 85,
+          "verified": 76,
+          "offerRate": 0.9770114942528736,
+          "fidelity": 0.8941176470588236,
+          "accuracyWhenQuoteVerified": 0.7894736842105263,
           "accuracyWhenQuoteUnverified": 0.6666666666666666,
-          "verifiedRows": 77,
+          "verifiedRows": 76,
           "unverifiedRows": 9,
-          "gap": 0.11255411255411263
+          "gap": 0.1228070175438597
         },
         "exactMatches": 86,
-        "partialMatches": 18,
-        "exactAccuracy": 0.4725274725274725,
-        "lenientAccuracy": 0.5714285714285714,
-        "binaryAccuracy": 0.7032967032967034,
+        "partialMatches": 17,
+        "exactAccuracy": 0.48314606741573035,
+        "lenientAccuracy": 0.5786516853932584,
+        "binaryAccuracy": 0.7134831460674157,
         "supportedVsRestCorrect": 110,
-        "supportedVsRestAccuracy": 0.6043956043956044,
+        "supportedVsRestAccuracy": 0.6179775280898876,
         "confusionMatrix": {
           "Supported": {
             "Supported": 60,
             "Partially supported": 2,
             "Not supported": 14,
-            "Source unavailable": 4
+            "Source unavailable": 3
           },
           "Partially supported": {
-            "Supported": 16,
+            "Supported": 15,
             "Partially supported": 7,
             "Not supported": 24,
-            "Source unavailable": 9
+            "Source unavailable": 7
           },
           "Not supported": {
             "Supported": 3,
@@ -532,15 +534,15 @@
           }
         },
         "latency": {
-          "avg": 6472.456043956044,
-          "min": 2698,
+          "avg": 6522.387640449439,
+          "min": 2831,
           "max": 20622
         },
         "support_score": {
-          "avg": 70.66115702479338,
+          "avg": 70.41666666666667,
           "avgWhenCorrect": 73.0813953488372,
-          "avgWhenWrong": 23.59375,
-          "calibration": 49.487645348837205
+          "avgWhenWrong": 23.532608695652176,
+          "calibration": 49.54878665318503
         }
       }
     }

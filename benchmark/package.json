@@ -32,6 +32,8 @@
     "analyze:v1": "node analyze_results.js --version v1",
     "analyze:v1-snapshot": "node analyze_results.js --results results_v1.json --dataset dataset_v1.json --analysis analysis_v1_recomputed.json",
     "analyze:v3": "node analyze_results.js --version v3",
+    "analyze:full-sources": "node analyze_results.js --truncation full --analysis analysis_full_sources.json",
+    "analyze:truncated-sources": "node analyze_results.js --truncation truncated --analysis analysis_truncated_sources.json",
     "analyze:v3-snapshot": "node analyze_results.js --results results_v3.json --dataset dataset_v3.json --analysis analysis_v3_recomputed.json",
     "report": "node analyze_results.js --output report.md",
     "compare": "node ../bin/ccs compare",

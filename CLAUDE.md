@@ -108,6 +108,8 @@ npm run analyze:v1            # Analyze results filtered to v1 entries
 npm run analyze:v1-snapshot   # Re-derive analysis from frozen v1 snapshots
 npm run analyze:v3            # Analyze results filtered to v3 entries
 npm run analyze:v3-snapshot   # Re-derive analysis from frozen v3 snapshots
+npm run analyze:full-sources       # Score only rows whose source was stored whole
+npm run analyze:truncated-sources  # Score only rows whose source hit a fetch cap
 npm run report                # Generate markdown report
 npm run compare               # Compare two results.json runs (delegates to `ccs compare`; see docs/comparing-benchmark-runs.md)
 
@@ -129,6 +131,42 @@ It is **gitignored and regenerated** (`npm run wice:convert`), not committed —
 **Read `docs/wice-benchmark.md` before quoting a WiCE number.** The one thing to know going in: WiCE's annotators labeled *subclaims*, and claim-level labels are projected from them (all-supported → supported, all-not-supported → not-supported, anything mixed → partially-supported). That rule is not our rubric, and it is why ~57% of rows are `Partially supported`. The converter therefore records `wice_label_projection` per row — `unanimous` (subclaims agreed; the label means what ours means) or `mixed` (the label is an artifact of the rule) — and `analyze_results.js --projection unanimous|mixed` scores either subset. A verifier that does well on `unanimous` and badly on `mixed` is likely applying our rubric correctly and being marked wrong by WiCE's projection.
 
 WiCE also has no `Source unavailable` rows and ships frozen 2023 Common Crawl evidence rather than live URLs, so a WiCE run exercises the prompt and model but **not** the CORS-proxy fetch path.
+
+### Truncated and excluded benchmark rows (read before quoting a headline accuracy)
+
+Two dataset fields decide which rows a run is scored on. Both exist because a
+row can be *unlabelable* without being *wrong* — see
+`docs/benchmark-ground-truth-audit-2026-09-06.md`.
+
+- **`source_truncated`** — the stored `source_text` stops at a fetch cap (12,000
+  chars from the proxy, 50,000 from the direct-fetch fallback) rather than at the
+  end of the document. 48 of 189 rows. The label was made by a human reading the
+  whole page, so a wrong verdict on such a row may be the tool failing to see the
+  evidence rather than the model misjudging it: truncated rows score **46.6%**
+  against **60.9%** for whole ones, and falsely report a citation as failing on
+  **18.4%** of calls. `extract_dataset.js` records this at fetch time via
+  `proxyContentTruncated()`, which deliberately mirrors `core/worker.js`'s rule —
+  `tests/truncation.test.js` fails if the two drift.
+- **`excluded_reason`** — the stored source is not the cited source at all (dead
+  fetch, bot wall, an archive banner with no article behind it). 11 rows. Set from
+  the `Exclude reason` column in `Benchmarking_data_Citations.csv`.
+
+`analyze_results.js` drops excluded rows by default (`--include-excluded` keeps
+them, and the count is always printed) and takes
+`--truncation all|full|truncated`, which filters like `--version` and
+`--projection` do. An unfiltered run prints the pooled split.
+
+**These rows are flagged, not deleted, and that is deliberate on two counts.**
+The userscript hits the same 12,000-char cap, so truncated rows reproduce a real
+production failure — deleting them would raise the headline ~4 points while the
+tool got no better, and would remove the only evidence the failure exists. And
+excluding by deleting CSV lines would shift every `row_<csv_line>` id after the
+deletion, which is the misalignment described under "Benchmark row_id fragility"
+below; a test pins each id to its CSV line so a future deletion fails loudly.
+
+The filter **refuses** to run against a dataset carrying no `source_truncated`
+anywhere (the frozen v1/v3 snapshots) rather than reading absent as `false`,
+which would report every row as whole and be confidently wrong.
 
 ### One provider table, one verification sequence (`core/models.js`, `core/pipeline.js`)
 

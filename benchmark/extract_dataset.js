@@ -45,6 +45,32 @@ const OUTPUT_JSON = path.join(__dirname, 'dataset.json');
 const OUTPUT_REVIEW_CSV = path.join(__dirname, 'dataset_review.csv');
 const PROXY_URL = 'https://publicai-proxy.alaexis.workers.dev/';
 
+// The proxy caps extracted content server-side. It reports `truncated` when it
+// does, but not reliably, so `core/worker.js` also treats "landed exactly on the
+// cap" as truncated — mirrored here so both paths agree on what counts.
+// A truncated row is one whose stored source_text is a *prefix* of the real
+// document, so a label made against the full page may not be checkable against
+// what we stored. See docs/benchmark-ground-truth-audit-2026-09-06.md.
+const PROXY_CONTENT_CAP = 12000;
+// The direct-fetch fallback below has its own, much larger cap. Two different
+// caps mean "truncated" has two different lengths depending on which fetch path
+// won, which is exactly why this is recorded per row rather than inferred from
+// source_text.length by downstream consumers.
+const DIRECT_FETCH_CAP = 50000;
+
+/**
+ * Whether a proxy response's content is a prefix of the real document.
+ *
+ * The proxy sets `truncated` when it cuts, but not reliably — which is why
+ * `core/worker.js` also treats "landed on the cap" as truncated. This mirrors
+ * that rule deliberately: the two must agree, or the benchmark and the
+ * userscript disagree about what the model was shown. `tests/truncation.test.js`
+ * pins them together.
+ */
+export function proxyContentTruncated(data) {
+    return data?.truncated === true || (data?.content?.length ?? 0) >= PROXY_CONTENT_CAP;
+}
+
 // Parse command line arguments
 const args = process.argv.slice(2);
 const DRY_RUN = args.includes('--dry-run');
@@ -165,7 +191,14 @@ function fetchURL(url) {
 }
 
 /**
- * Fetch source content via proxy, with direct fetch fallback
+ * Fetch source content via proxy, with direct fetch fallback.
+ *
+ * Returns `{ text, truncated }`. `truncated` records that the stored text is a
+ * prefix of the real document rather than the whole of it — a fact the caller
+ * cannot recover afterwards, since both caps are round numbers a genuine
+ * document could coincidentally land on. Callers that only want the text should
+ * destructure; there is deliberately no bare-string return, so a future caller
+ * cannot drop the flag by accident the way this function used to.
  */
 async function fetchSourceContent(url) {
     // Try proxy first
@@ -176,8 +209,9 @@ async function fetchSourceContent(url) {
         const data = JSON.parse(response);
 
         if (data.content && data.content.length > 100) {
-            log(`    Proxy success: ${data.content.length} chars`);
-            return data.content;
+            const truncated = proxyContentTruncated(data);
+            log(`    Proxy success: ${data.content.length} chars${truncated ? ' (TRUNCATED)' : ''}`);
+            return { text: data.content, truncated };
         }
         log(`    Proxy returned insufficient content: ${data.content?.length || 0} chars`);
     } catch (error) {
@@ -204,8 +238,9 @@ async function fetchSourceContent(url) {
                 .trim();
 
             if (text.length > 100) {
-                log(`    Direct fetch success: ${text.length} chars`);
-                return text.substring(0, 50000); // Limit size
+                const truncated = text.length > DIRECT_FETCH_CAP;
+                log(`    Direct fetch success: ${text.length} chars${truncated ? ' (TRUNCATED)' : ''}`);
+                return { text: text.substring(0, DIRECT_FETCH_CAP), truncated };
             }
         }
         log(`    Direct fetch: insufficient content`);
@@ -437,10 +472,14 @@ async function main() {
                         claim_text: '',
                         source_url: '',
                         source_text: '',
+                        source_truncated: false,
                         ground_truth: normalizeVerdict(row['Ground truth']),
                         dataset_version: row['Dataset version'] || 'v1',
                         extraction_status: 'article_fetch_failed',
-                        needs_manual_review: true
+                        needs_manual_review: true,
+                        ...((row['Exclude reason'] || '').trim()
+                            ? { excluded_reason: (row['Exclude reason'] || '').trim() }
+                            : {}),
                     });
                 }
                 continue;
@@ -455,6 +494,13 @@ async function main() {
             const wmfClaimText = (row['WMF claim text'] || '').trim();
             const wmfSourceUrl = (row['WMF source URL'] || '').trim();
             const wmfProvenance = (row['WMF provenance'] || '').trim();
+            // Human-owned exclusion: a non-empty reason marks a row whose stored
+            // source isn't the cited source at all (dead fetch, bot wall, archive
+            // banner with no article behind it), so no label can be checked
+            // against it. Kept in the CSV rather than applied by deleting the row,
+            // because row ids are `row_<csv_line>` and deleting lines silently
+            // shifts every id after them — the misalignment CLAUDE.md documents.
+            const excludeReason = (row['Exclude reason'] || '').trim();
 
             console.log(`  Citation [${citationNumber}] (instance ${occurrence})...`);
 
@@ -477,9 +523,12 @@ async function main() {
 
             // Fetch source content
             let sourceText = '';
+            let sourceTruncated = false;
             if (sourceUrl && !DRY_RUN) {
                 console.log(`    Fetching source: ${sourceUrl.substring(0, 60)}...`);
-                sourceText = await fetchSourceContent(sourceUrl) || '';
+                const fetched = await fetchSourceContent(sourceUrl);
+                sourceText = fetched?.text || '';
+                sourceTruncated = Boolean(fetched?.truncated);
                 await sleep(500); // Rate limiting
             }
 
@@ -494,10 +543,12 @@ async function main() {
                 claim_container: claimContainer,
                 source_url: sourceUrl || '',
                 source_text: sourceText,
+                source_truncated: sourceTruncated,
                 ground_truth: normalizeVerdict(row['Ground truth']),
                 dataset_version: row['Dataset version'] || 'v1',
                 extraction_status: determineStatus(claimText, sourceUrl, sourceText),
                 needs_manual_review: !claimText || !sourceText,
+                ...(excludeReason ? { excluded_reason: excludeReason } : {}),
                 ...(wmfProvenance ? { provenance: wmfProvenance } : {}),
             };
 

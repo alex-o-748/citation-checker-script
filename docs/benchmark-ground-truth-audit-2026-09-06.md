@@ -6,14 +6,27 @@ wrong, unverifiable, or attached to something other than what it appears to
 label.
 
 **Headline:** 6 rows have a label I'd call wrong on the evidence in the dataset
-itself, and a further ~11 are unscoreable because the stored `source_text` is not
-the cited source. Underneath both sits a systemic problem: **50 of 189 rows
-(26.5%) store a source silently truncated at the proxy's 12,000-character cap**,
+itself, and a further 11 are unscoreable because the stored `source_text` is not
+the cited source. Underneath both sits a systemic problem: **48 of 189 rows
+(25.4%) store a source silently truncated at the proxy's 12,000-character cap**,
 so the labeller and the model were not looking at the same document.
 
 Removing the unscoreable rows and correcting the six labels moves pooled accuracy
 from **57.2% → 60.4%**, and moves individual providers by up to **+4.6 points**.
 The ranking is stable, but the absolute numbers are not.
+
+> **Update, 2026-09-07.** Truncated rows are now flagged rather than removed, and
+> the 11 unscoreable ones are excluded via a CSV column — see
+> [Status](#status-what-has-been-done) at the end. The labels are untouched and
+> await review.
+>
+> One correction to this document's first version: it counted truncated rows with
+> `source_text.length >= 11900`, which swept in two complete documents
+> (`row_71` at 17,985 chars and `row_139` at 11,990 — both under their cap). The
+> real count is **48, not 50**, and the accuracy gap is **14.3 points, not 14.0**.
+> The conclusion is unchanged. `row_71` being a *complete* source strengthens the
+> case in section A, since its label is contradicted by a whole document rather
+> than a fragment.
 
 ---
 
@@ -100,8 +113,10 @@ same risk; the dataset stores no fetch date per row to detect it.
 
 ## D. Silent truncation at 12,000 characters — the systemic one
 
-**50 of 189 rows (26.5%) have `source_text` at the 11,900–12,000 char boundary.**
-That is the CORS proxy's content cap, not the length of the documents.
+**48 of 189 rows (25.4%) store a source that stops at a cap rather than at the
+end of the document** — 46 at the proxy's 12,000-character cap (a couple of
+characters over, since it cuts on a boundary) and 2 at the direct-fetch
+fallback's 50,000. Lengths between the two caps are complete documents.
 
 `core/worker.js:56-66` handles this: when `data.truncated` is set or content
 reaches 12,000 chars, it prepends a metadata header including `Truncated: true`,
@@ -128,13 +143,39 @@ Confirmed cases where the deciding evidence is provably past the cut:
 - `row_3` — same page, same cut: the "4% of global population / 17% of migrants" statistic is past the boundary.
 - `row_97` — the byline "Shreve" does not appear in the stored New Yorker text at all, so the source can't even establish the first of the claim's three publications.
 
-39 of the 50 truncated rows have a GT other than `Not supported`, i.e. the label
+Most truncated rows have a label other than `Not supported`, i.e. the label
 asserts the source contains something — which for a fragment is exactly the
 assertion that can't be trusted.
 
-Note also `benchmark/extract_dataset.js:208`, the direct-fetch fallback, applies a
-separate 50,000-char cap (`row_81` is one such row), so "truncated" has two
-different meanings in this dataset.
+**It costs about 16 points.** What `npm run analyze` now prints, with the
+section-B rows already excluded:
+
+```
+=== Accuracy by source completeness (pooled) ===
+
+  Full sources:      62.8%  (618/984)
+  Truncated sources: 46.6%  (170/365)
+  Gap:               16.2 points
+```
+
+The gap holds within every label class — *Supported* 72.5% vs 64.6%,
+*Not supported* 63.6% vs 50.0%, and widest on *Partially supported* at 46.3% vs
+**16.7%** — and the label mix is near-identical across the two buckets, so it
+isn't a composition artifact. (Before excluding the section-B rows the same split
+reads 60.9% vs 46.6%, a 14.3-point gap; exclusion lifts the full-source side
+because most of those rows sit in it.)
+
+Worse than the accuracy gap: on a truncated source **18.4% of calls falsely
+report that a citation fails** — the model returns NOT SUPPORTED where the label
+says the source backs the claim fully or partly — against 12.3% on whole sources.
+That is the worst error this tool can make to an editor, and it is concentrated
+in exactly the rows where the evidence was cut off before the model could see it.
+
+That number is also the argument against simply deleting these rows. They are not
+corrupt data — the userscript hits the same 12,000-char cap, so they are a
+faithful reproduction of a real production failure. Dropping them would raise the
+headline by ~4 points while the tool got no better, and would delete the only
+evidence that this failure mode exists.
 
 ---
 
@@ -204,27 +245,59 @@ all because fixing it needs a re-fetch, not a relabel.
 
 ---
 
-## Suggested order of work
+## Status: what has been done
 
-1. **Stop the truncation from being silent.** Have `extract_dataset.js` go through
-   `core/worker.js` (or at minimum carry `data.truncated` into the stored text)
-   so the benchmark and the userscript show the model the same thing. Then
-   re-fetch the 50 truncated rows with a higher cap and re-check their labels —
-   this is the largest single source of doubt in the dataset.
-2. **Quarantine section B.** Mark the 11 rows `needs_manual_review: true` and
-   exclude them from headline accuracy until re-fetched; several are permanently
-   dead (`row_144`'s eBird bot wall, `row_17`'s PDF).
-3. **Apply the six section-A corrections**, and decide whether `row_189`,
-   `row_78` and `row_128` should be relabelled or dropped as degenerate.
-4. **Re-run the row_78 alignment fix** and drop the pre-2026-05-15 provider runs,
-   or re-run those four providers against the current dataset. As it stands the
-   two provider cohorts are not comparable.
-5. **Consider the stable-id refactor** CLAUDE.md already recommends (content hash
-   or a CSV id column). Section F is the second occurrence of the same bug.
+Landed 2026-09-07 — **flags and tooling only; no label was changed.**
+
+- **`source_truncated` on every dataset row.** `extract_dataset.js` now records it
+  at fetch time (`proxyContentTruncated`, mirroring `core/worker.js`'s rule)
+  instead of discarding `data.truncated`. Existing rows were backfilled from
+  length. `fetchSourceContent` returns `{ text, truncated }` rather than a bare
+  string, so the flag can't be dropped by a future caller the way it was.
+- **`excluded_reason` on the 11 section-B rows**, driven by a new
+  `Exclude reason` column in `Benchmarking_data_Citations.csv`. Chosen over
+  deleting rows because ids are `row_<csv_line>` — deleting lines shifts every id
+  after them, which is exactly the section-F bug. A test pins ids to their CSV
+  line, so a future deletion fails loudly.
+- **`analyze_results.js --truncation all|full|truncated`**, alongside the existing
+  `--version` and `--projection`. Excluded rows leave the headline by default
+  (`--include-excluded` restores them); the count is always printed, never
+  silent. An unfiltered run prints the pooled full-vs-truncated split. The filter
+  **refuses** to run against a dataset with no `source_truncated` anywhere rather
+  than treating absent as `false` and answering confidently wrongly.
+- **`npm run analyze:full-sources` / `analyze:truncated-sources`** for the
+  per-provider figures.
+- `tests/truncation.test.js` covers all of it, including a test that fails if the
+  benchmark's cap drifts from `core/worker.js`'s.
+
+The clean-source subset the flags give you is `--truncation full` with the
+default exclusions: **128 rows**, which is the same set as deleting everything
+questionable, but reversible and still able to show the other number.
+
+## Still open
+
+1. **The six section-A labels** and the degenerate claims (`row_189`, `row_128`)
+   — deliberately untouched, awaiting review.
+2. **Pass `Truncated: true` through to the model.** The flag is now recorded, but
+   `source_text` still doesn't carry the marker `core/worker.js` prepends, so the
+   benchmark's model is worse informed than production's. This needs a re-extract
+   to take effect. Cheapest remaining win.
+3. **Decide what to do about the cap** — and in the proxy, not here. Note the fix
+   is probably *not* a bigger cap: the head of a document is usually the wrong
+   window for a specific claim (`row_7`'s SIV row, `row_5`'s statistic). Before
+   committing to that work, re-fetch the 48 rows uncapped and re-run one provider;
+   that separates truncation from long sources simply being harder, which the
+   14-point gap does not currently distinguish.
+4. **The row_78 alignment fix**, and either dropping the pre-2026-05-15 provider
+   runs or re-running those four against the current dataset. As it stands the two
+   provider cohorts were scored on different inputs.
+5. **The stable-id refactor** CLAUDE.md already recommends (content hash, or a
+   CSV id column). Section F is the second occurrence of that bug; the exclusion
+   column avoids a third but doesn't remove the hazard.
 
 ---
 
-*Reproduction: the audit scripts used here are throwaway; the two load-bearing
-queries are (a) per-row agreement between `ground_truth` and the four
-post-2026-05-15 providers, and (b) `source_text.length >= 11900` as a truncation
-proxy. Both run directly off `benchmark/dataset.json` and `benchmark/results.json`.*
+*Reproduction: the two load-bearing queries are (a) per-row agreement between
+`ground_truth` and the four post-2026-05-15 providers, and (b) `source_truncated`,
+now a dataset field. Both run directly off `benchmark/dataset.json` and
+`benchmark/results.json`.*
