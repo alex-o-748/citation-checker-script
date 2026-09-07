@@ -6,17 +6,16 @@ wrong, unverifiable, or attached to something other than what it appears to
 label.
 
 **Headline:** 6 rows have a label I'd call wrong on the evidence in the dataset
-itself, and a further 11 are unscoreable because the stored `source_text` is not
-the cited source. Underneath both sits a systemic problem: **48 of 189 rows
+itself, and one row is unscoreable because its claim and cited URL are unrelated. Underneath both sits a systemic problem: **48 of 189 rows
 (25.4%) store a source silently truncated at the proxy's 12,000-character cap**,
 so the labeller and the model were not looking at the same document.
 
-Removing the unscoreable rows and correcting the six labels moves pooled accuracy
-from **57.2% → 60.4%**, and moves individual providers by up to **+4.6 points**.
-The ranking is stable, but the absolute numbers are not.
+Correcting the six labels and scoring only whole sources moves individual providers
+by up to **+5.6 points**. The ranking is stable within a metric, but the absolute
+numbers are not — and the ranking is *not* stable across metrics (see below).
 
-> **Update, 2026-09-07.** Truncated rows are now flagged rather than removed, and
-> the 11 unscoreable ones are excluded via a CSV column — see
+> **Update, 2026-09-07.** Truncated rows are now flagged rather than removed. Only
+> `row_108` is excluded, via a CSV column — see
 > [Status](#status-what-has-been-done) at the end. The labels are untouched and
 > await review.
 >
@@ -27,11 +26,15 @@ The ranking is stable, but the absolute numbers are not.
 >    both under their cap). The real count is **48, not 50**. `row_71` being a
 >    *complete* source strengthens the case in section A, since its label is
 >    contradicted by a whole document rather than a fragment.
-> 2. It reported the truncation gap without noting that **about half of it is
->    unrewardable `Source unavailable`** — no scoreable row carries that label, so
->    the verdict is always scored wrong, and models emit it twice as often on
->    truncated sources. Section D now carries the decomposition. The gap on the
->    current data is 13.0 points by exact accuracy and 6.5 by supported-vs-rest.
+> 2. It reported the truncation gap without noting that **about 40% of it is
+>    unrewardable `Source unavailable`** — effectively no scoreable row carries that
+>    label (`row_111` does, but no provider has ever run it), so the verdict is
+>    always scored wrong, and models emit it more often on truncated sources.
+>    Section D carries the decomposition. The gap on the current data is 11.4 points
+>    by exact accuracy and 5.5 by supported-vs-rest.
+> 3. It excluded 11 rows whose source failed to fetch. That was wrong and is
+>    reverted: a human editor can still open those URLs, so a failed fetch is a
+>    failure of ours worth measuring. Only `row_108` stays excluded.
 >
 > This branch is merged with `main` as of `3697f99`, which fixed three metric bugs
 > — including `equalSupportedVsRest` excluding `SOURCE UNAVAILABLE` from "rest".
@@ -91,8 +94,13 @@ Two things constrain the evidence:
 ## B. The stored source is not the cited source
 
 For these the label may well be right about the *real* page — but nothing in the
-dataset can confirm it, and the model is being marked wrong for correctly saying
-so.
+dataset can confirm it, and the model is being marked wrong for correctly saying so.
+
+**These rows are NOT excluded.** A human editor can still open most of these URLs, so
+a failed or blocked fetch is a failure of ours worth measuring rather than a row to
+hide. Only `row_108` — where the claim and the cited URL are unrelated — is excluded.
+The rest stay in scoring, and the fetchability half of the benchmark is where they
+belong once it exists.
 
 | Row | GT | What `source_text` actually contains |
 |---|---|---|
@@ -157,25 +165,25 @@ Most truncated rows have a label other than `Not supported`, i.e. the label
 asserts the source contains something — which for a fragment is exactly the
 assertion that can't be trusted.
 
-**It costs about 13 points.** What `npm run analyze` prints, with the section-B rows
-excluded and the six 2026-09-07 label corrections applied:
+**It costs about 11 points.** What `npm run analyze` prints, with the six 2026-09-07
+label corrections applied:
 
 ```
 === Accuracy by source completeness (pooled) ===
 
-  Full sources:      64.0%  (626/978)
+  Full sources:      62.3%  (642/1030)
   Truncated sources: 51.0%  (186/365)
-  Gap:               13.0 points
+  Gap:               11.4 points
 ```
 
-**Roughly half of that gap is not the model being wrong.** No scoreable row in the
-dataset carries the `Source unavailable` label (the only one, `row_111`, is
-excluded), yet the verdict is emitted on 105 calls — every one scored wrong under
+**Roughly half of that gap is not the model being wrong.** Effectively no scoreable row carries the `Source unavailable`
+label (`row_111` does, but no provider has ever run it), yet the verdict is emitted
+on 124 calls — every one scored wrong under
 4-class exact accuracy. Models emit it twice as often on truncated rows (12.3% vs
-6.1%), where it accounts for 25.1% of all errors. Of the 48-error truncation cost,
-23 is unrewardable `Source unavailable` and 25 is genuine misjudgement. Under the
-`equalSupportedVsRest` metric — fixed on `main` in `3697f99` to fold the verdict
-into "rest" — the gap halves to **6.5 points** (78.5% vs 72.1%).
+7.7%). Of the 42-error truncation cost, 17 is unrewardable `Source unavailable` and
+25 is genuine misjudgement. Under the `equalSupportedVsRest` metric — fixed on `main`
+in `3697f99` to fold the verdict into "rest" — the gap halves to **5.5 points**
+(77.6% vs 72.1%).
 
 The gap holds within every label class — *Supported* 72.5% vs 64.6%,
 *Not supported* 63.6% vs 50.0%, and widest on *Partially supported* at 46.3% vs
@@ -277,26 +285,25 @@ as a quality ranking alone.
 
 ## Impact
 
-Pooled accuracy across all 8 providers:
+Exact accuracy on the current data, with the six label corrections applied. Only
+`row_108` is excluded; rows whose source failed to fetch stay in.
 
-| | As-is | Unscoreable rows removed | + the 6 label corrections |
+| Provider | All rows (188) | Strict set (140) | Supported-vs-rest (strict) |
 |---|---|---|---|
-| **Pooled** | 57.2% | 58.2% | **60.4%** |
-| `gemini-3.7-flash` | 67.1% | 68.6% | **71.4%** |
-| `gemini-2.5-flash` | 65.6% | 66.7% | 68.2% |
-| `hf-gpt-oss-20b` | 62.6% | 64.0% | 67.2% |
-| `qwen-sealion` | 58.7% | 60.3% | 62.1% |
-| `claude-sonnet-5` | 54.4% | 55.6% | 58.8% |
-| `apertus-70b` | 52.9% | 52.1% | 53.8% |
-| `claude-sonnet-4-5` | 48.9% | 49.7% | 50.6% |
-| `liftwing-qwen3.6-27b` | 47.3% | 48.3% | 50.8% |
+| `gemini-3.7-flash` | 69.2% | **74.8%** | **85.0%** |
+| `gemini-2.5-flash` | 67.6% | 71.5% | 79.6% |
+| `hf-gpt-oss-20b` | 65.2% | 67.7% | 81.2% |
+| `qwen-sealion` | 60.6% | 65.2% | 69.6% |
+| `claude-sonnet-5` | 57.5% | 60.2% | 83.5% |
+| `apertus-70b` | 54.8% | 54.8% | 62.6% |
+| `claude-sonnet-4-5` | 50.3% | 52.6% | 76.6% |
+| `liftwing-qwen3.6-27b` | 49.7% | 51.9% | 79.7% |
 
-Provider *ordering* barely moves — the errors are spread thinly enough not to
-favour one model. What moves is the level, by roughly 3 points pooled and 4.6 for
-`claude-sonnet-5`, and the truncation problem in section D is not costed here at
-all because fixing it needs a re-fetch, not a relabel.
+Pooled: **62.3%** on whole sources against **51.0%** on truncated ones.
 
----
+Provider *ordering within exact accuracy* is stable — the corrections are spread
+thinly enough not to favour one model. Ordering *across* metrics is not, as the third
+column shows.
 
 ## Status: what has been done
 

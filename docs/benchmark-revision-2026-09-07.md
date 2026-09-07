@@ -6,35 +6,39 @@ source is incomplete, and **six ground-truth corrections**.
 
 Model predictions are unchanged. Only the scoring set and six right-answer labels moved.
 
-**The short version:** the corpus is **68.3% support-testable and 31.7% everything
-else** — but by *error* the ratio is 91% / 9%. Both numbers, and why they differ, are
-under [Support vs everything else](#support-vs-everything-else--683--317).
+**The short version:** the corpus is **74.1% support-testable and 25.9% everything
+else** — but by *error* the ratio is 93% / 7%. Both numbers, and why they differ, are
+under [Support vs everything else](#support-vs-everything-else--741--259).
 
 ---
 
-## 1. The strict set — 129 of 189 rows
+## 1. The strict set — 140 of 189 rows
 
 The CORS proxy caps extracted source text at **12,000 characters**. **48 rows** hit a
 cap, so what is stored is a *prefix* of the document — while the label was made by a
-human reading the whole page. A further **12 rows** store something that is not the
-cited source at all: a dead fetch, a bot-block page, an archive banner with no article
-behind it. That leaves **129 rows** where the model and the labeller saw the same thing.
+human reading the whole page. **One further row** (`row_108`) is excluded outright: its
+claim and its cited URL are unrelated, so no verifier can do better or worse on it.
+That leaves **140 rows** where the model and the labeller saw the same thing.
+
+Rows whose source merely failed to fetch stay in. A human editor can still open those
+URLs, so a failed fetch is a failure of ours worth measuring, not a row to hide — the
+same reason the truncated rows stay.
 
 | Source | Result rows | Accuracy |
 |---|---|---|
-| Stored whole | 978 | **64.0%** |
+| Stored whole | 1,030 | **62.3%** |
 | Truncated at a cap | 365 | **51.0%** |
-| | | **13.0-point gap** |
+| | | **11.4-point gap** |
 
 **The rows are flagged, not deleted.** The userscript hits the same cap, so truncated
 rows reproduce a real production failure — dropping them would raise the headline while
-the tool got no better. They carry `source_truncated`; the unscoreable 12 carry
+the tool got no better. They carry `source_truncated`; the excluded row carries
 `excluded_reason`, from a new `Exclude reason` column in the CSV (a column rather than
 deleted lines, because row ids are `row_<csv_line>`).
 
 ```bash
 npm run analyze                    # all rows, prints the whole/truncated split
-npm run analyze:full-sources       # the strict 129-row set
+npm run analyze:full-sources       # the strict 140-row set
 npm run analyze:truncated-sources  # the 48 rows the cap cut short
 ```
 
@@ -74,22 +78,22 @@ as right** — they differ only in what "right" means:
   citation carry the claim, yes or no?* — without grading how it fails.
 
 Denominator in both cases is calls that returned a parseable verdict; API errors and
-unparseable responses are dropped, not counted wrong. "All rows" is the 177 scoreable
-rows; "strict" is the 129 with a whole source. Unscoreable rows are excluded from every
+unparseable responses are dropped, not counted wrong. "All rows" is the 188 scoreable
+rows; "strict" is the 140 with a whole source. Unscoreable rows are excluded from every
 column.
 
 Ordered by exact accuracy on the strict set:
 
 | Provider | Exact (all rows) | Exact (strict) | Supported-vs-rest (strict) |
 |---|---|---|---|
-| gemini-3.7-flash | 70.8% | **77.2%** | **86.2%** |
-| gemini-2.5-flash | 68.8% | 73.4% | 80.5% |
-| hf-gpt-oss-20b | 66.7% | 69.8% | 82.2% |
-| qwen-sealion | 62.3% | 67.9% | 70.8% |
-| claude-sonnet-5 | 58.8% | 62.0% | 84.5% |
-| claude-sonnet-4-5 | 51.1% | 53.9% | 78.1% |
-| apertus-70b | 54.1% | 53.8% | 61.3% |
-| liftwing-qwen3.6-27b | 50.8% | 53.5% | 80.6% |
+| gemini-3.7-flash | 69.2% | **74.8%** | **85.0%** |
+| gemini-2.5-flash | 67.6% | 71.5% | 79.6% |
+| hf-gpt-oss-20b | 65.2% | 67.7% | 81.2% |
+| qwen-sealion | 60.6% | 65.2% | 69.6% |
+| claude-sonnet-5 | 57.5% | 60.2% | 83.5% |
+| apertus-70b | 54.8% | 54.8% | 62.6% |
+| claude-sonnet-4-5 | 50.3% | 52.6% | 76.6% |
+| liftwing-qwen3.6-27b | 49.7% | 51.9% | 79.7% |
 
 The two metrics rank providers differently — `liftwing-qwen3.6-27b` goes from last to
 fourth, `claude-sonnet-5` from fifth to second — because exact accuracy counts every
@@ -97,7 +101,7 @@ fourth, `claude-sonnet-5` from fifth to second — because exact accuracy counts
 
 ---
 
-## Support vs everything else — 68.3% / 31.7%
+## Support vs everything else — 74.1% / 25.9%
 
 How much of this benchmark actually measures the model's judgement, and how much
 measures whether we could fetch and read the page? Two ways to count it, and they
@@ -107,37 +111,36 @@ disagree usefully.
 
 | | Rows | Share |
 |---|---|---|
-| Support-testable (whole source) | 129 | 68.3% |
+| Support-testable (whole source) | 140 | 74.1% |
 | Truncation-degraded | 48 | 25.4% |
-| Unscoreable (dead fetch, wrong page) | 12 | 6.3% |
-| **Everything but support** | **60** | **31.7%** |
+| Unscoreable (claim/URL mismatch) | 1 | 0.5% |
+| **Everything but support** | **49** | **25.9%** |
 
-**By error — where the wrongness comes from.** Of 531 wrong verdicts across 1,343
-scoreable calls, roughly **483 (91%)** are judgment errors that whole sources would
-not fix. Truncation accounts for about **48 (9%)** — worth **3.5 accuracy points**
+**By error — where the wrongness comes from.** Of 567 wrong verdicts across 1,395
+scoreable calls, roughly **525 (93%)** are judgment errors that whole sources would
+not fix. Truncation accounts for about **42 (7%)** — worth **3.0 accuracy points**
 pooled.
 
-So a third of the corpus is compromised but only a tenth of the error is. Truncation
+So a quarter of the corpus is compromised but well under a tenth of the error is. Truncation
 is a real cost, not the dominant one.
 
 ### About half the truncation penalty isn't the model being wrong
 
-**No scoreable row in the dataset is labelled `Source unavailable`.** The only one
-(`row_111`) is excluded. But the verdict is emitted on **105 calls (7.8%)**, and under
-4-class exact accuracy every one of them is scored wrong — the answer is unwinnable by
-construction.
+**Effectively no scoreable row is labelled `Source unavailable`.** One row (`row_111`)
+carries it, but no provider has ever run that row. So the verdict is emitted on
+**124 calls (8.9%)** and every one is scored wrong under 4-class exact accuracy — the
+answer is unwinnable in practice.
 
 That lands disproportionately on truncated rows, where models detect an unusable
 source twice as often:
 
 | | Whole sources | Truncated |
 |---|---|---|
-| Predicts `Source unavailable` | 6.1% (60 calls) | **12.3% (45 calls)** |
-| …as a share of that group's errors | 17.0% | **25.1%** |
+| Predicts `Source unavailable` | 7.7% (79 calls) | **12.3% (45 calls)** |
 
-Decomposing the 48-error truncation cost: **23 (47%) is excess `Source unavailable`**
+Decomposing the 42-error truncation cost: **17 (41%) is excess `Source unavailable`**
 that could never have scored right, and **25 is genuine misjudgement**. So the
-fetch-fixable part is closer to **1.8 accuracy points**, not 3.5.
+fetch-fixable part is closer to **1.8 accuracy points**, not 3.0.
 
 The same effect shows up in the metric that *does* credit the verdict.
 `equalSupportedVsRest` was fixed on `main` (commit `3697f99`) to fold
@@ -147,10 +150,10 @@ version the truncation gap **halves**:
 
 | Metric | Whole | Truncated | Gap |
 |---|---|---|---|
-| Exact accuracy (4-class) | 64.0% | 51.0% | 13.0 pts |
-| Supported-vs-rest (fixed) | 78.5% | 72.1% | **6.5 pts** |
+| Exact accuracy (4-class) | 62.3% | 51.0% | 11.4 pts |
+| Supported-vs-rest (fixed) | 77.6% | 72.1% | **5.5 pts** |
 
-Both numbers are honest; they answer different questions. But quoting the 13-point gap
+Both numbers are honest; they answer different questions. But quoting the 11.4-point gap
 as "what truncation costs" overstates it, because roughly half of it is the model
 correctly reporting that it cannot read the source and the benchmark having no way to
 say "correct".

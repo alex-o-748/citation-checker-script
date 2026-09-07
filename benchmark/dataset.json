@@ -274,8 +274,7 @@
       "ground_truth": "Supported",
       "dataset_version": "v1",
       "extraction_status": "complete",
-      "needs_manual_review": false,
-      "excluded_reason": "archive banner only - no document text"
+      "needs_manual_review": false
     },
     {
       "id": "row_18",
@@ -360,8 +359,7 @@
       "ground_truth": "Partially supported",
       "dataset_version": "v1",
       "extraction_status": "complete",
-      "needs_manual_review": false,
-      "excluded_reason": "archive banner + 301 redirect - no article text"
+      "needs_manual_review": false
     },
     {
       "id": "row_23",
@@ -582,8 +580,7 @@
       "ground_truth": "Partially supported",
       "dataset_version": "v1",
       "extraction_status": "source_fetch_failed",
-      "needs_manual_review": true,
-      "excluded_reason": "source fetch failed - no stored text"
+      "needs_manual_review": true
     },
     {
       "id": "row_36",
@@ -1297,8 +1294,7 @@
       "ground_truth": "Supported",
       "dataset_version": "v1",
       "extraction_status": "source_fetch_failed",
-      "needs_manual_review": false,
-      "excluded_reason": "source fetch failed - no stored text"
+      "needs_manual_review": false
     },
     {
       "id": "row_78",
@@ -1315,8 +1311,7 @@
       "ground_truth": "Partially supported",
       "dataset_version": "v2",
       "extraction_status": "complete",
-      "needs_manual_review": false,
-      "excluded_reason": "results misaligned at v1/v2 id boundary"
+      "needs_manual_review": false
     },
     {
       "id": "row_79",
@@ -1878,8 +1873,7 @@
       "ground_truth": "Source unavailable",
       "dataset_version": "v2",
       "extraction_status": "source_fetch_failed",
-      "needs_manual_review": false,
-      "excluded_reason": "source fetch failed - no stored text"
+      "needs_manual_review": false
     },
     {
       "id": "row_112",
@@ -2113,8 +2107,7 @@
       "dataset_version": "v3",
       "extraction_status": "source_fetch_failed",
       "needs_manual_review": true,
-      "provenance": "human-annotation:source-verification-2026-04-25",
-      "excluded_reason": "source fetch failed - no stored text"
+      "provenance": "human-annotation:source-verification-2026-04-25"
     },
     {
       "id": "row_125",
@@ -2474,8 +2467,7 @@
       "dataset_version": "v3",
       "extraction_status": "complete",
       "needs_manual_review": false,
-      "provenance": "human-annotation:source-verification-2026-04-25",
-      "excluded_reason": "bot-block page - source never retrieved"
+      "provenance": "human-annotation:source-verification-2026-04-25"
     },
     {
       "id": "row_145",
@@ -2493,8 +2485,7 @@
       "dataset_version": "v3",
       "extraction_status": "source_fetch_failed",
       "needs_manual_review": true,
-      "provenance": "human-annotation:source-verification-2026-04-25",
-      "excluded_reason": "source fetch failed - no stored text"
+      "provenance": "human-annotation:source-verification-2026-04-25"
     },
     {
       "id": "row_146",
@@ -3052,8 +3043,7 @@
       "dataset_version": "v3",
       "extraction_status": "source_fetch_failed",
       "needs_manual_review": false,
-      "provenance": "human-annotation:source-verification-2026-04-25",
-      "excluded_reason": "source fetch failed - no stored text"
+      "provenance": "human-annotation:source-verification-2026-04-25"
     },
     {
       "id": "row_177",
@@ -3269,8 +3259,7 @@
       "dataset_version": "v3",
       "extraction_status": "source_fetch_failed",
       "needs_manual_review": false,
-      "provenance": "human-annotation:source-verification-2026-04-25",
-      "excluded_reason": "source fetch failed - no stored text"
+      "provenance": "human-annotation:source-verification-2026-04-25"
     },
     {
       "id": "row_189",
