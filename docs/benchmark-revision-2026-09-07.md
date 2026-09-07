@@ -8,22 +8,29 @@ Model predictions are unchanged. Only the scoring set and six right-answer label
 
 ---
 
-## 1. The strict set — 130 of 189 rows
+## 1. The strict set — 129 of 189 rows
 
 The CORS proxy caps extracted source text at **12,000 characters** (the direct-fetch
 fallback at 50,000). **48 rows** hit a cap, so what is stored is a *prefix* of the
 document — while the label was made by a human reading the whole page. A further
-**11 rows** store something that is not the cited source at all: a dead fetch, a
-bot-block page, an Internet Archive banner with no article behind it.
+**12 rows** store something that is not the cited source at all: a dead fetch, a
+bot-block page, an Internet Archive banner with no article behind it, or — in one
+case — a page on an entirely unrelated subject.
 
 Scoring those rows measures whether the tool could *see* the evidence, not whether
 the model judged it correctly. Pooled across all eight providers:
 
 | Source | Result rows | Accuracy |
 |---|---|---|
-| Stored whole | 984 | **63.9%** |
+| Stored whole | 978 | **64.0%** |
 | Truncated at a cap | 365 | **51.0%** |
-| | | **12.9-point gap** |
+| | | **13.0-point gap** |
+
+The unrelated-subject case is `row_108`: a claim about *The Phoenix* magazine's
+Goldhawk phone line, cited to a Central Bank of Ireland explainer on financial
+regulation. Its label (*Not supported*) is arguably right by accident, but the row
+tests nothing — no verifier could do better or worse on it. The claim and the URL
+are simply not a pair.
 
 The gap holds within every label class, and the label mix is near-identical across
 the two groups, so it is not a composition artifact.
@@ -38,7 +45,7 @@ that the failure exists. Two fields carry this:
 
 ```bash
 npm run analyze                    # all rows, prints the whole/truncated split
-npm run analyze:full-sources       # the strict 130-row set
+npm run analyze:full-sources       # the strict 129-row set
 npm run analyze:truncated-sources  # the 48 rows the cap cut short
 ```
 
@@ -77,21 +84,21 @@ re-fetched whole, re-check it first.
 
 Exact accuracy, unscoreable rows excluded throughout:
 
-| Provider | All rows | Strict set (130) |
+| Provider | All rows | Strict set (129) |
 |---|---|---|
-| gemini-3.7-flash | 71.0% | **77.4%** |
-| gemini-2.5-flash | 68.9% | 73.6% |
-| hf-gpt-oss-20b | 66.9% | 70.0% |
+| gemini-3.7-flash | 70.8% | **77.2%** |
+| gemini-2.5-flash | 68.8% | 73.4% |
+| hf-gpt-oss-20b | 66.7% | 69.8% |
 | qwen-sealion | 62.3% | 67.9% |
-| claude-sonnet-5 | 58.4% | 61.5% |
+| claude-sonnet-5 | 58.8% | 62.0% |
 | apertus-70b | 54.1% | 53.8% |
-| claude-sonnet-4-5 | 50.8% | 53.5% |
-| liftwing-qwen3.6-27b | 50.6% | 53.1% |
+| claude-sonnet-4-5 | 51.1% | 53.9% |
+| liftwing-qwen3.6-27b | 50.8% | 53.5% |
 
 Ordering is essentially unchanged — the corrections are spread thinly enough not to
 favour one model. What moves is the level.
 
-Strict-set label mix: 56 Supported / 37 Partially supported / 37 Not supported.
+Strict-set label mix: 56 Supported / 37 Partially supported / 36 Not supported.
 
 ---
 

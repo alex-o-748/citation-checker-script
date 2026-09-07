@@ -1826,7 +1826,8 @@
       "ground_truth": "Not supported",
       "dataset_version": "v2",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "excluded_reason": "cited source unrelated to the claim - citation/URL mismatch"
     },
     {
       "id": "row_109",
