@@ -102,6 +102,53 @@ Strict-set label mix: 56 Supported / 37 Partially supported / 36 Not supported.
 
 ---
 
+## How much of this is actually the model?
+
+Two ways to read the same data, and they disagree usefully.
+
+**By row — what the corpus is made of:**
+
+| | Rows | Share |
+|---|---|---|
+| Support-testable (whole source) | 129 | 68.3% |
+| Truncation-degraded | 48 | 25.4% |
+| Unscoreable (dead fetch, wrong page) | 12 | 6.3% |
+| **Everything but support** | **60** | **31.7%** |
+
+**By error — where the wrongness comes from.** Of 531 wrong verdicts across 1,343
+scoreable calls, roughly **483 (91%)** are judgment errors that whole sources would
+not fix. Truncation accounts for about **48 (9%)** — worth **3.5 accuracy points**
+pooled.
+
+So a third of the corpus is compromised but only a tenth of the error is. Truncation
+is a real cost, not the dominant one.
+
+**The part that argues for splitting the benchmark:** that share is not constant
+across models.
+
+| Provider | Whole-source accuracy | Truncation's share of its errors | Points on the table |
+|---|---|---|---|
+| gemini-3.7-flash | 77.2% | 22.0% | 6.4 |
+| gemini-2.5-flash | 73.4% | 15.0% | 4.7 |
+| hf-gpt-oss-20b | 69.8% | 9.3% | 3.1 |
+| qwen-sealion | 67.9% | 14.9% | 5.6 |
+| claude-sonnet-5 | 62.0% | 7.9% | 3.3 |
+| claude-sonnet-4-5 | 53.9% | 5.7% | 2.8 |
+| apertus-70b | 53.8% | −0.7% | −0.3 |
+| liftwing-qwen3.6-27b | 53.5% | 5.4% | 2.6 |
+
+The pattern is rough rather than a clean law — `qwen-sealion` is out of line — but it
+is directional: **the better the model, the more of its remaining error is
+infrastructure rather than judgment.** `gemini-3.7-flash` leaves 6.4 points on the
+table; `apertus-70b` leaves nothing measurable (its −0.7% is noise — it does
+fractionally *better* on truncated rows, which is what guessing looks like).
+
+Which means conflating the two halves gets *worse* over time, not better. As models
+improve, the fetch-and-extract half grows as a share of the headline number, and
+comparisons across runs increasingly measure the web rather than the verifier.
+
+---
+
 ## What did not change
 
 - **No model predictions.** `results.json` keeps every verdict; only `ground_truth`

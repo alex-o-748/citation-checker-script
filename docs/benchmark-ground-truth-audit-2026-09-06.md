@@ -295,6 +295,41 @@ questionable, but reversible and still able to show the other number.
    CSV id column). Section F is the second occurrence of that bug; the exclusion
    column avoids a third but doesn't remove the hazard.
 
+6. **Split the benchmark into a fetchability half and a support half** (deferred,
+   2026-09-07). Live sources are not stable, so a number from today and the same
+   number in six months differ for reasons that have nothing to do with the model.
+   Measured churn: **6 of 189 rows changed fetchability in the two weeks** between
+   the April provider runs and the 15 May extraction — five went fetchable → dead,
+   one came back — with no code change. Content drifts under stable URLs too
+   (`row_168`'s Census Reporter vintage bump, `row_95`'s IEA page, and `row_5`,
+   which the 2026-05-08 audit Wayback-bisected to a nine-month window where the
+   claim matched MPI and then didn't).
+
+   Today the corpus is **68.3% support-testable / 31.7% everything else** (129
+   whole-source rows, 48 truncated, 12 unscoreable). By *error* the ratio is
+   91% / 9% — truncation costs 3.5 accuracy points pooled. But the split is
+   uneven across models: `gemini-3.7-flash` loses 6.4 points to truncation (22%
+   of its errors) while `apertus-70b` loses nothing measurable. **The better the
+   verifier, the larger the infrastructure share** — so the conflation worsens as
+   models improve.
+
+   The flags added on 2026-09-07 are half of this already: `source_truncated`
+   separates "did we fetch enough", `excluded_reason` separates "did we fetch the
+   right thing". The missing step is freezing `source_text` once a row is reviewed,
+   after which the support half stops moving. WiCE is already this benchmark —
+   `docs/wice-benchmark.md` notes it "exercises the prompt and model but **not** the
+   CORS-proxy fetch path" because it ships frozen 2023 Common Crawl evidence.
+
+   **Resolve before building:** the two halves cannot share a ground-truth
+   principle. `design-plans/2026-05-08-gt-audit-corrections.md` states GT "reflects
+   what an editor following the citation would find on the live page, not what was
+   captured in `source_text` at extraction time" — which a frozen support benchmark
+   contradicts outright. Support wants frozen text with a pinned label;
+   fetchability wants the live web, and its metric is retrieval rate and
+   completeness, not accuracy. Most of the label churn to date (`row_5`, `row_3`,
+   `row_168`) was the page moving rather than anyone misjudging, and disappears
+   once support is frozen.
+
 ---
 
 *Reproduction: the two load-bearing queries are (a) per-row agreement between
