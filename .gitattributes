@@ -1,0 +1,14 @@
+# Benchmark artifacts that are produced by a command, not written by hand.
+# Marking them `linguist-generated` collapses them by default in GitHub diffs,
+# so a pull request that regenerates them doesn't bury the reviewable changes.
+# They stay tracked and diffable — expand the entry to read one.
+#
+#   analysis.json / analysis_*.json  <- npm run analyze
+#   roc.json                         <- npm run roc
+#
+# results.json and dataset.json are deliberately NOT listed. They carry model
+# predictions and human ground-truth labels: a diff there is a change someone
+# has to look at, even though the files are machine-written.
+benchmark/analysis.json      linguist-generated=true
+benchmark/analysis_*.json    linguist-generated=true
+benchmark/roc.json           linguist-generated=true
