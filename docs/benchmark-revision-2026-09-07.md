@@ -6,10 +6,6 @@ source is incomplete, and **six ground-truth corrections**.
 
 Model predictions are unchanged. Only the scoring set and six right-answer labels moved.
 
-**The short version:** the corpus is **74.1% support-testable and 25.9% everything
-else** — but by *error* the ratio is 93% / 7%. Both numbers, and why they differ, are
-under [Support vs everything else](#support-vs-everything-else--741--259).
-
 ---
 
 ## 1. The strict set — 140 of 189 rows
@@ -101,93 +97,10 @@ fourth, `claude-sonnet-5` from fifth to second — because exact accuracy counts
 
 ---
 
-## Support vs everything else — 74.1% / 25.9%
-
-How much of this benchmark actually measures the model's judgement, and how much
-measures whether we could fetch and read the page? Two ways to count it, and they
-disagree usefully.
-
-**By row — what the corpus is made of:**
-
-| | Rows | Share |
-|---|---|---|
-| Support-testable (whole source) | 140 | 74.1% |
-| Truncation-degraded | 48 | 25.4% |
-| Unscoreable (claim/URL mismatch) | 1 | 0.5% |
-| **Everything but support** | **49** | **25.9%** |
-
-**By error — where the wrongness comes from.** Of 567 wrong verdicts across 1,395
-scoreable calls, roughly **525 (93%)** are judgment errors that whole sources would
-not fix. Truncation accounts for about **42 (7%)** — worth **3.0 accuracy points**
-pooled.
-
-So a quarter of the corpus is compromised but well under a tenth of the error is. Truncation
-is a real cost, not the dominant one.
-
-### About half the truncation penalty isn't the model being wrong
-
-**Effectively no scoreable row is labelled `Source unavailable`.** One row (`row_111`)
-carries it, but no provider has ever run that row. So the verdict is emitted on
-**124 calls (8.9%)** and every one is scored wrong under 4-class exact accuracy — the
-answer is unwinnable in practice.
-
-That lands disproportionately on truncated rows, where models detect an unusable
-source twice as often:
-
-| | Whole sources | Truncated |
-|---|---|---|
-| Predicts `Source unavailable` | 7.7% (79 calls) | **12.3% (45 calls)** |
-
-Decomposing the 42-error truncation cost: **17 (41%) is excess `Source unavailable`**
-that could never have scored right, and **25 is genuine misjudgement**. So the
-fetch-fixable part is closer to **1.8 accuracy points**, not 3.0.
-
-The same effect shows up in the metric that *does* credit the verdict.
-`equalSupportedVsRest` was fixed on `main` (commit `3697f99`) to fold
-`SOURCE UNAVAILABLE` into "rest" — it previously required an exact match, so the
-metric had quietly become "did the model avoid saying it". Under the corrected
-version the truncation gap **halves**:
-
-| Metric | Whole | Truncated | Gap |
-|---|---|---|---|
-| Exact accuracy (4-class) | 62.3% | 51.0% | 11.4 pts |
-| Supported-vs-rest (fixed) | 77.6% | 72.1% | **5.5 pts** |
-
-Both numbers are honest; they answer different questions. But quoting the 11.4-point gap
-as "what truncation costs" overstates it, because roughly half of it is the model
-correctly reporting that it cannot read the source and the benchmark having no way to
-say "correct".
-
-**The part that argues for splitting the benchmark:** that share is not constant
-across models.
-
-| Provider | Whole-source accuracy | Truncation's share of its errors | Points on the table |
-|---|---|---|---|
-| gemini-3.7-flash | 77.2% | 22.0% | 6.4 |
-| gemini-2.5-flash | 73.4% | 15.0% | 4.7 |
-| hf-gpt-oss-20b | 69.8% | 9.3% | 3.1 |
-| qwen-sealion | 67.9% | 14.9% | 5.6 |
-| claude-sonnet-5 | 62.0% | 7.9% | 3.3 |
-| claude-sonnet-4-5 | 53.9% | 5.7% | 2.8 |
-| apertus-70b | 53.8% | −0.7% | −0.3 |
-| liftwing-qwen3.6-27b | 53.5% | 5.4% | 2.6 |
-
-The pattern is rough rather than a clean law — `qwen-sealion` is out of line — but it
-is directional: **the better the model, the more of its remaining error is
-infrastructure rather than judgment.** `gemini-3.7-flash` leaves 6.4 points on the
-table; `apertus-70b` leaves nothing measurable (its −0.7% is noise — it does
-fractionally *better* on truncated rows, which is what guessing looks like).
-
-Which means conflating the two halves gets *worse* over time, not better. As models
-improve, the fetch-and-extract half grows as a share of the headline number, and
-comparisons across runs increasingly measure the web rather than the verifier.
-
----
-
 ## Open question this raises
 
-The `Partially supported` class is the weakest everywhere (46.3% even on whole
-sources). Part of that is a genuine rubric ambiguity: when a source contradicts one
+The `Partially supported` class is the weakest everywhere — **45.9%** even on whole
+sources, against 72.8% for `Supported` and 64.8% for `Not supported`. Part of that is a genuine rubric ambiguity: when a source contradicts one
 specific figure or date but supports everything else, `core/prompts.js` instructs the
 model toward NOT SUPPORTED (its own few-shot: claim says 45 nations, source says "over
 30" → NOT SUPPORTED), while the v2/v3 labelling convention maps the same shape to
