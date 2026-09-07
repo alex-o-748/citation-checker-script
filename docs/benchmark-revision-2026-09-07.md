@@ -86,21 +86,57 @@ re-fetched whole, re-check it first.
 
 ## Effect on the numbers
 
-Exact accuracy, unscoreable rows excluded throughout:
+Unscoreable rows excluded throughout. Ordered by exact accuracy on the strict set:
 
-| Provider | All rows | Strict set (129) |
-|---|---|---|
-| gemini-3.7-flash | 70.8% | **77.2%** |
-| gemini-2.5-flash | 68.8% | 73.4% |
-| hf-gpt-oss-20b | 66.7% | 69.8% |
-| qwen-sealion | 62.3% | 67.9% |
-| claude-sonnet-5 | 58.8% | 62.0% |
-| apertus-70b | 54.1% | 53.8% |
-| claude-sonnet-4-5 | 51.1% | 53.9% |
-| liftwing-qwen3.6-27b | 50.8% | 53.5% |
+| Provider | Exact (all rows) | Exact (strict) | Supported-vs-rest (strict) |
+|---|---|---|---|
+| gemini-3.7-flash | 70.8% | **77.2%** | **86.2%** |
+| gemini-2.5-flash | 68.8% | 73.4% | 80.5% |
+| hf-gpt-oss-20b | 66.7% | 69.8% | 82.2% |
+| qwen-sealion | 62.3% | 67.9% | 70.8% |
+| claude-sonnet-5 | 58.8% | 62.0% | 84.5% |
+| claude-sonnet-4-5 | 51.1% | 53.9% | 78.1% |
+| apertus-70b | 54.1% | 53.8% | 61.3% |
+| liftwing-qwen3.6-27b | 50.8% | 53.5% | 80.6% |
 
-Ordering is essentially unchanged — the corrections are spread thinly enough not to
-favour one model. What moves is the level.
+Within exact accuracy, the corrections are spread thinly enough not to favour one
+model — ordering barely moves, only the level.
+
+**Across metrics, ordering is not stable at all**, which the third column makes
+plain:
+
+| | Ranking |
+|---|---|
+| Exact accuracy | gemini-3.7 › gemini-2.5 › hf-gpt-oss › qwen-sealion › sonnet-5 › sonnet-4-5 › apertus › **liftwing** |
+| Supported-vs-rest | gemini-3.7 › **sonnet-5** › hf-gpt-oss › **liftwing** › gemini-2.5 › sonnet-4-5 › **qwen-sealion** › apertus |
+
+`liftwing-qwen3.6-27b` goes from last to fourth; `claude-sonnet-5` from fifth to
+second; `qwen-sealion` from fourth to seventh. Only `gemini-3.7-flash` and
+`apertus-70b` hold their positions.
+
+The mechanism is the `Source unavailable` problem above. Providers differ enormously
+in how often they emit that verdict — and under exact accuracy it is always wrong:
+
+| Provider | Says `Source unavailable` |
+|---|---|
+| claude-sonnet-4-5 | 21.0% |
+| liftwing-qwen3.6-27b | 18.6% |
+| claude-sonnet-5 | 11.3% |
+| qwen-sealion | 4.8% |
+| gemini-3.7-flash | 2.4% |
+| apertus-70b | 2.1% |
+| gemini-2.5-flash | 0.6% |
+| hf-gpt-oss-20b | 0.0% |
+
+`liftwing` gives up ~18.6 points of exact accuracy purely by reporting unusable
+sources, which no amount of correct judgement can win back. It also barely uses
+`Partially supported` — 9 predictions against 51 in the ground truth — collapsing
+that class into `Not supported` or `Source unavailable`. That is a vocabulary and
+calibration problem, not a judgement one, and only the exact metric punishes it.
+
+**So don't read the exact column as a quality ranking on its own.** It is the right
+metric for "does the verdict match the label", and the wrong one for "is this
+verifier useful".
 
 Strict-set label mix: 56 Supported / 37 Partially supported / 36 Not supported.
 
