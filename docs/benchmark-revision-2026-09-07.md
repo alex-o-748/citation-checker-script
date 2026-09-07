@@ -45,6 +45,13 @@ npm run analyze:truncated-sources  # the 48 rows the cap cut short
 Each was found by reading the stored claim and source directly; model disagreement
 only decided reading order.
 
+**Every correction was then checked by hand, row by row, before being applied** — none
+was auto-applied from a model's disagreement. The rows *not* changed are the evidence
+that the review was real: `row_186` (source says CZW was founded in 1998, the claim
+says 1999) and `row_161` (source never mentions North Carolina) both looked like
+errors, were examined, and were left alone because each follows a documented labelling
+convention. `row_47` was flagged as an error and turned out not to be one.
+
 | Row | Article | Was | Now | Evidence |
 |---|---|---|---|---|
 | `row_18` | Immigration to the United States | Partially supported | **Supported** | The source states it almost verbatim: *"Historians estimate that well under a million immigrants—perhaps as few as 400,000—crossed the Atlantic during those two centuries."* |
