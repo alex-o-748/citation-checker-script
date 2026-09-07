@@ -242,6 +242,39 @@ Two further integrity notes:
 
 ---
 
+## The `Source unavailable` verdict is unwinnable, and providers differ wildly on it
+
+No scoreable row carries the label, so every emission is scored wrong under exact
+accuracy. Emission rates across the eight providers span nearly the whole range:
+
+| Provider | Says `Source unavailable` |
+|---|---|
+| `claude-sonnet-4-5` | 21.0% |
+| `liftwing-qwen3.6-27b` | 18.6% |
+| `claude-sonnet-5` | 11.3% |
+| `qwen-sealion` | 4.8% |
+| `gemini-3.7-flash` | 2.4% |
+| `apertus-70b` | 2.1% |
+| `gemini-2.5-flash` | 0.6% |
+| `hf-gpt-oss-20b` | 0.0% |
+
+That single behaviour costs `liftwing-qwen3.6-27b` ~18.6 points of exact accuracy
+no amount of correct judgement can recover. It compounds the problem by barely
+using `Partially supported` — 9 predictions against 51 in the ground truth,
+collapsing the class into `Not supported` or `Source unavailable`.
+
+Consequently the provider ranking is **not stable across metrics**:
+
+| Metric | Ranking |
+|---|---|
+| Exact accuracy | gemini-3.7 › gemini-2.5 › hf-gpt-oss › qwen-sealion › sonnet-5 › sonnet-4-5 › apertus › **liftwing** |
+| Supported-vs-rest | gemini-3.7 › **sonnet-5** › hf-gpt-oss › **liftwing** › gemini-2.5 › sonnet-4-5 › **qwen-sealion** › apertus |
+
+`liftwing` moves last → 4th, `sonnet-5` 5th → 2nd, `qwen-sealion` 4th → 7th. Only
+`gemini-3.7-flash` and `apertus-70b` hold position. Exact accuracy answers "does
+the verdict match the label", not "is this verifier useful", and should not be read
+as a quality ranking alone.
+
 ## Impact
 
 Pooled accuracy across all 8 providers:

@@ -14,15 +14,11 @@ under [Support vs everything else](#support-vs-everything-else--683--317).
 
 ## 1. The strict set — 129 of 189 rows
 
-The CORS proxy caps extracted source text at **12,000 characters** (the direct-fetch
-fallback at 50,000). **48 rows** hit a cap, so what is stored is a *prefix* of the
-document — while the label was made by a human reading the whole page. A further
-**12 rows** store something that is not the cited source at all: a dead fetch, a
-bot-block page, an Internet Archive banner with no article behind it, or — in one
-case — a page on an entirely unrelated subject.
-
-Scoring those rows measures whether the tool could *see* the evidence, not whether
-the model judged it correctly. Pooled across all eight providers:
+The CORS proxy caps extracted source text at **12,000 characters**. **48 rows** hit a
+cap, so what is stored is a *prefix* of the document — while the label was made by a
+human reading the whole page. A further **12 rows** store something that is not the
+cited source at all: a dead fetch, a bot-block page, an archive banner with no article
+behind it. That leaves **129 rows** where the model and the labeller saw the same thing.
 
 | Source | Result rows | Accuracy |
 |---|---|---|
@@ -30,32 +26,17 @@ the model judged it correctly. Pooled across all eight providers:
 | Truncated at a cap | 365 | **51.0%** |
 | | | **13.0-point gap** |
 
-The unrelated-subject case is `row_108`: a claim about *The Phoenix* magazine's
-Goldhawk phone line, cited to a Central Bank of Ireland explainer on financial
-regulation. Its label (*Not supported*) is arguably right by accident, but the row
-tests nothing — no verifier could do better or worse on it. The claim and the URL
-are simply not a pair.
-
-The gap holds within every label class, and the label mix is near-identical across
-the two groups, so it is not a composition artifact.
-
-**The rows are flagged, not deleted.** The userscript hits the same 12,000-character
-cap, so truncated rows reproduce a real production failure — deleting them would
-raise the headline while the tool got no better, and would remove the only evidence
-that the failure exists. Two fields carry this:
-
-- `source_truncated` — recorded at fetch time by `extract_dataset.js`
-- `excluded_reason` — set from the `Exclude reason` column in `Benchmarking_data_Citations.csv`
+**The rows are flagged, not deleted.** The userscript hits the same cap, so truncated
+rows reproduce a real production failure — dropping them would raise the headline while
+the tool got no better. They carry `source_truncated`; the unscoreable 12 carry
+`excluded_reason`, from a new `Exclude reason` column in the CSV (a column rather than
+deleted lines, because row ids are `row_<csv_line>`).
 
 ```bash
 npm run analyze                    # all rows, prints the whole/truncated split
 npm run analyze:full-sources       # the strict 129-row set
 npm run analyze:truncated-sources  # the 48 rows the cap cut short
 ```
-
-Excluding by a CSV column rather than by deleting rows is deliberate: row ids are
-`row_<csv_line>`, so deleting lines shifts every id after them and silently
-misaligns the seven files that store `entry_id`. A test pins each id to its CSV line.
 
 ---
 
@@ -77,11 +58,6 @@ Three of the six (`row_24`, `row_71`, `row_102`) sit inside the strict set and m
 its numbers. The other three are truncated rows, so they affect only the all-rows
 figure.
 
-**One caveat on `row_159`:** its source is truncated, so the correction rests on the
-*absence* of a phrase in a partial document — the one inference the strict set exists
-to distrust. It is outside the strict set for exactly that reason. If the row is ever
-re-fetched whole, re-check it first.
-
 ---
 
 ## Effect on the numbers
@@ -99,46 +75,9 @@ Unscoreable rows excluded throughout. Ordered by exact accuracy on the strict se
 | apertus-70b | 54.1% | 53.8% | 61.3% |
 | liftwing-qwen3.6-27b | 50.8% | 53.5% | 80.6% |
 
-Within exact accuracy, the corrections are spread thinly enough not to favour one
-model — ordering barely moves, only the level.
-
-**Across metrics, ordering is not stable at all**, which the third column makes
-plain:
-
-| | Ranking |
-|---|---|
-| Exact accuracy | gemini-3.7 › gemini-2.5 › hf-gpt-oss › qwen-sealion › sonnet-5 › sonnet-4-5 › apertus › **liftwing** |
-| Supported-vs-rest | gemini-3.7 › **sonnet-5** › hf-gpt-oss › **liftwing** › gemini-2.5 › sonnet-4-5 › **qwen-sealion** › apertus |
-
-`liftwing-qwen3.6-27b` goes from last to fourth; `claude-sonnet-5` from fifth to
-second; `qwen-sealion` from fourth to seventh. Only `gemini-3.7-flash` and
-`apertus-70b` hold their positions.
-
-The mechanism is the `Source unavailable` problem above. Providers differ enormously
-in how often they emit that verdict — and under exact accuracy it is always wrong:
-
-| Provider | Says `Source unavailable` |
-|---|---|
-| claude-sonnet-4-5 | 21.0% |
-| liftwing-qwen3.6-27b | 18.6% |
-| claude-sonnet-5 | 11.3% |
-| qwen-sealion | 4.8% |
-| gemini-3.7-flash | 2.4% |
-| apertus-70b | 2.1% |
-| gemini-2.5-flash | 0.6% |
-| hf-gpt-oss-20b | 0.0% |
-
-`liftwing` gives up ~18.6 points of exact accuracy purely by reporting unusable
-sources, which no amount of correct judgement can win back. It also barely uses
-`Partially supported` — 9 predictions against 51 in the ground truth — collapsing
-that class into `Not supported` or `Source unavailable`. That is a vocabulary and
-calibration problem, not a judgement one, and only the exact metric punishes it.
-
-**So don't read the exact column as a quality ranking on its own.** It is the right
-metric for "does the verdict match the label", and the wrong one for "is this
-verifier useful".
-
-Strict-set label mix: 56 Supported / 37 Partially supported / 36 Not supported.
+The two metrics rank providers differently — `liftwing-qwen3.6-27b` goes from last to
+fourth, `claude-sonnet-5` from fifth to second — because exact accuracy counts every
+`Source unavailable` call as wrong. See the audit doc for that breakdown.
 
 ---
 
@@ -223,29 +162,6 @@ fractionally *better* on truncated rows, which is what guessing looks like).
 Which means conflating the two halves gets *worse* over time, not better. As models
 improve, the fetch-and-extract half grows as a share of the headline number, and
 comparisons across runs increasingly measure the web rather than the verifier.
-
----
-
-## What did not change
-
-- **No model predictions.** `results.json` keeps every verdict; only `ground_truth`
-  and the derived `correct` flag moved on the six rows.
-- **The frozen `v1` / `v3` snapshots**, which exist to reproduce published analyses.
-- **`row_161`** (North Carolina Republican Party) — examined and left at *Partially
-  supported*. The source does not mention North Carolina, but it does support two of
-  the claim's propositions (Carter as a Georgia Democrat elected in 1976; Johnson
-  signing the Civil Rights Act), which is what "partially" means under our rubric.
-  Its real defect is claim scope: it is a two-sentence span whose halves are likely
-  carried by different citations.
-- **`row_186`** (Combat Zone Wrestling) — the source says CZW was founded in 1998,
-  the claim says 1999. Left at *Partially supported*, because that is the documented
-  v3 convention: where a central named fact is in the source and the gap is a detail,
-  the 2026-04-30 strict-rubric audit mapped WMF's "No" to *Partially supported*.
-
-One repair worth noting: `results.json` was carrying a superseded label for `row_181`
-(the pre-audit WMF verdict, never propagated after the 2026-04-30 relabel). It now
-matches the dataset. `row_78` still disagrees deliberately — its results belong to a
-row that no longer exists, which is why it is excluded.
 
 ---
 
