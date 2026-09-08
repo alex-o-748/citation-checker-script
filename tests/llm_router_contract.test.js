@@ -144,27 +144,18 @@ test('callHuggingFaceAPI posts the documented request shape to /hf', async () =>
 
 test('callLiftwingAPI posts the documented request shape to /liftwing', async () => {
     const fixture = await startFixtureServer();
-    const realFetch = globalThis.fetch;
-    let requestedUrl;
     try {
-        // Production routing is deliberately fixed. Redirect that one request
-        // to the local contract fixture while also asserting the public URL.
-        globalThis.fetch = (url, options) => {
-            requestedUrl = url;
-            return realFetch(`${fixture.workerBase}/liftwing`, options);
-        };
         const result = await callLiftwingAPI({
             model: 'llm-ok',
             systemPrompt: 'sys',
             userContent: 'user',
+            workerBase: fixture.workerBase,
         });
         assert.equal(result.text, 'verdict text');
         assert.equal(result.usage.input, 120);
         assert.equal(result.usage.output, 30);
-        assert.equal(requestedUrl, 'https://llm-router.toolforge.org/liftwing');
         assert.equal(fixture.requests[0].path, '/liftwing');
     } finally {
-        globalThis.fetch = realFetch;
         await fixture.close();
     }
 });

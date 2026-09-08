@@ -121,14 +121,13 @@ export async function callHuggingFaceAPI({ apiKey, model, systemPrompt, userCont
 // Wikimedia Lift Wing hosts Qwen on WMF infrastructure. Always route these
 // requests through the tf-llm-router Toolforge app: unlike the generic
 // Cloudflare worker, that app reaches Lift Wing from Wikimedia infrastructure
-// and owns the provider-specific response cleanup and credentials. This URL is
-// intentionally not caller-configurable so every consumer follows the same
-// route. The router clamps max_tokens to 4096, so use that as the default.
-const TOOLFORGE_LIFTWING_URL = 'https://llm-router.toolforge.org/liftwing';
-
-export async function callLiftwingAPI({ model, systemPrompt, userContent, maxTokens = 4096, temperature }) {
+// and owns the provider-specific response cleanup and credentials. Toolforge is
+// the default for every consumer; workerBase remains an explicit override for
+// local contract tests and emergency routing during an outage. The router
+// clamps max_tokens to 4096, so use that as the default.
+export async function callLiftwingAPI({ model, systemPrompt, userContent, workerBase = 'https://llm-router.toolforge.org', maxTokens = 4096, temperature }) {
     return callOpenAICompatibleChat({
-        url: TOOLFORGE_LIFTWING_URL,
+        url: `${workerBase}/liftwing`,
         model, systemPrompt, userContent, maxTokens, temperature,
         label: 'Lift Wing',
     });

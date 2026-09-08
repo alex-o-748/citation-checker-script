@@ -23,7 +23,7 @@ export const PROVIDER_MODELS = {
 export const PROVIDER_ENV_VARS = {
     publicai:    null,
     huggingface: null,
-    liftwing:    null, // proxied through the CORS worker; no client-side key
+    liftwing:    null, // proxied through the Toolforge LLM router; no client-side key
     claude:      'CLAUDE_API_KEY',
     gemini:      'GEMINI_API_KEY',
     openai:      'OPENAI_API_KEY',
