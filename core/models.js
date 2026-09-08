@@ -45,9 +45,8 @@ export const PROVIDERS = Object.freeze({
     }),
     liftwing: Object.freeze({
         name: 'Lift Wing',
-        // No key needed - proxied through the CORS worker's /liftwing
-        // path, which talks to Wikimedia Lift Wing anonymously (an
-        // approved-bot JWT on the worker lifts the rate limit).
+        // No key needed: every request goes through the tf-llm-router
+        // Toolforge app, which reaches Lift Wing from Wikimedia infrastructure.
         storageKey: null,
         color: '#6B21A8',
         model: 'llm-qwen36-27b',

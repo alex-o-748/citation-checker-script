@@ -118,17 +118,17 @@ export async function callHuggingFaceAPI({ apiKey, model, systemPrompt, userCont
     });
 }
 
-// Wikimedia Lift Wing hosts open-weight models (Qwen3) on WMF infrastructure.
-// Routed through the same CORS worker as PublicAI/HF, on the `/liftwing` path:
-// the worker builds the upstream URL from the model id, works anonymously by
-// default (an approved-bot JWT on the worker lifts the rate limit), and strips
-// the reasoning models' <think>…</think> blocks from non-streaming responses so
-// the verdict parser sees clean JSON. The worker clamps max_tokens to its own
-// 4096 ceiling, so we pass that as the default rather than the shared 16384.
-// No apiKey — the worker holds any credential.
-export async function callLiftwingAPI({ model, systemPrompt, userContent, workerBase = 'https://publicai-proxy.alaexis.workers.dev', maxTokens = 4096, temperature }) {
+// Wikimedia Lift Wing hosts Qwen on WMF infrastructure. Always route these
+// requests through the tf-llm-router Toolforge app: unlike the generic
+// Cloudflare worker, that app reaches Lift Wing from Wikimedia infrastructure
+// and owns the provider-specific response cleanup and credentials. This URL is
+// intentionally not caller-configurable so every consumer follows the same
+// route. The router clamps max_tokens to 4096, so use that as the default.
+const TOOLFORGE_LIFTWING_URL = 'https://llm-router.toolforge.org/liftwing';
+
+export async function callLiftwingAPI({ model, systemPrompt, userContent, maxTokens = 4096, temperature }) {
     return callOpenAICompatibleChat({
-        url: `${workerBase}/liftwing`,
+        url: TOOLFORGE_LIFTWING_URL,
         model, systemPrompt, userContent, maxTokens, temperature,
         label: 'Lift Wing',
     });
