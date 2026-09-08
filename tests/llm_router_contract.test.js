@@ -12,8 +12,8 @@
 // the fixture responses here to match its new README before assuming this
 // client still works against it.
 //
-// ccs verify's --live-llm-router flag is the only caller of this contract in
-// this repo today.
+// Lift Wing always uses this contract; ccs verify's --live-llm-router flag
+// opts keyless HuggingFace calls into it as well.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';

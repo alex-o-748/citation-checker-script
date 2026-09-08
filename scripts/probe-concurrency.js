@@ -3,7 +3,7 @@
 // route sustain? Not part of the batch pipeline (service/run-sweep.js /
 // service/run-replay.js) — a one-off probe to answer the question left open
 // on 2026-08-24: a single sequential caller survived 100 back-to-back calls
-// with zero delay (`run-replay.js --live-llm-router --delay-ms 0`), which
+// with zero delay (`run-replay.js --delay-ms 0`), which
 // ruled out a hard per-request floor, but says nothing about concurrent
 // load — and concurrent load is what any real sweep speedup depends on.
 // Delete this file once the answer is known and acted on; it isn't meant
@@ -31,12 +31,6 @@ import { PROVIDER_MODELS } from '../service/provider-config.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_DATASET_PATH = join(__dirname, '..', 'benchmark', 'dataset.json');
-
-// Same endpoint as service/run-sweep.js's / service/run-replay.js's
-// --live-llm-router — see the comment on TOOLFORGE_LLM_ROUTER_BASE in
-// either file for why this differs from core/providers.js's default
-// (the Cloudflare Worker's shared approved-bot-JWT path).
-const TOOLFORGE_LLM_ROUTER_BASE = 'https://llm-router.toolforge.org';
 
 export function parseCliArgs(argv) {
     const { values } = parseArgs({
@@ -123,12 +117,11 @@ export async function main(argv, { stdout = process.stdout, stderr = process.std
         return 1;
     }
     stderr.write(`probe: ${usable.length}/${dataset.rows.length} dataset rows have source_text; cycling through them as needed\n`);
-    stderr.write(`probe: routing liftwing via ${TOOLFORGE_LLM_ROUTER_BASE}\n\n`);
+    stderr.write('probe: routing liftwing via the default Toolforge LLM router\n\n');
 
     const callModel = makeModelCaller({
         provider: 'liftwing',
         model: PROVIDER_MODELS.liftwing,
-        workerBase: TOOLFORGE_LLM_ROUTER_BASE,
     });
 
     const results = [];

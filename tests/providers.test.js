@@ -256,7 +256,7 @@ test('callOpenAICompatibleChat defaults max_tokens to 16384 (headroom for reason
   }
 });
 
-test('callLiftwingAPI posts to workerBase /liftwing with no auth and caps max_tokens at 4096', async () => {
+test('callLiftwingAPI defaults to Toolforge with no auth and caps max_tokens at 4096', async () => {
   const mock = withMockFetch(async () => ({
     ok: true,
     status: 200,
@@ -274,13 +274,30 @@ test('callLiftwingAPI posts to workerBase /liftwing with no auth and caps max_to
     assert.equal(result.text, 'lw-verdict');
     assert.equal(result.usage.input, 60);
     assert.equal(result.usage.output, 12);
-    assert.equal(mock.calls[0].url, 'https://publicai-proxy.alaexis.workers.dev/liftwing');
-    // Anonymous by default — the worker holds any credential, so no Bearer here.
+    assert.equal(mock.calls[0].url, 'https://llm-router.toolforge.org/liftwing');
+    // The Toolforge router holds any credential, so no Bearer here.
     assert.equal(mock.calls[0].opts.headers['Authorization'], undefined);
     const sent = JSON.parse(mock.calls[0].opts.body);
     assert.equal(sent.model, 'llm-qwen3-14b');
     // The worker clamps max_tokens to 4096; default to that rather than 16384.
     assert.equal(sent.max_tokens, 4096);
+  } finally {
+    mock.restore();
+  }
+});
+
+test('callLiftwingAPI permits an explicit workerBase override', async () => {
+  const mock = withMockFetch(async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ choices: [{ message: { content: 'ok' } }] }),
+  }));
+  try {
+    await callLiftwingAPI({
+      model: 'm', systemPrompt: 's', userContent: 'u',
+      workerBase: 'https://example.test/router',
+    });
+    assert.equal(mock.calls[0].url, 'https://example.test/router/liftwing');
   } finally {
     mock.restore();
   }

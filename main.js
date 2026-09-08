@@ -54,9 +54,8 @@ const PROVIDERS = Object.freeze({
     }),
     liftwing: Object.freeze({
         name: 'Lift Wing',
-        // No key needed - proxied through the CORS worker's /liftwing
-        // path, which talks to Wikimedia Lift Wing anonymously (an
-        // approved-bot JWT on the worker lifts the rate limit).
+        // No key needed: every request goes through the tf-llm-router
+        // Toolforge app, which reaches Lift Wing from Wikimedia infrastructure.
         storageKey: null,
         color: '#6B21A8',
         model: 'llm-qwen36-27b',
@@ -1687,15 +1686,14 @@ async function callHuggingFaceAPI({ apiKey, model, systemPrompt, userContent, wo
     });
 }
 
-// Wikimedia Lift Wing hosts open-weight models (Qwen3) on WMF infrastructure.
-// Routed through the same CORS worker as PublicAI/HF, on the `/liftwing` path:
-// the worker builds the upstream URL from the model id, works anonymously by
-// default (an approved-bot JWT on the worker lifts the rate limit), and strips
-// the reasoning models' <think>…</think> blocks from non-streaming responses so
-// the verdict parser sees clean JSON. The worker clamps max_tokens to its own
-// 4096 ceiling, so we pass that as the default rather than the shared 16384.
-// No apiKey — the worker holds any credential.
-async function callLiftwingAPI({ model, systemPrompt, userContent, workerBase = 'https://publicai-proxy.alaexis.workers.dev', maxTokens = 4096, temperature }) {
+// Wikimedia Lift Wing hosts Qwen on WMF infrastructure. Always route these
+// requests through the tf-llm-router Toolforge app: unlike the generic
+// Cloudflare worker, that app reaches Lift Wing from Wikimedia infrastructure
+// and owns the provider-specific response cleanup and credentials. Toolforge is
+// the default for every consumer; workerBase remains an explicit override for
+// local contract tests and emergency routing during an outage. The router
+// clamps max_tokens to 4096, so use that as the default.
+async function callLiftwingAPI({ model, systemPrompt, userContent, workerBase = 'https://llm-router.toolforge.org', maxTokens = 4096, temperature }) {
     return callOpenAICompatibleChat({
         url: `${workerBase}/liftwing`,
         model, systemPrompt, userContent, maxTokens, temperature,
@@ -2363,13 +2361,14 @@ function buildCommentUrl(fields = {}, {
 // silently deleted it, taking loadManualSourceText() with it.
 const MAX_MANUAL_SOURCE_CHARS = 80000;
 
-// Experimental: opt-in override that routes Lift Wing / HuggingFace LLM calls
-// through the tf-llm-router Toolforge tool
+// Experimental: opt-in override that routes HuggingFace LLM calls through the
+// tf-llm-router Toolforge tool
 // (https://github.com/alex-o-748/tf-llm-router) instead of the Cloudflare
 // Worker CORS proxy. Off by default for everyone; flip it on for yourself by
 // running `localStorage.setItem('source_verifier_toolforge_llm_router', 'true')`
-// in the browser console. Only overrides the `workerBase` passed to
-// callLiftwingAPI/callHuggingFaceAPI (core/providers.js) — source fetching,
+// in the browser console. Lift Wing is always routed through tf-llm-router by
+// core/providers.js. This only overrides the `workerBase` passed to
+// callHuggingFaceAPI — source fetching,
 // /log, and /feedback keep using the Worker, since tf-llm-router doesn't
 // implement those routes.
 const TOOLFORGE_LLM_ROUTER_BASE = 'https://llm-router.toolforge.org';
@@ -6807,12 +6806,10 @@ function useToolforgeSourceFetcher() {
             }
         }
 
-        // Toolforge override only applies to providers that route LLM calls
-        // through the Worker's /liftwing and /hf paths — passing workerBase to
-        // any other provider would either be ignored or (publicai) point it at
-        // a route tf-llm-router doesn't implement.
+        // Lift Wing is unconditionally routed via Toolforge in core/providers.js.
+        // This opt-in override now applies only to keyless HuggingFace calls.
         llmRouterConfigOverrides() {
-            if (useToolforgeLlmRouter() && (this.currentProvider === 'liftwing' || this.currentProvider === 'huggingface')) {
+            if (useToolforgeLlmRouter() && this.currentProvider === 'huggingface') {
                 return { workerBase: TOOLFORGE_LLM_ROUTER_BASE };
             }
             return {};
