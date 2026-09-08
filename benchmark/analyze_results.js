@@ -6,6 +6,7 @@
  *
  * Usage: node analyze_results.js [--output report.md] [--version v1|v2|all]
  *                                [--projection unanimous|mixed|all]
+ *                                [--truncation all|full|truncated] [--include-excluded]
  *                                [--results <path>] [--dataset <path>] [--analysis <path>]
  *
  * Output:
@@ -45,6 +46,17 @@ const VERSION_FILTER = flagValue('--version') || 'all';
 // Selects rows by how the claim-level label was derived from subclaim
 // annotations; see docs/wice-benchmark.md.
 const PROJECTION_FILTER = flagValue('--projection') || 'all';
+// TRUNCATION_FILTER: 'all' | 'full' | 'truncated' — selects rows by whether the
+// stored source_text is the whole document or a prefix of it. A truncated row's
+// label was made by a human reading the full page, so scoring it measures
+// "could the tool see the evidence" as much as "did the model judge it right".
+// Same reason --projection exists for WiCE: separate rubric/model error from an
+// artifact of how the row was built. See
+// docs/benchmark-ground-truth-audit-2026-09-06.md.
+const TRUNCATION_FILTER = flagValue('--truncation') || 'all';
+// Rows the CSV marks unscoreable (stored source isn't the cited source) are out
+// of the headline by default; --include-excluded puts them back.
+const INCLUDE_EXCLUDED = args.includes('--include-excluded');
 
 // Configuration (paths are overridable so v1 snapshots can be re-analyzed in place)
 const RESULTS_PATH = path.resolve(__dirname, flagValue('--results') || 'results.json');
@@ -65,6 +77,40 @@ function normalizeVerdict(verdict) {
     if (verdict == null || !String(verdict).trim()) return 'Unknown';
     if (String(verdict).toLowerCase().includes('error')) return 'Error';
     return 'Unknown';
+}
+
+/**
+ * Ids the dataset marks unscoreable — rows whose stored source_text isn't the
+ * cited source (dead fetch, bot wall, an archive banner with no article behind
+ * it), so no label can be checked against it. Set from the CSV's
+ * "Exclude reason" column; see docs/benchmark-ground-truth-audit-2026-09-06.md.
+ */
+export function excludedRowIds(dataset) {
+    return new Set(dataset.filter(e => e.excluded_reason).map(e => e.id));
+}
+
+/**
+ * Split results by whether the row's stored source is the whole document or a
+ * prefix of it.
+ *
+ * Returns `null` when the dataset carries no `source_truncated` flag anywhere —
+ * absent is *not* the same as `false`. A dataset extracted before the flag
+ * existed would otherwise report every row as "full" and answer confidently
+ * wrongly; callers are expected to refuse rather than guess.
+ *
+ * Results whose entry_id isn't in the dataset are dropped from both buckets:
+ * an id with no row behind it can't be classified either way.
+ */
+export function partitionByTruncation(results, dataset) {
+    if (!dataset.some(e => Object.hasOwn(e, 'source_truncated'))) return null;
+    const truncatedById = new Map(dataset.map(e => [e.id, Boolean(e.source_truncated)]));
+    const full = [];
+    const truncated = [];
+    for (const r of results) {
+        if (!truncatedById.has(r.entry_id)) continue;
+        (truncatedById.get(r.entry_id) ? truncated : full).push(r);
+    }
+    return { full, truncated };
 }
 
 /**
@@ -393,6 +439,51 @@ function main() {
         }
     }
 
+    // Rows whose stored source isn't the cited source can't be scored against
+    // any label, so they leave the headline unless asked for. Silent exclusion
+    // would be worse than including them, hence the count is always printed.
+    let excludedCount = 0;
+    if (fs.existsSync(DATASET_PATH)) {
+        const excludedIds = excludedRowIds(loadRows(DATASET_PATH));
+        if (excludedIds.size > 0) {
+            if (INCLUDE_EXCLUDED) {
+                console.log(`Including ${excludedIds.size} rows marked unscoreable (--include-excluded)`);
+            } else {
+                const before = results.length;
+                results = results.filter(r => !excludedIds.has(r.entry_id));
+                excludedCount = before - results.length;
+                console.log(`Excluded ${excludedIds.size} unscoreable rows (${excludedCount} results); --include-excluded to keep them`);
+            }
+        }
+    }
+
+    // Truncation: a property of the dataset row, so it filters like --version
+    // and --projection rather than splitting inside calculateMetrics the way the
+    // quote metrics (a property of the result row) do.
+    if (TRUNCATION_FILTER !== 'all') {
+        if (!['full', 'truncated'].includes(TRUNCATION_FILTER)) {
+            console.error(`--truncation must be one of: all, full, truncated (got "${TRUNCATION_FILTER}")`);
+            process.exit(1);
+        }
+        if (!fs.existsSync(DATASET_PATH)) {
+            console.error(`--truncation filter requires dataset at ${DATASET_PATH}; not found.`);
+            process.exit(1);
+        }
+        const split = partitionByTruncation(results, loadRows(DATASET_PATH));
+        if (!split) {
+            console.error('--truncation requires a dataset carrying source_truncated; this one has none.');
+            console.error('Re-extract with extract_dataset.js, or drop the flag.');
+            process.exit(1);
+        }
+        const before = results.length;
+        results = split[TRUNCATION_FILTER];
+        console.log(`Filtered to "${TRUNCATION_FILTER}" sources: ${results.length}/${before} results`);
+        if (results.length === 0) {
+            console.error('No results left after the truncation filter.');
+            process.exit(1);
+        }
+    }
+
     // Group by provider
     const byProvider = {};
     results.forEach(r => {
@@ -410,6 +501,8 @@ function main() {
         generated: new Date().toISOString(),
         overview: {
             datasetVersion: VERSION_FILTER,
+            truncation: TRUNCATION_FILTER,
+            excludedResults: excludedCount,
             totalEntries: new Set(results.map(r => r.entry_id)).size,
             totalCalls: results.length,
             providers: providers
@@ -440,6 +533,34 @@ function main() {
         console.log(`  Avg latency: ${metrics.latency.avg.toFixed(0)}ms`);
         console.log(`  Errors: ${metrics.errors}/${metrics.total}`);
         console.log('');
+    }
+
+    // Pooled full-vs-truncated split. Printed rather than stored per provider:
+    // the per-provider numbers come from re-running with --truncation, and
+    // duplicating them in analysis.json would give two things to keep in sync.
+    // What this line is for is noticing the gap exists at all — the rows whose
+    // source was cut short are the ones where a wrong verdict may be the tool
+    // failing to see the evidence rather than the model misjudging it.
+    if (TRUNCATION_FILTER === 'all' && fs.existsSync(DATASET_PATH)) {
+        const split = partitionByTruncation(results, loadRows(DATASET_PATH));
+        if (split && split.full.length && split.truncated.length) {
+            const score = rows => {
+                const scored = rows.filter(r => !r.error && r.predicted_verdict !== 'ERROR');
+                const ok = scored.filter(r =>
+                    normalizeVerdict(r.predicted_verdict) === normalizeVerdict(r.ground_truth)
+                ).length;
+                return { ok, n: scored.length, pct: scored.length ? 100 * ok / scored.length : 0 };
+            };
+            const full = score(split.full);
+            const truncated = score(split.truncated);
+            if (full.n && truncated.n) {
+                console.log('\n=== Accuracy by source completeness (pooled) ===\n');
+                console.log(`  Full sources:      ${full.pct.toFixed(1)}%  (${full.ok}/${full.n})`);
+                console.log(`  Truncated sources: ${truncated.pct.toFixed(1)}%  (${truncated.ok}/${truncated.n})`);
+                console.log(`  Gap:               ${(full.pct - truncated.pct).toFixed(1)} points`);
+                console.log('  Re-run with --truncation full|truncated for per-provider figures.\n');
+            }
+        }
     }
 
     // Save analysis JSON
