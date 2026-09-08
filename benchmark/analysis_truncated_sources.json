@@ -1,0 +1,550 @@
+{
+  "generated": "2026-09-08T19:42:07.054Z",
+  "overview": {
+    "datasetVersion": "all",
+    "truncation": "truncated",
+    "excludedResults": 8,
+    "totalEntries": 48,
+    "totalCalls": 384,
+    "providers": [
+      "apertus-70b",
+      "qwen-sealion",
+      "claude-sonnet-4-5",
+      "gemini-2.5-flash",
+      "claude-sonnet-5",
+      "gemini-3.7-flash",
+      "hf-gpt-oss-20b",
+      "liftwing-qwen3.6-27b"
+    ]
+  },
+  "providers": {
+    "apertus-70b": {
+      "name": "Apertus-70b",
+      "model": "swiss-ai/apertus-70b-instruct",
+      "sampleCount": 48,
+      "metrics": {
+        "total": 48,
+        "valid": 40,
+        "errors": 8,
+        "quotes": {
+          "eligible": 35,
+          "offered": 0,
+          "verified": 0,
+          "offerRate": 0,
+          "fidelity": 0,
+          "accuracyWhenQuoteVerified": 0,
+          "accuracyWhenQuoteUnverified": 0,
+          "verifiedRows": 0,
+          "unverifiedRows": 0,
+          "gap": 0
+        },
+        "exactMatches": 22,
+        "partialMatches": 9,
+        "exactAccuracy": 0.55,
+        "lenientAccuracy": 0.775,
+        "binaryAccuracy": 0.775,
+        "supportedVsRestCorrect": 27,
+        "supportedVsRestAccuracy": 0.675,
+        "confusionMatrix": {
+          "Supported": {
+            "Supported": 16,
+            "Partially supported": 4,
+            "Not supported": 2,
+            "Source unavailable": 1
+          },
+          "Partially supported": {
+            "Supported": 5,
+            "Partially supported": 5,
+            "Not supported": 1,
+            "Source unavailable": 0
+          },
+          "Not supported": {
+            "Supported": 1,
+            "Partially supported": 4,
+            "Not supported": 1,
+            "Source unavailable": 0
+          },
+          "Source unavailable": {
+            "Supported": 0,
+            "Partially supported": 0,
+            "Not supported": 0,
+            "Source unavailable": 0
+          }
+        },
+        "latency": {
+          "avg": 3779.1875,
+          "min": 522,
+          "max": 7288
+        },
+        "support_score": {
+          "avg": 81.44736842105263,
+          "avgWhenCorrect": 81.13636363636364,
+          "avgWhenWrong": 72.77777777777777,
+          "calibration": 8.358585858585869
+        }
+      }
+    },
+    "qwen-sealion": {
+      "name": "Qwen-sealion",
+      "model": "aisingapore/Qwen-SEA-LION-v4-32B-IT",
+      "sampleCount": 48,
+      "metrics": {
+        "total": 48,
+        "valid": 40,
+        "errors": 8,
+        "quotes": {
+          "eligible": 32,
+          "offered": 0,
+          "verified": 0,
+          "offerRate": 0,
+          "fidelity": 0,
+          "accuracyWhenQuoteVerified": 0,
+          "accuracyWhenQuoteUnverified": 0,
+          "verifiedRows": 0,
+          "unverifiedRows": 0,
+          "gap": 0
+        },
+        "exactMatches": 19,
+        "partialMatches": 11,
+        "exactAccuracy": 0.475,
+        "lenientAccuracy": 0.75,
+        "binaryAccuracy": 0.75,
+        "supportedVsRestCorrect": 23,
+        "supportedVsRestAccuracy": 0.575,
+        "confusionMatrix": {
+          "Supported": {
+            "Supported": 16,
+            "Partially supported": 2,
+            "Not supported": 0,
+            "Source unavailable": 5
+          },
+          "Partially supported": {
+            "Supported": 9,
+            "Partially supported": 1,
+            "Not supported": 1,
+            "Source unavailable": 0
+          },
+          "Not supported": {
+            "Supported": 1,
+            "Partially supported": 3,
+            "Not supported": 2,
+            "Source unavailable": 0
+          },
+          "Source unavailable": {
+            "Supported": 0,
+            "Partially supported": 0,
+            "Not supported": 0,
+            "Source unavailable": 0
+          }
+        },
+        "latency": {
+          "avg": 3967.2708333333335,
+          "min": 484,
+          "max": 7381
+        },
+        "support_score": {
+          "avg": 79.85714285714286,
+          "avgWhenCorrect": 83.15789473684211,
+          "avgWhenWrong": 57.857142857142854,
+          "calibration": 25.300751879699256
+        }
+      }
+    },
+    "claude-sonnet-4-5": {
+      "name": "Claude-sonnet-4-5",
+      "model": "claude-sonnet-4-5-20250929",
+      "sampleCount": 48,
+      "metrics": {
+        "total": 48,
+        "valid": 48,
+        "errors": 0,
+        "quotes": {
+          "eligible": 34,
+          "offered": 0,
+          "verified": 0,
+          "offerRate": 0,
+          "fidelity": 0,
+          "accuracyWhenQuoteVerified": 0,
+          "accuracyWhenQuoteUnverified": 0,
+          "verifiedRows": 0,
+          "unverifiedRows": 0,
+          "gap": 0
+        },
+        "exactMatches": 21,
+        "partialMatches": 10,
+        "exactAccuracy": 0.4375,
+        "lenientAccuracy": 0.6458333333333334,
+        "binaryAccuracy": 0.7708333333333334,
+        "supportedVsRestCorrect": 33,
+        "supportedVsRestAccuracy": 0.6875,
+        "confusionMatrix": {
+          "Supported": {
+            "Supported": 20,
+            "Partially supported": 0,
+            "Not supported": 0,
+            "Source unavailable": 3
+          },
+          "Partially supported": {
+            "Supported": 10,
+            "Partially supported": 0,
+            "Not supported": 1,
+            "Source unavailable": 3
+          },
+          "Not supported": {
+            "Supported": 2,
+            "Partially supported": 2,
+            "Not supported": 1,
+            "Source unavailable": 6
+          },
+          "Source unavailable": {
+            "Supported": 0,
+            "Partially supported": 0,
+            "Not supported": 0,
+            "Source unavailable": 0
+          }
+        },
+        "latency": {
+          "avg": 4316.020833333333,
+          "min": 2377,
+          "max": 8974
+        },
+        "support_score": {
+          "avg": 86.25,
+          "avgWhenCorrect": 90,
+          "avgWhenWrong": 45,
+          "calibration": 45
+        }
+      }
+    },
+    "gemini-2.5-flash": {
+      "name": "Gemini-2.5-flash",
+      "model": "gemini-2.5-flash",
+      "sampleCount": 48,
+      "metrics": {
+        "total": 48,
+        "valid": 48,
+        "errors": 0,
+        "quotes": {
+          "eligible": 28,
+          "offered": 0,
+          "verified": 0,
+          "offerRate": 0,
+          "fidelity": 0,
+          "accuracyWhenQuoteVerified": 0,
+          "accuracyWhenQuoteUnverified": 0,
+          "verifiedRows": 0,
+          "unverifiedRows": 0,
+          "gap": 0
+        },
+        "exactMatches": 27,
+        "partialMatches": 10,
+        "exactAccuracy": 0.5625,
+        "lenientAccuracy": 0.7708333333333334,
+        "binaryAccuracy": 0.7708333333333334,
+        "supportedVsRestCorrect": 33,
+        "supportedVsRestAccuracy": 0.6875,
+        "confusionMatrix": {
+          "Supported": {
+            "Supported": 14,
+            "Partially supported": 4,
+            "Not supported": 4,
+            "Source unavailable": 1
+          },
+          "Partially supported": {
+            "Supported": 6,
+            "Partially supported": 3,
+            "Not supported": 5,
+            "Source unavailable": 0
+          },
+          "Not supported": {
+            "Supported": 0,
+            "Partially supported": 1,
+            "Not supported": 10,
+            "Source unavailable": 0
+          },
+          "Source unavailable": {
+            "Supported": 0,
+            "Partially supported": 0,
+            "Not supported": 0,
+            "Source unavailable": 0
+          }
+        },
+        "latency": {
+          "avg": 4180.229166666667,
+          "min": 1528,
+          "max": 16386
+        },
+        "support_score": {
+          "avg": 58.513513513513516,
+          "avgWhenCorrect": 52.407407407407405,
+          "avgWhenWrong": 35.714285714285715,
+          "calibration": 16.69312169312169
+        }
+      }
+    },
+    "claude-sonnet-5": {
+      "name": "Claude-sonnet-5",
+      "model": "claude-sonnet-5",
+      "sampleCount": 48,
+      "metrics": {
+        "total": 48,
+        "valid": 48,
+        "errors": 0,
+        "quotes": {
+          "eligible": 22,
+          "offered": 22,
+          "verified": 20,
+          "offerRate": 1,
+          "fidelity": 0.9090909090909091,
+          "accuracyWhenQuoteVerified": 0.8,
+          "accuracyWhenQuoteUnverified": 0.5,
+          "verifiedRows": 20,
+          "unverifiedRows": 2,
+          "gap": 0.30000000000000004
+        },
+        "exactMatches": 24,
+        "partialMatches": 4,
+        "exactAccuracy": 0.5,
+        "lenientAccuracy": 0.5833333333333334,
+        "binaryAccuracy": 0.6458333333333334,
+        "supportedVsRestCorrect": 38,
+        "supportedVsRestAccuracy": 0.7916666666666666,
+        "confusionMatrix": {
+          "Supported": {
+            "Supported": 14,
+            "Partially supported": 3,
+            "Not supported": 3,
+            "Source unavailable": 3
+          },
+          "Partially supported": {
+            "Supported": 1,
+            "Partially supported": 3,
+            "Not supported": 8,
+            "Source unavailable": 2
+          },
+          "Not supported": {
+            "Supported": 0,
+            "Partially supported": 1,
+            "Not supported": 7,
+            "Source unavailable": 3
+          },
+          "Source unavailable": {
+            "Supported": 0,
+            "Partially supported": 0,
+            "Not supported": 0,
+            "Source unavailable": 0
+          }
+        },
+        "latency": {
+          "avg": 3470.1875,
+          "min": 1956,
+          "max": 10029
+        },
+        "support_score": {
+          "avg": 52.51428571428571,
+          "avgWhenCorrect": 61.166666666666664,
+          "avgWhenWrong": 15.416666666666666,
+          "calibration": 45.75
+        }
+      }
+    },
+    "gemini-3.7-flash": {
+      "name": "Gemini-3.7-flash",
+      "model": "gemini-3.7-flash",
+      "sampleCount": 48,
+      "metrics": {
+        "total": 48,
+        "valid": 45,
+        "errors": 3,
+        "quotes": {
+          "eligible": 22,
+          "offered": 22,
+          "verified": 22,
+          "offerRate": 1,
+          "fidelity": 1,
+          "accuracyWhenQuoteVerified": 0.6363636363636364,
+          "accuracyWhenQuoteUnverified": 0,
+          "verifiedRows": 22,
+          "unverifiedRows": 0,
+          "gap": 0.6363636363636364
+        },
+        "exactMatches": 24,
+        "partialMatches": 7,
+        "exactAccuracy": 0.5333333333333333,
+        "lenientAccuracy": 0.6888888888888889,
+        "binaryAccuracy": 0.6888888888888889,
+        "supportedVsRestCorrect": 33,
+        "supportedVsRestAccuracy": 0.7333333333333333,
+        "confusionMatrix": {
+          "Supported": {
+            "Supported": 10,
+            "Partially supported": 6,
+            "Not supported": 3,
+            "Source unavailable": 2
+          },
+          "Partially supported": {
+            "Supported": 1,
+            "Partially supported": 4,
+            "Not supported": 8,
+            "Source unavailable": 0
+          },
+          "Not supported": {
+            "Supported": 0,
+            "Partially supported": 1,
+            "Not supported": 10,
+            "Source unavailable": 0
+          },
+          "Source unavailable": {
+            "Supported": 0,
+            "Partially supported": 0,
+            "Not supported": 0,
+            "Source unavailable": 0
+          }
+        },
+        "latency": {
+          "avg": 15406.270833333334,
+          "min": 1427,
+          "max": 56589
+        },
+        "support_score": {
+          "avg": 47.58139534883721,
+          "avgWhenCorrect": 55.041666666666664,
+          "avgWhenWrong": 34.523809523809526,
+          "calibration": 20.51785714285714
+        }
+      }
+    },
+    "hf-gpt-oss-20b": {
+      "name": "Hf-gpt-oss-20b",
+      "model": "openai/gpt-oss-20b",
+      "sampleCount": 48,
+      "metrics": {
+        "total": 48,
+        "valid": 48,
+        "errors": 0,
+        "quotes": {
+          "eligible": 19,
+          "offered": 19,
+          "verified": 15,
+          "offerRate": 1,
+          "fidelity": 0.7894736842105263,
+          "accuracyWhenQuoteVerified": 0.8666666666666667,
+          "accuracyWhenQuoteUnverified": 1,
+          "verifiedRows": 15,
+          "unverifiedRows": 4,
+          "gap": -0.1333333333333333
+        },
+        "exactMatches": 28,
+        "partialMatches": 2,
+        "exactAccuracy": 0.5833333333333334,
+        "lenientAccuracy": 0.625,
+        "binaryAccuracy": 0.625,
+        "supportedVsRestCorrect": 38,
+        "supportedVsRestAccuracy": 0.7916666666666666,
+        "confusionMatrix": {
+          "Supported": {
+            "Supported": 13,
+            "Partially supported": 2,
+            "Not supported": 8,
+            "Source unavailable": 0
+          },
+          "Partially supported": {
+            "Supported": 0,
+            "Partially supported": 4,
+            "Not supported": 10,
+            "Source unavailable": 0
+          },
+          "Not supported": {
+            "Supported": 0,
+            "Partially supported": 0,
+            "Not supported": 11,
+            "Source unavailable": 0
+          },
+          "Source unavailable": {
+            "Supported": 0,
+            "Partially supported": 0,
+            "Not supported": 0,
+            "Source unavailable": 0
+          }
+        },
+        "latency": {
+          "avg": 3124.8541666666665,
+          "min": 744,
+          "max": 18409
+        },
+        "support_score": {
+          "avg": 59.791666666666664,
+          "avgWhenCorrect": 71.78571428571429,
+          "avgWhenWrong": 43,
+          "calibration": 28.785714285714292
+        }
+      }
+    },
+    "liftwing-qwen3.6-27b": {
+      "name": "Liftwing-qwen3.6-27b",
+      "model": "llm-qwen36-27b",
+      "sampleCount": 48,
+      "metrics": {
+        "total": 48,
+        "valid": 48,
+        "errors": 0,
+        "quotes": {
+          "eligible": 23,
+          "offered": 23,
+          "verified": 20,
+          "offerRate": 1,
+          "fidelity": 0.8695652173913043,
+          "accuracyWhenQuoteVerified": 0.8,
+          "accuracyWhenQuoteUnverified": 1,
+          "verifiedRows": 20,
+          "unverifiedRows": 3,
+          "gap": -0.19999999999999996
+        },
+        "exactMatches": 21,
+        "partialMatches": 4,
+        "exactAccuracy": 0.4375,
+        "lenientAccuracy": 0.5208333333333334,
+        "binaryAccuracy": 0.7083333333333334,
+        "supportedVsRestCorrect": 38,
+        "supportedVsRestAccuracy": 0.7916666666666666,
+        "confusionMatrix": {
+          "Supported": {
+            "Supported": 17,
+            "Partially supported": 0,
+            "Not supported": 3,
+            "Source unavailable": 3
+          },
+          "Partially supported": {
+            "Supported": 4,
+            "Partially supported": 2,
+            "Not supported": 4,
+            "Source unavailable": 4
+          },
+          "Not supported": {
+            "Supported": 0,
+            "Partially supported": 0,
+            "Not supported": 2,
+            "Source unavailable": 9
+          },
+          "Source unavailable": {
+            "Supported": 0,
+            "Partially supported": 0,
+            "Not supported": 0,
+            "Source unavailable": 0
+          }
+        },
+        "latency": {
+          "avg": 7081.125,
+          "min": 3156,
+          "max": 20622
+        },
+        "support_score": {
+          "avg": 77.06896551724138,
+          "avgWhenCorrect": 85,
+          "avgWhenWrong": 16.666666666666668,
+          "calibration": 68.33333333333333
+        }
+      }
+    }
+  }
+}
