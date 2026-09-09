@@ -5,7 +5,9 @@ import {
     DEFAULT_WEIGHTS,
     DEFAULT_THRESHOLDS,
     DEFAULT_OFFLINE_RATIO_CEILING,
+    DEFAULT_TABLE_RATIO_CEILING,
     computeOfflineRatio,
+    computeTableRatio,
     recencyFactor,
     burstFactor,
     isCurrentEvent,
@@ -14,7 +16,7 @@ import {
     tierOf,
     preliminaryRank,
     shortlist,
-    passesOfflineFilter,
+    passesContentFilter,
     finalizeRanking,
     splitFlaggedPool,
     flaggedQuotaFor,
@@ -30,6 +32,20 @@ test('computeOfflineRatio counts citations with no url as offline', () => {
 test('computeOfflineRatio returns null for an article with no citations, not 0 or 1', () => {
     assert.equal(computeOfflineRatio([]), null);
     assert.equal(computeOfflineRatio(null), null);
+});
+
+test('computeTableRatio counts citations sitting inside a table', () => {
+    const inTable = { refElement: { closest: sel => (sel === 'table' ? {} : null) } };
+    const inProse = { refElement: { closest: () => null } };
+    assert.equal(computeTableRatio([inTable, inTable, inProse, inProse]), 0.5);
+    assert.equal(computeTableRatio([inProse]), 0);
+    assert.equal(computeTableRatio([inTable]), 1);
+});
+
+test('computeTableRatio tolerates citations with no element attached', () => {
+    assert.equal(computeTableRatio([]), null);
+    assert.equal(computeTableRatio(null), null);
+    assert.equal(computeTableRatio([{}, { refElement: null }]), 0);
 });
 
 // --- The two untagged current-events signals ---
@@ -183,20 +199,32 @@ test('shortlist truncates the preliminary ranking to the requested size', () => 
 
 // --- Stage-2 filter ---
 
-test('passesOfflineFilter needs citations and enough of them fetchable', () => {
-    assert.equal(passesOfflineFilter({ citationCount: 10, offlineRatio: 0.3 }), true);
-    assert.equal(passesOfflineFilter({ citationCount: 10, offlineRatio: 0.9 }), false);
-    assert.equal(passesOfflineFilter({ citationCount: 0, offlineRatio: null }), false,
+test('passesContentFilter needs citations, enough of them fetchable, and enough in prose', () => {
+    assert.equal(passesContentFilter({ citationCount: 10, offlineRatio: 0.3, tableRatio: 0.1 }), true);
+    assert.equal(passesContentFilter({ citationCount: 10, offlineRatio: 0.9, tableRatio: 0.1 }), false);
+    assert.equal(passesContentFilter({ citationCount: 10, offlineRatio: 0.1, tableRatio: 0.95 }), false,
+        'a bracket page is excluded even though every one of its sources is fetchable');
+    assert.equal(passesContentFilter({ citationCount: 0 }), false,
         'a fetch failure or a citation-free article has nothing to verify');
-    assert.equal(passesOfflineFilter({ citationCount: 10, offlineRatio: 0.9 }, 0.95), true,
-        'ceiling is configurable');
+    assert.equal(
+        passesContentFilter({ citationCount: 10, offlineRatio: 0.9, tableRatio: 0.95 },
+            { offlineRatioCeiling: 0.95, tableRatioCeiling: 0.99 }),
+        true, 'both ceilings are configurable');
 });
 
-test('finalizeRanking drops the same rows passesOfflineFilter rejects', () => {
+test('passesContentFilter treats an unmeasured ratio as unknown, not as good', () => {
+    // A fetch that failed leaves both ratios null; citationCount is what
+    // rejects it, so a null must not be compared against a ceiling.
+    assert.equal(passesContentFilter({ citationCount: 5, offlineRatio: null, tableRatio: null }), true);
+    assert.equal(passesContentFilter({ citationCount: 0, offlineRatio: null, tableRatio: null }), false);
+});
+
+test('finalizeRanking drops the same rows passesContentFilter rejects', () => {
     const candidates = [
-        { title: 'mostly-online', editCount: 1, citationCount: 10, offlineRatio: 0.3 },
-        { title: 'mostly-offline', editCount: 1, citationCount: 10, offlineRatio: 0.9 },
+        { title: 'mostly-online', editCount: 1, citationCount: 10, offlineRatio: 0.3, tableRatio: 0.1 },
+        { title: 'mostly-offline', editCount: 1, citationCount: 10, offlineRatio: 0.9, tableRatio: 0.1 },
         { title: 'no-citations', editCount: 100, citationCount: 0, offlineRatio: null },
+        { title: 'bracket-page', editCount: 500, citationCount: 40, offlineRatio: 0, tableRatio: 0.95 },
     ];
     const ranked = finalizeRanking(candidates, { offlineRatioCeiling: DEFAULT_OFFLINE_RATIO_CEILING });
     assert.deepEqual(ranked.map(c => c.title), ['mostly-online']);

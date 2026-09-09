@@ -53,8 +53,9 @@ import {
     mergeSignals,
     shortlist,
     finalizeRanking,
-    passesOfflineFilter,
+    passesContentFilter,
     computeOfflineRatio,
+    computeTableRatio,
     splitFlaggedPool,
     flaggedQuotaFor,
     tierOf,
@@ -62,6 +63,7 @@ import {
     DEFAULT_WEIGHTS,
     DEFAULT_THRESHOLDS,
     DEFAULT_OFFLINE_RATIO_CEILING,
+    DEFAULT_TABLE_RATIO_CEILING,
 } from './pilot-selection.js';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -77,6 +79,7 @@ export function parseCliArgs(argv) {
             'shortlist-size':    { type: 'string', default: '300' },
             max:                 { type: 'string', default: '100' },
             'offline-ratio-max': { type: 'string', default: String(DEFAULT_OFFLINE_RATIO_CEILING) },
+            'table-ratio-max':   { type: 'string', default: String(DEFAULT_TABLE_RATIO_CEILING) },
             'flagged-share':     { type: 'string', default: String(DEFAULT_FLAGGED_QUOTA_SHARE) },
             'scan-all':          { type: 'boolean', default: false },
             out:                 { type: 'string', default: 'pilot-100.txt' },
@@ -95,6 +98,7 @@ export function parseCliArgs(argv) {
         shortlistSize: Number(values['shortlist-size']),
         max: Number(values.max),
         offlineRatioMax: Number(values['offline-ratio-max']),
+        tableRatioMax: Number(values['table-ratio-max']),
         flaggedShare: Number(values['flagged-share']),
         scanAll: values['scan-all'],
         out: values.out,
@@ -124,6 +128,13 @@ Options:
   --max <n>                 Final pilot size (default: 100)
   --offline-ratio-max <f>   Exclude articles whose citations are unfetchable
                              above this fraction, 0..1 (default: ${DEFAULT_OFFLINE_RATIO_CEILING})
+  --table-ratio-max <f>     Exclude articles with more than this fraction of
+                             their citations inside a <table>, 0..1
+                             (default: ${DEFAULT_TABLE_RATIO_CEILING}). Tournament draws, episode
+                             lists and medal tables score at the very top of
+                             the current-events ranking and are worthless to
+                             verify: the claim behind a bracket citation is a
+                             score line, not an assertion.
   --flagged-share <f>       Share of the pilot reserved for articles carrying
                              {{failed verification}}, 0..1 (default: ${DEFAULT_FLAGGED_QUOTA_SHARE}).
                              A floor, not a partition: those articles still
@@ -152,6 +163,7 @@ function validate(opts, stderr) {
         ['shortlist-size', Number.isInteger(opts.shortlistSize) && opts.shortlistSize >= 1],
         ['max', Number.isInteger(opts.max) && opts.max >= 1],
         ['offline-ratio-max', opts.offlineRatioMax >= 0 && opts.offlineRatioMax <= 1],
+        ['table-ratio-max', opts.tableRatioMax >= 0 && opts.tableRatioMax <= 1],
         ['flagged-share', opts.flaggedShare >= 0 && opts.flaggedShare <= 1],
     ];
     for (const [flag, ok] of checks) {
@@ -170,7 +182,8 @@ function renderTitlesFile(ranked, opts, generatedAt) {
         `# Pilot mix: ${ranked.length} article(s), generated ${generatedAt}`,
         `# wiki=${opts.wiki} edit-window-days=${opts.editWindowDays} burst-window-days=${opts.burstWindowDays}`,
         `# base-pool=${opts.basePool} shortlist-size=${opts.shortlistSize} `
-            + `offline-ratio-max=${opts.offlineRatioMax} flagged-share=${opts.flaggedShare}`,
+            + `offline-ratio-max=${opts.offlineRatioMax} table-ratio-max=${opts.tableRatioMax} `
+            + `flagged-share=${opts.flaggedShare}`,
         '# Biased toward current events (recently created, or edits concentrated in a burst, or',
         '# carrying {{current}}) and toward {{failed verification}}; biased against articles whose',
         '# citations are mostly unfetchable. See service/pilot-selection.js.',
@@ -269,6 +282,10 @@ export async function runPickPilot(opts, {
         const realLog = console.log;
         console.log = () => {};
 
+        const contentFilter = {
+            offlineRatioCeiling: opts.offlineRatioMax,
+            tableRatioCeiling: opts.tableRatioMax,
+        };
         const checked = [];
         let flaggedSurvivors = 0;
         let survivors = 0;
@@ -287,13 +304,15 @@ export async function runPickPilot(opts, {
                     fetchFailures++;
                     candidate.citationCount = 0;
                     candidate.offlineRatio = null;
+                    candidate.tableRatio = null;
                 } else {
                     const citations = collectCitations(parseHtml(html));
                     candidate.citationCount = citations.length;
                     candidate.offlineRatio = computeOfflineRatio(citations);
+                    candidate.tableRatio = computeTableRatio(citations);
                 }
                 checked.push(candidate);
-                if (passesOfflineFilter(candidate, opts.offlineRatioMax)) {
+                if (passesContentFilter(candidate, contentFilter)) {
                     survivors++;
                     if (candidate.failedVerification) flaggedSurvivors++;
                 }
@@ -315,6 +334,7 @@ export async function runPickPilot(opts, {
             limit: opts.max,
             flaggedQuota,
             offlineRatioCeiling: opts.offlineRatioMax,
+            tableRatioCeiling: opts.tableRatioMax,
             weights: DEFAULT_WEIGHTS,
             thresholds: DEFAULT_THRESHOLDS,
         });

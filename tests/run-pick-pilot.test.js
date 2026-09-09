@@ -14,6 +14,7 @@ test('parseCliArgs applies documented defaults', () => {
     assert.equal(opts.shortlistSize, 300);
     assert.equal(opts.max, 100);
     assert.equal(opts.offlineRatioMax, 0.6);
+    assert.equal(opts.tableRatioMax, 0.5);
     assert.equal(opts.flaggedShare, 0.4);
     assert.equal(opts.scanAll, false);
     assert.equal(opts.out, 'pilot-100.txt');
@@ -24,13 +25,15 @@ test('parseCliArgs applies overrides', () => {
     const opts = parseCliArgs([
         'node', 'pick-pilot.js', '--wiki', 'frwiki', '--edit-window-days', '7',
         '--burst-window-days', '2', '--base-pool', '500', '--shortlist-size', '50',
-        '--max', '20', '--offline-ratio-max', '0.4', '--flagged-share', '0.25', '--scan-all',
+        '--max', '20', '--offline-ratio-max', '0.4', '--table-ratio-max', '0.3',
+        '--flagged-share', '0.25', '--scan-all',
         '--out', 'out.txt', '--json-out', 'out.json',
     ]);
     assert.equal(opts.editWindowDays, 7);
     assert.equal(opts.burstWindowDays, 2);
     assert.equal(opts.max, 20);
     assert.equal(opts.offlineRatioMax, 0.4);
+    assert.equal(opts.tableRatioMax, 0.3);
     assert.equal(opts.flaggedShare, 0.25);
     assert.equal(opts.scanAll, true);
     assert.equal(opts.jsonOut, 'out.json');
@@ -38,7 +41,8 @@ test('parseCliArgs applies overrides', () => {
 
 test('HELP_TEXT documents every flag and the Toolforge-job memory caveat', () => {
     for (const flag of ['--wiki', '--edit-window-days', '--burst-window-days', '--base-pool',
-        '--shortlist-size', '--max', '--offline-ratio-max', '--flagged-share', '--scan-all',
+        '--shortlist-size', '--max', '--offline-ratio-max', '--table-ratio-max',
+        '--flagged-share', '--scan-all',
         '--out', '--json-out']) {
         assert.ok(HELP_TEXT.includes(flag), `HELP_TEXT missing ${flag}`);
     }
@@ -85,6 +89,18 @@ const offlineHeavyHtml = article(
     }
 );
 
+// A tournament draw: every citation sits in a results table, and every one of
+// them has a perfectly fetchable URL. This is the shape that dominated the
+// first real run — six 2026 US Open draw pages plus a dozen other results
+// tables — and that the offline filter alone cannot catch.
+const bracketHtml = `<!DOCTYPE html><body><table class="wikitable"><tbody>
+<tr><td>Alcaraz def. Sinner 6-4, 7-5, 6-2 in the final match.<sup id="cite_ref-b1" class="reference"><a href="./Test#cite_note-b1">[1]</a></sup></td></tr>
+<tr><td>Swiatek def. Gauff 7-6, 6-3 in the semifinal round.<sup id="cite_ref-b2" class="reference"><a href="./Test#cite_note-b2">[2]</a></sup></td></tr>
+</tbody></table><ol class="references">
+<li id="cite_note-b1">${link('https://draws.example/1')}</li>
+<li id="cite_note-b2">${link('https://draws.example/2')}</li>
+</ol></body>`;
+
 const NOW = new Date('2026-09-09T00:00:00Z');
 const daysAgo = n => new Date(NOW.getTime() - n * 86400000);
 const mwTs = date => date.toISOString().replace(/[-:T]/g, '').slice(0, 14);
@@ -95,6 +111,7 @@ const mwTs = date => date.toISOString().replace(/[-:T]/g, '').slice(0, 14);
 // pageId 3: ancient, {{failed verification}}, evenly edited.
 // pageId 4: ancient, huge edit count, but mostly offline sourcing.
 const topEditedRows = [
+    { pageId: 5, pageTitle: '2026_Open_Mens_singles', revisionId: 55, editCount: 300, recentEditCount: 295 },
     { pageId: 4, pageTitle: 'Print_Heavy', revisionId: 44, editCount: 900, recentEditCount: 200 },
     { pageId: 2, pageTitle: 'Perennial_Page', revisionId: 22, editCount: 400, recentEditCount: 86 },
     { pageId: 1, pageTitle: 'Breaking_Story', revisionId: 11, editCount: 60, recentEditCount: 58 },
@@ -106,6 +123,7 @@ const creationRows = [
     { pageId: 2, createdAt: Buffer.from(mwTs(daysAgo(4000))) },
     { pageId: 3, createdAt: Buffer.from(mwTs(daysAgo(4000))) },
     { pageId: 4, createdAt: Buffer.from(mwTs(daysAgo(4000))) },
+    { pageId: 5, createdAt: Buffer.from(mwTs(daysAgo(2))) },
 ];
 
 function fakeConnection({ onQuery } = {}) {
@@ -124,7 +142,11 @@ function fakeConnection({ onQuery } = {}) {
     };
 }
 
-const htmlForTitle = title => (title === 'Print Heavy' ? offlineHeavyHtml : onlineHeavyHtml);
+function htmlForTitle(title) {
+    if (title === 'Print Heavy') return offlineHeavyHtml;
+    if (title === '2026 Open Mens singles') return bracketHtml;
+    return onlineHeavyHtml;
+}
 
 const baseIo = (overrides = {}) => ({
     stdout: { write() {} },
@@ -139,7 +161,8 @@ const baseIo = (overrides = {}) => ({
 
 const baseOpts = (overrides = {}) => ({
     wiki: 'enwiki', editWindowDays: 14, burstWindowDays: 3, basePool: 1000,
-    shortlistSize: 10, max: 10, offlineRatioMax: 0.6, flaggedShare: 0.4, scanAll: false,
+    shortlistSize: 10, max: 10, offlineRatioMax: 0.6, tableRatioMax: 0.5,
+    flaggedShare: 0.4, scanAll: false,
     out: 'pilot.txt', jsonOut: undefined,
     ...overrides,
 });
@@ -158,6 +181,31 @@ test('an untagged breaking story outranks a much busier perennial page', async (
     assert.deepEqual(titles, ['Breaking Story', 'Perennial Page', 'Disputed Claim']);
 });
 
+// The regression the first real run exposed: a draw page is newly created,
+// almost entirely bursty and fully web-sourced, so every signal ranks it top
+// and the offline filter waves it through.
+test('a tournament draw is dropped despite topping every current-events signal', async () => {
+    let written;
+    const code = await runPickPilot(baseOpts({ scanAll: true }), baseIo({
+        writeFile: async (path, content) => { written = content; },
+    }));
+
+    assert.equal(code, 0);
+    const titles = written.split('\n').filter(l => l && !l.startsWith('#'));
+    assert.ok(!titles.includes('2026 Open Mens singles'),
+        'table-heavy article excluded — its claims are score lines, not assertions');
+    assert.equal(titles[0], 'Breaking Story');
+});
+
+test('raising --table-ratio-max lets the draw page back in', async () => {
+    let written;
+    await runPickPilot(baseOpts({ scanAll: true, tableRatioMax: 1 }), baseIo({
+        writeFile: async (path, content) => { written = content; },
+    }));
+    const titles = written.split('\n').filter(l => l && !l.startsWith('#'));
+    assert.ok(titles.includes('2026 Open Mens singles'));
+});
+
 test('the mix is reported by tier, and a burstless old page is not called a current event', async () => {
     const files = {};
     const code = await runPickPilot(baseOpts({ jsonOut: 'pilot.json' }), baseIo({
@@ -174,7 +222,7 @@ test('the mix is reported by tier, and a burstless old page is not called a curr
     assert.ok(byTitle['Breaking Story'].ageDays < 5);
 });
 
-test('the run stops fetching once --max articles have survived the offline filter', async () => {
+test('the run stops fetching once --max articles have survived the content filter', async () => {
     const fetched = [];
     const code = await runPickPilot(baseOpts({ max: 1 }), baseIo({
         fetchArticle: async ({ title }) => {
@@ -184,8 +232,9 @@ test('the run stops fetching once --max articles have survived the offline filte
     }));
 
     assert.equal(code, 0);
-    assert.deepEqual(fetched, ['Breaking Story'],
-        'one survivor was enough — the rest of the shortlist is never fetched');
+    assert.deepEqual(fetched, ['2026 Open Mens singles', 'Breaking Story'],
+        'a rejected article does not count toward the stop, so the run keeps going '
+        + 'until it has a real survivor — then stops');
 });
 
 test('--scan-all fetches the whole shortlist instead of stopping early', async () => {
@@ -197,7 +246,7 @@ test('--scan-all fetches the whole shortlist instead of stopping early', async (
         },
     }));
 
-    assert.equal(fetched.length, 4);
+    assert.equal(fetched.length, 5);
 });
 
 test('tag membership is asked about the base pool rather than pulled with a row cap', async () => {

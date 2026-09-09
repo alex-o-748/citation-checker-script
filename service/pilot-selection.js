@@ -87,6 +87,25 @@ export const DEFAULT_FLAGGED_QUOTA_SHARE = 0.4;
 // passed through service/run-pick-pilot.js's --offline-ratio-max.
 export const DEFAULT_OFFLINE_RATIO_CEILING = 0.6;
 
+// Above this share of citations sitting inside a <table>, an article is
+// excluded.
+//
+// This exists because the current-events signals select for tournament draws
+// almost perfectly: a bracket page is newly created, edited in a burst as
+// results come in, and densely web-sourced, so it scores at the very top.
+// A first real run returned six 2026 US Open draw pages plus a dozen other
+// results tables — roughly 40% of the pilot.
+//
+// They are worthless to verify. The claim an extractor pulls from a bracket
+// cell is "6-4, 7-5, 6-2" or a seeding number: long enough to clear
+// MIN_CLAIM_LENGTH, meaningless to ask a model about, and the citation behind
+// it is a draw sheet rather than prose. The same goes for discographies,
+// episode lists and "X at the Y Games" medal tables.
+//
+// Prose articles are not near this line — an infobox and a couple of tables
+// put a normal article in the 5-20% range, while a results page is 80-100%.
+export const DEFAULT_TABLE_RATIO_CEILING = 0.5;
+
 /**
  * Fraction of citations with no URL at all — core/citations.js's collectCitations()
  * leaves `url` null/undefined for a bare {{cite book}}/{{cite journal}} with no
@@ -97,6 +116,19 @@ export function computeOfflineRatio(citations) {
     if (!citations || citations.length === 0) return null;
     const offline = citations.filter(c => !c?.url).length;
     return offline / citations.length;
+}
+
+/**
+ * Share of citations attached to table cells rather than running prose.
+ *
+ * Reads the `refElement` collectCitations() already returns, so this costs
+ * nothing beyond the parse stage 2 has done anyway — no second fetch, no
+ * second DOM. See DEFAULT_TABLE_RATIO_CEILING for why it matters.
+ */
+export function computeTableRatio(citations) {
+    if (!citations || citations.length === 0) return null;
+    const inTable = citations.filter(c => c?.refElement?.closest?.('table')).length;
+    return inTable / citations.length;
 }
 
 /**
@@ -224,15 +256,24 @@ export function shortlist(candidates, {
 }
 
 /**
- * Whether a candidate survives stage 2: it has citations to check, and enough
- * of them are fetchable. Split out from finalizeRanking() so the runner can
- * apply it per article as it goes and stop once it has enough survivors,
- * rather than fetching the whole shortlist first.
+ * Whether a candidate survives stage 2: it has citations to check, enough of
+ * them are fetchable, and enough of them are attached to prose rather than to
+ * table cells. Split out from finalizeRanking() so the runner can apply it per
+ * article as it goes and stop once it has enough survivors, rather than
+ * fetching the whole shortlist first.
+ *
+ * An unmeasured ratio (null — a fetch that failed) passes here and is caught
+ * by the citationCount check instead, so a missing measurement never silently
+ * counts as a good one.
  */
-export function passesOfflineFilter(candidate, offlineRatioCeiling = DEFAULT_OFFLINE_RATIO_CEILING) {
+export function passesContentFilter(candidate, {
+    offlineRatioCeiling = DEFAULT_OFFLINE_RATIO_CEILING,
+    tableRatioCeiling = DEFAULT_TABLE_RATIO_CEILING,
+} = {}) {
     if ((candidate.citationCount ?? 0) <= 0) return false;
-    if (candidate.offlineRatio === null || candidate.offlineRatio === undefined) return true;
-    return candidate.offlineRatio <= offlineRatioCeiling;
+    if (typeof candidate.offlineRatio === 'number' && candidate.offlineRatio > offlineRatioCeiling) return false;
+    if (typeof candidate.tableRatio === 'number' && candidate.tableRatio > tableRatioCeiling) return false;
+    return true;
 }
 
 /**
@@ -278,11 +319,12 @@ export function finalizeRanking(candidates, {
     limit = 100,
     flaggedQuota = 0,
     offlineRatioCeiling = DEFAULT_OFFLINE_RATIO_CEILING,
+    tableRatioCeiling = DEFAULT_TABLE_RATIO_CEILING,
     weights = DEFAULT_WEIGHTS,
     thresholds = DEFAULT_THRESHOLDS,
 } = {}) {
     const scored = candidates
-        .filter(c => passesOfflineFilter(c, offlineRatioCeiling))
+        .filter(c => passesContentFilter(c, { offlineRatioCeiling, tableRatioCeiling }))
         .map(c => ({ ...c, score: scoreCandidate(c, weights, thresholds), tier: tierOf(c, thresholds) }))
         .sort((a, b) => b.score - a.score);
 
