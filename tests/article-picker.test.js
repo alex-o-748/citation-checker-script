@@ -7,9 +7,13 @@ import {
     NS_TEMPLATE,
     UnknownCriterionError,
     buildCandidateQuery,
+    buildTopEditedQuery,
+    formatRevTimestamp,
     normalizeRow,
+    normalizeTopEditedRow,
     resolveCriterion,
     selectCandidates,
+    selectTopEdited,
 } from '../service/article-picker.js';
 
 test('resolveCriterion returns known criteria and rejects unknown ones', () => {
@@ -146,4 +150,61 @@ test('selectCandidates propagates an unknown criterion rather than querying', as
         UnknownCriterionError
     );
     assert.equal(calls.length, 0);
+});
+
+test('current-event criterion is registered and resolves like the others', () => {
+    assert.equal(resolveCriterion('current-event').template, 'Current');
+    assert.ok(CRITERIA['current-event'].description.length > 0);
+});
+
+// --- Top-edited query ---
+
+test('formatRevTimestamp produces MediaWiki\'s MW_TS form', () => {
+    assert.equal(formatRevTimestamp(new Date('2026-09-09T14:03:07.000Z')), '20260909140307');
+});
+
+test('formatRevTimestamp rejects an invalid date', () => {
+    assert.throws(() => formatRevTimestamp(new Date('not a date')), TypeError);
+    assert.throws(() => formatRevTimestamp('2026-09-09'), TypeError);
+});
+
+test('buildTopEditedQuery groups by page and orders by edit count, not page id', () => {
+    const { sql, params } = buildTopEditedQuery({ sinceDate: new Date('2026-09-01T00:00:00Z'), limit: 250 });
+
+    assert.match(sql, /GROUP BY p\.page_id/);
+    assert.match(sql, /ORDER BY editCount DESC/);
+    assert.match(sql, /p\.page_is_redirect = 0/);
+    assert.doesNotMatch(sql, /OFFSET/i);
+    assert.equal((sql.match(/\?/g) || []).length, params.length);
+    assert.deepEqual(params, ['20260901000000', NS_MAIN, 250]);
+});
+
+test('buildTopEditedQuery validates sinceDate and limit', () => {
+    assert.throws(() => buildTopEditedQuery({ sinceDate: new Date('bad') }), TypeError);
+    assert.throws(() => buildTopEditedQuery({ sinceDate: new Date(), limit: 0 }), RangeError);
+    assert.throws(() => buildTopEditedQuery({ sinceDate: new Date(), limit: 5001 }), RangeError);
+});
+
+test('normalizeTopEditedRow decodes the title and carries editCount as a number', () => {
+    const row = normalizeTopEditedRow({
+        pageId: 7, pageTitle: Buffer.from('2026_Some_Election'), revisionId: 99, editCount: '42',
+    });
+    assert.deepEqual(row, { pageId: 7, title: '2026 Some Election', revisionId: 99, editCount: 42 });
+});
+
+test('selectTopEdited runs one bounded query and normalizes the rows, unpaginated', async () => {
+    const calls = [];
+    const query = async (sql, params) => {
+        calls.push({ sql, params });
+        return [
+            { pageId: 3, pageTitle: 'Busy_Page', revisionId: 30, editCount: 9 },
+            { pageId: 1, pageTitle: 'Busier_Page', revisionId: 10, editCount: 20 },
+        ];
+    };
+
+    const got = await selectTopEdited(query, { sinceDate: new Date('2026-09-01T00:00:00Z'), limit: 500 });
+
+    assert.equal(calls.length, 1, 'top-edited is a single bounded query, not keyset-paginated');
+    assert.deepEqual(got.map(r => r.title), ['Busy Page', 'Busier Page']);
+    assert.deepEqual(got.map(r => r.editCount), [9, 20]);
 });

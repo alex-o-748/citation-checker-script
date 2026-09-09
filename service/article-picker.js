@@ -42,6 +42,12 @@ export const CRITERIA = Object.freeze({
         template: 'Unreliable_source?',
         description: 'Inline {{unreliable source?}} — the cited source itself is disputed',
     },
+    'current-event': {
+        template: 'Current',
+        description: '{{current}} — the article documents a developing event; editors self-flag it because '
+            + 'coverage is being added faster than it can be checked, which is exactly the higher-base-rate '
+            + 'population service/pilot-selection.js biases the pilot mix toward',
+    },
 });
 
 export class UnknownCriterionError extends Error {
@@ -153,4 +159,84 @@ export async function selectCandidates(query, {
     }
 
     return out;
+}
+
+// --- Top-edited articles ---
+//
+// The criteria above are all "every page transcluding template X" — a bounded,
+// indexed lookup that keyset-pages until exhausted. "Most edited in the last N
+// days" is a different shape: rank the whole revision table by activity and
+// take the top N. There is no "every row" case to page through here, only
+// "give me the top N", so this deliberately does not reuse
+// buildCandidateQuery()/selectCandidates()'s pagination.
+//
+// This is the base population service/pilot-selection.js scores and filters
+// from for the 100-article pilot mix: recent edit velocity is a cheap proxy
+// for "this article is a current event" (elections, disasters, deaths,
+// ongoing tournaments all spike edit counts) that catches articles the
+// {{current}} tag misses — not every developing story gets self-tagged, and
+// the tag is commonly removed within days of the event settling down while
+// the edit spike (and the citation backlog it leaves) is still there.
+
+/**
+ * Formats a Date as MediaWiki's rev_timestamp form: BINARY(14), UTC,
+ * "YYYYMMDDHHMMSS" — the MW_TS format used throughout the MediaWiki schema.
+ */
+export function formatRevTimestamp(date) {
+    if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
+        throw new TypeError('formatRevTimestamp requires a valid Date');
+    }
+    return date.toISOString().replace(/[-:T]/g, '').slice(0, 14);
+}
+
+/**
+ * Builds the "most-edited in the window since `sinceDate`" query.
+ *
+ * Returns { sql, params } like buildCandidateQuery() — the template title is
+ * bound, never interpolated, and this query binds the timestamp the same way.
+ */
+export function buildTopEditedQuery({ sinceDate, limit = 500 } = {}) {
+    if (!(sinceDate instanceof Date) || Number.isNaN(sinceDate.getTime())) {
+        throw new TypeError('buildTopEditedQuery requires a valid sinceDate');
+    }
+    if (!Number.isInteger(limit) || limit < 1 || limit > 5000) {
+        throw new RangeError(`limit must be an integer in 1..5000 (got: ${limit})`);
+    }
+
+    const sql = `
+        SELECT
+            p.page_id      AS pageId,
+            p.page_title   AS pageTitle,
+            p.page_latest  AS revisionId,
+            COUNT(*)       AS editCount
+        FROM revision r
+        JOIN page p ON p.page_id = r.rev_page
+        WHERE r.rev_timestamp >= ?
+          AND p.page_namespace = ?
+          AND p.page_is_redirect = 0
+        GROUP BY p.page_id
+        ORDER BY editCount DESC
+        LIMIT ?
+    `.trim().replace(/\n {8}/g, '\n');
+
+    return {
+        sql,
+        params: [formatRevTimestamp(sinceDate), NS_MAIN, limit],
+    };
+}
+
+export function normalizeTopEditedRow(row) {
+    return { ...normalizeRow(row), editCount: Number(row.editCount) };
+}
+
+/**
+ * Runs the top-edited query and normalizes the rows. Single-shot — no
+ * pagination loop, since callers want exactly "the top `limit`", not
+ * exhaustion of a source. `query` has the same (sql, params) => rows shape
+ * selectCandidates() takes.
+ */
+export async function selectTopEdited(query, { sinceDate, limit = 500 } = {}) {
+    const { sql, params } = buildTopEditedQuery({ sinceDate, limit });
+    const rows = await query(sql, params);
+    return (rows || []).map(normalizeTopEditedRow);
 }
