@@ -19,7 +19,7 @@
 // are dropped — they mean nothing to a reader and exist only to dedupe rows
 // in ToolsDB.
 
-import { writeFile as fsWriteFile } from 'node:fs/promises';
+import { appendFile as fsAppendFile, writeFile as fsWriteFile } from 'node:fs/promises';
 
 // service/article-picker.js queries a Wiki Replicas database name ('enwiki',
 // 'frwiki', ...), not a domain. Only enwiki exists in practice today (per
@@ -83,17 +83,89 @@ export function findingToCsvRow(finding) {
     return COLUMNS.map(([, get]) => get(finding));
 }
 
+export function csvHeaderLine() {
+    return COLUMNS.map(([name]) => name).map(csvCell).join(',') + '\n';
+}
+
+export function findingToCsvLine(finding) {
+    return findingToCsvRow(finding).map(csvCell).join(',') + '\n';
+}
+
+// Built from the same two functions the incremental writer uses, so a batch
+// write and an appended write cannot produce different files.
 export function rowsToCsv(findings) {
-    const header = COLUMNS.map(([name]) => name);
-    const lines = [header, ...findings.map(findingToCsvRow)];
-    return lines.map(row => row.map(csvCell).join(',')).join('\n') + '\n';
+    return csvHeaderLine() + findings.map(findingToCsvLine).join('');
 }
 
 /**
- * Writes findings to a CSV file. `writeFile` is injected, matching the
- * pattern in service/replicas.js and service/toolsdb.js, so this is
+ * Writes findings to a CSV file in one go. `writeFile` is injected, matching
+ * the pattern in service/replicas.js and service/toolsdb.js, so this is
  * testable without touching disk.
  */
 export async function writeCsvReport(findings, path, { writeFile = fsWriteFile } = {}) {
     await writeFile(path, rowsToCsv(findings), 'utf8');
+}
+
+/**
+ * Appends one finding to an existing CSV.
+ *
+ * A sweep over a hundred articles runs for the better part of a day, and a
+ * process killed at hour fifteen must not lose what it computed — the same
+ * failure describeHalt() in service/run-sweep.js already guards against for
+ * in-process errors, which a SIGKILL walks straight past.
+ */
+export async function appendFinding(path, finding, { appendFile = fsAppendFile } = {}) {
+    await appendFile(path, findingToCsvLine(finding), 'utf8');
+}
+
+/**
+ * The page titles already present in a CSV this module wrote — what --resume
+ * skips over.
+ *
+ * Records can span physical lines: claim_text, rationale and source_quote are
+ * arbitrary prose, and csvCell() quotes rather than strips an embedded
+ * newline. So this tracks quoting instead of splitting on '\n', which would
+ * read the second line of a claim as a fresh record and take a fragment of
+ * prose for an article title.
+ */
+export function csvPageTitles(text) {
+    const titles = new Set();
+    let field = '';
+    let inQuotes = false;
+    let atFirstField = true;
+    let recordIndex = 0;
+
+    const endRecord = () => {
+        // A single-column record ends without ever seeing a comma, so the
+        // title is still sitting in `field`; a normal row already banked it.
+        if (atFirstField && recordIndex > 0 && field) titles.add(field);
+        recordIndex++;
+        atFirstField = true;
+        field = '';
+    };
+
+    for (let i = 0; i < text.length; i++) {
+        const char = text[i];
+        if (inQuotes) {
+            if (char !== '"') field += char;
+            else if (text[i + 1] === '"') { field += '"'; i++; }
+            else inQuotes = false;
+            continue;
+        }
+        if (char === '"') inQuotes = true;
+        else if (char === ',') {
+            // recordIndex 0 is the header row, whose first cell is the
+            // literal column name rather than a title.
+            if (atFirstField && recordIndex > 0 && field) titles.add(field);
+            atFirstField = false;
+            field = '';
+        } else if (char === '\n') endRecord();
+        else if (char === '\r') {
+            if (text[i + 1] === '\n') i++;
+            endRecord();
+        } else field += char;
+    }
+    endRecord();
+
+    return titles;
 }

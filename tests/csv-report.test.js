@@ -1,7 +1,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { rowsToCsv, findingToCsvRow, writeCsvReport } from '../service/csv-report.js';
+import {
+    rowsToCsv,
+    findingToCsvRow,
+    writeCsvReport,
+    csvHeaderLine,
+    findingToCsvLine,
+    appendFinding,
+    csvPageTitles,
+} from '../service/csv-report.js';
 
 const baseFinding = () => ({
     wiki: 'enwiki',
@@ -131,4 +139,56 @@ test('writeCsvReport writes the same content rowsToCsv produces, via the injecte
     assert.equal(written.path, '/tmp/findings.csv');
     assert.equal(written.content, rowsToCsv([baseFinding()]));
     assert.equal(written.encoding, 'utf8');
+});
+
+// --- Incremental writing and resume ---
+
+test('rowsToCsv is built from the same header and row helpers the appender uses', () => {
+    const finding = { pageTitle: 'A', citationNumber: '1', verdict: 'SUPPORTED' };
+    assert.equal(rowsToCsv([finding]), csvHeaderLine() + findingToCsvLine(finding));
+});
+
+test('appendFinding appends exactly one row and no header', async () => {
+    const writes = [];
+    await appendFinding('out.csv', { pageTitle: 'A', verdict: 'SUPPORTED' }, {
+        appendFile: async (path, text) => writes.push({ path, text }),
+    });
+    assert.equal(writes.length, 1);
+    assert.equal(writes[0].path, 'out.csv');
+    assert.ok(writes[0].text.startsWith('A,'));
+    assert.ok(writes[0].text.endsWith('\n'));
+    assert.ok(!writes[0].text.includes('page_title'));
+});
+
+test('csvPageTitles reads back the titles a written CSV contains, skipping the header', () => {
+    const csv = rowsToCsv([
+        { pageTitle: 'Hurricane Lowell (2026)' },
+        { pageTitle: 'Cape Verde bus crash' },
+        { pageTitle: 'Hurricane Lowell (2026)' },
+    ]);
+    assert.deepEqual([...csvPageTitles(csv)].sort(),
+        ['Cape Verde bus crash', 'Hurricane Lowell (2026)']);
+    assert.ok(!csvPageTitles(csv).has('page_title'), 'the header row is not a title');
+});
+
+// The reason this is a quote-aware scan rather than a split on newlines:
+// claim_text and rationale are arbitrary prose, and csvCell() quotes an
+// embedded newline rather than stripping it. A naive parser would treat the
+// claim's second line as a new record and take a fragment of prose for an
+// article title -- which on resume would fail to skip a finished article and
+// silently redo it.
+test('csvPageTitles is not fooled by newlines, commas or quotes inside a claim', () => {
+    const csv = rowsToCsv([
+        { pageTitle: 'Nepal-Tibet floods', claimText: 'First line.\nSecond line, with a comma.' },
+        { pageTitle: 'Yemen offensive', claimText: 'He said "it collapsed", per the report.' },
+    ]);
+    assert.deepEqual([...csvPageTitles(csv)].sort(), ['Nepal-Tibet floods', 'Yemen offensive']);
+});
+
+test('csvPageTitles handles a title needing quoting, CRLF, and an empty file', () => {
+    const csv = rowsToCsv([{ pageTitle: 'Smith, John "Jack"' }]);
+    assert.deepEqual([...csvPageTitles(csv)], ['Smith, John "Jack"']);
+    assert.deepEqual([...csvPageTitles(csv.replace(/\n/g, '\r\n'))], ['Smith, John "Jack"']);
+    assert.deepEqual([...csvPageTitles('')], []);
+    assert.deepEqual([...csvPageTitles(csvHeaderLine())], [], 'a header-only file has no titles');
 });
