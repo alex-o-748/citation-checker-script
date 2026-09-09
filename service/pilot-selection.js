@@ -65,6 +65,21 @@ export const DEFAULT_THRESHOLDS = Object.freeze({
     currentBurstFactor: 0.5,
 });
 
+// Share of the pilot reserved for articles carrying {{failed verification}}.
+//
+// A quota rather than a bigger weight, because the two populations the pilot
+// wants barely overlap: an article four days old has not existed long enough
+// for anyone to read one of its sources and tag it. Ranking both by one score
+// therefore doesn't blend them, it lets whichever signal is weighted higher
+// crowd the other out entirely — and the flagged population is much the
+// smaller of the two, so it is the one that disappears.
+//
+// The quota is a floor, not a partition: flagged articles compete for the
+// remaining slots on score like anything else, and an unfillable quota (fewer
+// flagged articles in the base pool than the quota reserves) simply leaves
+// those slots to the general ranking rather than padding them.
+export const DEFAULT_FLAGGED_QUOTA_SHARE = 0.4;
+
 // Above this fraction of citations lacking a URL, an article is excluded
 // outright rather than merely penalized: the sweep can only fetch a URL, so
 // a majority-offline article mostly returns SOURCE UNAVAILABLE regardless of
@@ -221,19 +236,55 @@ export function passesOfflineFilter(candidate, offlineRatioCeiling = DEFAULT_OFF
 }
 
 /**
+ * Splits a ranking into the flagged pool and everything else, each keeping
+ * its relative order. The runner fetches the flagged pool first so a quota
+ * for that (much smaller) population can actually be filled — which pool an
+ * article is fetched from has no bearing on its score, only on whether it
+ * gets looked at before the fetch budget runs out.
+ */
+export function splitFlaggedPool(candidates) {
+    return {
+        flagged: candidates.filter(c => c.failedVerification),
+        rest: candidates.filter(c => !c.failedVerification),
+    };
+}
+
+export function flaggedQuotaFor(limit, share = DEFAULT_FLAGGED_QUOTA_SHARE) {
+    return Math.round(limit * Math.min(1, Math.max(0, share)));
+}
+
+/**
+ * Takes `limit` candidates from a scored, descending ranking, reserving up to
+ * `flaggedQuota` slots for flagged articles before filling the rest by score.
+ * Returns the selection in score order, so the output reads as one ranking.
+ */
+export function allocateWithQuota(scored, { limit = 100, flaggedQuota = 0 } = {}) {
+    const reserved = scored.filter(c => c.failedVerification).slice(0, Math.min(flaggedQuota, limit));
+    const taken = new Set(reserved);
+    for (const candidate of scored) {
+        if (taken.size >= limit) break;
+        taken.add(candidate);
+    }
+    return [...taken].sort((a, b) => b.score - a.score);
+}
+
+/**
  * Stage-2 (final) ranking, after offlineRatio/citationCount have been filled
  * in. Drops anything with no citations at all (nothing to verify) or with an
- * offlineRatio above the ceiling, then scores and sorts the remainder.
+ * offlineRatio above the ceiling, scores and sorts the remainder, then applies
+ * the flagged quota.
  */
 export function finalizeRanking(candidates, {
     limit = 100,
+    flaggedQuota = 0,
     offlineRatioCeiling = DEFAULT_OFFLINE_RATIO_CEILING,
     weights = DEFAULT_WEIGHTS,
     thresholds = DEFAULT_THRESHOLDS,
 } = {}) {
-    return candidates
+    const scored = candidates
         .filter(c => passesOfflineFilter(c, offlineRatioCeiling))
         .map(c => ({ ...c, score: scoreCandidate(c, weights, thresholds), tier: tierOf(c, thresholds) }))
-        .sort((a, b) => b.score - a.score)
-        .slice(0, limit);
+        .sort((a, b) => b.score - a.score);
+
+    return allocateWithQuota(scored, { limit, flaggedQuota });
 }

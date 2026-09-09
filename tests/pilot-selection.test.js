@@ -16,6 +16,9 @@ import {
     shortlist,
     passesOfflineFilter,
     finalizeRanking,
+    splitFlaggedPool,
+    flaggedQuotaFor,
+    allocateWithQuota,
 } from '../service/pilot-selection.js';
 
 test('computeOfflineRatio counts citations with no url as offline', () => {
@@ -212,4 +215,78 @@ test('finalizeRanking sorts the survivors by score and applies limit, tagging ti
 
 test('DEFAULT_THRESHOLDS keeps the fresh window inside the stale window', () => {
     assert.ok(DEFAULT_THRESHOLDS.freshDays < DEFAULT_THRESHOLDS.staleDays);
+});
+
+// --- The flagged quota ---
+
+test('flaggedQuotaFor rounds the share and clamps it to 0..1', () => {
+    assert.equal(flaggedQuotaFor(100, 0.4), 40);
+    assert.equal(flaggedQuotaFor(100, 0), 0);
+    assert.equal(flaggedQuotaFor(100, 2), 100);
+    assert.equal(flaggedQuotaFor(100, -1), 0);
+    assert.equal(flaggedQuotaFor(7, 0.4), 3);
+});
+
+test('splitFlaggedPool separates the pools, each keeping its order', () => {
+    const { flagged, rest } = splitFlaggedPool([
+        { title: 'a', failedVerification: true },
+        { title: 'b' },
+        { title: 'c', failedVerification: true },
+    ]);
+    assert.deepEqual(flagged.map(c => c.title), ['a', 'c']);
+    assert.deepEqual(rest.map(c => c.title), ['b']);
+});
+
+// The reason the quota exists: current-events articles score higher (they get
+// two boosts), and a brand-new article has not existed long enough for anyone
+// to read a source and tag it, so the two populations barely overlap. Ranking
+// alone therefore does not blend them — it drops the flagged ones.
+test('without a quota the higher-scoring current-events pool crowds flagged articles out', () => {
+    const candidates = [
+        ...Array.from({ length: 5 }, (_, i) => ({
+            title: `breaking-${i}`, editCount: 100, ageDays: 2, burstRatio: 0.95,
+            burstBaseline: 3 / 14, citationCount: 5, offlineRatio: 0,
+        })),
+        { title: 'cockroach', editCount: 30, ageDays: 4000, failedVerification: true, citationCount: 5, offlineRatio: 0 },
+    ];
+
+    const noQuota = finalizeRanking(candidates, { limit: 5 });
+    assert.ok(!noQuota.some(c => c.failedVerification), 'crowded out entirely');
+
+    const withQuota = finalizeRanking(candidates, { limit: 5, flaggedQuota: 2 });
+    assert.equal(withQuota.filter(c => c.failedVerification).length, 1,
+        'the quota is a floor — it takes every flagged article available, not a padded two');
+    assert.equal(withQuota.length, 5, 'and the remaining slots still get filled');
+});
+
+test('allocateWithQuota reserves flagged slots but still returns one score-ordered list', () => {
+    const scored = [
+        { title: 'top', score: 100 },
+        { title: 'mid', score: 90 },
+        { title: 'flagged-low', score: 10, failedVerification: true },
+    ];
+    const got = allocateWithQuota(scored, { limit: 2, flaggedQuota: 1 });
+    assert.deepEqual(got.map(c => c.title), ['top', 'flagged-low'],
+        'one reserved slot, one earned; output sorted by score');
+});
+
+test('allocateWithQuota never exceeds the limit or double-counts a flagged article', () => {
+    const scored = [
+        { title: 'a', score: 30, failedVerification: true },
+        { title: 'b', score: 20, failedVerification: true },
+        { title: 'c', score: 10 },
+    ];
+    const got = allocateWithQuota(scored, { limit: 2, flaggedQuota: 2 });
+    assert.equal(got.length, 2);
+    assert.deepEqual(got.map(c => c.title), ['a', 'b']);
+});
+
+test('an unfillable quota leaves its slots to the general ranking rather than padding', () => {
+    const scored = [
+        { title: 'a', score: 30 },
+        { title: 'b', score: 20 },
+        { title: 'c', score: 10 },
+    ];
+    const got = allocateWithQuota(scored, { limit: 3, flaggedQuota: 2 });
+    assert.deepEqual(got.map(c => c.title), ['a', 'b', 'c']);
 });

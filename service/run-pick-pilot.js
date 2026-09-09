@@ -55,7 +55,10 @@ import {
     finalizeRanking,
     passesOfflineFilter,
     computeOfflineRatio,
+    splitFlaggedPool,
+    flaggedQuotaFor,
     tierOf,
+    DEFAULT_FLAGGED_QUOTA_SHARE,
     DEFAULT_WEIGHTS,
     DEFAULT_THRESHOLDS,
     DEFAULT_OFFLINE_RATIO_CEILING,
@@ -74,6 +77,7 @@ export function parseCliArgs(argv) {
             'shortlist-size':    { type: 'string', default: '300' },
             max:                 { type: 'string', default: '100' },
             'offline-ratio-max': { type: 'string', default: String(DEFAULT_OFFLINE_RATIO_CEILING) },
+            'flagged-share':     { type: 'string', default: String(DEFAULT_FLAGGED_QUOTA_SHARE) },
             'scan-all':          { type: 'boolean', default: false },
             out:                 { type: 'string', default: 'pilot-100.txt' },
             'json-out':          { type: 'string' },
@@ -91,6 +95,7 @@ export function parseCliArgs(argv) {
         shortlistSize: Number(values['shortlist-size']),
         max: Number(values.max),
         offlineRatioMax: Number(values['offline-ratio-max']),
+        flaggedShare: Number(values['flagged-share']),
         scanAll: values['scan-all'],
         out: values.out,
         jsonOut: values['json-out'],
@@ -119,6 +124,13 @@ Options:
   --max <n>                 Final pilot size (default: 100)
   --offline-ratio-max <f>   Exclude articles whose citations are unfetchable
                              above this fraction, 0..1 (default: ${DEFAULT_OFFLINE_RATIO_CEILING})
+  --flagged-share <f>       Share of the pilot reserved for articles carrying
+                             {{failed verification}}, 0..1 (default: ${DEFAULT_FLAGGED_QUOTA_SHARE}).
+                             A floor, not a partition: those articles still
+                             compete for the remaining slots on score, and an
+                             unfillable reserve leaves its slots to the general
+                             ranking. Without it the much larger current-events
+                             population crowds them out entirely.
   --scan-all                Fetch the entire shortlist instead of stopping at
                              --max survivors. Ranks more exactly, costs roughly
                              twice the fetches.
@@ -140,6 +152,7 @@ function validate(opts, stderr) {
         ['shortlist-size', Number.isInteger(opts.shortlistSize) && opts.shortlistSize >= 1],
         ['max', Number.isInteger(opts.max) && opts.max >= 1],
         ['offline-ratio-max', opts.offlineRatioMax >= 0 && opts.offlineRatioMax <= 1],
+        ['flagged-share', opts.flaggedShare >= 0 && opts.flaggedShare <= 1],
     ];
     for (const [flag, ok] of checks) {
         if (!ok) {
@@ -156,7 +169,8 @@ function renderTitlesFile(ranked, opts, generatedAt) {
     return [
         `# Pilot mix: ${ranked.length} article(s), generated ${generatedAt}`,
         `# wiki=${opts.wiki} edit-window-days=${opts.editWindowDays} burst-window-days=${opts.burstWindowDays}`,
-        `# base-pool=${opts.basePool} shortlist-size=${opts.shortlistSize} offline-ratio-max=${opts.offlineRatioMax}`,
+        `# base-pool=${opts.basePool} shortlist-size=${opts.shortlistSize} `
+            + `offline-ratio-max=${opts.offlineRatioMax} flagged-share=${opts.flaggedShare}`,
         '# Biased toward current events (recently created, or edits concentrated in a burst, or',
         '# carrying {{current}}) and toward {{failed verification}}; biased against articles whose',
         '# citations are mostly unfetchable. See service/pilot-selection.js.',
@@ -233,9 +247,17 @@ export async function runPickPilot(opts, {
         const short = shortlist(merged, {
             size: opts.shortlistSize, weights: DEFAULT_WEIGHTS, thresholds: DEFAULT_THRESHOLDS,
         });
+        // Flagged articles are the scarcer population and score lower on
+        // average (they are rarely also breaking news), so they are checked
+        // first: otherwise the fetch budget is spent on current-events
+        // candidates and the quota has nothing left to fill itself from.
+        // Fetch order has no bearing on any article's score.
+        const flaggedQuota = flaggedQuotaFor(opts.max, opts.flaggedShare);
+        const { flagged, rest } = splitFlaggedPool(short);
         stderr.write(
-            `pick-pilot: checking citations, best-first, until ${opts.max} survive `
-            + `(at most ${short.length})...\n`
+            `pick-pilot: checking citations until ${opts.max} survive `
+            + `(${flaggedQuota} slot(s) reserved for {{failed verification}}; `
+            + `${flagged.length} such article(s) in the shortlist of ${short.length})...\n`
         );
 
         // core/urls.js logs one console.log per citation it examines — fine
@@ -248,10 +270,16 @@ export async function runPickPilot(opts, {
         console.log = () => {};
 
         const checked = [];
+        let flaggedSurvivors = 0;
         let survivors = 0;
         let fetchFailures = 0;
-        try {
-            for (const candidate of short) {
+
+        // `stopAt` is how many survivors this pass needs before it hands over
+        // to the next; the shortlist is already in priority order within each
+        // pool, so everything below a satisfied target is a worse candidate.
+        const checkPool = async (pool, stopAt, countsToward) => {
+            for (const candidate of pool) {
+                if (!opts.scanAll && countsToward() >= stopAt) return;
                 const { html } = await fetchArticle({
                     title: candidate.title, revisionId: candidate.revisionId,
                 });
@@ -265,22 +293,27 @@ export async function runPickPilot(opts, {
                     candidate.offlineRatio = computeOfflineRatio(citations);
                 }
                 checked.push(candidate);
-                if (passesOfflineFilter(candidate, opts.offlineRatioMax)) survivors++;
-                // Stop as soon as there are enough survivors: the shortlist is
-                // already in priority order, so everything below is a worse
-                // candidate on the cheap signals.
-                if (!opts.scanAll && survivors >= opts.max) break;
+                if (passesOfflineFilter(candidate, opts.offlineRatioMax)) {
+                    survivors++;
+                    if (candidate.failedVerification) flaggedSurvivors++;
+                }
             }
+        };
+
+        try {
+            await checkPool(flagged, flaggedQuota, () => flaggedSurvivors);
+            await checkPool(rest, opts.max, () => survivors);
         } finally {
             console.log = realLog;
         }
         stderr.write(
             `pick-pilot: fetched ${checked.length} article(s), ${fetchFailures} failed, `
-            + `${survivors} passed the offline filter\n`
+            + `${survivors} passed the offline filter (${flaggedSurvivors} flagged)\n`
         );
 
         ranked = finalizeRanking(checked, {
             limit: opts.max,
+            flaggedQuota,
             offlineRatioCeiling: opts.offlineRatioMax,
             weights: DEFAULT_WEIGHTS,
             thresholds: DEFAULT_THRESHOLDS,

@@ -14,6 +14,7 @@ test('parseCliArgs applies documented defaults', () => {
     assert.equal(opts.shortlistSize, 300);
     assert.equal(opts.max, 100);
     assert.equal(opts.offlineRatioMax, 0.6);
+    assert.equal(opts.flaggedShare, 0.4);
     assert.equal(opts.scanAll, false);
     assert.equal(opts.out, 'pilot-100.txt');
     assert.equal(opts.jsonOut, undefined);
@@ -23,20 +24,22 @@ test('parseCliArgs applies overrides', () => {
     const opts = parseCliArgs([
         'node', 'pick-pilot.js', '--wiki', 'frwiki', '--edit-window-days', '7',
         '--burst-window-days', '2', '--base-pool', '500', '--shortlist-size', '50',
-        '--max', '20', '--offline-ratio-max', '0.4', '--scan-all',
+        '--max', '20', '--offline-ratio-max', '0.4', '--flagged-share', '0.25', '--scan-all',
         '--out', 'out.txt', '--json-out', 'out.json',
     ]);
     assert.equal(opts.editWindowDays, 7);
     assert.equal(opts.burstWindowDays, 2);
     assert.equal(opts.max, 20);
     assert.equal(opts.offlineRatioMax, 0.4);
+    assert.equal(opts.flaggedShare, 0.25);
     assert.equal(opts.scanAll, true);
     assert.equal(opts.jsonOut, 'out.json');
 });
 
 test('HELP_TEXT documents every flag and the Toolforge-job memory caveat', () => {
     for (const flag of ['--wiki', '--edit-window-days', '--burst-window-days', '--base-pool',
-        '--shortlist-size', '--max', '--offline-ratio-max', '--scan-all', '--out', '--json-out']) {
+        '--shortlist-size', '--max', '--offline-ratio-max', '--flagged-share', '--scan-all',
+        '--out', '--json-out']) {
         assert.ok(HELP_TEXT.includes(flag), `HELP_TEXT missing ${flag}`);
     }
     assert.match(HELP_TEXT, /toolforge jobs run/);
@@ -136,7 +139,7 @@ const baseIo = (overrides = {}) => ({
 
 const baseOpts = (overrides = {}) => ({
     wiki: 'enwiki', editWindowDays: 14, burstWindowDays: 3, basePool: 1000,
-    shortlistSize: 10, max: 10, offlineRatioMax: 0.6, scanAll: false,
+    shortlistSize: 10, max: 10, offlineRatioMax: 0.6, flaggedShare: 0.4, scanAll: false,
     out: 'pilot.txt', jsonOut: undefined,
     ...overrides,
 });
