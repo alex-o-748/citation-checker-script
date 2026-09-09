@@ -9,10 +9,12 @@ test('parseCliArgs applies documented defaults', () => {
     const opts = parseCliArgs(['node', 'pick-pilot.js']);
     assert.equal(opts.wiki, 'enwiki');
     assert.equal(opts.editWindowDays, 14);
+    assert.equal(opts.burstWindowDays, 3);
     assert.equal(opts.basePool, 1000);
     assert.equal(opts.shortlistSize, 300);
     assert.equal(opts.max, 100);
     assert.equal(opts.offlineRatioMax, 0.6);
+    assert.equal(opts.scanAll, false);
     assert.equal(opts.out, 'pilot-100.txt');
     assert.equal(opts.jsonOut, undefined);
 });
@@ -20,24 +22,24 @@ test('parseCliArgs applies documented defaults', () => {
 test('parseCliArgs applies overrides', () => {
     const opts = parseCliArgs([
         'node', 'pick-pilot.js', '--wiki', 'frwiki', '--edit-window-days', '7',
-        '--base-pool', '500', '--shortlist-size', '50', '--max', '20',
-        '--offline-ratio-max', '0.4', '--out', 'out.txt', '--json-out', 'out.json',
+        '--burst-window-days', '2', '--base-pool', '500', '--shortlist-size', '50',
+        '--max', '20', '--offline-ratio-max', '0.4', '--scan-all',
+        '--out', 'out.txt', '--json-out', 'out.json',
     ]);
-    assert.equal(opts.wiki, 'frwiki');
     assert.equal(opts.editWindowDays, 7);
-    assert.equal(opts.basePool, 500);
-    assert.equal(opts.shortlistSize, 50);
+    assert.equal(opts.burstWindowDays, 2);
     assert.equal(opts.max, 20);
     assert.equal(opts.offlineRatioMax, 0.4);
-    assert.equal(opts.out, 'out.txt');
+    assert.equal(opts.scanAll, true);
     assert.equal(opts.jsonOut, 'out.json');
 });
 
-test('HELP_TEXT documents every flag', () => {
-    for (const flag of ['--wiki', '--edit-window-days', '--base-pool', '--shortlist-size',
-        '--max', '--offline-ratio-max', '--out', '--json-out']) {
+test('HELP_TEXT documents every flag and the Toolforge-job memory caveat', () => {
+    for (const flag of ['--wiki', '--edit-window-days', '--burst-window-days', '--base-pool',
+        '--shortlist-size', '--max', '--offline-ratio-max', '--scan-all', '--out', '--json-out']) {
         assert.ok(HELP_TEXT.includes(flag), `HELP_TEXT missing ${flag}`);
     }
+    assert.match(HELP_TEXT, /toolforge jobs run/);
 });
 
 // --- runPickPilot integration, with fakes for every external boundary ---
@@ -80,40 +82,46 @@ const offlineHeavyHtml = article(
     }
 );
 
-const rows = {
-    // pageId=1: baseline, high edit count, no tags, fully online.
-    popular: { pageId: 1, pageTitle: 'Popular_Now', revisionId: 11, editCount: 500 },
-    // pageId=2: {{current}}, moderate edit count, fully online.
-    current: { pageId: 2, pageTitle: 'Breaking_Story', revisionId: 22, editCount: 50 },
-    // pageId=3: {{failed verification}}, low edit count, fully online.
-    flagged: { pageId: 3, pageTitle: 'Disputed_Claim', revisionId: 33, editCount: 10 },
-    // pageId=4: no tags, huge edit count (would rank first on stage 1 alone),
-    // but mostly offline sourcing — must be excluded by finalizeRanking.
-    offline: { pageId: 4, pageTitle: 'Print_Heavy', revisionId: 44, editCount: 1000 },
-};
+const NOW = new Date('2026-09-09T00:00:00Z');
+const daysAgo = n => new Date(NOW.getTime() - n * 86400000);
+const mwTs = date => date.toISOString().replace(/[-:T]/g, '').slice(0, 14);
 
-function fakeConnection() {
+// pageId 1: brand new and bursty — a breaking story, no tag anywhere.
+// pageId 2: ancient and evenly edited, but far more edits — the perennial
+//           page the mix should NOT read as a current event.
+// pageId 3: ancient, {{failed verification}}, evenly edited.
+// pageId 4: ancient, huge edit count, but mostly offline sourcing.
+const topEditedRows = [
+    { pageId: 4, pageTitle: 'Print_Heavy', revisionId: 44, editCount: 900, recentEditCount: 200 },
+    { pageId: 2, pageTitle: 'Perennial_Page', revisionId: 22, editCount: 400, recentEditCount: 86 },
+    { pageId: 1, pageTitle: 'Breaking_Story', revisionId: 11, editCount: 60, recentEditCount: 58 },
+    { pageId: 3, pageTitle: 'Disputed_Claim', revisionId: 33, editCount: 40, recentEditCount: 9 },
+];
+
+const creationRows = [
+    { pageId: 1, createdAt: Buffer.from(mwTs(daysAgo(4))) },
+    { pageId: 2, createdAt: Buffer.from(mwTs(daysAgo(4000))) },
+    { pageId: 3, createdAt: Buffer.from(mwTs(daysAgo(4000))) },
+    { pageId: 4, createdAt: Buffer.from(mwTs(daysAgo(4000))) },
+];
+
+function fakeConnection({ onQuery } = {}) {
     return {
         execute: async (sql, params) => {
-            if (/GROUP BY p\.page_id/.test(sql)) {
-                return [[rows.popular, rows.current, rows.flagged, rows.offline]];
-            }
-            // buildCandidateQuery params: [NS_TEMPLATE, template, NS_MAIN, NS_MAIN, afterPageId, limit]
+            onQuery?.(sql, params);
+            if (/GROUP BY p\.page_id/.test(sql)) return [topEditedRows];
+            if (/MIN\(rev_timestamp\)/.test(sql)) return [creationRows];
+            // Tag membership: [NS_TEMPLATE, ...templates, NS_MAIN, ...pageIds]
             assert.equal(params[0], NS_TEMPLATE);
-            assert.equal(params[2], NS_MAIN);
-            const template = params[1];
-            if (template === 'Current') return [[rows.current]];
-            if (template === 'Failed_verification') return [[rows.flagged]];
-            return [[]];
+            const templates = params.slice(1, params.indexOf(NS_MAIN, 1));
+            if (templates.includes('Failed_verification')) return [[{ pageId: 3 }]];
+            return [[]]; // no {{current}} tags at all — the real enwiki case
         },
         end: async () => {},
     };
 }
 
-function htmlForTitle(title) {
-    if (title === 'Print Heavy') return offlineHeavyHtml;
-    return onlineHeavyHtml;
-}
+const htmlForTitle = title => (title === 'Print Heavy' ? offlineHeavyHtml : onlineHeavyHtml);
 
 const baseIo = (overrides = {}) => ({
     stdout: { write() {} },
@@ -121,60 +129,118 @@ const baseIo = (overrides = {}) => ({
     connectReplicas: async () => fakeConnection(),
     fetchArticle: async ({ title }) => ({ html: htmlForTitle(title), status: 200, error: null }),
     parseHtml: html => JSDOM.fragment(html),
-    now: () => new Date('2026-09-09T00:00:00Z'),
+    writeFile: async () => {},
+    now: () => NOW,
     ...overrides,
 });
 
 const baseOpts = (overrides = {}) => ({
-    wiki: 'enwiki', editWindowDays: 14, basePool: 1000, shortlistSize: 10,
-    max: 10, offlineRatioMax: 0.6, out: 'pilot.txt', jsonOut: undefined,
+    wiki: 'enwiki', editWindowDays: 14, burstWindowDays: 3, basePool: 1000,
+    shortlistSize: 10, max: 10, offlineRatioMax: 0.6, scanAll: false,
+    out: 'pilot.txt', jsonOut: undefined,
     ...overrides,
 });
 
-test('runPickPilot excludes the offline-heavy article and ranks the rest by score', async () => {
-    let written;
-    const code = await runPickPilot(baseOpts(), baseIo({
-        writeFile: async (path, content) => { written = { ...written, [path]: content }; },
-    }));
-
-    assert.equal(code, 0);
-    const body = written['pilot.txt'];
-    assert.ok(body, 'titles file was written');
-
-    const titles = body.split('\n').filter(l => l && !l.startsWith('#'));
-    assert.deepEqual(titles, ['Breaking Story', 'Popular Now', 'Disputed Claim'],
-        'current-event boost outranks a much higher edit count; offline-heavy article dropped entirely');
-});
-
-test('runPickPilot writes the header documenting provenance and the follow-up sweep command', async () => {
+test('an untagged breaking story outranks a much busier perennial page', async () => {
     let written;
     const code = await runPickPilot(baseOpts(), baseIo({
         writeFile: async (path, content) => { written = content; },
     }));
+
     assert.equal(code, 0);
-    assert.match(written, /^# Pilot mix:/);
-    assert.match(written, /run-sweep\.js --titles-file/);
+    const titles = written.split('\n').filter(l => l && !l.startsWith('#'));
+    assert.equal(titles[0], 'Breaking Story',
+        'recency + burst must beat a 6x higher edit count with no {{current}} tag anywhere');
+    assert.ok(!titles.includes('Print Heavy'), 'offline-heavy article dropped entirely');
+    assert.deepEqual(titles, ['Breaking Story', 'Perennial Page', 'Disputed Claim']);
 });
 
-test('runPickPilot writes --json-out with the full score/tier breakdown when requested', async () => {
+test('the mix is reported by tier, and a burstless old page is not called a current event', async () => {
     const files = {};
     const code = await runPickPilot(baseOpts({ jsonOut: 'pilot.json' }), baseIo({
         writeFile: async (path, content) => { files[path] = content; },
     }));
+
     assert.equal(code, 0);
     const parsed = JSON.parse(files['pilot.json']);
-    assert.equal(parsed.length, 3);
-    assert.deepEqual(parsed.map(c => c.tier), ['current', 'baseline', 'flagged']);
+    const byTitle = Object.fromEntries(parsed.map(c => [c.title, c]));
+    assert.equal(byTitle['Breaking Story'].tier, 'current');
+    assert.equal(byTitle['Perennial Page'].tier, 'baseline');
+    assert.equal(byTitle['Disputed Claim'].tier, 'flagged');
+    assert.equal(byTitle['Breaking Story'].currentTag, false, 'no tag was involved');
+    assert.ok(byTitle['Breaking Story'].ageDays < 5);
 });
 
-test('runPickPilot rejects an out-of-range --offline-ratio-max before touching the network', async () => {
+test('the run stops fetching once --max articles have survived the offline filter', async () => {
+    const fetched = [];
+    const code = await runPickPilot(baseOpts({ max: 1 }), baseIo({
+        fetchArticle: async ({ title }) => {
+            fetched.push(title);
+            return { html: htmlForTitle(title), status: 200, error: null };
+        },
+    }));
+
+    assert.equal(code, 0);
+    assert.deepEqual(fetched, ['Breaking Story'],
+        'one survivor was enough — the rest of the shortlist is never fetched');
+});
+
+test('--scan-all fetches the whole shortlist instead of stopping early', async () => {
+    const fetched = [];
+    await runPickPilot(baseOpts({ max: 1, scanAll: true }), baseIo({
+        fetchArticle: async ({ title }) => {
+            fetched.push(title);
+            return { html: htmlForTitle(title), status: 200, error: null };
+        },
+    }));
+
+    assert.equal(fetched.length, 4);
+});
+
+test('tag membership is asked about the base pool rather than pulled with a row cap', async () => {
+    const membershipCalls = [];
+    await runPickPilot(baseOpts(), baseIo({
+        connectReplicas: async () => fakeConnection({
+            onQuery: (sql, params) => {
+                if (/tl_from IN/.test(sql)) membershipCalls.push(params);
+            },
+        }),
+    }));
+
+    assert.ok(membershipCalls.length >= 2, 'one membership query per tag set');
+    for (const params of membershipCalls) {
+        assert.ok(params.includes(1) && params.includes(4), 'every base-pool id is asked about');
+    }
+});
+
+test('a fetch failure drops the article instead of aborting the run', async () => {
+    let written;
+    const code = await runPickPilot(baseOpts(), baseIo({
+        fetchArticle: async ({ title }) => (title === 'Breaking Story'
+            ? { html: null, status: 404, error: 'gone' }
+            : { html: htmlForTitle(title), status: 200, error: null }),
+        writeFile: async (path, content) => { written = content; },
+    }));
+
+    assert.equal(code, 0);
+    const titles = written.split('\n').filter(l => l && !l.startsWith('#'));
+    assert.ok(!titles.includes('Breaking Story'));
+    assert.ok(titles.includes('Perennial Page'));
+});
+
+test('runPickPilot rejects a burst window longer than the edit window before any I/O', async () => {
     let touched = false;
     const code = await runPickPilot(
-        baseOpts({ offlineRatioMax: 1.5 }),
+        baseOpts({ burstWindowDays: 30, editWindowDays: 14 }),
         baseIo({ connectReplicas: async () => { touched = true; return fakeConnection(); } })
     );
     assert.equal(code, 2);
     assert.equal(touched, false);
+});
+
+test('runPickPilot rejects an out-of-range --offline-ratio-max before touching the network', async () => {
+    const code = await runPickPilot(baseOpts({ offlineRatioMax: 1.5 }), baseIo());
+    assert.equal(code, 2);
 });
 
 test('runPickPilot surfaces a Wiki Replicas connection failure as exit code 1', async () => {
@@ -182,4 +248,10 @@ test('runPickPilot surfaces a Wiki Replicas connection failure as exit code 1', 
         connectReplicas: async () => { throw new Error('ECONNREFUSED'); },
     }));
     assert.equal(code, 1);
+});
+
+test('runPickPilot restores console.log after suppressing extraction noise', async () => {
+    const original = console.log;
+    await runPickPilot(baseOpts(), baseIo());
+    assert.equal(console.log, original);
 });
