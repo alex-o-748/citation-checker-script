@@ -884,21 +884,31 @@ function quoteExpectedFor(verdict, reasonType) {
 const RETRYABLE_STATUS = /^(?:HTTP |[^:()]*API request failed \()(429|500|502|503|504)\b/;
 const RETRYABLE_NETWORK = /timeout|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|socket hang up/i;
 
-// vLLM (Lift Wing's backend for open-weight models) reports a genuine
-// input-validation failure — the prompt exceeds the model's context
-// window — as an HTTP 500, which would otherwise match RETRYABLE_STATUS
-// above. Retrying buys nothing: the same oversized prompt produces the
-// identical error on every attempt, so retrying just burns up to ~30s of
-// backoff before failing anyway, on a request that will never succeed no
-// matter how many times it's sent. Real incident, 2026-08-24: exactly this
-// on a live sweep against tf-llm-router. Exported (not just used inline
-// below) so service/verifier.js can recognize this specific failure after
-// withRetry gives up and record it as a per-citation result instead of
-// treating it as a run-halting error the way an unrecognized failure is.
-const CONTEXT_LENGTH_EXCEEDED = /maximum context length|VLLMValidationError/i;
+// Two distinct causes, one operational class: this *particular* source is too
+// big to send, and no number of retries or later citations changes that.
+//
+// Retrying buys nothing either way — the same oversized prompt produces the
+// identical error on every attempt, burning up to ~30s of backoff on a
+// request that can never succeed. Exported (not just used inline below) so
+// service/verifier.js can recognize the failure after withRetry gives up and
+// record it as a per-citation result rather than the run-halting error an
+// unrecognized failure becomes.
+//
+//   - `maximum context length` / `VLLMValidationError` — the model's context
+//     window, reported by vLLM as an HTTP 500 (the 2026-08-24 incident above).
+//   - `too large to send` — core/providers.js's 413 branch, a byte cap on the
+//     request body enforced by the proxy before the model ever sees it.
+//
+// The second was missing here, and the omission cost a run: a 100-article
+// sweep on 2026-09-09 halted at article 13 because one oversized source threw
+// a 413, which no detector recognized, so service/run-sweep.js's
+// "unrecognized error halts the batch" rule discarded the remaining 87
+// articles. That rule is right for an exhausted 429 or a spent budget, and
+// exactly wrong for one citation's fat PDF.
+const SOURCE_TOO_LARGE = /maximum context length|VLLMValidationError|too large to send/i;
 
-function isContextLengthError(error) {
-    return CONTEXT_LENGTH_EXCEEDED.test(error?.message ?? '');
+function isSourceTooLargeError(error) {
+    return SOURCE_TOO_LARGE.test(error?.message ?? '');
 }
 
 function defaultSleep(ms) {
@@ -908,7 +918,7 @@ function defaultSleep(ms) {
 function isRetryableError(error) {
     const msg = error?.message ?? '';
 
-    if (isContextLengthError(error)) return false;
+    if (isSourceTooLargeError(error)) return false;
 
     // Node's fetch (undici) always throws this exact generic message for a
     // network/transport-layer failure — DNS, connection reset, refused, TLS
