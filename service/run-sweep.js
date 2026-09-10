@@ -164,11 +164,14 @@ Options:
   --resume              Continue into an existing --out CSV instead of starting
                          a new one: every article already present in it is
                          skipped and new findings are appended. For picking a
-                         long sweep back up after it was killed. Articles that
-                         were mid-flight when it stopped are re-checked from
-                         scratch, so a resumed file can hold duplicate rows for
-                         those few — dedupe on (page_title, citation_number) if
-                         it matters.
+                         long sweep back up after it was killed. "Already
+                         present" means at least one row, not necessarily a
+                         complete one: an article that was mid-flight when the
+                         run died is treated as done and keeps only the
+                         citations it got through. That undercounts one or two
+                         articles per interruption rather than duplicating
+                         them — check the CSV's per-article row counts against
+                         the article if completeness matters.
   --out <path>          CSV output path (default: findings.csv)
   --help, -h            Show this help and exit.
 
@@ -337,10 +340,16 @@ export async function runSweep(opts, {
     //
     // --resume picks such a run back up. Article granularity, read back from
     // the CSV itself rather than a sidecar file that could disagree with it:
-    // whichever articles have rows are considered done. Articles that were
-    // mid-flight when the run died are re-checked in full, so their partial
-    // rows are duplicated rather than completed — bounded to the few articles
-    // in flight, and stated in --help rather than papered over.
+    // whichever articles have any rows are considered done.
+    //
+    // The cost of reading completion off the rows themselves is that a
+    // partially-written article is indistinguishable from a finished one, so
+    // an article interrupted mid-flight is skipped with only the citations it
+    // managed. Bounded to however many were in flight (concurrency, so a
+    // handful), and it undercounts rather than duplicating. Distinguishing
+    // the two would need a completion marker per article, which is a sidecar
+    // by another name — deliberately not built until an undercount of that
+    // size actually matters to someone.
     let resumeSkipped = 0;
     let existingCsv = null;
     if (opts.resume) {
