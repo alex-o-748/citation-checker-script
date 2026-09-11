@@ -1,6 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { fetchSourceContent, logVerification } from '../core/worker.js';
+import {
+    fetchSourceContent,
+    logVerification,
+    DEFAULT_SOURCE_FETCH_TIMEOUT_MS,
+} from '../core/worker.js';
 
 function mockFetch(impl) {
   const original = globalThis.fetch;
@@ -349,4 +353,72 @@ test('logVerification posts payload and swallows failures', async () => {
   } finally {
     mock.restore();
   }
+});
+
+// --- Fetch timeouts ---
+//
+// The bug these pin: core/wikipedia.js bounded its article fetches after hung
+// connections stalled a batch, but source fetching had no timeout at all. It
+// is the worse place to lack one, because service/run-sweep.js fetches
+// serially — one hung connection stopped a 100-article sweep dead at article
+// 13 for sixteen hours, with the job still alive and no error anywhere.
+
+test('fetchSourceContent aborts a hung proxy fetch instead of waiting forever', async () => {
+    let sawSignal = null;
+    global.fetch = (url, options) => {
+        sawSignal = options?.signal;
+        // Never resolves on its own: only the abort can end this.
+        return new Promise((_resolve, reject) => {
+            options.signal.addEventListener('abort',
+                () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })));
+        });
+    };
+
+    const result = await fetchSourceContent('https://slow.example/x', null, { timeoutMs: 10 });
+
+    assert.ok(sawSignal, 'an AbortSignal is passed to fetch');
+    assert.equal(result.content, null);
+    assert.match(result.error, /timed out after 10ms/);
+    assert.equal(result.status, null);
+});
+
+test('a timeout is reported as a timeout, not as a generic network error', async () => {
+    global.fetch = (url, options) => new Promise((_r, reject) => {
+        options.signal.addEventListener('abort',
+            () => reject(Object.assign(new Error('This operation was aborted'), { name: 'AbortError' })));
+    });
+
+    const events = [];
+    const result = await fetchSourceContent('https://slow.example/x', null, {
+        timeoutMs: 10,
+        onRequest: e => events.push(e),
+    });
+
+    // "aborted" alone would read as a cancelled request rather than a stall;
+    // the whole point is that an operator can see which URL hung and for how
+    // long.
+    assert.match(result.error, /timed out/);
+    assert.match(events[0].error, /timed out/);
+    assert.equal(events[0].ok, false);
+});
+
+test('the timer is cleared on a fast response, so the process can exit', async () => {
+    global.fetch = async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({ content: 'x'.repeat(200), status: 200 }),
+    });
+
+    const result = await fetchSourceContent('https://fast.example/x', null, { timeoutMs: 50_000 });
+
+    assert.ok(result.content, 'a normal fetch is unaffected by the timeout');
+    // An uncleared 50s timer would keep the event loop alive; node --test
+    // hanging after this file is the symptom if this regresses.
+});
+
+test('the default timeout is generous enough for the two-hop fetch path', async () => {
+    // Client -> tf-source-fetcher -> publisher. Cutting the client off before
+    // the fetcher's own timeout would abandon work it was about to return.
+    assert.ok(DEFAULT_SOURCE_FETCH_TIMEOUT_MS >= 30_000);
+    assert.ok(DEFAULT_SOURCE_FETCH_TIMEOUT_MS <= 120_000);
 });

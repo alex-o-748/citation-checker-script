@@ -11,6 +11,7 @@ import {
     main,
 } from '../service/run-sweep.js';
 import { ProviderAuthError } from '../service/verifier.js';
+import { rowsToCsv } from '../service/csv-report.js';
 
 test('parseCliArgs defaults match run-replay.js\'s conventions (liftwing, no key needed)', () => {
     const opts = parseCliArgs(['node', 'sweep.js']);
@@ -139,7 +140,9 @@ const baseIo = (overrides = {}) => ({
         text: JSON.stringify({ support_score: 90, verdict: 'SUPPORTED', source_quote: '', comments: 'ok' }),
         usage: { input: 10, output: 5 },
     }),
-    writeCsvReportFn: async () => {},
+    appendFindingFn: async () => {},
+    startCsvFn: async () => {},
+    readCsvFn: async () => { throw new Error('ENOENT'); },
     stdout: { write() {} },
     stderr: { write() {} },
     ...overrides,
@@ -155,7 +158,10 @@ const baseOpts = (overrides = {}) => ({
 test('a full sweep writes one finding per solo citation plus one per completed group', async () => {
     let written;
     const code = await runSweep(baseOpts(), baseIo({
-        writeCsvReportFn: async (findings, path) => { written = { findings, path }; },
+        appendFindingFn: async (path, finding) => {
+            written ??= { findings: [], path };
+            written.findings.push(finding);
+        },
     }));
 
     assert.equal(code, 0);
@@ -183,7 +189,7 @@ test('a group with only one usable source is skipped and contributes no collecti
         fetchSourceFn: async url => (url === 'https://c.example/x'
             ? { content: null, status: 403, error: 'forbidden' }
             : { content: `text of ${url}`, status: 200, error: null }),
-        writeCsvReportFn: async findings => { written = findings; },
+        appendFindingFn: async (_path, finding) => { (written ??= []).push(finding); },
     }));
 
     assert.equal(code, 0);
@@ -224,7 +230,7 @@ test('--titles-file bypasses Wiki Replicas entirely and checks the listed titles
             seenTitle = { title, revisionId };
             return { html: okArticleHtml, status: 200, error: null };
         },
-        writeCsvReportFn: async findings => { written = findings; },
+        appendFindingFn: async (_path, finding) => { (written ??= []).push(finding); },
     }));
 
     assert.equal(code, 0);
@@ -306,20 +312,24 @@ test('a Wiki Replicas connection failure is a fatal error', async () => {
 
 test('a ProviderAuthError halts the sweep and still writes the CSV with what was computed so far', async () => {
     let attempts = 0;
-    let written;
+    const written = [];
+    let started = null;
     const stderrChunks = [];
     const code = await runSweep(baseOpts(), baseIo({
         makeModelCallerFn: () => async () => {
             attempts++;
             throw new ProviderAuthError('publicai: insufficient wallet balance', { status: 402 });
         },
-        writeCsvReportFn: async findings => { written = findings; },
+        appendFindingFn: async (_path, finding) => { written.push(finding); },
+        startCsvFn: async (path, header) => { started = { path, header }; },
         stderr: { write: s => stderrChunks.push(s) },
     }));
 
     assert.equal(code, 3);
     assert.equal(attempts, 1, 'the sweep stops at the first auth/billing error');
-    assert.deepEqual(written, [], 'nothing was computed before the halt, so the CSV is written empty, not skipped');
+    assert.deepEqual(written, [], 'nothing was computed before the halt');
+    assert.match(started.header, /^page_title,/,
+        'the CSV is still created with its header, not left absent');
     assert.match(stderrChunks.join(''), /halting/);
 });
 
@@ -331,20 +341,23 @@ test('a non-auth, non-retryable error also halts and still writes the CSV, at ex
     // 429 reaches this same catch block after withRetry exhausts its
     // attempts; the halt path doesn't care which kind of error it was.
     let attempts = 0;
-    let written;
+    const written = [];
+    let started = null;
     const stderrChunks = [];
     const code = await runSweep(baseOpts(), baseIo({
         makeModelCallerFn: () => async () => {
             attempts++;
             throw new Error('Lift Wing: unexpected response shape');
         },
-        writeCsvReportFn: async findings => { written = findings; },
+        appendFindingFn: async (_path, finding) => { written.push(finding); },
+        startCsvFn: async (path, header) => { started = { path, header }; },
         stderr: { write: s => stderrChunks.push(s) },
     }));
 
     assert.equal(code, 4);
     assert.equal(attempts, 1, 'the sweep stops at the first unrecoverable error');
-    assert.deepEqual(written, [], 'nothing was computed before the halt, so the CSV is written empty, not skipped');
+    assert.deepEqual(written, [], 'nothing was computed before the halt');
+    assert.match(started.header, /^page_title,/, 'the CSV is still created with its header');
     assert.match(stderrChunks.join(''), /halting/);
 });
 
@@ -391,7 +404,7 @@ test('a context-length-exceeded failure records an ERROR finding and does NOT ha
                 usage: { input: 10, output: 5 },
             };
         },
-        writeCsvReportFn: async findings => { written = findings; },
+        appendFindingFn: async (_path, finding) => { (written ??= []).push(finding); },
     }));
 
     assert.equal(code, 0, 'a context-length failure must not halt the sweep the way an unrecognized error does');
@@ -421,7 +434,7 @@ test('halting stops new dispatch but keeps findings already in flight when the h
                 usage: { input: 10, output: 5 },
             };
         },
-        writeCsvReportFn: async findings => { written = findings; },
+        appendFindingFn: async (_path, finding) => { (written ??= []).push(finding); },
     }));
 
     assert.equal(code, 4);
@@ -462,10 +475,10 @@ test('a ProviderAuthError still closes an open ToolsDB connection', async () => 
 });
 
 test('an article that fails to fetch is counted but contributes no citations', async () => {
-    let written;
+    const written = [];
     const code = await runSweep(baseOpts(), baseIo({
         fetchArticle: async () => ({ html: null, status: 404, error: 'not found' }),
-        writeCsvReportFn: async findings => { written = findings; },
+        appendFindingFn: async (_path, finding) => { written.push(finding); },
     }));
     assert.equal(code, 0);
     assert.deepEqual(written, []);
@@ -535,4 +548,108 @@ test('--help prints usage and exits 0 without connecting to anything', async () 
     const code = await main(['node', 'sweep.js', '--help'], { stdout });
     assert.equal(code, 0);
     assert.equal(stdout.chunks.join(''), HELP_TEXT);
+});
+
+// --- Incremental writing and --resume ---
+
+test('findings are appended as they are computed, not buffered until the end', async () => {
+    const events = [];
+    await runSweep(baseOpts(), baseIo({
+        appendFindingFn: async (_path, finding) => events.push(`append:${finding.citationNumber}`),
+        makeModelCallerFn: () => async () => {
+            events.push('call');
+            return {
+                text: JSON.stringify({ support_score: 90, verdict: 'SUPPORTED', source_quote: '', comments: 'ok' }),
+                usage: { input: 10, output: 5 },
+            };
+        },
+    }));
+
+    // A row must land between model calls, not all of them after the last
+    // one: that interleaving is the whole point -- a SIGKILL partway through
+    // has to leave the earlier findings on disk.
+    const firstAppend = events.indexOf(events.find(e => e.startsWith('append:')));
+    const lastCall = events.lastIndexOf('call');
+    assert.ok(firstAppend < lastCall, `expected appends interleaved with calls, got ${events.join(',')}`);
+});
+
+test('a fresh run starts the CSV with a header and no resume read', async () => {
+    let started = null;
+    let readAttempted = false;
+    const code = await runSweep(baseOpts(), baseIo({
+        startCsvFn: async (path, header) => { started = { path, header }; },
+        readCsvFn: async () => { readAttempted = true; return ''; },
+    }));
+
+    assert.equal(code, 0);
+    assert.equal(started.path, 'findings.csv');
+    assert.match(started.header, /^page_title,page_id,/);
+    assert.equal(readAttempted, false, '--resume was not passed, so the existing file is not consulted');
+});
+
+test('--resume skips articles already present in the CSV and does not rewrite the header', async () => {
+    let started = false;
+    const fetched = [];
+    const code = await runSweep(baseOpts({ resume: true, titlesFile: 'articles.txt', max: undefined }), baseIo({
+        readTitlesFile: async () => 'Done Article\nPending Article\n',
+        readCsvFn: async () => rowsToCsv([{ pageTitle: 'Done Article', citationNumber: '1' }]),
+        startCsvFn: async () => { started = true; },
+        fetchArticle: async ({ title }) => {
+            fetched.push(title);
+            return { html: okArticleHtml, status: 200, error: null };
+        },
+    }));
+
+    assert.equal(code, 0);
+    assert.deepEqual(fetched, ['Pending Article'], 'the finished article is not re-fetched');
+    assert.equal(started, false, 'appending to an existing file must not truncate it');
+});
+
+test('--resume on a run with nothing left exits cleanly without calling the model', async () => {
+    let calls = 0;
+    const code = await runSweep(baseOpts({ resume: true, titlesFile: 'articles.txt', max: undefined }), baseIo({
+        readTitlesFile: async () => 'Done Article\n',
+        readCsvFn: async () => rowsToCsv([{ pageTitle: 'Done Article', citationNumber: '1' }]),
+        makeModelCallerFn: () => async () => { calls++; return { text: '{}', usage: {} }; },
+    }));
+
+    assert.equal(code, 0);
+    assert.equal(calls, 0);
+});
+
+test('--resume against a file that does not exist yet behaves like a fresh run', async () => {
+    let started = false;
+    const code = await runSweep(baseOpts({ resume: true }), baseIo({
+        readCsvFn: async () => { throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' }); },
+        startCsvFn: async () => { started = true; },
+    }));
+
+    assert.equal(code, 0);
+    assert.equal(started, true, 'no file to resume from, so the header is written as usual');
+});
+
+// --- --wiki must reach the actual article fetch, not just permalinks ---
+//
+// service/run-sweep.js accepted --wiki and documented it as controlling the
+// fetch host, but never actually threaded it through: fetchArticle defaulted
+// straight to fetchArticleHtml, whose own default host is en.wikipedia.org.
+// A --wiki ruwiki run fetched every article from en.wikipedia.org regardless
+// — silently 404ing on nearly every title. This only shows up when
+// fetchArticle is NOT injected (every other test in this file injects its
+// own, which bypasses the bug entirely), so it needs its own test that mocks
+// global.fetch instead.
+test('--wiki reaches the REST host when fetchArticle is not injected (the hostForWiki bug)', async () => {
+    let seenUrl;
+    const originalFetch = global.fetch;
+    global.fetch = async url => {
+        seenUrl = url;
+        return { ok: false, status: 404 };
+    };
+    try {
+        const code = await runSweep(baseOpts({ wiki: 'ruwiki' }), baseIo({ fetchArticle: undefined }));
+        assert.equal(code, 0);
+    } finally {
+        global.fetch = originalFetch;
+    }
+    assert.match(seenUrl, /^https:\/\/ru\.wikipedia\.org\//);
 });

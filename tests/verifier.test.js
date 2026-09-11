@@ -145,7 +145,7 @@ test('a context-length-exceeded failure resolves to a per-citation ERROR result,
 
     assert.equal(attempts, 1, 'a context-length failure is permanent for this exact prompt — retrying it is pointless');
     assert.equal(result.verdict, 'ERROR');
-    assert.equal(result.reasonType, 'context_length');
+    assert.equal(result.reasonType, 'source_too_large');
     assert.match(result.rationale, /maximum context length/);
     assert.equal(result.usage, null, 'no tokens were actually generated');
     assert.equal(result.sourceQuote, null);
@@ -166,7 +166,7 @@ test('verifyGroup: a context-length-exceeded failure resolves to a per-group ERR
 
     assert.equal(result.skipped, false);
     assert.equal(result.verdict, 'ERROR');
-    assert.equal(result.reasonType, 'context_length');
+    assert.equal(result.reasonType, 'source_too_large');
     assert.equal(result.groupId, 'g1');
     assert.deepEqual(result.memberCitationNumbers, ['5', '6']);
     assert.equal(result.usage, null);

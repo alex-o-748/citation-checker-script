@@ -23,7 +23,7 @@ import { callProviderAPI } from '../core/providers.js';
 import { parseVerificationResult } from '../core/parsing.js';
 import { canonicalizeVerdict } from '../core/verdicts.js';
 import { verifyQuote } from '../core/quote.js';
-import { withRetry, isContextLengthError } from '../core/retry.js';
+import { withRetry, isSourceTooLargeError } from '../core/retry.js';
 import { groupSourceEntries, shouldSkipCollective } from '../core/groups.js';
 import { sourceCacheKey } from './claim-extractor.js';
 
@@ -146,12 +146,12 @@ export async function verifyCitation(claimText, source, {
         // whole batch over it would both be wrong; recorded as a normal
         // (non-throwing) result instead, same as the no-content
         // short-circuit above, so a runner just moves on to the next task.
-        if (isContextLengthError(error)) {
+        if (isSourceTooLargeError(error)) {
             return {
                 verdict: 'ERROR',
                 supportScore: null,
-                reasonType: 'context_length',
-                rationale: `Source too large for the model's context window: ${error.message}`,
+                reasonType: 'source_too_large',
+                rationale: `Source too large to verify: ${error.message}`,
                 sourceQuote: null,
                 quoteStatus: null,
                 usage: null,
@@ -256,15 +256,15 @@ export async function verifyGroup(members, {
         // See verifyCitation()'s matching branch: data-dependent and
         // permanent for this exact group's assembled sources, not evidence
         // the batch itself is broken.
-        if (isContextLengthError(error)) {
+        if (isSourceTooLargeError(error)) {
             return {
                 skipped: false,
                 groupId,
                 memberCitationNumbers,
                 verdict: 'ERROR',
                 supportScore: null,
-                reasonType: 'context_length',
-                rationale: `Source too large for the model's context window: ${error.message}`,
+                reasonType: 'source_too_large',
+                rationale: `Source too large to verify: ${error.message}`,
                 sourceQuote: null,
                 quoteStatus: null,
                 usage: null,

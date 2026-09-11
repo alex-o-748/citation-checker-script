@@ -17,6 +17,38 @@ import { isGoogleBooksUrl, parseArchiveOrgUrl } from './urls.js';
 const DEFAULT_USER_AGENT =
     'citation-checker-script (https://github.com/alex-o-748/citation-checker-script)';
 
+// Without a bound here, a single stalled connection hangs forever.
+//
+// core/wikipedia.js already carries this exact fix for *article* fetches,
+// added after a batch of 30 sequential fetches took roughly an hour on
+// Toolforge's shared egress. Source fetching had no equivalent, and it is the
+// worse place to lack one: service/run-sweep.js fetches sources serially, so
+// one hung connection stops the whole sweep rather than slowing it — observed
+// in practice on a 100-article run, frozen at article 13 for sixteen hours
+// with the job still nominally alive and the CSV not growing.
+//
+// Larger than core/wikipedia.js's 20s because this request is two hops: the
+// client waits on tf-source-fetcher, which is itself waiting on a
+// third-party publisher under its own FETCH_TIMEOUT_MS. Cutting the client
+// off first would abandon work the fetcher was about to return. Measured
+// per-citation fetch cost is ~2.6s, so this is roughly 20x the average and
+// only ever fires on a genuine hang.
+export const DEFAULT_SOURCE_FETCH_TIMEOUT_MS = 60000;
+
+// AbortController is available in every target: browsers (the userscript) and
+// Node 16+ (CLI, benchmark, batch pipeline).
+function withTimeout(timeoutMs) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    return { signal: controller.signal, done: () => clearTimeout(timer) };
+}
+
+function timeoutMessage(error, timeoutMs, what) {
+    return error?.name === 'AbortError'
+        ? `${what} timed out after ${timeoutMs}ms`
+        : (error?.message || String(error));
+}
+
 // `onRequest`, when supplied, is called once per outbound HTTP call this
 // function makes — `{ kind: 'source-fetch', url, status, ok, error, latencyMs,
 // bytes }` — regardless of success or failure. It exists for the Internet
@@ -24,7 +56,7 @@ const DEFAULT_USER_AGENT =
 // telemetry that the returned `{content, error, status}` summary can't carry;
 // no caller in this repo passed it before that runner, so omitting it is a
 // silent no-op and default behavior is unchanged.
-async function fetchViaProxy(fetchUrl, pageNum, workerBase, sourceUrl, onRequest) {
+async function fetchViaProxy(fetchUrl, pageNum, workerBase, sourceUrl, onRequest, timeoutMs) {
     const startedAt = Date.now();
     const report = (status, ok, error, bytes = null) => {
         onRequest?.({ kind: 'source-fetch', url: fetchUrl, status, ok, error, latencyMs: Date.now() - startedAt, bytes });
@@ -34,7 +66,13 @@ async function fetchViaProxy(fetchUrl, pageNum, workerBase, sourceUrl, onRequest
         if (pageNum) {
             proxyUrl += `&page=${pageNum}`;
         }
-        const response = await fetch(proxyUrl);
+        const { signal, done } = withTimeout(timeoutMs);
+        let response;
+        try {
+            response = await fetch(proxyUrl, { signal });
+        } finally {
+            done();
+        }
         const proxyStatus = response.status;
         let data = null;
         try {
@@ -74,17 +112,24 @@ async function fetchViaProxy(fetchUrl, pageNum, workerBase, sourceUrl, onRequest
         report(status, false, 'empty or too-short content');
         return { content: null, error: 'Source content was empty or too short to verify', status };
     } catch (error) {
-        report(null, false, error?.message || String(error));
-        console.error('Proxy fetch failed:', error);
-        return { content: null, error: error?.message || String(error), status: null };
+        const message = timeoutMessage(error, timeoutMs, 'Source fetch');
+        report(null, false, message);
+        console.error('Proxy fetch failed:', message);
+        return { content: null, error: message, status: null };
     }
 }
 
-async function findWaybackSnapshot(url, onRequest) {
+async function findWaybackSnapshot(url, onRequest, timeoutMs) {
     const startedAt = Date.now();
     try {
         const apiUrl = `https://archive.org/wayback/available?url=${encodeURIComponent(url)}`;
-        const response = await fetch(apiUrl, { headers: { 'User-Agent': DEFAULT_USER_AGENT } });
+        const { signal, done } = withTimeout(timeoutMs);
+        let response;
+        try {
+            response = await fetch(apiUrl, { headers: { 'User-Agent': DEFAULT_USER_AGENT }, signal });
+        } finally {
+            done();
+        }
         const data = await response.json();
         onRequest?.({ kind: 'wayback-availability', url, status: response.status, ok: response.ok, error: null, latencyMs: Date.now() - startedAt, bytes: null });
         const snapshot = data?.archived_snapshots?.closest;
@@ -92,8 +137,9 @@ async function findWaybackSnapshot(url, onRequest) {
             return `https://web.archive.org/web/${snapshot.timestamp}id_/${url}`;
         }
     } catch (e) {
-        onRequest?.({ kind: 'wayback-availability', url, status: null, ok: false, error: e?.message || String(e), latencyMs: Date.now() - startedAt, bytes: null });
-        console.warn('[CitationVerifier] Wayback availability check failed:', e?.message);
+        const message = timeoutMessage(e, timeoutMs, 'Wayback availability check');
+        onRequest?.({ kind: 'wayback-availability', url, status: null, ok: false, error: message, latencyMs: Date.now() - startedAt, bytes: null });
+        console.warn('[CitationVerifier] Wayback availability check failed:', message);
     }
     return null;
 }
@@ -109,7 +155,7 @@ async function findWaybackSnapshot(url, onRequest) {
 // which must never send traffic to a third-party publisher (see
 // service/ia-load-test.js). Default behavior (live-first, Wayback as a
 // fallback) is unchanged for the userscript, CLI, and batch pipeline.
-export async function fetchSourceContent(url, pageNum, { workerBase = 'https://publicai-proxy.alaexis.workers.dev', archiveFirst = false, onRequest } = {}) {
+export async function fetchSourceContent(url, pageNum, { workerBase = 'https://publicai-proxy.alaexis.workers.dev', archiveFirst = false, onRequest, timeoutMs = DEFAULT_SOURCE_FETCH_TIMEOUT_MS } = {}) {
     if (isGoogleBooksUrl(url)) {
         console.log('[CitationVerifier] Skipping Google Books URL:', url);
         return { content: null, error: 'Google Books URL skipped (no fetchable content)', status: null };
@@ -119,24 +165,24 @@ export async function fetchSourceContent(url, pageNum, { workerBase = 'https://p
     if (archiveInfo) {
         const rawUrl = `https://web.archive.org/web/${archiveInfo.timestamp}id_/${archiveInfo.originalUrl}`;
         console.log('[CitationVerifier] Fetching via Wayback raw endpoint');
-        return fetchViaProxy(rawUrl, pageNum, workerBase, url, onRequest);
+        return fetchViaProxy(rawUrl, pageNum, workerBase, url, onRequest, timeoutMs);
     }
 
     if (archiveFirst) {
-        const waybackUrl = await findWaybackSnapshot(url, onRequest);
+        const waybackUrl = await findWaybackSnapshot(url, onRequest, timeoutMs);
         if (!waybackUrl) {
             return { content: null, error: 'No Wayback snapshot available for this URL', status: null };
         }
-        return fetchViaProxy(waybackUrl, pageNum, workerBase, url, onRequest);
+        return fetchViaProxy(waybackUrl, pageNum, workerBase, url, onRequest, timeoutMs);
     }
 
-    const result = await fetchViaProxy(url, pageNum, workerBase, url, onRequest);
+    const result = await fetchViaProxy(url, pageNum, workerBase, url, onRequest, timeoutMs);
 
     if (!result.content) {
-        const waybackUrl = await findWaybackSnapshot(url, onRequest);
+        const waybackUrl = await findWaybackSnapshot(url, onRequest, timeoutMs);
         if (waybackUrl) {
             console.log('[CitationVerifier] Live fetch failed, trying Wayback snapshot');
-            return fetchViaProxy(waybackUrl, pageNum, workerBase, url, onRequest);
+            return fetchViaProxy(waybackUrl, pageNum, workerBase, url, onRequest, timeoutMs);
         }
     }
 

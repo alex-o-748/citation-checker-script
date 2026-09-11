@@ -55,18 +55,18 @@
 
 import { JSDOM } from 'jsdom';
 import { parseArgs } from 'node:util';
-import { readFile as fsReadFile } from 'node:fs/promises';
+import { readFile as fsReadFile, writeFile as fsWriteFile } from 'node:fs/promises';
 
 import { openReplicaConnection, makeQueryFn } from './replicas.js';
 import { selectCandidates, CRITERIA } from './article-picker.js';
 import { runBatch, ARTICLE_OUTCOMES } from './claim-extractor.js';
-import { fetchArticleHtml } from '../core/wikipedia.js';
+import { fetchArticleHtml, hostForWiki } from '../core/wikipedia.js';
 import { fetchSourceContent } from '../core/worker.js';
 import { verifyCitation, verifyGroup, makeModelCaller, ProviderAuthError } from './verifier.js';
 import { assembleFinding, assembleGroupFinding } from './finding-builder.js';
 import { upsertFinding } from './findings-store.js';
 import { openToolsDbConnection } from './toolsdb.js';
-import { writeCsvReport } from './csv-report.js';
+import { csvHeaderLine, appendFinding, csvPageTitles } from './csv-report.js';
 import { PROMPT_VERSION } from '../core/prompts.js';
 import { PROVIDER_MODELS, PROVIDER_ENV_VARS } from './provider-config.js';
 
@@ -87,6 +87,7 @@ export function parseCliArgs(argv) {
             concurrency:         { type: 'string', default: '1' },
             'live-source-fetch': { type: 'boolean', default: false },
             store:               { type: 'boolean', default: false },
+            resume:              { type: 'boolean', default: false },
             out:                 { type: 'string', default: 'findings.csv' },
             help:                { type: 'boolean', short: 'h', default: false },
         },
@@ -110,6 +111,7 @@ export function parseCliArgs(argv) {
         concurrency: Number(values.concurrency),
         liveSourceFetch: values['live-source-fetch'],
         store: values.store,
+        resume: values.resume,
         out: values.out,
     };
 }
@@ -159,6 +161,17 @@ Options:
                          on WMCS.
   --store               Also upsert every finding into ToolsDB. Requires a
                          Toolforge bastion; the CSV is written either way.
+  --resume              Continue into an existing --out CSV instead of starting
+                         a new one: every article already present in it is
+                         skipped and new findings are appended. For picking a
+                         long sweep back up after it was killed. "Already
+                         present" means at least one row, not necessarily a
+                         complete one: an article that was mid-flight when the
+                         run died is treated as done and keeps only the
+                         citations it got through. That undercounts one or two
+                         articles per interruption rather than duplicating
+                         them — check the CSV's per-article row counts against
+                         the article if completeness matters.
   --out <path>          CSV output path (default: findings.csv)
   --help, -h            Show this help and exit.
 
@@ -235,10 +248,12 @@ export async function runSweep(opts, {
     env = process.env,
     connectReplicas = openReplicaConnection,
     connectToolsDb = openToolsDbConnection,
-    fetchArticle = fetchArticleHtml,
+    fetchArticle,
     fetchSourceFn,
     makeModelCallerFn = makeModelCaller,
-    writeCsvReportFn = writeCsvReport,
+    appendFindingFn = appendFinding,
+    startCsvFn = async (path, header) => fsWriteFile(path, header, 'utf8'),
+    readCsvFn = path => fsReadFile(path, 'utf8'),
     // JSDOM.fragment() parses without building a full Window/browsing
     // context (CSSOM, timers, navigator, ...) -- new JSDOM(html).window
     // leaks several MB per article that global.gc() never reclaims, which
@@ -261,6 +276,14 @@ export async function runSweep(opts, {
         stderr.write(`sweep: --concurrency must be a positive integer (got: ${opts.concurrency})\n`);
         return 2;
     }
+
+    // Defaulted here rather than in the destructuring above so a real run
+    // (no fetchArticle injected) resolves the REST host from --wiki instead
+    // of always hitting en.wikipedia.org — the bug hostForWiki()'s comment
+    // describes. A test that injects its own fetchArticle bypasses this
+    // entirely, same as before.
+    const fetchArticleFn = fetchArticle
+        ?? (params => fetchArticleHtml(params, { host: hostForWiki(opts.wiki) }));
 
     const envVar = PROVIDER_ENV_VARS[opts.provider];
     const apiKey = envVar ? env[envVar] : undefined;
@@ -316,6 +339,51 @@ export async function runSweep(opts, {
         stderr.write(`sweep: selected ${candidates.length} article(s)\n`);
     }
 
+    // Findings are appended to the CSV as they are computed rather than
+    // buffered until the end. describeHalt() below already guards the
+    // in-process error case; a SIGKILL — an OOM kill, a job timeout, a closed
+    // session — walks straight past it, and at a hundred articles a run is
+    // long enough that losing everything to one is a real outcome rather than
+    // a theoretical one.
+    //
+    // --resume picks such a run back up. Article granularity, read back from
+    // the CSV itself rather than a sidecar file that could disagree with it:
+    // whichever articles have any rows are considered done.
+    //
+    // The cost of reading completion off the rows themselves is that a
+    // partially-written article is indistinguishable from a finished one, so
+    // an article interrupted mid-flight is skipped with only the citations it
+    // managed. Bounded to however many were in flight (concurrency, so a
+    // handful), and it undercounts rather than duplicating. Distinguishing
+    // the two would need a completion marker per article, which is a sidecar
+    // by another name — deliberately not built until an undercount of that
+    // size actually matters to someone.
+    let resumeSkipped = 0;
+    let existingCsv = null;
+    if (opts.resume) {
+        try {
+            existingCsv = await readCsvFn(opts.out);
+        } catch {
+            existingCsv = null; // no file yet: --resume on a fresh run is a no-op
+        }
+    }
+    if (existingCsv) {
+        const done = csvPageTitles(existingCsv);
+        const before = candidates.length;
+        candidates = candidates.filter(candidate => !done.has(candidate.title));
+        resumeSkipped = before - candidates.length;
+        stderr.write(
+            `sweep: --resume: ${resumeSkipped} article(s) already in ${opts.out}, ` +
+            `${candidates.length} left to check\n`
+        );
+        if (candidates.length === 0) {
+            stderr.write('sweep: nothing left to do\n');
+            return 0;
+        }
+    } else {
+        await startCsvFn(opts.out, csvHeaderLine());
+    }
+
     let toolsDbConnection = null;
     let toolsDbQuery = null;
     if (opts.store) {
@@ -369,6 +437,7 @@ export async function runSweep(opts, {
     const record = async finding => {
         findings.push(finding);
         if (finding.published) funnel.published++;
+        await appendFindingFn(opts.out, finding);
         if (toolsDbQuery) await upsertFinding(toolsDbQuery, finding);
     };
 
@@ -459,7 +528,7 @@ export async function runSweep(opts, {
         // article's worth of fetching slip through after halting before it
         // took effect. Driving runBatch's iterator by hand puts the check
         // before each fetch instead of after.
-        const articles = runBatch(candidates, { parseHtml, fetchArticle, fetchSource });
+        const articles = runBatch(candidates, { parseHtml, fetchArticle: fetchArticleFn, fetchSource });
         while (true) {
             if (halted) return;
             const fetchStartedAt = Date.now();
@@ -557,7 +626,6 @@ export async function runSweep(opts, {
     // findings.length here is the true final count, not a lower bound.
     const haltCode = haltError ? describeHalt(stderr, opts.provider, haltError, findings.length) : null;
 
-    await writeCsvReportFn(findings, opts.out);
     stderr.write(
         `sweep: done. ${funnel.articles} article(s) (${funnel.articlesFailed} failed/no citations), ` +
         `${funnel.citationsSeen} citation(s) seen -> ${funnel.citationsWithUrl} had a URL -> ` +
@@ -566,7 +634,8 @@ export async function runSweep(opts, {
         `sweep: adjacent-citation groups: ${funnel.groupsChecked} checked, ${funnel.groupsSkipped} skipped ` +
         `(<=1 usable source), ${funnel.groupsFlagged} flagged.\n` +
         `sweep: verdicts: ${JSON.stringify(verdictCounts)}\n` +
-        `sweep: wrote ${findings.length} finding(s) to ${opts.out}${toolsDbQuery ? ' and ToolsDB' : ''}.\n`
+        `sweep: wrote ${findings.length} finding(s) to ${opts.out}${toolsDbQuery ? ' and ToolsDB' : ''}` +
+        `${resumeSkipped ? ` (${resumeSkipped} article(s) skipped as already done)` : ''}.\n`
     );
     stderr.write(
         `sweep: timing — fetch (serial, wall-clock): ${(timing.fetchMs / 1000).toFixed(3)}s. ` +
@@ -603,13 +672,13 @@ function describeHalt(stderr, provider, error, writtenSoFar) {
     if (error instanceof ProviderAuthError) {
         stderr.write(
             `sweep: halting — ${provider} returned an auth/billing error (${error.status ?? '?'}): ${error.message}\n` +
-            `sweep: ${writtenSoFar} finding(s) already computed are kept and will still be written to the CSV.\n`
+            `sweep: ${writtenSoFar} finding(s) computed so far are already written to the CSV.\n`
         );
         return 3;
     }
     stderr.write(
         `sweep: halting — unrecoverable error calling ${provider}: ${error.message}\n` +
-        `sweep: ${writtenSoFar} finding(s) already computed are kept and will still be written to the CSV.\n`
+        `sweep: ${writtenSoFar} finding(s) computed so far are already written to the CSV.\n`
     );
     return 4;
 }
