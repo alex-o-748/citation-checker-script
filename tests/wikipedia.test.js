@@ -1,7 +1,32 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { deriveRestUrl, fetchArticleHtml, DEFAULT_USER_AGENT } from '../core/wikipedia.js';
+import { deriveRestUrl, fetchArticleHtml, DEFAULT_USER_AGENT, hostForWiki, DEFAULT_WIKI_HOST } from '../core/wikipedia.js';
+
+// --- hostForWiki ---
+//
+// Pins the bug this function fixed: service/run-sweep.js and
+// service/run-pick-pilot.js both accepted --wiki but never derived a REST
+// host from it, so every article fetch went to en.wikipedia.org regardless —
+// silent 404s (or a wrong article on a title collision) on any other wiki.
+
+test('hostForWiki derives the public domain from a Wiki Replicas database name', () => {
+    assert.equal(hostForWiki('enwiki'), 'en.wikipedia.org');
+    assert.equal(hostForWiki('ruwiki'), 'ru.wikipedia.org');
+    assert.equal(hostForWiki('frwiki'), 'fr.wikipedia.org');
+});
+
+test('hostForWiki falls back to the English default for a missing or unrecognized wiki', () => {
+    assert.equal(hostForWiki(undefined), DEFAULT_WIKI_HOST);
+    assert.equal(hostForWiki(null), DEFAULT_WIKI_HOST);
+    assert.equal(hostForWiki(''), DEFAULT_WIKI_HOST);
+});
+
+test('hostForWiki does not mangle a name that already lacks the "wiki" suffix', () => {
+    // Not a real Wiki Replicas name today, but the transform must stay a
+    // no-op rather than truncating real characters off the front.
+    assert.equal(hostForWiki('commons'), 'commons.wikipedia.org');
+});
 
 test('deriveRestUrl builds the REST path, pinning a revision when given', () => {
     assert.equal(

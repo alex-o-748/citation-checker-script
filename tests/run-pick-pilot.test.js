@@ -307,3 +307,19 @@ test('runPickPilot restores console.log after suppressing extraction noise', asy
     await runPickPilot(baseOpts(), baseIo());
     assert.equal(console.log, original);
 });
+
+test('--wiki reaches the REST host when fetchArticle is not injected (the hostForWiki bug)', async () => {
+    let seenUrl;
+    const originalFetch = global.fetch;
+    global.fetch = async url => {
+        seenUrl = url;
+        return { ok: false, status: 404 };
+    };
+    try {
+        const code = await runPickPilot(baseOpts({ wiki: 'ruwiki' }), baseIo({ fetchArticle: undefined }));
+        assert.equal(code, 0);
+    } finally {
+        global.fetch = originalFetch;
+    }
+    assert.match(seenUrl, /^https:\/\/ru\.wikipedia\.org\//);
+});

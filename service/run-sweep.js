@@ -60,7 +60,7 @@ import { readFile as fsReadFile, writeFile as fsWriteFile } from 'node:fs/promis
 import { openReplicaConnection, makeQueryFn } from './replicas.js';
 import { selectCandidates, CRITERIA } from './article-picker.js';
 import { runBatch, ARTICLE_OUTCOMES } from './claim-extractor.js';
-import { fetchArticleHtml } from '../core/wikipedia.js';
+import { fetchArticleHtml, hostForWiki } from '../core/wikipedia.js';
 import { fetchSourceContent } from '../core/worker.js';
 import { verifyCitation, verifyGroup, makeModelCaller, ProviderAuthError } from './verifier.js';
 import { assembleFinding, assembleGroupFinding } from './finding-builder.js';
@@ -248,7 +248,7 @@ export async function runSweep(opts, {
     env = process.env,
     connectReplicas = openReplicaConnection,
     connectToolsDb = openToolsDbConnection,
-    fetchArticle = fetchArticleHtml,
+    fetchArticle,
     fetchSourceFn,
     makeModelCallerFn = makeModelCaller,
     appendFindingFn = appendFinding,
@@ -276,6 +276,14 @@ export async function runSweep(opts, {
         stderr.write(`sweep: --concurrency must be a positive integer (got: ${opts.concurrency})\n`);
         return 2;
     }
+
+    // Defaulted here rather than in the destructuring above so a real run
+    // (no fetchArticle injected) resolves the REST host from --wiki instead
+    // of always hitting en.wikipedia.org — the bug hostForWiki()'s comment
+    // describes. A test that injects its own fetchArticle bypasses this
+    // entirely, same as before.
+    const fetchArticleFn = fetchArticle
+        ?? (params => fetchArticleHtml(params, { host: hostForWiki(opts.wiki) }));
 
     const envVar = PROVIDER_ENV_VARS[opts.provider];
     const apiKey = envVar ? env[envVar] : undefined;
@@ -520,7 +528,7 @@ export async function runSweep(opts, {
         // article's worth of fetching slip through after halting before it
         // took effect. Driving runBatch's iterator by hand puts the check
         // before each fetch instead of after.
-        const articles = runBatch(candidates, { parseHtml, fetchArticle, fetchSource });
+        const articles = runBatch(candidates, { parseHtml, fetchArticle: fetchArticleFn, fetchSource });
         while (true) {
             if (halted) return;
             const fetchStartedAt = Date.now();

@@ -20,23 +20,14 @@
 // in ToolsDB.
 
 import { appendFile as fsAppendFile, writeFile as fsWriteFile } from 'node:fs/promises';
-
-// service/article-picker.js queries a Wiki Replicas database name ('enwiki',
-// 'frwiki', ...), not a domain. Only enwiki exists in practice today (per
-// CLAUDE.md's "per-wiki scope" — the prompt's few-shot examples are tuned on
-// English Wikipedia), so this heuristic is deliberately simple rather than a
-// real wiki-to-domain table; revisit if a second wiki is ever added.
-function wikiDomain(wiki) {
-    if (!wiki) return 'en.wikipedia.org';
-    return wiki.endsWith('wiki') ? `${wiki.slice(0, -4)}.wikipedia.org` : `${wiki}.wikipedia.org`;
-}
+import { hostForWiki } from '../core/wikipedia.js';
 
 // A reviewer reading a row needs to click through to the claim in the
 // revision it was actually judged against — this is the difference between a
 // CSV and a *shareable* CSV.
 function permalink(finding) {
     if (!finding.pageId || !finding.revisionId) return '';
-    return `https://${wikiDomain(finding.wiki)}/w/index.php?curid=${finding.pageId}&oldid=${finding.revisionId}`;
+    return `https://${hostForWiki(finding.wiki)}/w/index.php?curid=${finding.pageId}&oldid=${finding.revisionId}`;
 }
 
 // [csv header, finding -> cell value]. Order is the column order in the

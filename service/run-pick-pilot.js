@@ -48,7 +48,7 @@ import {
     resolveCriterion,
 } from './article-picker.js';
 import { collectCitations } from '../core/citations.js';
-import { fetchArticleHtml } from '../core/wikipedia.js';
+import { fetchArticleHtml, hostForWiki } from '../core/wikipedia.js';
 import {
     mergeSignals,
     shortlist,
@@ -205,12 +205,18 @@ export async function runPickPilot(opts, {
     stdout = process.stdout,
     stderr = process.stderr,
     connectReplicas = openReplicaConnection,
-    fetchArticle = fetchArticleHtml,
+    fetchArticle,
     parseHtml = html => JSDOM.fragment(html),
     writeFile = fsWriteFile,
     now = () => new Date(),
 } = {}) {
     if (!validate(opts, stderr)) return 2;
+
+    // See core/wikipedia.js's hostForWiki() comment: defaulted here (not in
+    // the destructuring above) so --wiki actually reaches the REST fetch
+    // rather than always hitting en.wikipedia.org.
+    const fetchArticleFn = fetchArticle
+        ?? (params => fetchArticleHtml(params, { host: hostForWiki(opts.wiki) }));
 
     let connection;
     try {
@@ -297,7 +303,7 @@ export async function runPickPilot(opts, {
         const checkPool = async (pool, stopAt, countsToward) => {
             for (const candidate of pool) {
                 if (!opts.scanAll && countsToward() >= stopAt) return;
-                const { html } = await fetchArticle({
+                const { html } = await fetchArticleFn({
                     title: candidate.title, revisionId: candidate.revisionId,
                 });
                 if (!html) {

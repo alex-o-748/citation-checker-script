@@ -627,3 +627,29 @@ test('--resume against a file that does not exist yet behaves like a fresh run',
     assert.equal(code, 0);
     assert.equal(started, true, 'no file to resume from, so the header is written as usual');
 });
+
+// --- --wiki must reach the actual article fetch, not just permalinks ---
+//
+// service/run-sweep.js accepted --wiki and documented it as controlling the
+// fetch host, but never actually threaded it through: fetchArticle defaulted
+// straight to fetchArticleHtml, whose own default host is en.wikipedia.org.
+// A --wiki ruwiki run fetched every article from en.wikipedia.org regardless
+// — silently 404ing on nearly every title. This only shows up when
+// fetchArticle is NOT injected (every other test in this file injects its
+// own, which bypasses the bug entirely), so it needs its own test that mocks
+// global.fetch instead.
+test('--wiki reaches the REST host when fetchArticle is not injected (the hostForWiki bug)', async () => {
+    let seenUrl;
+    const originalFetch = global.fetch;
+    global.fetch = async url => {
+        seenUrl = url;
+        return { ok: false, status: 404 };
+    };
+    try {
+        const code = await runSweep(baseOpts({ wiki: 'ruwiki' }), baseIo({ fetchArticle: undefined }));
+        assert.equal(code, 0);
+    } finally {
+        global.fetch = originalFetch;
+    }
+    assert.match(seenUrl, /^https:\/\/ru\.wikipedia\.org\//);
+});
