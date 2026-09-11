@@ -37,9 +37,10 @@
 
 import { JSDOM } from 'jsdom';
 import { parseArgs } from 'node:util';
-import { writeFile as fsWriteFile } from 'node:fs/promises';
+import { readFile as fsReadFile, writeFile as fsWriteFile } from 'node:fs/promises';
 
 import { openReplicaConnection, makeQueryFn } from './replicas.js';
+import { parseTitlesFile } from './run-sweep.js';
 import {
     selectTopEdited,
     selectTagMembership,
@@ -81,6 +82,7 @@ export function parseCliArgs(argv) {
             'offline-ratio-max': { type: 'string', default: String(DEFAULT_OFFLINE_RATIO_CEILING) },
             'table-ratio-max':   { type: 'string', default: String(DEFAULT_TABLE_RATIO_CEILING) },
             'flagged-share':     { type: 'string', default: String(DEFAULT_FLAGGED_QUOTA_SHARE) },
+            'exclude-titles-file': { type: 'string' },
             'scan-all':          { type: 'boolean', default: false },
             out:                 { type: 'string', default: 'pilot-100.txt' },
             'json-out':          { type: 'string' },
@@ -100,6 +102,7 @@ export function parseCliArgs(argv) {
         offlineRatioMax: Number(values['offline-ratio-max']),
         tableRatioMax: Number(values['table-ratio-max']),
         flaggedShare: Number(values['flagged-share']),
+        excludeTitlesFile: values['exclude-titles-file'],
         scanAll: values['scan-all'],
         out: values.out,
         jsonOut: values['json-out'],
@@ -135,6 +138,12 @@ Options:
                              the current-events ranking and are worthless to
                              verify: the claim behind a bracket citation is a
                              score line, not an assertion.
+  --exclude-titles-file <path>
+                             Skip any base-pool article whose title appears in
+                             this file (same one-title-per-line format
+                             --titles-file uses elsewhere) — a prior pilot's
+                             titles file, so a second batch covers new ground
+                             instead of re-picking the first batch's articles.
   --flagged-share <f>       Share of the pilot reserved for articles carrying
                              {{failed verification}}, 0..1 (default: ${DEFAULT_FLAGGED_QUOTA_SHARE}).
                              A floor, not a partition: those articles still
@@ -208,6 +217,7 @@ export async function runPickPilot(opts, {
     fetchArticle,
     parseHtml = html => JSDOM.fragment(html),
     writeFile = fsWriteFile,
+    readExcludeTitlesFile = path => fsReadFile(path, 'utf8'),
     now = () => new Date(),
 } = {}) {
     if (!validate(opts, stderr)) return 2;
@@ -233,12 +243,32 @@ export async function runPickPilot(opts, {
         const sinceDate = new Date(runAt.getTime() - opts.editWindowDays * MS_PER_DAY);
         const burstSinceDate = new Date(runAt.getTime() - opts.burstWindowDays * MS_PER_DAY);
 
-        const topEdited = await selectTopEdited(query, {
+        let excludeTitles = null;
+        if (opts.excludeTitlesFile) {
+            const text = await readExcludeTitlesFile(opts.excludeTitlesFile);
+            excludeTitles = new Set(parseTitlesFile(text));
+        }
+
+        const topEditedAll = await selectTopEdited(query, {
             sinceDate, burstSinceDate, limit: opts.basePool,
         });
-        if (topEdited.length === 0) {
+        if (topEditedAll.length === 0) {
             stderr.write('pick-pilot: no articles edited in the window — nothing to select\n');
             return 1;
+        }
+
+        const topEdited = excludeTitles
+            ? topEditedAll.filter(c => !excludeTitles.has(c.title))
+            : topEditedAll;
+        if (excludeTitles) {
+            stderr.write(
+                `pick-pilot: --exclude-titles-file dropped ${topEditedAll.length - topEdited.length} of `
+                + `${topEditedAll.length} base-pool article(s) already in ${opts.excludeTitlesFile}\n`
+            );
+            if (topEdited.length === 0) {
+                stderr.write('pick-pilot: nothing left to select after --exclude-titles-file\n');
+                return 1;
+            }
         }
 
         const pageIds = topEdited.map(c => c.pageId);

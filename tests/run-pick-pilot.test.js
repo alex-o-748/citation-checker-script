@@ -323,3 +323,46 @@ test('--wiki reaches the REST host when fetchArticle is not injected (the hostFo
     }
     assert.match(seenUrl, /^https:\/\/ru\.wikipedia\.org\//);
 });
+
+// --- --exclude-titles-file: a second batch must cover new ground ---
+
+test('--exclude-titles-file drops matching base-pool articles before scoring', async () => {
+    let written;
+    const code = await runPickPilot(baseOpts({ excludeTitlesFile: 'batch1.txt' }), baseIo({
+        readExcludeTitlesFile: async path => {
+            assert.equal(path, 'batch1.txt');
+            return 'Breaking Story\n# a comment\nPerennial Page\n';
+        },
+        writeFile: async (path, content) => { written = content; },
+    }));
+
+    assert.equal(code, 0);
+    const titles = written.split('\n').filter(l => l && !l.startsWith('#'));
+    assert.ok(!titles.includes('Breaking Story'));
+    assert.ok(!titles.includes('Perennial Page'));
+    assert.deepEqual(titles, ['Disputed Claim'], 'the one base-pool article not excluded');
+});
+
+test('without --exclude-titles-file, the exclude file is never read', async () => {
+    let readAttempted = false;
+    const code = await runPickPilot(baseOpts(), baseIo({
+        readExcludeTitlesFile: async () => { readAttempted = true; return ''; },
+    }));
+    assert.equal(code, 0);
+    assert.equal(readAttempted, false);
+});
+
+test('--exclude-titles-file that removes every candidate fails cleanly rather than writing an empty pilot', async () => {
+    const code = await runPickPilot(baseOpts({ excludeTitlesFile: 'batch1.txt' }), baseIo({
+        readExcludeTitlesFile: async () =>
+            'Breaking Story\nPerennial Page\nDisputed Claim\nPrint Heavy\n2026 Open Mens singles\n',
+    }));
+    assert.equal(code, 1);
+});
+
+test('a missing --exclude-titles-file surfaces as an error rather than silently including everything', async () => {
+    const code = await runPickPilot(baseOpts({ excludeTitlesFile: 'nope.txt' }), baseIo({
+        readExcludeTitlesFile: async () => { throw new Error('ENOENT: no such file'); },
+    }));
+    assert.equal(code, 1);
+});
