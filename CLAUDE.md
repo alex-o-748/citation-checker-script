@@ -112,6 +112,8 @@ npm run analyze:full-sources       # Score only rows whose source was stored who
 npm run analyze:truncated-sources  # Score only rows whose source hit a fetch cap
 npm run report                # Generate markdown report
 npm run compare               # Compare two results.json runs (delegates to `ccs compare`; see docs/comparing-benchmark-runs.md)
+npm run roc                   # ROC curve + AUC per provider, all scoreable rows (see docs/roc-curves.md)
+npm run roc:strict            # Same, over the strict set — rows whose source was stored whole
 
 # WiCE — external benchmark (see docs/wice-benchmark.md)
 npm run wice:convert          # Fetch + convert WiCE dev+test -> dataset_wice.json

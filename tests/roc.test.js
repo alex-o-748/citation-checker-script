@@ -7,6 +7,7 @@ import {
     computeRocCurvesByProvider,
     computeVerdictOperatingPoint,
 } from '../benchmark/roc.js';
+import { selectScoredRows } from '../benchmark/roc_curve.js';
 import { rowSupportScore } from '../benchmark/io.js';
 
 test('supportedScore pushes SUPPORTED above 50 and NOT SUPPORTED/SOURCE UNAVAILABLE below it', () => {
@@ -193,4 +194,55 @@ test('computeRocCurvesByProvider splits rows by provider', () => {
     assert.deepEqual(Object.keys(curves).sort(), ['a', 'b']);
     assert.equal(curves.a.auc, 1);
     assert.equal(curves.b.auc, 0);
+});
+
+// --- Row-set selection (the strict set) -------------------------------------
+//
+// The curve has to be drawn over the same rows the accuracy table is scored
+// on, or the two answer different questions while looking like they answer the
+// same one. These pin the ROC CLI's filtering to analyze_results.js's rules.
+
+const FILTER_DATASET = [
+    { id: 'row_1', source_truncated: false },
+    { id: 'row_2', source_truncated: true },
+    { id: 'row_3', source_truncated: false, excluded_reason: 'claim and cited URL are unrelated' },
+    { id: 'row_4', source_truncated: true },
+];
+const FILTER_RESULTS = FILTER_DATASET.map(e => ({ entry_id: e.id, provider: 'a' }));
+
+test('selectScoredRows drops unscoreable rows by default and keeps them on request', () => {
+    const dropped = selectScoredRows(FILTER_RESULTS, FILTER_DATASET);
+    assert.deepEqual(dropped.rows.map(r => r.entry_id), ['row_1', 'row_2', 'row_4']);
+    assert.equal(dropped.excludedRows, 1);
+
+    const kept = selectScoredRows(FILTER_RESULTS, FILTER_DATASET, { includeExcluded: true });
+    assert.equal(kept.rows.length, 4);
+    assert.equal(kept.excludedRows, 0);
+});
+
+test('selectScoredRows --truncation full is the strict set: whole sources, unscoreable rows already gone', () => {
+    const strict = selectScoredRows(FILTER_RESULTS, FILTER_DATASET, { truncation: 'full' });
+    assert.deepEqual(strict.rows.map(r => r.entry_id), ['row_1']);
+    assert.equal(strict.excludedRows, 1);
+    assert.equal(strict.droppedByTruncation, 2);
+
+    const capped = selectScoredRows(FILTER_RESULTS, FILTER_DATASET, { truncation: 'truncated' });
+    assert.deepEqual(capped.rows.map(r => r.entry_id), ['row_2', 'row_4']);
+});
+
+// Absent is not false: a dataset predating the flag would otherwise report
+// every row as whole and produce a confidently wrong "strict" curve.
+test('selectScoredRows refuses --truncation against a dataset with no source_truncated flag', () => {
+    const legacy = [{ id: 'row_1' }, { id: 'row_2' }];
+    const rows = legacy.map(e => ({ entry_id: e.id, provider: 'a' }));
+    assert.throws(() => selectScoredRows(rows, legacy, { truncation: 'full' }), /source_truncated/);
+    // Without the flag it is still usable for the unfiltered curve.
+    assert.equal(selectScoredRows(rows, legacy).rows.length, 2);
+});
+
+test('selectScoredRows rejects an unknown truncation value rather than silently scoring everything', () => {
+    assert.throws(
+        () => selectScoredRows(FILTER_RESULTS, FILTER_DATASET, { truncation: 'whole' }),
+        /all, full, truncated/
+    );
 });

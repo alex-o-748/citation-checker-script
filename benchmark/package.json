@@ -38,6 +38,8 @@
     "report": "node analyze_results.js --output report.md",
     "compare": "node ../bin/ccs compare",
     "roc": "node roc_curve.js",
+    "roc:strict": "node roc_curve.js --truncation full --output roc_strict.json",
+    "roc:truncated": "node roc_curve.js --truncation truncated --output roc_truncated.json",
     "inspect": "node inspect_results.js"
   },
   "dependencies": {

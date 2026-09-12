@@ -1,0 +1,459 @@
+{
+  "metadata": {
+    "computed_at": "2026-09-12",
+    "results_file": "results.json",
+    "dataset_file": "dataset.json",
+    "truncation": "truncated",
+    "include_excluded": false,
+    "results_scored": 384
+  },
+  "curves": {
+    "apertus-70b": {
+      "points": [
+        {
+          "fpr": 0,
+          "tpr": 0
+        },
+        {
+          "fpr": 0.11764705882352941,
+          "tpr": 0.08695652173913043,
+          "threshold": 97.5
+        },
+        {
+          "fpr": 0.29411764705882354,
+          "tpr": 0.43478260869565216,
+          "threshold": 95
+        },
+        {
+          "fpr": 0.29411764705882354,
+          "tpr": 0.4782608695652174,
+          "threshold": 92.5
+        },
+        {
+          "fpr": 0.35294117647058826,
+          "tpr": 0.6956521739130435,
+          "threshold": 90
+        },
+        {
+          "fpr": 0.8823529411764706,
+          "tpr": 0.9565217391304348,
+          "threshold": 50
+        },
+        {
+          "fpr": 0.9411764705882353,
+          "tpr": 0.9565217391304348,
+          "threshold": 25
+        },
+        {
+          "fpr": 1,
+          "tpr": 1,
+          "threshold": 10
+        },
+        {
+          "fpr": 1,
+          "tpr": 1
+        }
+      ],
+      "auc": 0.6368286445012787,
+      "positives": 23,
+      "negatives": 17,
+      "verdictOperatingPoint": {
+        "fpr": 0.35294117647058826,
+        "tpr": 0.6956521739130435
+      }
+    },
+    "qwen-sealion": {
+      "points": [
+        {
+          "fpr": 0,
+          "tpr": 0
+        },
+        {
+          "fpr": 0.23529411764705882,
+          "tpr": 0.391304347826087,
+          "threshold": 97.5
+        },
+        {
+          "fpr": 0.29411764705882354,
+          "tpr": 0.6086956521739131,
+          "threshold": 95
+        },
+        {
+          "fpr": 0.5882352941176471,
+          "tpr": 0.6956521739130435,
+          "threshold": 92.5
+        },
+        {
+          "fpr": 0.8235294117647058,
+          "tpr": 1,
+          "threshold": 50
+        },
+        {
+          "fpr": 0.9411764705882353,
+          "tpr": 1,
+          "threshold": 45
+        },
+        {
+          "fpr": 1,
+          "tpr": 1,
+          "threshold": 40
+        },
+        {
+          "fpr": 1,
+          "tpr": 1
+        }
+      ],
+      "auc": 0.6432225063938619,
+      "positives": 23,
+      "negatives": 17,
+      "verdictOperatingPoint": {
+        "fpr": 0.5882352941176471,
+        "tpr": 0.6956521739130435
+      }
+    },
+    "claude-sonnet-4-5": {
+      "points": [
+        {
+          "fpr": 0,
+          "tpr": 0
+        },
+        {
+          "fpr": 0.08,
+          "tpr": 0.13043478260869565,
+          "threshold": 100
+        },
+        {
+          "fpr": 0.28,
+          "tpr": 0.6521739130434783,
+          "threshold": 97.5
+        },
+        {
+          "fpr": 0.28,
+          "tpr": 0.7391304347826086,
+          "threshold": 95
+        },
+        {
+          "fpr": 0.48,
+          "tpr": 0.8695652173913043,
+          "threshold": 92.5
+        },
+        {
+          "fpr": 0.92,
+          "tpr": 1,
+          "threshold": 50
+        },
+        {
+          "fpr": 1,
+          "tpr": 1,
+          "threshold": 42.5
+        },
+        {
+          "fpr": 1,
+          "tpr": 1
+        }
+      ],
+      "auc": 0.7356521739130434,
+      "positives": 23,
+      "negatives": 25,
+      "verdictOperatingPoint": {
+        "fpr": 0.48,
+        "tpr": 0.8695652173913043
+      }
+    },
+    "gemini-2.5-flash": {
+      "points": [
+        {
+          "fpr": 0,
+          "tpr": 0
+        },
+        {
+          "fpr": 0.08,
+          "tpr": 0.5652173913043478,
+          "threshold": 97.5
+        },
+        {
+          "fpr": 0.24,
+          "tpr": 0.6086956521739131,
+          "threshold": 95
+        },
+        {
+          "fpr": 0.56,
+          "tpr": 0.8260869565217391,
+          "threshold": 50
+        },
+        {
+          "fpr": 0.92,
+          "tpr": 1,
+          "threshold": 45
+        },
+        {
+          "fpr": 1,
+          "tpr": 1,
+          "threshold": 42.5
+        },
+        {
+          "fpr": 1,
+          "tpr": 1
+        }
+      ],
+      "auc": 0.7547826086956522,
+      "positives": 23,
+      "negatives": 25,
+      "verdictOperatingPoint": {
+        "fpr": 0.24,
+        "tpr": 0.6086956521739131
+      }
+    },
+    "claude-sonnet-5": {
+      "points": [
+        {
+          "fpr": 0,
+          "tpr": 0
+        },
+        {
+          "fpr": 0,
+          "tpr": 0.21739130434782608,
+          "threshold": 97.5
+        },
+        {
+          "fpr": 0,
+          "tpr": 0.43478260869565216,
+          "threshold": 95
+        },
+        {
+          "fpr": 0,
+          "tpr": 0.4782608695652174,
+          "threshold": 94
+        },
+        {
+          "fpr": 0.04,
+          "tpr": 0.5652173913043478,
+          "threshold": 92.5
+        },
+        {
+          "fpr": 0.04,
+          "tpr": 0.6086956521739131,
+          "threshold": 90
+        },
+        {
+          "fpr": 0.56,
+          "tpr": 0.9130434782608695,
+          "threshold": 50
+        },
+        {
+          "fpr": 0.64,
+          "tpr": 0.9130434782608695,
+          "threshold": 47.5
+        },
+        {
+          "fpr": 0.8,
+          "tpr": 0.9565217391304348,
+          "threshold": 45
+        },
+        {
+          "fpr": 0.92,
+          "tpr": 0.9565217391304348,
+          "threshold": 42.5
+        },
+        {
+          "fpr": 1,
+          "tpr": 1,
+          "threshold": 40
+        },
+        {
+          "fpr": 1,
+          "tpr": 1
+        }
+      ],
+      "auc": 0.8321739130434783,
+      "positives": 23,
+      "negatives": 25,
+      "verdictOperatingPoint": {
+        "fpr": 0.04,
+        "tpr": 0.6086956521739131
+      }
+    },
+    "gemini-3.7-flash": {
+      "points": [
+        {
+          "fpr": 0,
+          "tpr": 0
+        },
+        {
+          "fpr": 0,
+          "tpr": 0.047619047619047616,
+          "threshold": 100
+        },
+        {
+          "fpr": 0,
+          "tpr": 0.14285714285714285,
+          "threshold": 99
+        },
+        {
+          "fpr": 0,
+          "tpr": 0.42857142857142855,
+          "threshold": 97.5
+        },
+        {
+          "fpr": 0.041666666666666664,
+          "tpr": 0.42857142857142855,
+          "threshold": 95
+        },
+        {
+          "fpr": 0.041666666666666664,
+          "tpr": 0.47619047619047616,
+          "threshold": 92.5
+        },
+        {
+          "fpr": 0.25,
+          "tpr": 0.8571428571428571,
+          "threshold": 50
+        },
+        {
+          "fpr": 0.7916666666666666,
+          "tpr": 1,
+          "threshold": 45
+        },
+        {
+          "fpr": 0.9166666666666666,
+          "tpr": 1,
+          "threshold": 42.5
+        },
+        {
+          "fpr": 0.9583333333333334,
+          "tpr": 1,
+          "threshold": 35
+        },
+        {
+          "fpr": 1,
+          "tpr": 1,
+          "threshold": 32.5
+        },
+        {
+          "fpr": 1,
+          "tpr": 1
+        }
+      ],
+      "auc": 0.8680555555555556,
+      "positives": 21,
+      "negatives": 24,
+      "verdictOperatingPoint": {
+        "fpr": 0.041666666666666664,
+        "tpr": 0.47619047619047616
+      }
+    },
+    "hf-gpt-oss-20b": {
+      "points": [
+        {
+          "fpr": 0,
+          "tpr": 0
+        },
+        {
+          "fpr": 0,
+          "tpr": 0.391304347826087,
+          "threshold": 97.5
+        },
+        {
+          "fpr": 0,
+          "tpr": 0.5652173913043478,
+          "threshold": 95
+        },
+        {
+          "fpr": 0.16,
+          "tpr": 0.6521739130434783,
+          "threshold": 50
+        },
+        {
+          "fpr": 0.44,
+          "tpr": 0.782608695652174,
+          "threshold": 45
+        },
+        {
+          "fpr": 0.52,
+          "tpr": 0.9130434782608695,
+          "threshold": 40
+        },
+        {
+          "fpr": 0.64,
+          "tpr": 0.9565217391304348,
+          "threshold": 35
+        },
+        {
+          "fpr": 0.88,
+          "tpr": 0.9565217391304348,
+          "threshold": 5
+        },
+        {
+          "fpr": 1,
+          "tpr": 1,
+          "threshold": 2.5
+        },
+        {
+          "fpr": 1,
+          "tpr": 1
+        }
+      ],
+      "auc": 0.8252173913043479,
+      "positives": 23,
+      "negatives": 25,
+      "verdictOperatingPoint": {
+        "fpr": 0,
+        "tpr": 0.5652173913043478
+      }
+    },
+    "liftwing-qwen3.6-27b": {
+      "points": [
+        {
+          "fpr": 0,
+          "tpr": 0
+        },
+        {
+          "fpr": 0.04,
+          "tpr": 0.2608695652173913,
+          "threshold": 100
+        },
+        {
+          "fpr": 0.12,
+          "tpr": 0.6956521739130435,
+          "threshold": 97.5
+        },
+        {
+          "fpr": 0.16,
+          "tpr": 0.7391304347826086,
+          "threshold": 92.5
+        },
+        {
+          "fpr": 0.84,
+          "tpr": 0.9130434782608695,
+          "threshold": 50
+        },
+        {
+          "fpr": 0.88,
+          "tpr": 0.9130434782608695,
+          "threshold": 45
+        },
+        {
+          "fpr": 1,
+          "tpr": 0.9565217391304348,
+          "threshold": 42.5
+        },
+        {
+          "fpr": 1,
+          "tpr": 1,
+          "threshold": 40
+        },
+        {
+          "fpr": 1,
+          "tpr": 1
+        }
+      ],
+      "auc": 0.7826086956521738,
+      "positives": 23,
+      "negatives": 25,
+      "verdictOperatingPoint": {
+        "fpr": 0.16,
+        "tpr": 0.7391304347826086
+      }
+    }
+  }
+}
