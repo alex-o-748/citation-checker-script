@@ -18,10 +18,10 @@ const KNOWN_PROVIDERS = ['publicai', 'huggingface', 'claude', 'gemini', 'openai'
 // call through the tf-llm-router Toolforge tool
 // (https://github.com/alex-o-748/tf-llm-router) instead of the Cloudflare
 // Worker CORS proxy, mirroring the same override in main.js
-// (useToolforgeLlmRouter). Unlike tf-source-fetcher, tf-llm-router's README
-// carries no WMCS gating caveat — it's opt-in because it's new and its
-// Toolforge rate-limit behavior is still unverified, not because it's
-// policy-blocked. Only applies to huggingface routed via the proxy (no
+// (useToolforgeLlmRouter). It's opt-in because it's new and its Toolforge
+// rate-limit behavior is still unverified, not because it's policy-blocked;
+// the contrast this used to draw was against tf-source-fetcher's WMCS gating
+// caveat, which WMCS answered on 2026-09-13. Only applies to huggingface routed via the proxy (no
 // HF_API_KEY set) — with a key the call goes directly to HF's router and
 // workerBase is irrelevant; publicai isn't routed here at all, since
 // tf-llm-router doesn't implement a publicai-shaped route.

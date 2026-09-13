@@ -5,8 +5,10 @@
 // via Wayback break? It never contacts a publisher — every source fetch goes
 // straight to a Wayback snapshot (fetchSourceContent's `archiveFirst` option,
 // core/worker.js) — so it stays inside the clearance we already have from the
-// Internet Archive and clear of the still-unresolved WMCS egress question
-// tf-source-fetcher's README describes for publisher URLs.
+// Internet Archive, and sends no publisher traffic at all. (That second
+// property was originally about staying clear of the WMCS egress question
+// for publisher URLs, which WMCS has since answered — 2026-09-13.
+// Archive-only is still what this runner measures, so nothing changes here.)
 //
 // It logs one NDJSON record per outbound HTTP request (Wayback availability
 // lookup + snapshot fetch), which is the artifact worth sending back to IA
