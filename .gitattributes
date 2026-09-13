@@ -4,7 +4,7 @@
 # They stay tracked and diffable — expand the entry to read one.
 #
 #   analysis.json / analysis_*.json  <- npm run analyze
-#   roc.json                         <- npm run roc
+#   roc.json / roc_*.json            <- npm run roc / roc:strict / roc:truncated
 #
 # results.json and dataset.json are deliberately NOT listed. They carry model
 # predictions and human ground-truth labels: a diff there is a change someone
@@ -12,3 +12,4 @@
 benchmark/analysis.json      linguist-generated=true
 benchmark/analysis_*.json    linguist-generated=true
 benchmark/roc.json           linguist-generated=true
+benchmark/roc_*.json         linguist-generated=true

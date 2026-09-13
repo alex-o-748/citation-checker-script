@@ -112,6 +112,8 @@ npm run analyze:full-sources       # Score only rows whose source was stored who
 npm run analyze:truncated-sources  # Score only rows whose source hit a fetch cap
 npm run report                # Generate markdown report
 npm run compare               # Compare two results.json runs (delegates to `ccs compare`; see docs/comparing-benchmark-runs.md)
+npm run roc                   # ROC curve + AUC per provider, all scoreable rows (see docs/roc-curves.md)
+npm run roc:strict            # Same, over the strict set — rows whose source was stored whole
 
 # WiCE — external benchmark (see docs/wice-benchmark.md)
 npm run wice:convert          # Fetch + convert WiCE dev+test -> dataset_wice.json
@@ -167,6 +169,36 @@ below; a test pins each id to its CSV line so a future deletion fails loudly.
 The filter **refuses** to run against a dataset carrying no `source_truncated`
 anywhere (the frozen v1/v3 snapshots) rather than reading absent as `false`,
 which would report every row as whole and be confidently wrong.
+
+### The positive class is the failing citation (read before quoting a TPR/FPR)
+
+**Positive = ground truth is anything but `Supported`** — `Partially supported`,
+`Not supported`, or `Source unavailable`. That is the case requiring treatment:
+the citation an editor has to act on. Everything that scores detection in this
+repo uses that direction.
+
+| | Means | Better |
+|---|---|---|
+| **TPR** | of citations that genuinely fail, the share the tool flags | higher |
+| **FPR** | of citations that are genuinely fine, the share the tool flags anyway | lower |
+
+So **FPR here is the same quantity the rest of the repo already calls a false
+positive** — the tool crying wolf on a good citation. It matches the "falsely
+report that a citation fails" measure in
+`docs/benchmark-ground-truth-audit-2026-09-06.md` and the "False Positives
+(overcautious)" counts in `docs/llm-benchmarking-overview.md`.
+
+This is written down in four places (here, `benchmark/roc.js`'s header,
+`docs/roc-curves.md`, and the `positive_class` field of every `roc*.json`)
+because it has twice been read the other way round — treating `Supported` as
+positive, which silently inverts every published TPR and FPR. `tests/roc.test.js`
+opens with four tests that fail loudly if the class is flipped back.
+
+Note AUC is invariant to the choice: flipping both the class and the score
+direction leaves the ranking statistic identical. Only the axes and the
+operating point change, and those are the parts people interpret. Operating
+points under the old framing are exact complements — subtract from 1 and swap
+TPR/FPR.
 
 ### One provider table, one verification sequence (`core/models.js`, `core/pipeline.js`)
 
