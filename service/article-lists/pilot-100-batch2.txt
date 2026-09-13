@@ -1,0 +1,109 @@
+# Pilot mix: 100 article(s), generated 2026-09-11T15:02:21.876Z
+# wiki=enwiki edit-window-days=14 burst-window-days=3
+# base-pool=1000 shortlist-size=300 offline-ratio-max=0.6 table-ratio-max=0.5 flagged-share=0.4
+# Biased toward current events (recently created, or edits concentrated in a burst, or
+# carrying {{current}}) and toward {{failed verification}}; biased against articles whose
+# citations are mostly unfetchable. See service/pilot-selection.js.
+#
+# node service/run-sweep.js --titles-file <this file> --live-source-fetch \
+#     --max 100 --out pilot-findings.csv
+IPhone Duo
+2026 Yemen offensives
+List of Uruguayan Grammy Award winners and nominees
+MV June Aster ship fire
+Navier–Stokes priority controversy
+Mindanao Civic Center
+Albert Alós
+Basketball at the 2026 Asian Games – Men's tournament
+SUSTech School of Medicine
+List of members of the National Assembly of Zambia (2026–2031)
+Kirby and the World Beyond
+2026 Women's South American Volleyball Championship
+Rebel Heart (professional wrestling)
+60th Annual Country Music Association Awards
+1880–81 Birmingham Senior Cup
+Ku Zing-whai
+2026 US Open – Girls' doubles
+Sam Obisanya
+Serbia at the 2026 Mediterranean Games
+2026 Barranquilla Open – Singles
+2026 US Open – Boys' doubles
+Ellie Goulding
+You Can See Everything
+Pakistan at the 2026 Asian Games
+Tourism in Indonesia
+Baby Dolls
+2026 Phan Thiết Challenger III – Singles
+2026 Kuhestak wedding airstrike
+Rhizopus delemar
+Mike McFarland
+2026 Montreux Nestlé Open – Singles
+Carla Jeffery
+List of songs with lyrics by Bernie Taupin
+Physint
+Tung Chee-hwa
+2026–27 Cambodian Premier League
+Helch
+Bass Persuades
+Bias of jurors
+Samaneh Atbai Tabari
+Unmanned fighter aircraft
+2026 Western Michigan Broncos football team
+Reacher season 4
+Algeria at the 2026 Mediterranean Games
+Critters TV
+I Knew It, I Knew You
+2026 Asian Games
+2026 OpenAI agent cyberattacks
+Philippines at the 2027 FIBA Basketball World Cup qualification
+India women's national field hockey team results (2020–2025)
+Turkey at the 2026 Mediterranean Games
+Deaths in 2026
+2026 ITF Men's World Tennis Tour (July–September)
+2026 ACC Men's Premier Cup
+I'm Game (film)
+2026 ICF Canoe Sprint World Championships
+Alex Pearlman
+2026 BFI London Film Festival
+La Belle Fatma
+59th Sitges Film Festival
+Alfred William Frisby
+2026–27 CAF Champions League qualifying rounds
+1982 Democratic Midterm Conference
+Bass Persuades (song)
+Max Bennett (scientist)
+Joheirry Mola
+Mecca Joint Defence Agreement
+WTT Contender Almaty 2026
+Jayanta Bose
+31st Busan International Film Festival
+Fleet Air Arm
+2026 Czech Darts Open
+Adam Steele
+2026 Como Lake Challenger – Singles
+2026 International Challenger Zhangjiagang – Singles
+Vishwanath & Sons
+Schendyla nemorensis
+2028 Republican Party presidential primaries
+Climate history of Sydney
+Punching the Clown (album)
+James Brown (settler)
+Schendyla megobroba
+Itmad Ud Daulah
+Dhaun (village)
+2026 Namibia T20I Tri-Nation Series
+2026–27 FC Augsburg season
+2026 AVC Women's Volleyball Continental Championship
+2026–27 Liverpool F.C. Women season
+British philosophy
+Deaths in August 1978
+Richenda C. Scott
+Navier–Stokes existence and smoothness
+University of Central Florida
+Origins of Japan
+Margaret Curphey
+Moonlight and Muzak
+Vine v National Dock Labour Board
+Patrick Healy (sheepman)
+John Jay Pittman
+List of next general elections
