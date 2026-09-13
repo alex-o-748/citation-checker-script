@@ -18,12 +18,13 @@
 import {
     generateSystemPrompt, generateUserPrompt, extractSourceText,
     generateGroupSystemPrompt, generateGroupUserPrompt, assembleGroupSources,
+    withCommentLanguage,
 } from '../core/prompts.js';
 import { callProviderAPI } from '../core/providers.js';
 import { parseVerificationResult } from '../core/parsing.js';
 import { canonicalizeVerdict } from '../core/verdicts.js';
 import { verifyQuote } from '../core/quote.js';
-import { withRetry, isContextLengthError } from '../core/retry.js';
+import { withRetry, isSourceTooLargeError } from '../core/retry.js';
 import { groupSourceEntries, shouldSkipCollective } from '../core/groups.js';
 import { sourceCacheKey } from './claim-extractor.js';
 
@@ -102,11 +103,22 @@ export function makeModelCaller({ provider, apiKey, model, workerBase }) {
  * `verdict: 'ERROR'` result instead, same as the no-content short-circuit
  * above. core/retry.js declines to retry it for the same reason (the same
  * oversized prompt fails identically every time).
+ *
+ * `articleLangCode` (from core/wikipedia.js's langCodeForWiki(), derived from
+ * --wiki) is passed to core/prompts.js's withCommentLanguage() as BOTH its
+ * `lang` and `articleLangCode` params — unlike main.js, which keeps those
+ * separate because a UI-language user can be reading an article in a
+ * different language, the batch pipeline has no UI at all and knows the
+ * swept wiki's language with certainty, so a ru/fr/es sweep gets the curated
+ * "Write in Russian (русский)" instruction rather than settling for the
+ * generic "match the source" fallback. This batch path had no comment
+ * localization at all before 2026-09-13's ruwiki pilot.
  */
 export async function verifyCitation(claimText, source, {
     callModel,
     signal,
     retry = {},
+    articleLangCode,
 } = {}) {
     if (typeof callModel !== 'function') {
         throw new TypeError('verifyCitation requires a callModel(systemPrompt, userContent) function');
@@ -125,7 +137,7 @@ export async function verifyCitation(claimText, source, {
         };
     }
 
-    const systemPrompt = generateSystemPrompt();
+    const systemPrompt = withCommentLanguage(generateSystemPrompt(), { lang: articleLangCode, articleLangCode });
     const userContent = generateUserPrompt(claimText, source.content);
 
     const retryOptions = { ...retry };
@@ -146,12 +158,12 @@ export async function verifyCitation(claimText, source, {
         // whole batch over it would both be wrong; recorded as a normal
         // (non-throwing) result instead, same as the no-content
         // short-circuit above, so a runner just moves on to the next task.
-        if (isContextLengthError(error)) {
+        if (isSourceTooLargeError(error)) {
             return {
                 verdict: 'ERROR',
                 supportScore: null,
-                reasonType: 'context_length',
-                rationale: `Source too large for the model's context window: ${error.message}`,
+                reasonType: 'source_too_large',
+                rationale: `Source too large to verify: ${error.message}`,
                 sourceQuote: null,
                 quoteStatus: null,
                 usage: null,
@@ -204,6 +216,7 @@ export async function verifyGroup(members, {
     callModel,
     signal,
     retry = {},
+    articleLangCode,
 } = {}) {
     if (typeof callModel !== 'function') {
         throw new TypeError('verifyGroup requires a callModel(systemPrompt, userContent) function');
@@ -237,7 +250,7 @@ export async function verifyGroup(members, {
     }
 
     const { text: assembledText } = assembleGroupSources(entries);
-    const systemPrompt = generateGroupSystemPrompt();
+    const systemPrompt = withCommentLanguage(generateGroupSystemPrompt(), { lang: articleLangCode, articleLangCode });
     const userContent = generateGroupUserPrompt(claimText, assembledText);
 
     const retryOptions = { ...retry };
@@ -256,15 +269,15 @@ export async function verifyGroup(members, {
         // See verifyCitation()'s matching branch: data-dependent and
         // permanent for this exact group's assembled sources, not evidence
         // the batch itself is broken.
-        if (isContextLengthError(error)) {
+        if (isSourceTooLargeError(error)) {
             return {
                 skipped: false,
                 groupId,
                 memberCitationNumbers,
                 verdict: 'ERROR',
                 supportScore: null,
-                reasonType: 'context_length',
-                rationale: `Source too large for the model's context window: ${error.message}`,
+                reasonType: 'source_too_large',
+                rationale: `Source too large to verify: ${error.message}`,
                 sourceQuote: null,
                 quoteStatus: null,
                 usage: null,

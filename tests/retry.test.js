@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { withRetry, isRetryableError, isContextLengthError } from '../core/retry.js';
+import { withRetry, isRetryableError, isSourceTooLargeError } from '../core/retry.js';
 
 const noSleep = () => Promise.resolve();
 
@@ -298,7 +298,7 @@ test('withRetry: retries on undici\'s "fetch failed" and eventually succeeds', a
     assert.equal(calls, 2);
 });
 
-// ---- isContextLengthError / the vLLM context-length carve-out --------------
+// ---- isSourceTooLargeError / the too-big-to-send carve-out ----------------
 // vLLM (Lift Wing's open-weight-model backend) reports "the prompt is too
 // big for this model" as an HTTP 500 — which RETRYABLE_STATUS would
 // otherwise treat as transient. It isn't: the same oversized prompt fails
@@ -309,12 +309,12 @@ test('withRetry: retries on undici\'s "fetch failed" and eventually succeeds', a
 // propagate, but that only works if it's excluded from retry first.
 
 test('isContextLengthError: recognizes vLLM\'s validation error regardless of the surrounding status/label', () => {
-    assert.equal(isContextLengthError(new Error(
+    assert.equal(isSourceTooLargeError(new Error(
         'Lift Wing API request failed (500): {"error":"VLLMValidationError : This model\'s maximum context length is 32768 tokens."}'
     )), true);
-    assert.equal(isContextLengthError(new Error('some backend: VLLMValidationError happened')), true);
-    assert.equal(isContextLengthError(new Error('API request failed (500): internal error')), false);
-    assert.equal(isContextLengthError(null), false);
+    assert.equal(isSourceTooLargeError(new Error('some backend: VLLMValidationError happened')), true);
+    assert.equal(isSourceTooLargeError(new Error('API request failed (500): internal error')), false);
+    assert.equal(isSourceTooLargeError(null), false);
 });
 
 test('isRetryableError: false for a context-length-exceeded 500, even though 500 is normally retryable', () => {
@@ -337,4 +337,24 @@ test('withRetry: does NOT retry a context-length-exceeded failure', async () => 
         /maximum context length/
     );
     assert.equal(calls, 1);
+});
+
+// The 413 variant, which used to fall through every detector.
+//
+// core/providers.js throws this when the proxy rejects the request body by
+// size, before the model sees it. It is the same operational class as a
+// context-window overflow — this one source cannot be sent, ever — but it
+// matched no pattern, so service/run-sweep.js treated it as an unrecognized
+// error and halted the batch. Real incident 2026-09-09: a 100-article sweep
+// stopped at article 13 and discarded the other 87.
+test('isSourceTooLargeError: recognizes the proxy 413 payload cap, not just the context window', () => {
+    assert.equal(isSourceTooLargeError(new Error(
+        'Lift Wing: the source is too large to send. Trim the source text, or switch to a '
+        + 'provider that calls its API directly (Claude, Gemini, or OpenAI).')), true);
+});
+
+test('a 413 is not retried, for the same reason a context overflow is not', () => {
+    // Identical request, identical rejection, every attempt — retrying only
+    // burns backoff before failing anyway.
+    assert.equal(isRetryableError(new Error('Lift Wing: the source is too large to send.')), false);
 });

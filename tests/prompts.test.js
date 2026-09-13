@@ -1,6 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   generateSystemPrompt,
   generateUserPrompt,
@@ -9,6 +12,8 @@ import {
   generateGroupUserPrompt,
   assembleGroupSources,
   PROMPT_VERSION,
+  COMMENT_LANGUAGE_NAMES,
+  withCommentLanguage,
 } from '../core/prompts.js';
 
 test('generateSystemPrompt returns a non-empty string', () => {
@@ -195,4 +200,95 @@ test('PROMPT_VERSION is bumped whenever the system prompt text changes', () => {
     `generateSystemPrompt() changed (hash now ${actual}) but PROMPT_VERSION is still "${PROMPT_VERSION}". ` +
     `Bump PROMPT_VERSION in core/prompts.js and update EXPECTED_HASH in this test to match.`
   );
+});
+
+// --- withCommentLanguage / COMMENT_LANGUAGE_NAMES ---
+//
+// This is a second, standalone copy of main.js's PROMPT_LANGUAGES /
+// localizeSystemPrompt() — not a shared call — because that pair lives
+// outside the <core-injected> block tests/i18n.test.js lifts out of main.js
+// by exact text match (FR_MESSAGES ... class WikipediaSourceVerifier), so a
+// same-named export injected from here would collide with main.js's own
+// declaration. See core/prompts.js's comment on COMMENT_LANGUAGE_NAMES.
+//
+// The cross-check test below is what keeps the two from drifting apart
+// silently: it extracts main.js's real localizeSystemPrompt()/PROMPT_LANGUAGES
+// the same way tests/i18n.test.js does, and asserts byte-identical output
+// against withCommentLanguage() across every case that matters. If someone
+// edits the directive text in one copy and not the other, this fails.
+
+test('withCommentLanguage leaves an English prompt untouched', () => {
+  const prompt = 'SYSTEM PROMPT';
+  assert.equal(withCommentLanguage(prompt, { lang: undefined, articleLangCode: 'en' }), prompt);
+  assert.equal(withCommentLanguage(prompt, {}), prompt, 'no articleLangCode at all is also English');
+});
+
+test('withCommentLanguage names the language explicitly for a COMMENT_LANGUAGE_NAMES entry', () => {
+  const out = withCommentLanguage('SYSTEM PROMPT', { lang: 'ru', articleLangCode: 'ru' });
+  assert.match(out, /Write the "comments" field in Russian \(русский\)\./);
+  assert.ok(out.startsWith('SYSTEM PROMPT'), 'appended, not spliced into the original prompt');
+});
+
+test('withCommentLanguage falls back to a generic directive for a non-English wiki with no curated name', () => {
+  const out = withCommentLanguage('SYSTEM PROMPT', { lang: undefined, articleLangCode: 'de' });
+  assert.match(out, /same language as the claim and source text above, not in English/);
+});
+
+test('withCommentLanguage always exempts source_quote and pins the English verdict enum', () => {
+  const out = withCommentLanguage('SYSTEM PROMPT', { lang: 'ru', articleLangCode: 'ru' });
+  assert.match(out, /"source_quote".*must stay in the source's own language, copied verbatim/s);
+  assert.match(out, /SUPPORTED, PARTIALLY SUPPORTED, NOT SUPPORTED, SOURCE UNAVAILABLE, contradiction, omission/);
+});
+
+test('COMMENT_LANGUAGE_NAMES covers fr, es, and ru', () => {
+  assert.deepEqual(Object.keys(COMMENT_LANGUAGE_NAMES).sort(), ['es', 'fr', 'ru']);
+});
+
+// --- Cross-check against main.js's own copy ---
+
+const MAIN_JS = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'main.js');
+const MAIN_SRC = fs.readFileSync(MAIN_JS, 'utf8');
+
+function extractMainJsLocalizer() {
+  const i18nStart = MAIN_SRC.indexOf('    const FR_MESSAGES = {');
+  const i18nEnd = MAIN_SRC.indexOf('    class WikipediaSourceVerifier {');
+  assert.ok(i18nStart !== -1 && i18nEnd > i18nStart, 'i18n block not found in main.js — see tests/i18n.test.js');
+  const i18nBlock = MAIN_SRC.slice(i18nStart, i18nEnd);
+
+  const methodStart = MAIN_SRC.indexOf('        localizeSystemPrompt(prompt) {');
+  assert.ok(methodStart !== -1, 'localizeSystemPrompt() not found in main.js — did it get renamed?');
+  const methodEnd = MAIN_SRC.indexOf('\n        }\n', methodStart);
+  const method = MAIN_SRC.slice(methodStart, methodEnd + '\n        }'.length);
+
+  const build = new Function(`
+${i18nBlock}
+    class Harness {
+      constructor(lang, articleLangCode) { this.lang = lang; this.articleLangCode = articleLangCode; }
+${method}
+    }
+    return Harness;
+  `);
+  return build();
+}
+
+const MainJsHarness = extractMainJsLocalizer();
+
+test('withCommentLanguage matches main.js\'s own localizeSystemPrompt() for every language case', () => {
+  const cases = [
+    { lang: undefined, articleLangCode: 'en' },
+    { lang: undefined, articleLangCode: undefined },
+    { lang: 'ru', articleLangCode: 'ru' },
+    { lang: 'fr', articleLangCode: 'fr' },
+    { lang: 'es', articleLangCode: 'es' },
+    { lang: undefined, articleLangCode: 'de' },
+    { lang: undefined, articleLangCode: 'ru' }, // batch pipeline's actual shape: no UI lang, just the wiki's
+  ];
+  for (const { lang, articleLangCode } of cases) {
+    const prompt = 'SYSTEM PROMPT FOR CROSS-CHECK';
+    const fromCore = withCommentLanguage(prompt, { lang, articleLangCode });
+    const fromMainJs = new MainJsHarness(lang, articleLangCode).localizeSystemPrompt(prompt);
+    assert.equal(fromCore, fromMainJs,
+      `mismatch for lang=${lang} articleLangCode=${articleLangCode} — core/prompts.js's ` +
+      `withCommentLanguage() and main.js's localizeSystemPrompt() have drifted apart`);
+  }
 });

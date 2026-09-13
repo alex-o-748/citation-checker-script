@@ -25,7 +25,7 @@ import { parseArgs } from 'node:util';
 import { openReplicaConnection, makeQueryFn } from './replicas.js';
 import { selectCandidates, CRITERIA } from './article-picker.js';
 import { runBatch, ARTICLE_OUTCOMES } from './claim-extractor.js';
-import { fetchArticleHtml } from '../core/wikipedia.js';
+import { fetchArticleHtml, hostForWiki } from '../core/wikipedia.js';
 import { fetchSourceContent } from '../core/worker.js';
 
 // Same contract, same query shape (?fetch=&page=), same Google-Books-skip and
@@ -201,7 +201,7 @@ async function main(argv) {
     try {
         for await (const result of runBatch(candidates, {
             parseHtml,
-            fetchArticle: fetchArticleHtml,
+            fetchArticle: params => fetchArticleHtml(params, { host: hostForWiki(opts.wiki) }),
             fetchSource: opts.liveSourceFetch ? liveFetchSource : stubFetchSource,
         })) {
             const { citations, withUrl, fetched, failed } = printArticle(result);

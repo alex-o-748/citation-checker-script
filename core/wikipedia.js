@@ -10,6 +10,35 @@
 
 export const DEFAULT_WIKI_HOST = 'en.wikipedia.org';
 
+// Wiki Replicas / service/article-picker.js's selectTopEdited() and friends
+// deal in a database name ('enwiki', 'ruwiki', 'frwiki', ...), never a
+// domain; the REST API and every outbound URL need the domain. This was
+// 'enwiki'-only until the first non-English batch run needed it — every
+// caller either hardcoded en.wikipedia.org or (service/run-sweep.js,
+// service/run-pick-pilot.js) accepted a --wiki flag that never actually
+// reached fetchArticleHtml(), so a --wiki ruwiki run silently fetched every
+// article from en.wikipedia.org: 404 on nearly every title, and a wrong
+// article on the rare collision. One function, so a second wiki never drifts
+// out of sync with the domain csv-report.js prints in a permalink.
+export function hostForWiki(wikiDb) {
+    if (!wikiDb) return DEFAULT_WIKI_HOST;
+    return wikiDb.endsWith('wiki') ? `${wikiDb.slice(0, -4)}.wikipedia.org` : `${wikiDb}.wikipedia.org`;
+}
+
+// Same "strip the trailing 'wiki'" heuristic as hostForWiki(), for the one
+// other place a Wiki Replicas database name needs converting: telling the
+// model what language the claim/source it's reading is in
+// (core/prompts.js's withCommentLanguage(), via its articleLangCode param) so
+// service/verifier.js's batch pipeline doesn't return English rationale on a
+// Russian sweep. Holds for every standard-language Wikipedia ('ruwiki' -> 'ru'),
+// which is what the batch pipeline runs against; wrong for a project this
+// heuristic was never meant to cover (Commons, a non-Wikipedia sister
+// project), same caveat as hostForWiki().
+export function langCodeForWiki(wikiDb) {
+    if (!wikiDb) return 'en';
+    return wikiDb.endsWith('wiki') ? wikiDb.slice(0, -4) : wikiDb;
+}
+
 export const DEFAULT_USER_AGENT =
     'citation-checker-script (https://github.com/alex-o-748/citation-checker-script)';
 
