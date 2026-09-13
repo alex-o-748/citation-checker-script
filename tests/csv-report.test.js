@@ -45,7 +45,7 @@ test('rowsToCsv emits the header row', () => {
         header,
         'page_title,page_id,revision_id,permalink,citation_number,ref_name,is_collective,group_id,claim_text,' +
         'source_url,verdict,support_score,reason_type,rationale,source_quote,quote_status,fetch_status,' +
-        'fetch_error,source_truncated,provider,model,prompt_version,tokens_in,tokens_out,published'
+        'fetch_error,source_truncated,provider,model,prompt_version,tokens_in,tokens_out,published,check_id'
     );
 });
 
@@ -208,4 +208,18 @@ test('csvPageTitles handles a title needing quoting, CRLF, and an empty file', (
     assert.deepEqual([...csvPageTitles(csv.replace(/\n/g, '\r\n'))], ['Smith, John "Jack"']);
     assert.deepEqual([...csvPageTitles('')], []);
     assert.deepEqual([...csvPageTitles(csvHeaderLine())], [], 'a header-only file has no titles');
+});
+
+test('check_id is a column so a row can be quoted', () => {
+    const header = rowsToCsv([]).trim().split('\n')[0].split(',');
+    const row = findingToCsvRow({ ...baseFinding(), checkId: '4f2a91bc3d8e7102' });
+    assert.equal(row[header.indexOf('check_id')], '4f2a91bc3d8e7102');
+});
+
+// --resume reads the first field of every record as the page title
+// (csvPageTitles). An id column moved to the front would make every resume
+// read an id as an article title and re-check the whole batch.
+test('page_title stays the first column, which --resume depends on', () => {
+    const header = rowsToCsv([]).trim().split('\n')[0].split(',');
+    assert.equal(header[0], 'page_title');
 });

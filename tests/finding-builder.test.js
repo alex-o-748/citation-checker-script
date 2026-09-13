@@ -54,6 +54,50 @@ test('a verified citation assembles into a finding with published always false',
     );
 });
 
+const soloArgs = (overrides = {}) => ({
+    candidate,
+    citation: {
+        claimText: 'c', citationNumber: '1', url: 'https://example.com/a', groupId: null,
+        source: { content: 'Source Content:\\ntext', status: 200, error: null },
+    },
+    verification: {
+        verdict: 'SUPPORTED', supportScore: 90, reasonType: null, rationale: 'ok',
+        sourceQuote: null, quoteStatus: 'empty', usage: { input: 1, output: 1 }, fetchStatus: 200,
+    },
+    provider: 'publicai', model: 'qwen3-32b', promptVersion: 'v1',
+    ...overrides,
+});
+
+test('every finding carries a check_id — 16 hex, fresh per row', () => {
+    const a = assembleFinding(soloArgs());
+    const b = assembleFinding(soloArgs());
+    assert.match(a.checkId, /^[0-9a-f]{16}$/, '16 hex: 8 is the userscript\'s low-volume budget, not a sweep\'s');
+    assert.notEqual(a.checkId, b.checkId, 'two rows in one run must not collide');
+});
+
+test('check_id is injectable, so the module stays testable without a random source', () => {
+    assert.equal(assembleFinding(soloArgs({ checkId: 'deadbeefdeadbeef' })).checkId, 'deadbeefdeadbeef');
+});
+
+test('a collective finding gets its own check_id, distinct from its members\'', () => {
+    const members = [
+        { claimText: 'c', citationNumber: '2', url: 'https://a.example/x', groupId: 'g1', source: { content: 'a', status: 200 } },
+        { claimText: 'c', citationNumber: '3', url: 'https://b.example/x', groupId: 'g1', source: { content: 'b', status: 200 } },
+    ];
+    const group = assembleGroupFinding({
+        candidate, members,
+        verification: {
+            skipped: false, groupId: 'g1', memberCitationNumbers: ['2', '3'],
+            verdict: 'SUPPORTED', supportScore: 90, reasonType: null, rationale: 'ok',
+            sourceQuote: null, quoteStatus: 'empty', usage: { input: 1, output: 1 },
+        },
+        provider: 'publicai', model: 'qwen3-32b', promptVersion: 'v1',
+    });
+    const member = assembleFinding(soloArgs());
+    assert.match(group.checkId, /^[0-9a-f]{16}$/);
+    assert.notEqual(group.checkId, member.checkId, 'a separate row from a separate model call');
+});
+
 test('a fetch failure carries the fetcher\'s own message onto the finding', () => {
     const citation = {
         claimText: 'The bridge opened in 1998.',

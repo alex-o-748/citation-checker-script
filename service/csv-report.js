@@ -59,6 +59,13 @@ const COLUMNS = [
     ['tokens_in', f => f.tokensIn],
     ['tokens_out', f => f.tokensOut],
     ['published', f => (f.published ? 1 : 0)],
+    // Last, not first, despite being the row's identifier — csvPageTitles()
+    // below reads the FIRST field of every record as the page title, which is
+    // what --resume skips on. Moving check_id to column 1 would silently make
+    // every resume treat an id as an article title and re-check the whole
+    // batch. If this ever does belong at the front, teach csvPageTitles() to
+    // locate page_title by header name first.
+    ['check_id', f => f.checkId],
 ];
 
 // RFC4180-style escaping: quote a cell that contains a comma, quote, or
