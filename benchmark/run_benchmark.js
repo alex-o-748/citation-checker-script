@@ -78,6 +78,14 @@ const PROVIDERS = {
         keyEnv: 'ANTHROPIC_API_KEY',
         type: 'claude'
     },
+    'claude-opus-4-7': {
+        name: 'Claude Opus 4.7',
+        model: 'claude-opus-4-7',
+        endpoint: 'https://api.anthropic.com/v1/messages',
+        requiresKey: true,
+        keyEnv: 'ANTHROPIC_API_KEY',
+        type: 'claude'
+    },
     // Gemini
     'gemini-2.5-flash': {
         name: 'Gemini 2.5 Flash',
