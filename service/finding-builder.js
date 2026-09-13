@@ -108,6 +108,13 @@ export function assembleFinding({
             groupId: citation.groupId ?? null,
             isCollective: false,
             fetchStatus: verification.fetchStatus,
+            // The fetcher's own words for why there is no content. Carried
+            // separately from fetchStatus because most failures never get a
+            // status at all (DNS, TLS, a timeout, the stub fetcher), which
+            // left every one of those rows looking identical in the CSV.
+            // CSV-only — findings-store.js has no column for it, and the
+            // reason code (reasonType) is the part worth storing.
+            fetchError: citation.source?.error ?? null,
             sourceTruncated: Boolean(citation.source?.content?.includes('\nTruncated: true')),
         },
         { verification, provider, model, promptVersion, hasContent, fetchedAt, ttlDays }
@@ -167,7 +174,12 @@ export function assembleGroupFinding({
             fetchedAt: hasContent ? fetchedAt : null,
             groupId: verification.groupId ?? members[0]?.groupId ?? null,
             isCollective: true,
+            // Both null for the same reason: a collective row covers several
+            // sources, and only runs at all when at least two of them were
+            // fetched, so there is no one status or error that describes it.
+            // The members' own rows carry theirs.
             fetchStatus: null,
+            fetchError: null,
             sourceTruncated: members.some(m => m.source?.content?.includes('\nTruncated: true')),
         },
         { verification, provider, model, promptVersion, hasContent, fetchedAt, ttlDays }

@@ -51,6 +51,7 @@ const COLUMNS = [
     ['source_quote', f => f.sourceQuote],
     ['quote_status', f => f.quoteStatus],
     ['fetch_status', f => f.fetchStatus],
+    ['fetch_error', f => f.fetchError],
     ['source_truncated', f => (f.sourceTruncated ? 1 : 0)],
     ['provider', f => f.provider],
     ['model', f => f.model],

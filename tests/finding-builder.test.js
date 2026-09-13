@@ -54,6 +54,48 @@ test('a verified citation assembles into a finding with published always false',
     );
 });
 
+test('a fetch failure carries the fetcher\'s own message onto the finding', () => {
+    const citation = {
+        claimText: 'The bridge opened in 1998.',
+        citationNumber: '3',
+        url: 'https://example.invalid/a',
+        groupId: null,
+        source: {
+            content: null, status: null,
+            error: 'getaddrinfo ENOTFOUND example.invalid',
+            unavailableReason: 'fetch_failed',
+        },
+    };
+    const finding = assembleFinding({
+        candidate, citation,
+        verification: {
+            verdict: 'SOURCE UNAVAILABLE', supportScore: null, reasonType: 'fetch_failed',
+            rationale: null, sourceQuote: null, quoteStatus: null, usage: null, fetchStatus: null,
+        },
+        provider: 'publicai', model: 'qwen3-32b', promptVersion: 'v1',
+    });
+
+    assert.equal(finding.fetchError, 'getaddrinfo ENOTFOUND example.invalid');
+    assert.equal(finding.fetchStatus, null, 'a DNS failure never gets an HTTP status');
+    assert.equal(finding.reasonType, 'fetch_failed');
+});
+
+test('a successfully fetched source leaves fetchError empty', () => {
+    const finding = assembleFinding({
+        candidate,
+        citation: {
+            claimText: 'c', citationNumber: '1', url: 'https://example.com/a', groupId: null,
+            source: { content: 'Source Content:\ntext', status: 200, error: null },
+        },
+        verification: {
+            verdict: 'SUPPORTED', supportScore: 90, reasonType: null, rationale: 'ok',
+            sourceQuote: null, quoteStatus: 'empty', usage: { input: 1, output: 1 }, fetchStatus: 200,
+        },
+        provider: 'publicai', model: 'qwen3-32b', promptVersion: 'v1',
+    });
+    assert.equal(finding.fetchError, null);
+});
+
 test('a citation from a named ref carries its recovered ref name into the finding', () => {
     const citation = {
         claimText: 'The bridge opened in 1998.',
