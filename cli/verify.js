@@ -12,19 +12,24 @@ import { modelFor } from '../core/models.js';
 import { verifyCitation, VERIFY_STAGES } from '../core/pipeline.js';
 import { parseCompareArgs, COMPARE_HELP_TEXT, runCompare } from './compare.js';
 
-const KNOWN_PROVIDERS = ['publicai', 'huggingface', 'claude', 'gemini', 'openai'];
+const KNOWN_PROVIDERS = ['publicai', 'huggingface', 'liftwing', 'claude', 'gemini', 'openai'];
 
-// Experimental: opt-in override that routes the huggingface provider's proxy
-// call through the tf-llm-router Toolforge tool
+// Experimental: opt-in override that routes the huggingface/liftwing
+// providers' proxy calls through the tf-llm-router Toolforge tool
 // (https://github.com/alex-o-748/tf-llm-router) instead of the Cloudflare
 // Worker CORS proxy, mirroring the same override in main.js
 // (useToolforgeLlmRouter). Unlike tf-source-fetcher, tf-llm-router's README
 // carries no WMCS gating caveat — it's opt-in because it's new and its
 // Toolforge rate-limit behavior is still unverified, not because it's
-// policy-blocked. Only applies to huggingface routed via the proxy (no
-// HF_API_KEY set) — with a key the call goes directly to HF's router and
-// workerBase is irrelevant; publicai isn't routed here at all, since
-// tf-llm-router doesn't implement a publicai-shaped route.
+// policy-blocked. liftwing benefits from this the most: Lift Wing is
+// severely rate-limited when called from outside Wikimedia infrastructure
+// (as this CLI does by default) but not when called from inside Toolforge,
+// which is exactly what routing through tf-llm-router does (see
+// docs/design-plans/2026-08-07-batch-source-checks-for-edit-suggestions.md
+// §5). Only applies to huggingface/liftwing routed via the proxy (no
+// HF_API_KEY set for huggingface — with a key the call goes directly to HF's
+// router and workerBase is irrelevant); publicai isn't routed here at all,
+// since tf-llm-router doesn't implement a publicai-shaped route.
 const TOOLFORGE_LLM_ROUTER_BASE = 'https://llm-router.toolforge.org';
 
 export function parseCliArgs(argv) {
@@ -167,6 +172,7 @@ export function classifyProviderError(err) {
 const PROVIDER_ENV_VARS = {
     publicai:    null, // routed through the worker proxy; no client-side key
     huggingface: null, // proxy by default; HF_API_KEY (optional) opts into direct
+    liftwing:    null, // proxy-only; no client-side key
     claude:      'CLAUDE_API_KEY',
     gemini:      'GEMINI_API_KEY',
     openai:      'OPENAI_API_KEY',
@@ -197,15 +203,21 @@ Options:
                                     HF-hosted model)
                        publicai    (routed via the worker proxy,
                                     no API key needed)
+                       liftwing    (Wikimedia Lift Wing, routed via the
+                                    worker proxy, no API key needed; see
+                                    --live-llm-router — Lift Wing is
+                                    severely rate-limited from outside
+                                    Wikimedia infrastructure)
                        claude      (requires CLAUDE_API_KEY)
                        gemini      (requires GEMINI_API_KEY)
                        openai      (requires OPENAI_API_KEY)
   --no-log           Do not log the verification to the worker proxy's
                      /log endpoint.
-  --live-llm-router  Route the huggingface provider through tf-llm-router
-                     (https://github.com/alex-o-748/tf-llm-router) instead
-                     of the Cloudflare Worker proxy. Experimental; no effect
-                     unless --provider huggingface and HF_API_KEY is unset.
+  --live-llm-router  Route the huggingface/liftwing providers through
+                     tf-llm-router (https://github.com/alex-o-748/tf-llm-router)
+                     instead of the Cloudflare Worker proxy. Experimental; no
+                     effect unless --provider is huggingface (with HF_API_KEY
+                     unset) or liftwing.
   --help, -h         Show this help and exit.
 
 Exit codes:
@@ -333,10 +345,11 @@ export async function runVerify(opts, { stdout = process.stdout, stderr = proces
         : (optionalEnvVar ? env[optionalEnvVar] : undefined);
 
     // See TOOLFORGE_LLM_ROUTER_BASE above: only meaningful for the proxy-routed
-    // huggingface call (no apiKey — a direct HF call ignores workerBase entirely).
+    // huggingface/liftwing calls (no apiKey — a direct HF call ignores
+    // workerBase entirely, and liftwing never takes a client-side key).
     let workerBase;
-    if (liveLlmRouter && provider === 'huggingface' && !apiKey) {
-        stderr.write(`ccs: routing huggingface via ${TOOLFORGE_LLM_ROUTER_BASE}\n`);
+    if (liveLlmRouter && (provider === 'huggingface' || provider === 'liftwing') && !apiKey) {
+        stderr.write(`ccs: routing ${provider} via ${TOOLFORGE_LLM_ROUTER_BASE}\n`);
         workerBase = TOOLFORGE_LLM_ROUTER_BASE;
     }
 

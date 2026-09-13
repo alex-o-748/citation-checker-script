@@ -3,10 +3,9 @@
 // provider, and which environment variable holds its API key.
 //
 // Sourced from main.js's this.providers config, which is the authoritative,
-// complete provider list — NOT from cli/verify.js's KNOWN_PROVIDERS, which
-// omits 'liftwing' with no stated reason. That omission matters more here
-// than it does in cli/verify.js: Lift Wing, called from inside Toolforge, is
-// the specific thing docs/design-plans/
+// complete provider list (cli/verify.js's KNOWN_PROVIDERS now includes
+// 'liftwing' too — see its --live-llm-router flag). Lift Wing, called from
+// inside Toolforge, is the specific thing docs/design-plans/
 // 2026-08-07-batch-source-checks-for-edit-suggestions.md §5 calls "the
 // strongest single argument for Toolforge hosting" — a batch runner for a
 // Toolforge migration that can't select it is missing its own point. Keep in
