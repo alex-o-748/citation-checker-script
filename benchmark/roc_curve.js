@@ -2,8 +2,11 @@
 /**
  * ROC Curve Script
  *
- * Computes ROC curve points + AUC per provider from a results file, using
- * the SUPPORTED-vs-rest framing in roc.js.
+ * Computes ROC curve points + AUC per provider from a results file.
+ *
+ * The positive class is the FAILING citation — ground truth anything but
+ * SUPPORTED, the case requiring treatment. So TPR is recall on failing
+ * citations and FPR is good citations flagged anyway. See roc.js's header.
  *
  * Usage: node roc_curve.js [--results <path>] [--dataset <path>] [--output <path>]
  *                         [--truncation all|full|truncated] [--include-excluded]
@@ -136,12 +139,14 @@ function main() {
 
     const curves = computeRocCurvesByProvider(rows);
 
-    console.log('\n=== ROC AUC (SUPPORTED vs. rest) ===\n');
+    console.log('\n=== ROC AUC — detecting the failing citation ===');
+    console.log('positive = needs treatment (anything but SUPPORTED)');
+    console.log('TPR = failing citations caught · FPR = good citations flagged anyway\n');
     for (const [provider, curve] of Object.entries(curves)) {
         const aucStr = curve.auc === null ? 'n/a (single-class)' : curve.auc.toFixed(3);
         const vop = curve.verdictOperatingPoint;
         const vopStr = vop ? `  |  raw verdict: FPR ${vop.fpr.toFixed(3)}, TPR ${vop.tpr.toFixed(3)}` : '';
-        console.log(`${provider}: AUC ${aucStr}  (${curve.positives} positive / ${curve.negatives} negative)${vopStr}`);
+        console.log(`${provider}: AUC ${aucStr}  (${curve.positives} failing / ${curve.negatives} fine)${vopStr}`);
     }
 
     // The metadata block is the point of the wrapper: roc.json and
@@ -150,6 +155,11 @@ function main() {
     // all-rows one.
     const metadata = {
         computed_at: todayIso(),
+        // Written into every output so a curve can never be read against the
+        // wrong class by someone who only has the JSON.
+        positive_class: 'needs treatment — ground truth is anything but SUPPORTED',
+        tpr_means: 'share of genuinely failing citations the tool flags',
+        fpr_means: 'share of genuinely fine citations the tool flags anyway',
         results_file: path.basename(RESULTS_PATH),
         dataset_file: path.basename(DATASET_PATH),
         truncation: TRUNCATION_FILTER,

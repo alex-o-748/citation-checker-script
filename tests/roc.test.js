@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-    supportedScore,
-    isPositiveGroundTruth,
+    failureScore,
+    needsTreatment,
     computeRocCurve,
     computeRocCurvesByProvider,
     computeVerdictOperatingPoint,
@@ -10,33 +10,77 @@ import {
 import { selectScoredRows } from '../benchmark/roc_curve.js';
 import { rowSupportScore } from '../benchmark/io.js';
 
-test('supportedScore pushes SUPPORTED above 50 and NOT SUPPORTED/SOURCE UNAVAILABLE below it', () => {
-    assert.equal(supportedScore('Supported', 100), 100);
-    assert.equal(supportedScore('Supported', 0), 50);
-    assert.equal(supportedScore('Not supported', 100), 0);
-    assert.equal(supportedScore('Not supported', 0), 50);
-    assert.equal(supportedScore('Source unavailable', 80), 10);
+// --- THE POSITIVE CLASS ------------------------------------------------------
+// Positive = the citation needs treatment: ground truth is anything but
+// SUPPORTED. TPR is recall on failing citations; FPR is good citations flagged
+// anyway. This has been read backwards twice, so these four tests exist to fail
+// loudly rather than quietly re-inverting the meaning of every published curve.
+
+test('the positive class is the failing citation — anything but SUPPORTED', () => {
+    assert.equal(needsTreatment('Partially supported'), true);
+    assert.equal(needsTreatment('Not supported'), true);
+    assert.equal(needsTreatment('Source unavailable'), true);
+    assert.equal(needsTreatment('Supported'), false, 'SUPPORTED is the negative class');
+    assert.equal(needsTreatment('SUPPORTED'), false);
+    assert.equal(needsTreatment(null), false);
 });
 
-test('supportedScore sits PARTIALLY SUPPORTED and unrecognized verdicts at the midpoint regardless of confidence', () => {
-    assert.equal(supportedScore('Partially supported', 95), 50);
-    assert.equal(supportedScore('Partially supported', 0), 50);
-    assert.equal(supportedScore('gibberish', 90), 50);
-    assert.equal(supportedScore(null, 90), 50);
+test('a tool that flags every failing citation and passes every good one sits at the ideal corner', () => {
+    const rows = [
+        { ground_truth: 'Not supported', predicted_verdict: 'Not supported', support_score: 90 },
+        { ground_truth: 'Partially supported', predicted_verdict: 'Partially supported', support_score: 90 },
+        { ground_truth: 'Supported', predicted_verdict: 'Supported', support_score: 90 },
+    ];
+    // TPR 1: both failing citations caught. FPR 0: the good one was not flagged.
+    assert.deepEqual(computeVerdictOperatingPoint(rows), { fpr: 0, tpr: 1 });
 });
 
-test('supportedScore clamps out-of-range confidence', () => {
-    assert.equal(supportedScore('Supported', 150), 100);
-    assert.equal(supportedScore('Supported', -10), 50);
+test('FPR counts good citations the tool flagged anyway', () => {
+    const rows = [
+        { ground_truth: 'Supported', predicted_verdict: 'Supported', support_score: 90 },
+        { ground_truth: 'Supported', predicted_verdict: 'Supported', support_score: 90 },
+        { ground_truth: 'Supported', predicted_verdict: 'Not supported', support_score: 90 },
+        { ground_truth: 'Not supported', predicted_verdict: 'Not supported', support_score: 90 },
+    ];
+    const { fpr } = computeVerdictOperatingPoint(rows);
+    assert.equal(fpr, 1 / 3, 'one of three genuinely supported citations was flagged');
 });
 
-test('isPositiveGroundTruth is true only for SUPPORTED, case/format insensitive', () => {
-    assert.equal(isPositiveGroundTruth('Supported'), true);
-    assert.equal(isPositiveGroundTruth('SUPPORTED'), true);
-    assert.equal(isPositiveGroundTruth('Partially supported'), false);
-    assert.equal(isPositiveGroundTruth('Not supported'), false);
-    assert.equal(isPositiveGroundTruth('Source unavailable'), false);
-    assert.equal(isPositiveGroundTruth(null), false);
+test('failureScore pushes NOT SUPPORTED/SOURCE UNAVAILABLE above 50 and SUPPORTED below it', () => {
+    assert.equal(failureScore('Not supported', 100), 100);
+    assert.equal(failureScore('Not supported', 0), 50);
+    assert.equal(failureScore('Source unavailable', 80), 90);
+    assert.equal(failureScore('Supported', 100), 0);
+    assert.equal(failureScore('Supported', 0), 50);
+});
+
+test('failureScore sits PARTIALLY SUPPORTED and unrecognized verdicts at the midpoint regardless of confidence', () => {
+    assert.equal(failureScore('Partially supported', 95), 50);
+    assert.equal(failureScore('Partially supported', 0), 50);
+    assert.equal(failureScore('gibberish', 90), 50);
+    assert.equal(failureScore(null, 90), 50);
+});
+
+test('failureScore clamps out-of-range confidence', () => {
+    assert.equal(failureScore('Not supported', 150), 100);
+    assert.equal(failureScore('Not supported', -10), 50);
+});
+
+// The property that keeps the diamond on its own curve: at cutoff 50 the swept
+// score flags exactly what the bare verdict flags, because every non-SUPPORTED
+// prediction sits at or above the midpoint.
+test('sweeping to threshold 50 reproduces the raw-verdict operating point', () => {
+    const rows = [
+        { ground_truth: 'Not supported', predicted_verdict: 'Not supported', support_score: 90 },
+        { ground_truth: 'Partially supported', predicted_verdict: 'Partially supported', support_score: 80 },
+        { ground_truth: 'Supported', predicted_verdict: 'Supported', support_score: 90 },
+        { ground_truth: 'Supported', predicted_verdict: 'Not supported', support_score: 70 },
+    ];
+    const { points, verdictOperatingPoint } = computeRocCurve(rows);
+    const at50 = points.find(pt => pt.threshold === 50);
+    assert.ok(at50, 'expected a swept threshold at the midpoint');
+    assert.equal(at50.tpr, verdictOperatingPoint.tpr);
+    assert.equal(at50.fpr, verdictOperatingPoint.fpr);
 });
 
 test('computeRocCurve traces (0,0) to (1,1) and scores perfect separation as AUC 1', () => {
@@ -72,8 +116,9 @@ test('computeRocCurve returns null AUC for single-class rows (nothing to trade o
     ];
     const { auc, positives, negatives } = computeRocCurve(rows);
     assert.equal(auc, null);
-    assert.equal(positives, 2);
-    assert.equal(negatives, 0);
+    // Both rows are genuinely SUPPORTED, so there is nothing to detect.
+    assert.equal(positives, 0);
+    assert.equal(negatives, 2);
 });
 
 test('computeRocCurve excludes error rows and rows with unrecognized ground truth', () => {
@@ -90,25 +135,27 @@ test('computeRocCurve excludes error rows and rows with unrecognized ground trut
 
 test('computeVerdictOperatingPoint ignores confidence and scores the raw predicted_verdict', () => {
     const rows = [
-        // Low-confidence SUPPORTED still counts as a predicted positive here,
-        // unlike the threshold-swept curve where it might not clear a high cutoff.
+        // Low-confidence SUPPORTED still counts as a predicted negative here —
+        // the bare verdict is read as-is, whatever confidence rides along.
         { ground_truth: 'Supported', predicted_verdict: 'Supported', confidence: 5 },
         { ground_truth: 'Not supported', predicted_verdict: 'Supported', confidence: 5 },
         { ground_truth: 'Supported', predicted_verdict: 'Not supported', confidence: 99 },
         { ground_truth: 'Not supported', predicted_verdict: 'Not supported', confidence: 99 },
     ];
     const point = computeVerdictOperatingPoint(rows);
-    // 1 true positive / 2 actual positives; 1 false positive / 2 actual negatives.
+    // 1 failing citation caught of 2; 1 good citation flagged of 2.
     assert.deepEqual(point, { fpr: 0.5, tpr: 0.5 });
 });
 
-test('computeVerdictOperatingPoint treats PARTIALLY SUPPORTED as a predicted negative', () => {
+test('computeVerdictOperatingPoint treats PARTIALLY SUPPORTED as a predicted positive', () => {
     const rows = [
+        // Partially supported is a citation the editor still has to look at, so
+        // predicting it counts as flagging — here, wrongly, on a good citation.
         { ground_truth: 'Supported', predicted_verdict: 'Partially supported', confidence: 60 },
         { ground_truth: 'Not supported', predicted_verdict: 'Not supported', confidence: 60 },
     ];
     const point = computeVerdictOperatingPoint(rows);
-    assert.deepEqual(point, { fpr: 0, tpr: 0 });
+    assert.deepEqual(point, { fpr: 1, tpr: 1 });
 });
 
 test('computeVerdictOperatingPoint returns null for single-class rows', () => {
@@ -126,7 +173,8 @@ test('computeRocCurve includes the matching verdictOperatingPoint', () => {
         { ground_truth: 'Not supported', predicted_verdict: 'Not supported', confidence: 80 },
     ];
     const { verdictOperatingPoint } = computeRocCurve(rows);
-    assert.deepEqual(verdictOperatingPoint, { fpr: 0, tpr: 0.5 });
+    // Both failing citations caught; one of the two good ones flagged anyway.
+    assert.deepEqual(verdictOperatingPoint, { fpr: 0.5, tpr: 1 });
 });
 
 // --- support_score / confidence field tolerance ---
@@ -156,7 +204,7 @@ test('support_score rows do not collapse to a single midpoint threshold', () => 
         { ground_truth: 'Not supported', predicted_verdict: 'Not supported', support_score: 80 },
         { ground_truth: 'Not supported', predicted_verdict: 'Source unavailable', support_score: 60 },
     ];
-    const scores = new Set(rows.map(r => supportedScore(r.predicted_verdict, rowSupportScore(r))));
+    const scores = new Set(rows.map(r => failureScore(r.predicted_verdict, rowSupportScore(r))));
     assert.ok(scores.size > 1, 'every row collapsed onto one score');
     assert.notEqual(computeRocCurve(rows).auc, 0.5);
 });

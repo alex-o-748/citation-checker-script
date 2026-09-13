@@ -47,7 +47,7 @@ export function writeWithMetadata(filePath, metadata, rows) {
  * directions, which is why this is centralized:
  *
  *   - benchmark/roc.js read only `confidence`. Since it feeds
- *     `supportedScore(verdict, score)`, and a score of 0 collapses SUPPORTED,
+ *     `failureScore(verdict, score)`, and a score of 0 collapses SUPPORTED,
  *     NOT SUPPORTED and SOURCE UNAVAILABLE alike onto the 50 midpoint, a
  *     current-schema run scored one distinct threshold and an AUC of exactly
  *     0.500 — chance, indistinguishable from a genuinely useless model.
