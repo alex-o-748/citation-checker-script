@@ -60,7 +60,7 @@ import { readFile as fsReadFile, writeFile as fsWriteFile } from 'node:fs/promis
 import { openReplicaConnection, makeQueryFn } from './replicas.js';
 import { selectCandidates, CRITERIA } from './article-picker.js';
 import { runBatch, ARTICLE_OUTCOMES } from './claim-extractor.js';
-import { fetchArticleHtml, hostForWiki } from '../core/wikipedia.js';
+import { fetchArticleHtml, hostForWiki, langCodeForWiki } from '../core/wikipedia.js';
 import { fetchSourceContent } from '../core/worker.js';
 import { verifyCitation, verifyGroup, makeModelCaller, ProviderAuthError } from './verifier.js';
 import { assembleFinding, assembleGroupFinding } from './finding-builder.js';
@@ -126,9 +126,13 @@ be SOURCE UNAVAILABLE until you opt in.
 Options:
   --criterion <name>   Selection criterion. One of: ${Object.keys(CRITERIA).join(', ')}
                         (default: failed-verification). Ignored with --titles-file.
-  --wiki <db>           Wiki database name, e.g. enwiki, frwiki (default: enwiki).
-                        With --titles-file this only picks the domain used for
-                        permalinks in the CSV — no Wiki Replicas query is made.
+  --wiki <db>           Wiki database name, e.g. enwiki, ruwiki (default: enwiki).
+                        Controls the REST fetch host, the permalink domain in
+                        the CSV, and the language the model is asked to write
+                        its rationale in — English is only assumed when this
+                        is enwiki (or unset). With --titles-file, --wiki is
+                        still how a non-English titles list is identified; no
+                        Wiki Replicas query is made either way.
   --titles-file <path>  Check an explicit list of articles instead of selecting
                          via Wiki Replicas: a text file, one article title per
                          line (blank lines and lines starting with # ignored).
@@ -284,6 +288,16 @@ export async function runSweep(opts, {
     // entirely, same as before.
     const fetchArticleFn = fetchArticle
         ?? (params => fetchArticleHtml(params, { host: hostForWiki(opts.wiki) }));
+
+    // Passed to every verifyCitation()/verifyGroup() call below so the
+    // model's free-text "comments" come back in the article's language
+    // (core/prompts.js's withCommentLanguage()) rather than English on a
+    // non-English sweep. Derived from --wiki, not --titles-file's contents —
+    // a titles file has no wiki of its own, it's just a list of strings, so
+    // --wiki is still how a Russian titles-file run says "these are Russian
+    // titles" (also see hostForWiki()'s comment: same flag, same gap, before
+    // 2026-09-13).
+    const articleLangCode = langCodeForWiki(opts.wiki);
 
     const envVar = PROVIDER_ENV_VARS[opts.provider];
     const apiKey = envVar ? env[envVar] : undefined;
@@ -566,7 +580,7 @@ export async function runSweep(opts, {
                 const verifyStartedAt = Date.now();
                 const { onAttemptFailed, finish } = trackRetries();
                 try {
-                    verification = await verifyCitation(task.citation.claimText, task.citation.source, { callModel, retry: { onAttemptFailed } });
+                    verification = await verifyCitation(task.citation.claimText, task.citation.source, { callModel, retry: { onAttemptFailed }, articleLangCode });
                 } catch (error) {
                     recordVerifyDuration(verifyStartedAt);
                     finish();
@@ -587,7 +601,7 @@ export async function runSweep(opts, {
                 const verifyStartedAt = Date.now();
                 const { onAttemptFailed, finish } = trackRetries();
                 try {
-                    verification = await verifyGroup(task.members, { callModel, retry: { onAttemptFailed } });
+                    verification = await verifyGroup(task.members, { callModel, retry: { onAttemptFailed }, articleLangCode });
                 } catch (error) {
                     recordVerifyDuration(verifyStartedAt);
                     finish();

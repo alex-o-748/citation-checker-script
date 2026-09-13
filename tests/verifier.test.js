@@ -307,3 +307,61 @@ test('verifyGroup requires a non-empty members array', async () => {
         TypeError
     );
 });
+
+// --- articleLangCode: verdict comments in the article's language ---
+
+test('verifyCitation passes articleLangCode through to the system prompt', async () => {
+    // Unlike main.js (UI language vs. article language can differ — a French
+    // UI user can view an English article), the batch pipeline knows the
+    // swept wiki's language with certainty, so articleLangCode is passed as
+    // both withCommentLanguage() params: a ru/fr/es sweep gets the curated
+    // "Write in Russian (русский)" instruction, not just the generic one.
+    let capturedSystemPrompt;
+    await verifyCitation('The bridge opened in 1998.', source(withContent('The bridge opened in 1998.')), {
+        callModel: async systemPrompt => {
+            capturedSystemPrompt = systemPrompt;
+            return okResponse({ support_score: 90, verdict: 'SUPPORTED', source_quote: '', comments: 'ok' })();
+        },
+        articleLangCode: 'ru',
+    });
+    assert.match(capturedSystemPrompt, /Write the "comments" field in Russian \(русский\)\./);
+});
+
+test('verifyCitation falls back to the generic directive for a wiki with no curated language name', async () => {
+    let capturedSystemPrompt;
+    await verifyCitation('The bridge opened in 1998.', source(withContent('The bridge opened in 1998.')), {
+        callModel: async systemPrompt => {
+            capturedSystemPrompt = systemPrompt;
+            return okResponse({ support_score: 90, verdict: 'SUPPORTED', source_quote: '', comments: 'ok' })();
+        },
+        articleLangCode: 'de',
+    });
+    assert.match(capturedSystemPrompt, /LANGUAGE:.*same language as the claim and source text above, not in English/s);
+});
+
+test('verifyCitation leaves the system prompt unlocalized without articleLangCode', async () => {
+    let capturedSystemPrompt;
+    await verifyCitation('The bridge opened in 1998.', source(withContent('The bridge opened in 1998.')), {
+        callModel: async systemPrompt => {
+            capturedSystemPrompt = systemPrompt;
+            return okResponse({ support_score: 90, verdict: 'SUPPORTED', source_quote: '', comments: 'ok' })();
+        },
+    });
+    assert.doesNotMatch(capturedSystemPrompt, /LANGUAGE:/);
+});
+
+test('verifyGroup passes articleLangCode through to the system prompt', async () => {
+    let capturedSystemPrompt;
+    const members = [
+        member('2', { content: withContent('Alpha body.') }),
+        member('3', { url: 'https://example.com/3', content: withContent('Beta body.') }),
+    ];
+    await verifyGroup(members, {
+        callModel: async systemPrompt => {
+            capturedSystemPrompt = systemPrompt;
+            return okResponse({ support_score: 90, verdict: 'SUPPORTED', source_quote: '', comments: 'ok' })();
+        },
+        articleLangCode: 'ru',
+    });
+    assert.match(capturedSystemPrompt, /Write the "comments" field in Russian \(русский\)\./);
+});

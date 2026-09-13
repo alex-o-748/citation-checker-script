@@ -68,6 +68,43 @@ export const CURRENT_EVENT_TEMPLATES = Object.freeze([
     'Ongoing_election',
 ]);
 
+// Per-wiki names for the two tag-based pilot-mix signals
+// (service/run-pick-pilot.js's current-tag bonus and {{failed verification}}
+// quota). Every wiki names its own maintenance templates independently —
+// there is no cross-wiki registry to look these up in — so each wiki's set is
+// entered here by hand, sourced from a human editor on that wiki. Never
+// guessed: a wrong name doesn't error, selectTagMembership() just silently
+// matches zero pages, and the pilot mix quietly loses the signal with nothing
+// reporting that it happened. Confirmed by a ru.wikipedia editor, 2026-09-13.
+//
+// ruwiki's {{failed verification}} equivalent lists two names rather than
+// one: it wasn't confirmed which of "Не соответствует источнику" and
+// "Нет в источнике" is the one actually transcluded (possibly both, possibly
+// one is a redirect to the other) — matching either is safer than guessing
+// and silently under-counting.
+//
+// A wiki absent from these tables falls back to the enwiki names, which is
+// certainly wrong for that wiki but is exactly today's (pre-existing)
+// behavior for every non-English wiki — not a new failure mode, just not yet
+// a fixed one.
+export const WIKI_CURRENT_EVENT_TEMPLATES = Object.freeze({
+    enwiki: CURRENT_EVENT_TEMPLATES,
+    ruwiki: Object.freeze(['Текущие_события']),
+});
+
+export const WIKI_FAILED_VERIFICATION_TEMPLATES = Object.freeze({
+    enwiki: Object.freeze([CRITERIA['failed-verification'].template]),
+    ruwiki: Object.freeze(['Не_соответствует_источнику', 'Нет_в_источнике']),
+});
+
+export function currentEventTemplatesForWiki(wikiDb) {
+    return WIKI_CURRENT_EVENT_TEMPLATES[wikiDb] ?? CURRENT_EVENT_TEMPLATES;
+}
+
+export function failedVerificationTemplatesForWiki(wikiDb) {
+    return WIKI_FAILED_VERIFICATION_TEMPLATES[wikiDb] ?? [CRITERIA['failed-verification'].template];
+}
+
 export class UnknownCriterionError extends Error {
     constructor(name) {
         super(`unknown selection criterion: ${name} (known: ${Object.keys(CRITERIA).join(', ')})`);

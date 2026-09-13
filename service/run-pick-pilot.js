@@ -45,8 +45,8 @@ import {
     selectTopEdited,
     selectTagMembership,
     selectCreationDates,
-    CURRENT_EVENT_TEMPLATES,
-    resolveCriterion,
+    currentEventTemplatesForWiki,
+    failedVerificationTemplatesForWiki,
 } from './article-picker.js';
 import { collectCitations } from '../core/citations.js';
 import { fetchArticleHtml, hostForWiki } from '../core/wikipedia.js';
@@ -273,10 +273,8 @@ export async function runPickPilot(opts, {
 
         const pageIds = topEdited.map(c => c.pageId);
         const [currentTagIds, failedVerificationIds, creationDates] = await Promise.all([
-            selectTagMembership(query, { templates: CURRENT_EVENT_TEMPLATES, pageIds }),
-            selectTagMembership(query, {
-                templates: [resolveCriterion('failed-verification').template], pageIds,
-            }),
+            selectTagMembership(query, { templates: currentEventTemplatesForWiki(opts.wiki), pageIds }),
+            selectTagMembership(query, { templates: failedVerificationTemplatesForWiki(opts.wiki), pageIds }),
             selectCreationDates(query, { pageIds }),
         ]);
 

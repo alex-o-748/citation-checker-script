@@ -11,6 +11,8 @@ import {
     buildCreationDateQuery,
     buildTagMembershipQuery,
     buildTopEditedQuery,
+    currentEventTemplatesForWiki,
+    failedVerificationTemplatesForWiki,
     formatRevTimestamp,
     normalizeRow,
     normalizeTopEditedRow,
@@ -168,6 +170,35 @@ test('CURRENT_EVENT_TEMPLATES uses DB-form titles and includes the umbrella tag'
     for (const template of CURRENT_EVENT_TEMPLATES) {
         assert.ok(!template.includes(' '), `${template} must use underscores, not spaces`);
     }
+});
+
+// --- Per-wiki template names ---
+
+test('currentEventTemplatesForWiki resolves ruwiki to its own confirmed template', () => {
+    assert.deepEqual(currentEventTemplatesForWiki('ruwiki'), ['Текущие_события']);
+});
+
+test('failedVerificationTemplatesForWiki resolves ruwiki to both candidate names', () => {
+    // Not confirmed which of the two is actually transcluded on ru.wikipedia
+    // (or whether one redirects to the other) — matching both is the safe
+    // choice over guessing and silently under-counting.
+    assert.deepEqual(
+        failedVerificationTemplatesForWiki('ruwiki'),
+        ['Не_соответствует_источнику', 'Нет_в_источнике']
+    );
+});
+
+test('currentEventTemplatesForWiki and failedVerificationTemplatesForWiki resolve enwiki to the existing tables', () => {
+    assert.deepEqual(currentEventTemplatesForWiki('enwiki'), CURRENT_EVENT_TEMPLATES);
+    assert.deepEqual(failedVerificationTemplatesForWiki('enwiki'), ['Failed_verification']);
+});
+
+test('an unregistered wiki falls back to the enwiki names rather than throwing', () => {
+    // Wrong for that wiki, but identical to this function not existing at all
+    // — not a new failure mode, just not yet a fixed one (see the constants'
+    // doc comment).
+    assert.deepEqual(currentEventTemplatesForWiki('frwiki'), CURRENT_EVENT_TEMPLATES);
+    assert.deepEqual(failedVerificationTemplatesForWiki('frwiki'), ['Failed_verification']);
 });
 
 // --- Top-edited query ---

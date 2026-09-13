@@ -25,6 +25,20 @@ export function hostForWiki(wikiDb) {
     return wikiDb.endsWith('wiki') ? `${wikiDb.slice(0, -4)}.wikipedia.org` : `${wikiDb}.wikipedia.org`;
 }
 
+// Same "strip the trailing 'wiki'" heuristic as hostForWiki(), for the one
+// other place a Wiki Replicas database name needs converting: telling the
+// model what language the claim/source it's reading is in
+// (core/prompts.js's withCommentLanguage(), via its articleLangCode param) so
+// service/verifier.js's batch pipeline doesn't return English rationale on a
+// Russian sweep. Holds for every standard-language Wikipedia ('ruwiki' -> 'ru'),
+// which is what the batch pipeline runs against; wrong for a project this
+// heuristic was never meant to cover (Commons, a non-Wikipedia sister
+// project), same caveat as hostForWiki().
+export function langCodeForWiki(wikiDb) {
+    if (!wikiDb) return 'en';
+    return wikiDb.endsWith('wiki') ? wikiDb.slice(0, -4) : wikiDb;
+}
+
 export const DEFAULT_USER_AGENT =
     'citation-checker-script (https://github.com/alex-o-748/citation-checker-script)';
 

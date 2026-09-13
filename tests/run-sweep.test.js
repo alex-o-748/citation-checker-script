@@ -653,3 +653,34 @@ test('--wiki reaches the REST host when fetchArticle is not injected (the hostFo
     }
     assert.match(seenUrl, /^https:\/\/ru\.wikipedia\.org\//);
 });
+
+// --- --wiki reaches the model's comment-language directive ---
+
+test('--wiki ruwiki makes it into the system prompt the model sees', async () => {
+    let capturedSystemPrompt;
+    const code = await runSweep(baseOpts({ wiki: 'ruwiki' }), baseIo({
+        makeModelCallerFn: () => async systemPrompt => {
+            capturedSystemPrompt = systemPrompt;
+            return {
+                text: JSON.stringify({ support_score: 90, verdict: 'SUPPORTED', source_quote: '', comments: 'ok' }),
+                usage: { input: 10, output: 5 },
+            };
+        },
+    }));
+    assert.equal(code, 0);
+    assert.match(capturedSystemPrompt, /Write the "comments" field in Russian \(русский\)\./);
+});
+
+test('--wiki enwiki (the default) leaves the system prompt unlocalized', async () => {
+    let capturedSystemPrompt;
+    await runSweep(baseOpts(), baseIo({
+        makeModelCallerFn: () => async systemPrompt => {
+            capturedSystemPrompt = systemPrompt;
+            return {
+                text: JSON.stringify({ support_score: 90, verdict: 'SUPPORTED', source_quote: '', comments: 'ok' }),
+                usage: { input: 10, output: 5 },
+            };
+        },
+    }));
+    assert.doesNotMatch(capturedSystemPrompt, /LANGUAGE:/);
+});

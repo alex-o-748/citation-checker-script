@@ -234,6 +234,56 @@ Source text: "Professor Martin completed her PhD at Oxford in 1998 and joined th
 </example>`;
 }
 
+// How each fully-localized language is named to the LLM when asking it to
+// write its free-text "comments" in that language. Keys are MediaWiki
+// content-language codes.
+//
+// Deliberately NOT named PROMPT_LANGUAGES, and withCommentLanguage() below
+// deliberately not named localizeSystemPrompt: main.js declares both of those
+// names itself, outside the <core-injected> block tests/i18n.test.js lifts
+// out of main.js by exact text match (FR_MESSAGES ... class
+// WikipediaSourceVerifier), so this module — injected into main.js wholesale
+// — would collide with them under the same names. This is the batch
+// pipeline's (service/verifier.js's) own copy of main.js's
+// PROMPT_LANGUAGES/localizeSystemPrompt, kept in sync by
+// tests/prompts.test.js's cross-check rather than by sharing one
+// implementation.
+const COMMENT_LANGUAGE_NAMES = {
+    fr: 'French (français)',
+    es: 'Spanish (español)',
+    ru: 'Russian (русский)',
+};
+
+// Appends a language directive to an already-built system prompt rather than
+// localizing generateSystemPrompt() itself — the few-shot examples above stay
+// English and untouched (they're tuned against the benchmark; see CLAUDE.md).
+// Two cases:
+//   - `lang` is a COMMENT_LANGUAGE_NAMES key (fr/es/ru): name the language
+//     explicitly, using the same curated name shown to editors elsewhere.
+//   - Any other non-English wiki (`articleLangCode` set and not 'en', no
+//     COMMENT_LANGUAGE_NAMES entry): a generic "match the source" directive,
+//     so this isn't gated on a full UI translation existing.
+// `verdict` / `reason_type` are parsed programmatically and must stay in the
+// English enum regardless — the directive says so explicitly, since the rest
+// of the instruction is now asking for a different language.
+//
+// service/verifier.js has no UI language concept at all (there's no sidebar),
+// so it only ever passes articleLangCode, derived from the wiki being swept
+// (core/wikipedia.js's langCodeForWiki()) — this batch path had no
+// localization until 2026-09-13's ruwiki pilot.
+function withCommentLanguage(prompt, { lang, articleLangCode } = {}) {
+    const language = COMMENT_LANGUAGE_NAMES[lang];
+    const languageInstruction = language
+        ? `Write the "comments" field in ${language}.`
+        : 'Write the "comments" field in the same language as the claim and source text above, not in English.';
+    if (!language && (!articleLangCode || articleLangCode === 'en')) return prompt;
+    return prompt + `\n\nLANGUAGE: ${languageInstruction} `
+        + 'The "source_quote" field is an exception: it must stay in the source\'s own language, copied verbatim. Never translate it — it is checked against the source text character for character. '
+        + 'You may quote the source verbatim in its original language, but write your own explanation in that language. '
+        + 'Keep the "verdict" and "reason_type" values exactly as specified above, in English '
+        + '(SUPPORTED, PARTIALLY SUPPORTED, NOT SUPPORTED, SOURCE UNAVAILABLE, contradiction, omission).';
+}
+
 // Strips the "Source URL: ... Source Content:\n" / "Manual source text:\n"
 // framing that fetchSourceContent and the manual-paste path wrap around the
 // actual source body, returning just the body. Shared by the single-source
@@ -5919,6 +5969,14 @@ function useToolforgeSourceFetcher() {
         // they must stay in the English enum; the directive is appended (not
         // spliced) to leave the benchmark-tuned few-shot prompt in
         // core/prompts.js untouched. English wikis get the prompt verbatim.
+        //
+        // core/prompts.js's withCommentLanguage() does the identical thing for
+        // the batch pipeline (service/verifier.js) — kept as a second copy
+        // rather than a shared call because this method (and PROMPT_LANGUAGES
+        // above) sit outside the <core-injected> block tests/i18n.test.js lifts
+        // out of main.js by exact text match; tests/prompts.test.js's
+        // cross-check test pins the two to produce identical output so a
+        // change to one that isn't mirrored in the other fails the suite.
         localizeSystemPrompt(prompt) {
             const language = PROMPT_LANGUAGES[this.lang];
             const languageInstruction = language

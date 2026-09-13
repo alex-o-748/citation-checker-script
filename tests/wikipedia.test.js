@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { deriveRestUrl, fetchArticleHtml, DEFAULT_USER_AGENT, hostForWiki, DEFAULT_WIKI_HOST } from '../core/wikipedia.js';
+import { deriveRestUrl, fetchArticleHtml, DEFAULT_USER_AGENT, hostForWiki, langCodeForWiki, DEFAULT_WIKI_HOST } from '../core/wikipedia.js';
 
 // --- hostForWiki ---
 //
@@ -26,6 +26,20 @@ test('hostForWiki does not mangle a name that already lacks the "wiki" suffix', 
     // Not a real Wiki Replicas name today, but the transform must stay a
     // no-op rather than truncating real characters off the front.
     assert.equal(hostForWiki('commons'), 'commons.wikipedia.org');
+});
+
+// --- langCodeForWiki ---
+
+test('langCodeForWiki strips the wiki suffix to get the content-language code', () => {
+    assert.equal(langCodeForWiki('enwiki'), 'en');
+    assert.equal(langCodeForWiki('ruwiki'), 'ru');
+    assert.equal(langCodeForWiki('frwiki'), 'fr');
+});
+
+test('langCodeForWiki falls back to English for a missing wiki', () => {
+    assert.equal(langCodeForWiki(undefined), 'en');
+    assert.equal(langCodeForWiki(null), 'en');
+    assert.equal(langCodeForWiki(''), 'en');
 });
 
 test('deriveRestUrl builds the REST path, pinning a revision when given', () => {
