@@ -2586,9 +2586,9 @@ function useToolforgeSourceFetcher() {
         // Verifier tab + first-run notification
         'Verify': 'Vérifier',
         'Verify claims against sources': 'Vérifier les affirmations par rapport aux sources',
-        'Source Verifier': 'Vérificateur de sources',
+        'Source Verifier': 'Source Verifier',
         'Source Verifier installed — click the ':
-            'Vérificateur de sources installé — cliquez sur l’onglet ',
+            'Source Verifier installé — cliquez sur l’onglet ',
         ' tab to get started.': ' pour commencer.',
 
         // Source display
@@ -2877,9 +2877,9 @@ function useToolforgeSourceFetcher() {
         // Verifier tab + first-run notification
         'Verify': 'Verificar',
         'Verify claims against sources': 'Verificar afirmaciones con sus fuentes',
-        'Source Verifier': 'Verificador de fuentes',
+        'Source Verifier': 'Source Verifier',
         'Source Verifier installed — click the ':
-            'Verificador de fuentes instalado: la pestaña ',
+            'Source Verifier instalado: la pestaña ',
         ' tab to get started.': ' permite empezar.',
 
         // Source display
@@ -3164,9 +3164,9 @@ function useToolforgeSourceFetcher() {
         // Verifier tab + first-run notification
         'Verify': 'Проверка',
         'Verify claims against sources': 'Проверка утверждений по источникам',
-        'Source Verifier': 'Верификатор источников',
+        'Source Verifier': 'Source Verifier',
         'Source Verifier installed — click the ':
-            'Верификатор источников установлен — откройте вкладку ',
+            'Source Verifier установлен — откройте вкладку ',
         ' tab to get started.': ', чтобы начать.',
 
         // Source display

@@ -102,9 +102,11 @@ test('translations are non-empty and actually differ from English', () => {
       assert.ok(translated.length > 0, `${lang}: ${JSON.stringify(en)} translates to an empty string`);
     }
   }
-  // A handful of strings are genuinely the same word in Spanish. Anything else
-  // matching English means a key was copied over without being translated.
-  const SAME_IN_SPANISH = ['No', 'ERROR', 'Error: {message}'];
+  // A handful of strings are genuinely the same word in Spanish, and the tool's
+  // name is a name — it reads identically in every language, on purpose.
+  // Anything else matching English means a key was copied over without being
+  // translated.
+  const SAME_IN_SPANISH = ['No', 'Source Verifier', 'ERROR', 'Error: {message}'];
   const untranslated = Object.entries(MESSAGES.es).filter(([en, es]) => en === es);
   assert.deepEqual(untranslated.map(([en]) => en), SAME_IN_SPANISH, 'untranslated Spanish strings');
 });
