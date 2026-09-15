@@ -595,6 +595,22 @@ export async function runSweep(opts, {
             funnel.articles++;
             if (article.outcome !== ARTICLE_OUTCOMES.OK) {
                 funnel.articlesFailed++;
+                // Name it. This used to increment the counter and move on,
+                // which meant an article could contribute zero rows to a
+                // sweep with no trace beyond a number printed hours later at
+                // the end — and the bigger the article, the likelier it is to
+                // hit the REST timeout, so the ones that vanish silently are
+                // the ones that matter most. A real case: "Timeline of the
+                // 2026 Iran war" produced 1223 rows in one run of a
+                // 100-article batch and 0 in the next, and nothing in the log
+                // said which article was missing or why.
+                // service/run-extract.js has always reported this per article.
+                stderr.write(
+                    `sweep: skipped ${article.title} — ${article.outcome}`
+                    + (article.fetchStatus ? ` (HTTP ${article.fetchStatus})` : '')
+                    + (article.error ? `: ${article.error}` : '')
+                    + '\n'
+                );
                 continue;
             }
 

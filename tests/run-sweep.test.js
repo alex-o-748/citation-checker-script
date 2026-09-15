@@ -559,6 +559,41 @@ test('an article that fails to fetch is counted but contributes no citations', a
     assert.deepEqual(written, []);
 });
 
+// The failure mode this guards: a 1223-citation article contributed zero rows
+// to a 100-article batch and nothing in the log said which one was missing or
+// why — only a count, printed hours later at the end of the run.
+test('a skipped article is named on stderr, with its status and error', async () => {
+    const stderrChunks = [];
+    const code = await runSweep(baseOpts(), baseIo({
+        fetchArticle: async () => ({ html: null, status: 404, error: 'not found' }),
+        stderr: { write: chunk => stderrChunks.push(chunk) },
+    }));
+
+    assert.equal(code, 0);
+    const out = stderrChunks.join('');
+    assert.match(out, /sweep: skipped Test Article — fetch_failed \(HTTP 404\): not found/);
+});
+
+test('a timed-out article fetch is named even with no HTTP status to report', async () => {
+    const stderrChunks = [];
+    await runSweep(baseOpts(), baseIo({
+        fetchArticle: async () => ({ html: null, status: null, error: 'Request to Wikipedia timed out after 20000ms' }),
+        stderr: { write: chunk => stderrChunks.push(chunk) },
+    }));
+    const out = stderrChunks.join('');
+    assert.match(out, /sweep: skipped Test Article — fetch_failed: Request to Wikipedia timed out/);
+    assert.doesNotMatch(out, /HTTP null/);
+});
+
+test('an article with no citations is named too, distinctly from a fetch failure', async () => {
+    const stderrChunks = [];
+    await runSweep(baseOpts(), baseIo({
+        fetchArticle: async () => ({ html: '<!DOCTYPE html><body><p>No citations here.</p></body>', status: 200, error: null }),
+        stderr: { write: chunk => stderrChunks.push(chunk) },
+    }));
+    assert.match(stderrChunks.join(''), /sweep: skipped Test Article — no_citations/);
+});
+
 test('the timing summary reports real fetch and verify durations, not zeros', async () => {
     const stderrChunks = [];
     const code = await runSweep(baseOpts({ concurrency: 1 }), baseIo({
