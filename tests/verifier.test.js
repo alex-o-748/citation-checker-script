@@ -50,6 +50,29 @@ test('a fetch failure carries its status through untouched', async () => {
     assert.equal(result.fetchStatus, 403, '403 must stay distinguishable from a dead link');
 });
 
+// Without this, every SOURCE UNAVAILABLE row in the CSV had a blank
+// reason_type, and "this citation has no URL to check" looked exactly like
+// "we tried and the fetch failed" — two problems with different owners.
+test('a SOURCE UNAVAILABLE row records which kind of unavailable it is', async () => {
+    const noUrl = await verifyCitation('claim', {
+        content: null, status: null, error: null, unavailableReason: 'no_url',
+    }, { callModel: async () => ({ text: '{}', usage: {} }) });
+    assert.equal(noUrl.reasonType, 'no_url');
+
+    const failed = await verifyCitation('claim', {
+        content: null, status: 402, error: 'HTTP 402', unavailableReason: 'fetch_failed',
+    }, { callModel: async () => ({ text: '{}', usage: {} }) });
+    assert.equal(failed.reasonType, 'fetch_failed');
+    assert.equal(failed.fetchStatus, 402);
+});
+
+test('an unavailable source with no reason recorded stays null rather than guessing', async () => {
+    const result = await verifyCitation('claim', { content: null }, {
+        callModel: async () => ({ text: '{}', usage: {} }),
+    });
+    assert.equal(result.reasonType, null);
+});
+
 test('a supported verdict carries a verified quote', async () => {
     const src = source('Source URL: https://example.com\n\nSource Content:\nAcme Corp was founded in 1985 by John Smith.');
     const result = await verifyCitation('The company was founded in 1985 by John Smith.', src, {

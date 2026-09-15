@@ -1,0 +1,29 @@
+# Pilot mix: 20 article(s), generated 2026-09-13T09:24:42.198Z
+# wiki=ruwiki edit-window-days=14 burst-window-days=3
+# base-pool=300 shortlist-size=60 offline-ratio-max=0.6 table-ratio-max=0.5 flagged-share=0.4
+# Biased toward current events (recently created, or edits concentrated in a burst, or
+# carrying {{current}}) and toward {{failed verification}}; biased against articles whose
+# citations are mostly unfetchable. See service/pilot-selection.js.
+#
+# node service/run-sweep.js --titles-file <this file> --live-source-fetch \
+#     --max 20 --out pilot-findings.csv
+О’Флинн, Кейт
+Меркурий-ГТК
+Алюминиевая промышленность России
+Телевизионный отряд краеведов-следопытов
+Бун, Энсон
+Нахлаот
+Warcraft III: Forsaken Kingdom
+Флаг Чебоксар
+Halo: Campaign Evolved
+Взрыв бытового газа в Новосибирске (2023)
+Star Fox (игра, 2026)
+Белоцерковский, Онисим Наумович
+Генерал-полковник в ранге генерал-фельдмаршала
+Чемпионат России по тяжёлой атлетике 2026
+C++29
+IPhone Duo
+UFC Fight Night: Силва vs. Дельгадо
+Bodycam
+Капелян, Иосиф Хаимович
+Эскалация атак израильских поселенцев на Западном берегу Иордана в 2026 году

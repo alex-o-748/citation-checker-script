@@ -1,0 +1,109 @@
+# Pilot mix: 100 article(s), generated 2026-09-09T17:40:50.529Z
+# wiki=enwiki edit-window-days=14 burst-window-days=3
+# base-pool=1000 shortlist-size=300 offline-ratio-max=0.6 table-ratio-max=0.5 flagged-share=0.4
+# Biased toward current events (recently created, or edits concentrated in a burst, or
+# carrying {{current}}) and toward {{failed verification}}; biased against articles whose
+# citations are mostly unfetchable. See service/pilot-selection.js.
+#
+# node service/run-sweep.js --titles-file <this file> --live-source-fetch \
+#     --max 100 --out pilot-findings.csv
+2026 Musée Renoir theft
+2026 Vietnam Open
+21 Air Flight 7598
+Cape Verde bus crash
+2026 Nigerien coup attempt
+2026 Nepal–Tibet floods
+2026 Yemen offensive
+2026 Western Michigan vs. Michigan football game
+2026 World Para Swimming European Championships
+Daniel Thomas (activist)
+Grand Theft Auto VI: An Extended Look
+2026 US Open – Boys' singles
+Territory of Junbish-e Milli
+2026 US Open – Girls' singles
+2026 US Open – Men's singles
+Prima (album)
+Death and state funeral of Harald V
+Merry Berry Love
+List of Billboard Global 200 top-ten singles in 2026
+Gilmar Santos
+2026 US Open – Women's singles
+Taniec z gwiazdami season 32
+V. P. Abdullah
+Pinky Marquez
+Amaravati International Airport
+Italy at the 2026 Mediterranean Games
+Cityscape Global
+Millennium Prize Problems
+Church of the Sacred Heart, Donnybrook
+Bigg Boss (Hindi TV series) season 20
+Killing of the Clancy children
+2026 US Open – Men's doubles
+2026 Men's Hockey Junior Asia Cup
+Hurricane Lowell (2026)
+2026–2027 El Niño event
+2026 China Masters
+2026 US Open – Women's doubles
+2026 Grand Canyon flood
+2026 Indonesia Masters Super 100 I
+Flora of Samoa
+Los Angeles Clippers salary cap scandal
+2026 Women's Hockey Junior Asia Cup
+Lake Ontario naming dispute
+Karen Van Lengen
+2026 Women's African Nations Volleyball Championship
+Party lists for the 2026 Israeli legislative election
+The Legend of Zelda: Ocarina of Time (2026 video game)
+2026 FIFA U-20 Women's World Cup squads
+2026 KW Fall Classic
+Indonesia at the 2026 Asian Games
+Concert Tunisien
+2026 Holborn and St Pancras by-election
+Bigg Boss (Malayalam TV series) season 8
+Andrew Oteng-Amoako
+Casa Gorordo Museum
+2026–27 F.C. Copenhagen season
+2026 Saxony-Anhalt state election
+US military bases in the Middle East
+Dolly Parton as a gay icon
+2026 Kazakh legislative election
+2026–27 Indian Football League
+List of recovering species
+2026 Israeli legislative election
+2026 Women's European Volleyball Championship final round
+Sinking of the Filo Jet
+2026 Premier Volleyball League Invitational Conference
+2026 Sirik wedding airstrike
+GPT-6 Astra
+2026 UTB season
+Athletics at the 2026 Mediterranean Games
+Hanuman Ansh
+Chew Hock Leong
+Vitamin D (musician)
+2026–27 Persepolis F.C. season
+Thousand Martyrs' Cup
+Héléna Joséphine Robelet
+Tropical Storm Edouard (2026)
+Timeline of the Green Bay Packers
+2026 US Open – Men's singles qualifying
+Bigg Boss Bangla season 3
+IPhone 18 Pro
+Haati Haati Paa Paa
+Bigg Boss (Telugu TV series) season 10
+2026 English Open (snooker)
+2026 US Open (tennis)
+Timeline of the Russo-Ukrainian war (1 September 2026 – present)
+Long Way Home (Stella Lefty album)
+78th Primetime Creative Arts Emmy Awards
+2026 World Nomad Games
+2026 AVC Men's Volleyball Continental Championship
+Sabyasachi Chakrabarty
+Timeline of the 2026 Iran war
+2026 in the United Kingdom
+List of women associated with Marie Curie and Irène Joliot-Curie
+Wittman Regional Airport
+2027 AFC U-20 Asian Cup qualification
+Climate change in Turkey
+Flock Safety
+Famous Last Words (M album)
+Early life of Whitney Houston

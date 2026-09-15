@@ -12,8 +12,8 @@
 // outbound requests to third-party publisher sites — the dataset's
 // source_text was fetched once when the dataset was built, so this run
 // touches only the model API and (for page-id resolution) the Wikipedia
-// Action API, neither of which is behind the WMCS egress question stage 3's
-// live source fetch is gated on.
+// Action API — no publisher traffic at all, which is what makes this the
+// cheapest way to exercise verify+store.
 //
 // Two things this script needs that only run with real network access, so
 // there is no way to smoke-test it from this environment — see that design

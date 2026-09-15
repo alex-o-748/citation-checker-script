@@ -1,12 +1,19 @@
-// Resolving article titles to page IDs via the MediaWiki Action API.
+// Resolving article titles to page IDs and current revision IDs via the
+// MediaWiki Action API.
 //
-// service/article-picker.js's Wiki Replicas rows carry page_id directly; this
-// module exists for the one caller that doesn't — service/run-replay.js, whose
-// input is benchmark/dataset.json, a standalone JSON file with a title and
-// an oldid but no page_id (see docs/design-plans/
-// 2026-08-22-batch-verification-and-persistence.md §3, "Wrinkle 1").
-// citation_findings.page_id is NOT NULL, so a replay run needs a real value
-// from somewhere.
+// service/article-picker.js's Wiki Replicas rows carry page_id and rev_id
+// directly; this module exists for the callers that don't have a Replicas row
+// to read them off:
+//
+//   - service/run-replay.js, whose input is benchmark/dataset.json, a
+//     standalone JSON file with a title and an oldid but no page_id (see
+//     docs/design-plans/2026-08-22-batch-verification-and-persistence.md §3,
+//     "Wrinkle 1"). citation_findings.page_id is NOT NULL, so a replay run
+//     needs a real value from somewhere.
+//   - service/run-sweep.js's --titles-file branch, whose input is a bare list
+//     of strings. Without this it had neither id: every row it wrote carried
+//     an empty page_id, revision_id and permalink, which is most of what a
+//     shareable CSV is for (see service/csv-report.js's permalink()).
 //
 // A plain REST GET, not a Wiki Replicas query, so this works from anywhere
 // with internet access — a laptop or the Toolforge bastion alike — matching
@@ -24,6 +31,12 @@ export const DEFAULT_USER_AGENT =
 // bite" already warns against assuming bot-tier limits apply here.
 export const DEFAULT_BATCH_SIZE = 50;
 
+// prop=revisions + rvprop=ids returns each page's *latest* revision alongside
+// its id — one revision per page, which is what the API gives for a
+// multi-title query (rvlimit is only accepted for a single page, and is
+// deliberately not sent). One query shape for both exports below, so a caller
+// wanting only page ids can't end up issuing a different request than one
+// wanting both.
 export function buildTitlesQueryUrl(titles, { host = DEFAULT_API_HOST } = {}) {
     if (!titles || titles.length === 0) {
         throw new TypeError('buildTitlesQueryUrl requires at least one title');
@@ -32,6 +45,8 @@ export function buildTitlesQueryUrl(titles, { host = DEFAULT_API_HOST } = {}) {
         action: 'query',
         format: 'json',
         formatversion: '2',
+        prop: 'revisions',
+        rvprop: 'ids',
         titles: titles.join('|'),
     });
     return `https://${host}/w/api.php?${params.toString()}`;
@@ -44,22 +59,27 @@ function chunk(array, size) {
 }
 
 /**
- * Resolves a list of article titles to their current page IDs.
+ * Resolves a list of article titles to `{ pageId, revisionId }`.
  *
- * Returns a Map<title, pageId>, keyed by both the title as requested and (if
- * MediaWiki normalized it — underscores to spaces, first-letter case) the
- * normalized form, so a caller can look up with whatever string it started
- * with. A title MediaWiki reports missing (deleted, moved, typo) is simply
- * absent from the map rather than throwing — callers skip rows they can't
- * resolve, the same "survive one bad row" pattern service/claim-extractor.js uses
- * for a single article's fetch failure.
+ * Returns a Map<title, {pageId, revisionId}>, keyed by both the title as
+ * requested and (if MediaWiki normalized it — underscores to spaces,
+ * first-letter case) the normalized form, so a caller can look up with
+ * whatever string it started with. A title MediaWiki reports missing
+ * (deleted, moved, typo) is simply absent from the map rather than throwing —
+ * callers skip or degrade rows they can't resolve, the same "survive one bad
+ * row" pattern service/claim-extractor.js uses for a single article's fetch
+ * failure.
+ *
+ * `revisionId` is null (rather than absent) for a page whose revision the API
+ * didn't report, which keeps "this title exists" and "we know which revision
+ * to pin" separable: a caller can still record the page id.
  *
  * Redirects are not followed: a genuine #REDIRECT page resolves to the
  * redirect page's own id, not the target's. None of benchmark/dataset.json's
  * titles are known redirects as of this writing; a future dataset refresh
  * should re-check this if resolution rates drop unexpectedly.
  */
-export async function resolvePageIds(titles, {
+export async function resolveTitleInfo(titles, {
     host = DEFAULT_API_HOST,
     userAgent = DEFAULT_USER_AGENT,
     fetchImpl = fetch,
@@ -79,11 +99,24 @@ export async function resolvePageIds(titles, {
 
         for (const page of data.query?.pages ?? []) {
             if (page.missing || !page.pageid) continue;
-            result.set(page.title, page.pageid);
+            const info = { pageId: page.pageid, revisionId: page.revisions?.[0]?.revid ?? null };
+            result.set(page.title, info);
             const original = normalizedFrom.get(page.title);
-            if (original && original !== page.title) result.set(original, page.pageid);
+            if (original && original !== page.title) result.set(original, info);
         }
     }
 
     return result;
+}
+
+/**
+ * Resolves a list of article titles to their current page IDs.
+ *
+ * The page-id-only view of resolveTitleInfo(), for run-replay.js, which gets
+ * its revision from the dataset row's own oldid and has no use for the
+ * current one. Same Map keying and same missing-title behaviour.
+ */
+export async function resolvePageIds(titles, options = {}) {
+    const info = await resolveTitleInfo(titles, options);
+    return new Map([...info].map(([title, { pageId }]) => [title, pageId]));
 }

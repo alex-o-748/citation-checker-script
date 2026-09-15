@@ -45,7 +45,7 @@ test('rowsToCsv emits the header row', () => {
         header,
         'page_title,page_id,revision_id,permalink,citation_number,ref_name,is_collective,group_id,claim_text,' +
         'source_url,verdict,support_score,reason_type,rationale,source_quote,quote_status,fetch_status,' +
-        'source_truncated,provider,model,prompt_version,tokens_in,tokens_out,published'
+        'fetch_error,source_truncated,provider,model,prompt_version,tokens_in,tokens_out,published,check_id'
     );
 });
 
@@ -121,7 +121,24 @@ test('null and undefined fields render as empty cells, not the string "null"', (
 test('is_collective and source_truncated render as 0/1, not true/false', () => {
     const row = findingToCsvRow({ ...baseFinding(), isCollective: true, sourceTruncated: true });
     assert.equal(row[6], 1);
-    assert.equal(row[17], 1);
+    assert.equal(row[18], 1);
+});
+
+// Most fetch failures never get an HTTP status at all — DNS, TLS, a timeout,
+// the default stub fetcher — so without this column every one of those rows
+// reads identically to every other: SOURCE UNAVAILABLE, blank status, blank
+// everything downstream of the model that never ran.
+test('fetch_error carries the fetcher\'s reason when there is no HTTP status to show', () => {
+    const header = rowsToCsv([]).trim().split('\n')[0].split(',');
+    const index = header.indexOf('fetch_error');
+    const row = findingToCsvRow({
+        ...baseFinding(),
+        verdict: 'SOURCE UNAVAILABLE',
+        fetchStatus: null,
+        fetchError: 'getaddrinfo ENOTFOUND example.invalid',
+    });
+    assert.equal(row[index], 'getaddrinfo ENOTFOUND example.invalid');
+    assert.equal(row[index - 1], null, 'sits next to fetch_status, which is empty here');
 });
 
 test('an internal identity hash is never a column', () => {
@@ -191,4 +208,18 @@ test('csvPageTitles handles a title needing quoting, CRLF, and an empty file', (
     assert.deepEqual([...csvPageTitles(csv.replace(/\n/g, '\r\n'))], ['Smith, John "Jack"']);
     assert.deepEqual([...csvPageTitles('')], []);
     assert.deepEqual([...csvPageTitles(csvHeaderLine())], [], 'a header-only file has no titles');
+});
+
+test('check_id is a column so a row can be quoted', () => {
+    const header = rowsToCsv([]).trim().split('\n')[0].split(',');
+    const row = findingToCsvRow({ ...baseFinding(), checkId: '4f2a91bc3d8e7102' });
+    assert.equal(row[header.indexOf('check_id')], '4f2a91bc3d8e7102');
+});
+
+// --resume reads the first field of every record as the page title
+// (csvPageTitles). An id column moved to the front would make every resume
+// read an id as an article title and re-check the whole batch.
+test('page_title stays the first column, which --resume depends on', () => {
+    const header = rowsToCsv([]).trim().split('\n')[0].split(',');
+    assert.equal(header[0], 'page_title');
 });
