@@ -10,7 +10,7 @@
     "ccs": "./bin/ccs"
   },
   "scripts": {
-    "test": "node --test 'tests/**/*.test.js'",
+    "test": "node --test tests/*.test.js",
     "build": "node scripts/sync-main.js",
     "start": "node api/server.js"
   },

@@ -3,6 +3,7 @@
 import { createServer } from 'node:http';
 import { pathToFileURL } from 'node:url';
 import { MAX_BODY_BYTES, verifyRequest } from './verify.js';
+import { OPENAPI_DOCUMENT } from './openapi.js';
 
 const WIKIPEDIA_ORIGIN = /^https:\/\/[a-z0-9-]+\.wikipedia\.org$/i;
 const RATE_LIMIT = 10;
@@ -19,6 +20,15 @@ export function createRateLimiter({ limit = RATE_LIMIT, windowMs = RATE_WINDOW_M
     const clients = new Map();
     return (key) => {
         const time = now();
+        // Bound retained state when scanners continually rotate addresses.
+        if (clients.size >= 10_000) {
+            for (const [client, value] of clients) {
+                if (value.resetAt <= time) clients.delete(client);
+            }
+            if (clients.size >= 10_000 && !clients.has(key)) {
+                clients.delete(clients.keys().next().value);
+            }
+        }
         let entry = clients.get(key);
         if (!entry || entry.resetAt <= time) {
             entry = { count: 0, resetAt: time + windowMs };
@@ -75,7 +85,18 @@ async function readJson(req) {
 export function createVerifyServer({ verify = verifyRequest, rateLimit = createRateLimiter(), address = clientAddress } = {}) {
     return createServer(async (req, res) => {
         const cors = corsHeaders(req);
-        if (req.method === 'OPTIONS' && req.url === '/v1/verify') {
+        const pathname = new URL(req.url, 'http://localhost').pathname;
+        if (req.method === 'GET' && pathname === '/') {
+            return sendJson(res, 200, {
+                name: OPENAPI_DOCUMENT.info.title,
+                documentation: '/openapi.json',
+                verify: '/v1/verify',
+            }, cors);
+        }
+        if (req.method === 'GET' && pathname === '/openapi.json') {
+            return sendJson(res, 200, OPENAPI_DOCUMENT, cors);
+        }
+        if (req.method === 'OPTIONS' && pathname === '/v1/verify') {
             res.writeHead(204, {
                 ...cors,
                 'Access-Control-Allow-Methods': 'POST, OPTIONS',
@@ -84,8 +105,13 @@ export function createVerifyServer({ verify = verifyRequest, rateLimit = createR
             });
             return res.end();
         }
-        if (req.method !== 'POST' || req.url !== '/v1/verify') {
+        if (req.method !== 'POST' || pathname !== '/v1/verify') {
             return sendJson(res, 404, { error: 'Not found' }, cors);
+        }
+
+        const mediaType = req.headers['content-type']?.split(';', 1)[0].trim().toLowerCase();
+        if (mediaType !== 'application/json') {
+            return sendJson(res, 415, { error: 'Content-Type must be application/json' }, cors);
         }
 
         const allowance = rateLimit(address(req));

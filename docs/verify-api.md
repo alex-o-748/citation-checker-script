@@ -6,11 +6,14 @@ call, verdict parser, and quote verification as existing core consumers.
 
 > **Deployment status (2026-09-15): not public yet.** This repository does not
 > contain credentials or deployment access for either candidate production
-> host. The path below is final, but a public base URL must not be advertised
+> host. The paths below are final, but a public base URL must not be advertised
 > until the maintainer confirms the host and deploys it. Run locally with
 > `npm start` (default: `http://localhost:8080`).
 
 ## `POST /v1/verify`
+
+The running service publishes its machine-readable OpenAPI 3.1 contract at
+`GET /openapi.json`; `GET /` links to that contract and this operation.
 
 Send `Content-Type: application/json` with:
 
@@ -60,6 +63,7 @@ Errors have `{ "error": "..." }`; pipeline failures also include `stage`.
 | --- | --- |
 | `400` | Invalid JSON field or value. |
 | `413` | Request body exceeds 64 KiB. |
+| `415` | Request is not `application/json`. |
 | `422` | Source unavailable or empty. |
 | `429` | Per-client request limit exceeded; honor `Retry-After`. |
 | `502` | Provider failure or unreadable model response. |

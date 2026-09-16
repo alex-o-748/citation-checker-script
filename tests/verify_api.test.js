@@ -39,6 +39,22 @@ test('verifyRequest accepts source text without fetching a URL', async () => {
   assert.equal(result.status, 200);
 });
 
+test('verifyRequest preserves source content exactly and rejects unknown fields', async () => {
+  let userContent;
+  const source = '  The bridge opened in 1998.\n';
+  const result = await verifyRequest({ claim: 'Claim', source_content: source }, {
+    callProvider: async (_provider, options) => {
+      userContent = options.userContent;
+      return { text: JSON.stringify({ ...MODEL_RESPONSE, source_quote: '' }), usage: null };
+    },
+  });
+  assert.equal(result.status, 200);
+  assert.ok(userContent.endsWith(source));
+
+  const unknown = await verifyRequest({ claim: 'Claim', source_content: source, provider: 'openai' });
+  assert.deepEqual(unknown, { status: 400, body: { error: 'Unknown field: provider' } });
+});
+
 test('verifyRequest rejects malformed requests before inference', async () => {
   let called = false;
   const result = await verifyRequest({ claim: '', source_url: 'file:///etc/passwd' }, {
@@ -87,6 +103,30 @@ test('HTTP endpoint supports JSON POST and Wikipedia-scoped CORS', async () => {
       method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'https://example.org' }, body: '{}',
     });
     assert.equal(foreign.headers.has('access-control-allow-origin'), false);
+  });
+});
+
+test('HTTP endpoint serves discoverable OpenAPI documentation', async () => {
+  await withServer({}, async base => {
+    const index = await fetch(`${base}/`);
+    assert.equal(index.status, 200);
+    assert.equal((await index.json()).documentation, '/openapi.json');
+
+    const response = await fetch(`${base}/openapi.json`);
+    const spec = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(spec.openapi, '3.1.0');
+    assert.ok(spec.paths['/v1/verify'].post);
+  });
+});
+
+test('HTTP endpoint requires a JSON content type', async () => {
+  let calls = 0;
+  await withServer({ verify: async () => { calls += 1; return { status: 200, body: {} }; } }, async base => {
+    const response = await fetch(`${base}/v1/verify`, { method: 'POST', body: '{}' });
+    assert.equal(response.status, 415);
+    assert.deepEqual(await response.json(), { error: 'Content-Type must be application/json' });
+    assert.equal(calls, 0);
   });
 });
 

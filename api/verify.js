@@ -50,6 +50,9 @@ export function validateVerifyRequest(body) {
     if (body.page != null && (!Number.isInteger(body.page) || body.page < 1)) {
         return 'page must be a positive integer';
     }
+    const knownFields = new Set(['claim', 'source_url', 'source_content', 'page']);
+    const unknown = Object.keys(body).find(field => !knownFields.has(field));
+    if (unknown) return `Unknown field: ${unknown}`;
     return null;
 }
 
@@ -95,7 +98,9 @@ export async function verifyRequest(body, {
         claimText: body.claim.trim(),
         sourceUrl: body.source_url?.trim() || null,
         pageNum: body.page ?? null,
-        sourceContent: body.source_content?.trim() || null,
+        // Preserve supplied source bytes. Trimming here would make the API a
+        // subtly different input path from other verifyCitation() callers.
+        sourceContent: body.source_content || null,
         provider,
         model,
     };
