@@ -5,15 +5,14 @@
 // fetches the cited sources via the tf-source-fetcher Toolforge tool
 // (https://github.com/alex-o-748/tf-source-fetcher).
 //
-// Stage 3 defaults to a stub. tf-source-fetcher is built and deployable, but
-// per its own README, unattended fetching of third-party publisher URLs from
-// Wikimedia infrastructure has not yet been cleared with WMCS — so no batch
-// job may be pointed at it as a matter of course. Pass --live-source-fetch to
-// opt in for a one-off manual, attended run — from a laptop or any host with
-// open egress this needs no clearance at all (docs/design-plans/
-// 2026-08-24-csv-deliverable-and-component-names.md, G3); only running it
-// unattended, at volume, from Toolforge itself is the part still gated on
-// WMCS. Every other run stays stubbed.
+// Stage 3 defaults to a stub. Pass --live-source-fetch to fetch real sources
+// via tf-source-fetcher. That needs no clearance: WMCS cleared unattended
+// fetching of third-party publisher URLs from Toolforge (confirmed by the
+// maintainer, 2026-09-13), closing the last open part of docs/design-plans/
+// 2026-08-24-csv-deliverable-and-component-names.md's G3. The flag stays
+// opt-in because this runner's job is the citations/URLs/fetched/failed
+// funnel, which the stub reports just as well without spending anyone's
+// bandwidth. Every other run stays stubbed.
 //
 // Usage (on a Toolforge bastion, inside the tool account):
 //   node service/run-extract.js
@@ -60,9 +59,9 @@ const HELP_TEXT = `usage: node service/run-extract.js [options]
 Selects candidate articles from Wiki Replicas, fetches each one's real
 rendered HTML, and extracts its citations and claims. Source fetching (stage
 3) is stubbed by default — pass --live-source-fetch to fetch real sources via
-tf-source-fetcher for a one-off manual smoke test. Per that service's own
-README, it is not yet cleared by WMCS for unattended production traffic, so
---live-source-fetch is opt-in only and should not be used in a scheduled job.
+tf-source-fetcher. WMCS cleared unattended fetching from Toolforge on
+2026-09-13; the flag stays opt-in because the funnel this runner prints reads
+the same either way, not because anything is blocked.
 
 Options:
   --criterion <name>  Selection criterion. One of: ${Object.keys(CRITERIA).join(', ')}
@@ -175,11 +174,11 @@ async function main(argv) {
         await connection.end();
     }
 
+    // See service/run-sweep.js's matching line: informational, not a warning
+    // — which stage 3 ran is the difference between a real funnel and a
+    // stubbed one.
     if (opts.liveSourceFetch) {
-        process.stderr.write(
-            `WARNING: --live-source-fetch is on — fetching real sources via ${TOOLFORGE_SOURCE_FETCHER_BASE}. ` +
-            `Confirm WMCS has cleared unattended fetching before using this outside a manual smoke test.\n`
-        );
+        process.stderr.write(`fetching real sources via ${TOOLFORGE_SOURCE_FETCHER_BASE}.\n`);
     }
 
     process.stderr.write(`selected ${candidates.length} article(s); fetching and extracting...\n\n`);

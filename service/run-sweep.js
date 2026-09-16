@@ -26,14 +26,15 @@
 // every finding is SOURCE UNAVAILABLE — the CSV proves the pipeline wiring,
 // not sourcing accuracy, until it's turned on.
 //
-// --live-source-fetch itself needs no permission for a small, attended run —
-// the design doc's G3 settles this: it is only unattended, production-volume
-// fetching *from Toolforge* that waits on WMCS. What a run of this flag
-// actually requires is a host with open egress to en.wikipedia.org,
-// TOOLFORGE_SOURCE_FETCHER_BASE below, and the chosen model provider — not
-// every environment has that (a sandboxed Claude Code session's own proxy,
-// for one, may not allow-list those hosts; check before assuming a run just
-// hung).
+// --live-source-fetch needs no permission: WMCS has cleared unattended
+// fetching of third-party publisher URLs from Toolforge (confirmed by the
+// maintainer, 2026-09-13), which was the last open part of the design doc's
+// G3. The flag stays opt-in so a default run costs nobody else's bandwidth,
+// not because anything is blocked. What it does require is a host with open
+// egress to the wiki's REST API, TOOLFORGE_SOURCE_FETCHER_BASE below, and the
+// chosen model provider — not every environment has that (a sandboxed Claude
+// Code session's own proxy, for one, may not allow-list those hosts; check
+// before assuming a run just hung).
 //
 // The CSV is the default deliverable; a ToolsDB write is opt-in (--store),
 // inverting service/run-replay.js's default. Its bastion is unreachable from
@@ -66,6 +67,7 @@ import { verifyCitation, verifyGroup, makeModelCaller, ProviderAuthError } from 
 import { assembleFinding, assembleGroupFinding } from './finding-builder.js';
 import { upsertFinding } from './findings-store.js';
 import { openToolsDbConnection } from './toolsdb.js';
+import { resolveTitleInfo } from './wikipedia-pageids.js';
 import { csvHeaderLine, appendFinding, csvPageTitles } from './csv-report.js';
 import { PROMPT_VERSION } from '../core/prompts.js';
 import { PROVIDER_MODELS, PROVIDER_ENV_VARS } from './provider-config.js';
@@ -137,9 +139,11 @@ Options:
                          via Wiki Replicas: a text file, one article title per
                          line (blank lines and lines starting with # ignored).
                          Bypasses stage 1 entirely — no Wiki Replicas connection
-                         is opened. Each title is fetched at its *latest*
-                         revision (selection normally pins one, since there is
-                         no separate select step here to race against).
+                         is opened. Each title is resolved to its page ID and
+                         current revision via the Action API first, so rows get
+                         a permalink and the run is pinned to one revision per
+                         article. A title that doesn't resolve is still checked,
+                         at its latest revision and with no permalink.
   --max <n>             Maximum articles to process. Default: 5 without
                          --titles-file; every listed title with it.
   --provider <name>     One of: ${Object.keys(PROVIDER_MODELS).join(', ')} (default: liftwing)
@@ -157,12 +161,12 @@ Options:
                          (scripts/probe-concurrency.js) before trusting a
                          number this comment will go stale on.
   --live-source-fetch   Fetch real sources via tf-source-fetcher instead of the
-                         stub. A small, attended run needs no permission (see
-                         the design doc's G3) — just a host with open egress
-                         to en.wikipedia.org and tf-source-fetcher, which not
-                         every environment has. Unattended, production-volume
-                         fetching from Toolforge is the part still waiting
-                         on WMCS.
+                         stub. Needs no permission — WMCS cleared unattended
+                         fetching from Toolforge on 2026-09-13. It stays
+                         opt-in so a default run costs nobody else's
+                         bandwidth. Requires a host with open egress to the
+                         wiki's REST API and to tf-source-fetcher, which not
+                         every environment has.
   --store               Also upsert every finding into ToolsDB. Requires a
                          Toolforge bastion; the CSV is written either way.
   --resume              Continue into an existing --out CSV instead of starting
@@ -267,6 +271,7 @@ export async function runSweep(opts, {
     parseHtml = html => JSDOM.fragment(html),
     readFile,
     readTitlesFile = path => fsReadFile(path, 'utf8'),
+    resolveTitleInfoFn = resolveTitleInfo,
 } = {}) {
     // opts.max is left undefined by parseCliArgs when --titles-file is given
     // and --max wasn't — the titles-file branch below resolves that to "every
@@ -310,11 +315,20 @@ export async function runSweep(opts, {
     if (opts.titlesFile) {
         // Stage 1 replaced entirely: the caller already knows which articles
         // to check, so there's nothing to select and no Wiki Replicas
-        // connection to open. pageId/revisionId stay null — there is no
-        // Wiki-Replicas row to pin a revision from, so fetchArticleHtml()
-        // (core/wikipedia.js) falls back to the latest revision, and
-        // csv-report.js's permalink() already treats a missing pageId/
-        // revisionId as "omit the link" rather than a broken one.
+        // connection to open.
+        //
+        // The ids still have to come from somewhere. They used to come from
+        // nowhere — pageId/revisionId were left null, which meant every row a
+        // --titles-file run wrote had an empty page_id, revision_id and
+        // permalink. That is most of what makes the CSV shareable
+        // (csv-report.js's permalink(): "a reviewer reading a row needs to
+        // click through to the claim in the revision it was actually judged
+        // against"), and it was silent — the reader of the CSV has no way to
+        // tell a run that couldn't resolve the ids from one that never tried.
+        // So resolve them up front off the Action API
+        // (service/wikipedia-pageids.js), which also pins the fetch to a
+        // revision instead of letting each article be read at whatever
+        // "latest" meant at the moment it was fetched.
         let text;
         try {
             text = await readTitlesFile(opts.titlesFile);
@@ -328,8 +342,35 @@ export async function runSweep(opts, {
             return 2;
         }
         const max = opts.max ?? titles.length;
-        candidates = titles.slice(0, max).map(title => ({ pageId: null, title, revisionId: null }));
-        stderr.write(`sweep: loaded ${candidates.length} of ${titles.length} article(s) from ${opts.titlesFile}\n`);
+        const chosen = titles.slice(0, max);
+        stderr.write(`sweep: loaded ${chosen.length} of ${titles.length} article(s) from ${opts.titlesFile}\n`);
+
+        // Degrades rather than aborts: a run that can reach the REST API and
+        // the model but not the Action API should still produce findings —
+        // just without permalinks, which is where this branch was before.
+        // Both the whole-query failure and the per-title miss are reported,
+        // because "no permalinks in this CSV" is the kind of thing that has
+        // to be noticed while the run is happening.
+        let resolved = new Map();
+        try {
+            resolved = await resolveTitleInfoFn(chosen, { host: hostForWiki(opts.wiki) });
+        } catch (error) {
+            stderr.write(
+                `sweep: WARNING — could not resolve page IDs/revisions for --titles-file: ${error.message}. ` +
+                `Rows will carry no page_id, revision_id or permalink, and each article is read at its latest revision.\n`
+            );
+        }
+        candidates = chosen.map(title => {
+            const info = resolved.get(title);
+            return { pageId: info?.pageId ?? null, title, revisionId: info?.revisionId ?? null };
+        });
+        const unresolved = candidates.filter(c => !c.pageId).map(c => c.title);
+        if (unresolved.length) {
+            stderr.write(
+                `sweep: WARNING — ${unresolved.length} of ${candidates.length} title(s) did not resolve to a page ` +
+                `(missing, moved, or misspelled?) and will have no permalink: ${unresolved.join(', ')}\n`
+            );
+        }
     } else {
         let replicaConnection;
         try {
@@ -410,11 +451,12 @@ export async function runSweep(opts, {
         }
     }
 
+    // Not a warning any more (WMCS cleared unattended fetching, 2026-09-13),
+    // but still worth one line: stub-vs-live is the difference between a CSV
+    // of real verdicts and a CSV of SOURCE UNAVAILABLE, and the run's own log
+    // is where someone reading it back looks for which one this was.
     if (opts.liveSourceFetch) {
-        stderr.write(
-            `sweep: WARNING — --live-source-fetch is on, fetching real sources via ${TOOLFORGE_SOURCE_FETCHER_BASE}. ` +
-            `Confirm WMCS has cleared unattended fetching before using this outside a manual, attended run.\n`
-        );
+        stderr.write(`sweep: fetching real sources via ${TOOLFORGE_SOURCE_FETCHER_BASE}.\n`);
     }
     const fetchSource = fetchSourceFn ?? (opts.liveSourceFetch ? liveFetchSource : stubFetchSource);
 
@@ -553,6 +595,22 @@ export async function runSweep(opts, {
             funnel.articles++;
             if (article.outcome !== ARTICLE_OUTCOMES.OK) {
                 funnel.articlesFailed++;
+                // Name it. This used to increment the counter and move on,
+                // which meant an article could contribute zero rows to a
+                // sweep with no trace beyond a number printed hours later at
+                // the end — and the bigger the article, the likelier it is to
+                // hit the REST timeout, so the ones that vanish silently are
+                // the ones that matter most. A real case: "Timeline of the
+                // 2026 Iran war" produced 1223 rows in one run of a
+                // 100-article batch and 0 in the next, and nothing in the log
+                // said which article was missing or why.
+                // service/run-extract.js has always reported this per article.
+                stderr.write(
+                    `sweep: skipped ${article.title} — ${article.outcome}`
+                    + (article.fetchStatus ? ` (HTTP ${article.fetchStatus})` : '')
+                    + (article.error ? `: ${article.error}` : '')
+                    + '\n'
+                );
                 continue;
             }
 

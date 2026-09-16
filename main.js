@@ -2493,10 +2493,11 @@ function useToolforgeLlmRouter() {
 // Experimental: opt-in override that routes source fetching through the
 // tf-source-fetcher Toolforge tool
 // (https://github.com/alex-o-748/tf-source-fetcher) instead of the Cloudflare
-// Worker CORS proxy. Off by default for everyone — per the tool's README it
-// has not yet been cleared with WMCS for unattended fetching from Wikimedia
-// infrastructure, so live traffic must not be switched over until that
-// approval lands. Flip it on for yourself by running
+// Worker CORS proxy. Off by default for everyone. The WMCS clearance this
+// used to wait on landed 2026-09-13, so the remaining reason is capacity, not
+// policy: pointing every userscript user's source fetches at the Toolforge
+// tool is a load decision nobody has made or measured yet. Flip it on for
+// yourself by running
 // `localStorage.setItem('source_verifier_toolforge_source_fetcher', 'true')`
 // in the browser console. Only overrides the `workerBase` passed to
 // fetchSourceContent (core/worker.js) — /log and /feedback keep using the

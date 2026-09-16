@@ -15,6 +15,41 @@
 // Pure and synchronous — no I/O, no clock reads beyond an injectable `now`.
 
 import { groupSourceUrl } from '../core/anchor.js';
+import { newCheckId } from '../core/feedback.js';
+
+// A label, and deliberately nothing more.
+//
+// Every row needs something a person can quote — in a ticket, a talk-page
+// reply, a mail to the Suggestions team — and before this there was nothing:
+// the closest thing to a row identifier was page_title + citation_number,
+// which stops being unique the moment an article is re-swept at a revision
+// where the citation numbering has shifted.
+//
+// Random rather than derived from the claim/source/provider tuple, which was
+// the other candidate. A derived id would additionally assert that two rows
+// are "the same finding", and nothing yet depends on that claim — while the
+// tuple that would define it (does a prompt bump make it a new finding? a
+// provider switch?) is genuinely unsettled. The asymmetry decides it: a
+// derived id can be computed retroactively over every CSV ever produced,
+// since all its inputs are already columns. A random one cannot be recovered
+// for a row that didn't get one at birth. So mint the unrecoverable thing now
+// and leave the recoverable one for when something actually needs it.
+//
+// Consequence, which is a property rather than a defect: a re-sweep gives
+// every row a new id, so an id only resolves against the CSV that carried it.
+// That is what makes each batch CSV a dated snapshot. When --store is turned
+// on, check_id belongs in the ON DUPLICATE KEY UPDATE list alongside verdict
+// and rationale — updated with the contents, so it always names the run that
+// produced the row as it currently reads. Freezing it at first insert would
+// make it name a run whose output has since been overwritten.
+//
+// 16 hex, not core/feedback.js's 8: that module justifies 32 bits for "a
+// low-volume, human-paced event stream", and a batch sweep is not that — 20
+// articles produced ~500 rows here, so a real corpus is millions. Same
+// doubling idiom as main.js's getFeedbackClientId().
+function mintCheckId() {
+    return newCheckId() + newCheckId();
+}
 
 // §4 of the design doc: nothing computed by this phase has been through the
 // §1 publication filter (that threshold doesn't exist yet — Track B), so
@@ -38,10 +73,11 @@ function computeExpiresAt(hasContent, fetchedAt, ttlDays) {
 // fetchStatus). `verification` is either verifyCitation()'s or
 // verifyGroup()'s return value — both carry verdict/supportScore/reasonType/
 // rationale/sourceQuote/quoteStatus/usage under the same names.
-function finishFinding(base, { verification, provider, model, promptVersion, hasContent, fetchedAt, ttlDays }) {
+function finishFinding(base, { verification, provider, model, promptVersion, hasContent, fetchedAt, ttlDays, checkId }) {
     const modelRan = Boolean(verification.usage);
     return {
         ...base,
+        checkId,
         verdict: verification.verdict,
         supportScore: verification.supportScore,
         reasonType: verification.reasonType,
@@ -81,6 +117,9 @@ function finishFinding(base, { verification, provider, model, promptVersion, has
  *   source_text should still pass the real fetch time if known, since it
  *   predates this run.
  * @param {number} [args.ttlDays] - Overrides FINDING_TTL_DAYS.
+ * @param {string} [args.checkId] - Overrides the minted id. Injectable for
+ *   the same reason `fetchedAt` is: minting reads a random source, and this
+ *   module's contract is to stay pure and testable.
  */
 export function assembleFinding({
     candidate,
@@ -91,6 +130,7 @@ export function assembleFinding({
     promptVersion,
     fetchedAt = new Date(),
     ttlDays = FINDING_TTL_DAYS,
+    checkId = mintCheckId(),
 }) {
     const hasContent = Boolean(citation.source?.content);
 
@@ -108,9 +148,16 @@ export function assembleFinding({
             groupId: citation.groupId ?? null,
             isCollective: false,
             fetchStatus: verification.fetchStatus,
+            // The fetcher's own words for why there is no content. Carried
+            // separately from fetchStatus because most failures never get a
+            // status at all (DNS, TLS, a timeout, the stub fetcher), which
+            // left every one of those rows looking identical in the CSV.
+            // CSV-only — findings-store.js has no column for it, and the
+            // reason code (reasonType) is the part worth storing.
+            fetchError: citation.source?.error ?? null,
             sourceTruncated: Boolean(citation.source?.content?.includes('\nTruncated: true')),
         },
-        { verification, provider, model, promptVersion, hasContent, fetchedAt, ttlDays }
+        { verification, provider, model, promptVersion, hasContent, fetchedAt, ttlDays, checkId }
     );
 }
 
@@ -132,6 +179,9 @@ export function assembleFinding({
  * @param {string} args.promptVersion
  * @param {Date} [args.fetchedAt]
  * @param {number} [args.ttlDays]
+ * @param {string} [args.checkId] - Same as assembleFinding()'s. A group's
+ *   collective finding gets its own id, distinct from its members' — it is a
+ *   separate row, from a separate model call.
  */
 export function assembleGroupFinding({
     candidate,
@@ -142,6 +192,7 @@ export function assembleGroupFinding({
     promptVersion,
     fetchedAt = new Date(),
     ttlDays = FINDING_TTL_DAYS,
+    checkId = mintCheckId(),
 }) {
     if (verification.skipped) {
         throw new TypeError('assembleGroupFinding requires a completed (non-skipped) verifyGroup() result');
@@ -167,9 +218,14 @@ export function assembleGroupFinding({
             fetchedAt: hasContent ? fetchedAt : null,
             groupId: verification.groupId ?? members[0]?.groupId ?? null,
             isCollective: true,
+            // Both null for the same reason: a collective row covers several
+            // sources, and only runs at all when at least two of them were
+            // fetched, so there is no one status or error that describes it.
+            // The members' own rows carry theirs.
             fetchStatus: null,
+            fetchError: null,
             sourceTruncated: members.some(m => m.source?.content?.includes('\nTruncated: true')),
         },
-        { verification, provider, model, promptVersion, hasContent, fetchedAt, ttlDays }
+        { verification, provider, model, promptVersion, hasContent, fetchedAt, ttlDays, checkId }
     );
 }
