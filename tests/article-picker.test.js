@@ -7,6 +7,8 @@ import {
     NS_MAIN,
     NS_TEMPLATE,
     UnknownCriterionError,
+    activityBuckets,
+    buildActivityProfileQuery,
     buildCandidateQuery,
     buildCreationDateQuery,
     buildTagMembershipQuery,
@@ -14,10 +16,12 @@ import {
     currentEventTemplatesForWiki,
     failedVerificationTemplatesForWiki,
     formatRevTimestamp,
+    normalizeActivityProfileRow,
     normalizeRow,
     normalizeTopEditedRow,
     parseRevTimestamp,
     resolveCriterion,
+    selectActivityProfiles,
     selectCandidates,
     selectCreationDates,
     selectTagMembership,
@@ -346,4 +350,105 @@ test('selectCreationDates parses timestamps into Dates and skips unparseable row
     const dates = await selectCreationDates(query, { pageIds: [1, 2] });
     assert.equal(dates.get(1).toISOString(), '2026-09-04T12:00:00.000Z');
     assert.equal(dates.has(2), false);
+});
+
+// --- Long-run activity profile ---
+
+test('activityBuckets divides the window newest-first and clamps the oldest bucket', () => {
+    const now = new Date('2026-09-16T00:00:00Z');
+    const buckets = activityBuckets({ now, historyDays: 180, bucketDays: 30 });
+
+    assert.equal(buckets.length, 6);
+    assert.equal(buckets[0].end.toISOString(), now.toISOString());
+    assert.equal(buckets[0].start.toISOString(), '2026-08-17T00:00:00.000Z');
+    assert.equal(buckets[5].start.toISOString(), '2026-03-20T00:00:00.000Z',
+        'oldest bucket starts exactly historyDays back');
+
+    // Consecutive and non-overlapping: each bucket's start is the next one's end.
+    for (let i = 0; i < buckets.length - 1; i++) {
+        assert.equal(buckets[i].start.getTime(), buckets[i + 1].end.getTime());
+    }
+});
+
+test('activityBuckets clamps an uneven division rather than overrunning the window', () => {
+    const now = new Date('2026-09-16T00:00:00Z');
+    const buckets = activityBuckets({ now, historyDays: 100, bucketDays: 30 });
+    assert.equal(buckets.length, 4);
+    assert.equal(now.getTime() - buckets[3].start.getTime(), 100 * 86400000,
+        'the window is exactly 100 days, not 120');
+});
+
+test('activityBuckets validates its inputs', () => {
+    assert.throws(() => activityBuckets({ now: new Date('bad') }), TypeError);
+    assert.throws(() => activityBuckets({ historyDays: 0 }), RangeError);
+    assert.throws(() => activityBuckets({ historyDays: 30, bucketDays: 60 }), RangeError);
+});
+
+test('buildActivityProfileQuery emits one conditional SUM per bucket over a single scan', () => {
+    const now = new Date('2026-09-16T00:00:00Z');
+    const buckets = activityBuckets({ now, historyDays: 90, bucketDays: 30 });
+    const { sql, params } = buildActivityProfileQuery({ pageIds: [7, 8], buckets });
+
+    assert.equal((sql.match(/AS bucket\d+/g) || []).length, 3);
+    assert.match(sql, /COUNT\(DISTINCT r\.rev_actor\) AS distinctEditors/);
+    assert.match(sql, /MAX\(r\.rev_timestamp\)\s+AS lastEditAt/);
+    assert.match(sql, /GROUP BY r\.rev_page/);
+    assert.equal((sql.match(/FROM revision/g) || []).length, 1,
+        'one scan per page range, not one query per bucket');
+    assert.equal((sql.match(/\?/g) || []).length, params.length);
+
+    // Textual order: bucket bounds (SELECT), then the id list, then the
+    // window start (WHERE). Swapping these silently mis-buckets every edit.
+    assert.deepEqual(params.slice(0, 2), ['20260817000000', '20260916000000']);
+    assert.deepEqual(params.slice(-3), [7, 8, '20260618000000']);
+});
+
+test('buildActivityProfileQuery rejects empty inputs rather than matching everything', () => {
+    const buckets = activityBuckets({ historyDays: 60, bucketDays: 30 });
+    assert.throws(() => buildActivityProfileQuery({ pageIds: [], buckets }), TypeError);
+    assert.throws(() => buildActivityProfileQuery({ pageIds: [1], buckets: [] }), TypeError);
+});
+
+test('normalizeActivityProfileRow counts the buckets that saw any edit at all', () => {
+    const profile = normalizeActivityProfileRow({
+        pageId: '3', historyEditCount: '41', distinctEditors: '12',
+        lastEditAt: Buffer.from('20260915093000'),
+        bucket0: '5', bucket1: '0', bucket2: '30', bucket3: '6', bucket4: '0', bucket5: '0',
+    }, 6);
+
+    assert.equal(profile.pageId, 3);
+    assert.equal(profile.historyEditCount, 41);
+    assert.equal(profile.distinctEditors, 12);
+    assert.equal(profile.lastEditAt.toISOString(), '2026-09-15T09:30:00.000Z');
+    assert.deepEqual(profile.bucketCounts, [5, 0, 30, 6, 0, 0]);
+    assert.equal(profile.activeBuckets, 3, 'three buckets saw edits, not three months of edits');
+    assert.equal(profile.bucketCount, 6);
+});
+
+test('normalizeActivityProfileRow keeps an unmeasured editor count null rather than zero', () => {
+    // "nobody edited it" and "we did not measure" must not score the same.
+    const profile = normalizeActivityProfileRow({ pageId: 1, historyEditCount: 0 }, 2);
+    assert.equal(profile.distinctEditors, null);
+    assert.deepEqual(profile.bucketCounts, [0, 0]);
+    assert.equal(profile.activeBuckets, 0);
+});
+
+test('selectActivityProfiles chunks by page id and keys the result by page id', async () => {
+    const seen = [];
+    const query = async (sql, params) => {
+        const ids = params.filter(p => typeof p === 'number');
+        seen.push(ids.length);
+        return ids.map(id => ({
+            pageId: id, historyEditCount: 10, distinctEditors: 4,
+            lastEditAt: Buffer.from('20260915000000'), bucket0: 1, bucket1: 1,
+        }));
+    };
+
+    const buckets = activityBuckets({ historyDays: 60, bucketDays: 30 });
+    const pageIds = Array.from({ length: 700 }, (_, i) => i + 1);
+    const profiles = await selectActivityProfiles(query, { pageIds, buckets });
+
+    assert.deepEqual(seen, [500, 200], 'chunked at 500 ids per query');
+    assert.equal(profiles.size, 700);
+    assert.equal(profiles.get(42).activeBuckets, 2);
 });

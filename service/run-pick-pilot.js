@@ -1,14 +1,21 @@
 #!/usr/bin/env node
-// Runnable entry point: builds the 100-article pilot mix described in
-// service/pilot-selection.js's header — most-edited articles, biased toward
-// current events (recency + edit burst, with the {{current}} tag as a bonus)
-// and toward {{failed verification}}, biased against articles whose sources
-// the sweep can't fetch — and writes a --titles-file for service/run-sweep.js.
+// Runnable entry point: builds the pilot article mix described in
+// service/pilot-selection.js's header — articles likely to still be edited
+// when the batch reaches an editor (editing spread across months, by several
+// people, without a recent spike), biased toward {{failed verification}} and
+// against articles whose sources the sweep can't fetch — and writes a
+// --titles-file for service/run-sweep.js.
+//
+// Not "articles being edited right now": that ranking filled the first batch
+// with tournament finals and other one-shot events, which are finished by the
+// time a batch ships. See service/pilot-selection.js's header and
+// docs/design-plans/2026-09-16-selecting-for-future-activity.md.
 //
 // Two stages, matching service/pilot-selection.js's split:
 //   1. Wiki Replicas: top-edited base population (with a burst count), then
-//      creation dates and tag membership for exactly those page ids. Cheap —
-//      three bounded queries, none of them enumerating a whole population.
+//      creation dates, tag membership and the bucketed activity profile for
+//      exactly those page ids. Cheap — four bounded queries, none of them
+//      enumerating a whole population.
 //   2. Wikipedia REST + citation extraction, walking stage 1's ranking in
 //      order and stopping as soon as --max articles have survived the
 //      offline-source filter. That early stop is what keeps this affordable:
@@ -45,6 +52,8 @@ import {
     selectTopEdited,
     selectTagMembership,
     selectCreationDates,
+    selectActivityProfiles,
+    activityBuckets,
     currentEventTemplatesForWiki,
     failedVerificationTemplatesForWiki,
 } from './article-picker.js';
@@ -54,13 +63,16 @@ import {
     mergeSignals,
     shortlist,
     finalizeRanking,
-    passesContentFilter,
+    activityRejection,
+    contentRejection,
     computeOfflineRatio,
     computeTableRatio,
     splitFlaggedPool,
     flaggedQuotaFor,
     tierOf,
     DEFAULT_FLAGGED_QUOTA_SHARE,
+    DEFAULT_MIN_ACTIVE_BUCKETS,
+    DEFAULT_MAX_IDLE_DAYS,
     DEFAULT_WEIGHTS,
     DEFAULT_THRESHOLDS,
     DEFAULT_OFFLINE_RATIO_CEILING,
@@ -74,9 +86,14 @@ export function parseCliArgs(argv) {
         args: argv.slice(2),
         options: {
             wiki:                { type: 'string', default: 'enwiki' },
-            'edit-window-days':  { type: 'string', default: '14' },
+            'edit-window-days':  { type: 'string', default: '30' },
             'burst-window-days': { type: 'string', default: '3' },
-            'base-pool':         { type: 'string', default: '1000' },
+            'history-days':      { type: 'string', default: '180' },
+            'history-bucket-days': { type: 'string', default: '30' },
+            'min-active-buckets': { type: 'string', default: String(DEFAULT_MIN_ACTIVE_BUCKETS) },
+            'max-idle-days':     { type: 'string', default: String(DEFAULT_MAX_IDLE_DAYS) },
+            'allow-event-titles': { type: 'boolean', default: false },
+            'base-pool':         { type: 'string', default: '2000' },
             'shortlist-size':    { type: 'string', default: '300' },
             max:                 { type: 'string', default: '100' },
             'offline-ratio-max': { type: 'string', default: String(DEFAULT_OFFLINE_RATIO_CEILING) },
@@ -96,6 +113,11 @@ export function parseCliArgs(argv) {
         wiki: values.wiki,
         editWindowDays: Number(values['edit-window-days']),
         burstWindowDays: Number(values['burst-window-days']),
+        historyDays: Number(values['history-days']),
+        historyBucketDays: Number(values['history-bucket-days']),
+        minActiveBuckets: Number(values['min-active-buckets']),
+        maxIdleDays: Number(values['max-idle-days']),
+        allowEventTitles: values['allow-event-titles'],
         basePool: Number(values['base-pool']),
         shortlistSize: Number(values['shortlist-size']),
         max: Number(values.max),
@@ -111,19 +133,42 @@ export function parseCliArgs(argv) {
 
 export const HELP_TEXT = `usage: node service/run-pick-pilot.js [options]
 
-Builds a --titles-file for service/run-sweep.js: the most-edited articles in
-a recent window, biased toward current events (recently created, or edits
-concentrated in a burst, or carrying {{current}}) and toward
-{{failed verification}}, and away from articles whose citations are mostly
-unfetchable. See service/pilot-selection.js for the scoring.
+Builds a --titles-file for service/run-sweep.js: active articles that look
+likely to STILL be edited when the batch reaches an editor — editing spread
+across months, by several people, without a recent spike — biased toward
+{{failed verification}}, and away from one-shot event pages and articles whose
+citations are mostly unfetchable. See service/pilot-selection.js for the
+scoring, and docs/design-plans/2026-09-16-selecting-for-future-activity.md for
+why "edited a lot lately" was the wrong target.
 
 Options:
   --wiki <db>               Wiki database name (default: enwiki)
-  --edit-window-days <n>    Edit-count window in days (default: 14)
+  --edit-window-days <n>    Edit-count window in days (default: 30)
   --burst-window-days <n>   Short window whose share of those edits marks an
-                             article as a burst, i.e. breaking rather than
-                             perennially busy (default: 3)
-  --base-pool <n>           Top-edited articles to pull before scoring (default: 1000)
+                             article as a spike — a finished event rather than
+                             a page with a standing constituency. Penalized,
+                             and subtracted from the volume term (default: 3)
+  --history-days <n>        How far back to measure the editing pattern
+                             (default: 180). Measured per candidate, so this
+                             is a bounded index range per page, not a second
+                             scan of the revision table.
+  --history-bucket-days <n> Bucket size within that window (default: 30). The
+                             number of buckets an article was edited in — not
+                             its edit count — is the persistence signal.
+  --min-active-buckets <n>  Reject an article edited in fewer than this many
+                             buckets (default: ${DEFAULT_MIN_ACTIVE_BUCKETS} of 6, at the defaults
+                             above). This is the filter that excludes one-shot
+                             events; an article with no history in the window
+                             at all is rejected too, never waved through.
+  --max-idle-days <n>       Reject an article whose last edit is older than
+                             this (default: ${DEFAULT_MAX_IDLE_DAYS})
+  --allow-event-titles      Keep articles whose titles name an occasion rather
+                             than a subject ("2026 US Open", "2025-26 X
+                             season", "Athletics at the 2026 Olympics"). These
+                             are excluded by default: a forthcoming event is
+                             edited steadily right up until it happens, so
+                             persistence alone does not catch it.
+  --base-pool <n>           Top-edited articles to pull before scoring (default: 2000)
   --shortlist-size <n>      Upper bound on stage-2 candidates — the fetch +
                              citation-extraction step (default: 300). The run
                              normally stops well before this, once --max
@@ -133,9 +178,8 @@ Options:
                              above this fraction, 0..1 (default: ${DEFAULT_OFFLINE_RATIO_CEILING})
   --table-ratio-max <f>     Exclude articles with more than this fraction of
                              their citations inside a <table>, 0..1
-                             (default: ${DEFAULT_TABLE_RATIO_CEILING}). Tournament draws, episode
-                             lists and medal tables score at the very top of
-                             the current-events ranking and are worthless to
+                             (default: ${DEFAULT_TABLE_RATIO_CEILING}). Recurring results pages,
+                             episode lists and medal tables are worthless to
                              verify: the claim behind a bracket citation is a
                              score line, not an assertion.
   --exclude-titles-file <path>
@@ -149,7 +193,7 @@ Options:
                              A floor, not a partition: those articles still
                              compete for the remaining slots on score, and an
                              unfillable reserve leaves its slots to the general
-                             ranking. Without it the much larger current-events
+                             ranking. Without it the much larger untagged
                              population crowds them out entirely.
   --scan-all                Fetch the entire shortlist instead of stopping at
                              --max survivors. Ranks more exactly, costs roughly
@@ -168,6 +212,11 @@ function validate(opts, stderr) {
     const checks = [
         ['edit-window-days', opts.editWindowDays > 0],
         ['burst-window-days', opts.burstWindowDays > 0 && opts.burstWindowDays <= opts.editWindowDays],
+        ['history-days', opts.historyDays > 0],
+        ['history-bucket-days', opts.historyBucketDays > 0 && opts.historyBucketDays <= opts.historyDays],
+        ['min-active-buckets', Number.isInteger(opts.minActiveBuckets) && opts.minActiveBuckets >= 0
+            && opts.minActiveBuckets <= Math.ceil(opts.historyDays / opts.historyBucketDays)],
+        ['max-idle-days', opts.maxIdleDays > 0],
         ['base-pool', Number.isInteger(opts.basePool) && opts.basePool >= 1 && opts.basePool <= 5000],
         ['shortlist-size', Number.isInteger(opts.shortlistSize) && opts.shortlistSize >= 1],
         ['max', Number.isInteger(opts.max) && opts.max >= 1],
@@ -190,17 +239,34 @@ function renderTitlesFile(ranked, opts, generatedAt) {
     return [
         `# Pilot mix: ${ranked.length} article(s), generated ${generatedAt}`,
         `# wiki=${opts.wiki} edit-window-days=${opts.editWindowDays} burst-window-days=${opts.burstWindowDays}`,
+        `# history-days=${opts.historyDays} history-bucket-days=${opts.historyBucketDays} `
+            + `min-active-buckets=${opts.minActiveBuckets} max-idle-days=${opts.maxIdleDays} `
+            + `allow-event-titles=${opts.allowEventTitles}`,
         `# base-pool=${opts.basePool} shortlist-size=${opts.shortlistSize} `
             + `offline-ratio-max=${opts.offlineRatioMax} table-ratio-max=${opts.tableRatioMax} `
             + `flagged-share=${opts.flaggedShare}`,
-        '# Biased toward current events (recently created, or edits concentrated in a burst, or',
-        '# carrying {{current}}) and toward {{failed verification}}; biased against articles whose',
-        '# citations are mostly unfetchable. See service/pilot-selection.js.',
+        '# Selected for articles likely to still be edited when this batch reaches an editor:',
+        '# editing spread across months, by several people, without a recent spike. Biased toward',
+        '# {{failed verification}}; biased against one-shot event pages, articles whose citations',
+        '# are mostly unfetchable, and pages whose citations sit in results tables.',
+        '# See service/pilot-selection.js.',
         '#',
         '# node service/run-sweep.js --titles-file <this file> --live-source-fetch \\',
         `#     --max ${ranked.length} --out pilot-findings.csv`,
         '',
     ].join('\n') + ranked.map(c => c.title).join('\n') + '\n';
+}
+
+// One line per rejection reason, e.g. "event-title: 214, low-persistence: 96".
+// The commitment made on the 2026-09-14 volunteer call was to show how a batch
+// was generated before it ships; this is the shareable form of it.
+function countReasons(reasons) {
+    const tally = reasons.reduce((acc, r) => {
+        acc[r] = (acc[r] || 0) + 1;
+        return acc;
+    }, {});
+    const entries = Object.entries(tally).sort((a, b) => b[1] - a[1]);
+    return entries.length ? entries.map(([r, n]) => `${r}: ${n}`).join(', ') : 'none';
 }
 
 function countTiers(ranked) {
@@ -272,26 +338,54 @@ export async function runPickPilot(opts, {
         }
 
         const pageIds = topEdited.map(c => c.pageId);
-        const [currentTagIds, failedVerificationIds, creationDates] = await Promise.all([
+        const buckets = activityBuckets({
+            now: runAt, historyDays: opts.historyDays, bucketDays: opts.historyBucketDays,
+        });
+        const [currentTagIds, failedVerificationIds, creationDates, activityProfiles] = await Promise.all([
             selectTagMembership(query, { templates: currentEventTemplatesForWiki(opts.wiki), pageIds }),
             selectTagMembership(query, { templates: failedVerificationTemplatesForWiki(opts.wiki), pageIds }),
             selectCreationDates(query, { pageIds }),
+            selectActivityProfiles(query, { pageIds, buckets }),
         ]);
 
         const merged = mergeSignals(topEdited, {
             currentTagIds,
             failedVerificationIds,
             creationDates,
+            activityProfiles,
             burstBaseline: opts.burstWindowDays / opts.editWindowDays,
             now: runAt,
         });
-        const currentCount = merged.filter(c => tierOf(c).startsWith('current')).length;
-        stderr.write(
-            `pick-pilot: base pool ${merged.length} article(s) — ${currentCount} read as current events `
-            + `(${currentTagIds.size} by tag), ${failedVerificationIds.size} tagged {{failed verification}}\n`
-        );
 
-        const short = shortlist(merged, {
+        // The activity filter runs before the shortlist, not after: rejecting
+        // an event page here costs one map lookup, rejecting it in stage 2
+        // costs an article fetch and a DOM parse.
+        const activityFilter = {
+            minActiveBuckets: opts.minActiveBuckets,
+            maxIdleDays: opts.maxIdleDays,
+            allowEventTitles: opts.allowEventTitles,
+        };
+        const rejected = [];
+        const eligible = merged.filter(candidate => {
+            const reason = activityRejection(candidate, activityFilter);
+            if (reason) rejected.push(reason);
+            return !reason;
+        });
+
+        const durableCount = eligible.filter(c => tierOf(c).startsWith('durable')).length;
+        stderr.write(
+            `pick-pilot: base pool ${merged.length} article(s) — dropped ${rejected.length} on the `
+            + `activity filter (${countReasons(rejected)}); ${eligible.length} eligible, of which `
+            + `${durableCount} read as durably edited and `
+            + `${eligible.filter(c => c.failedVerification).length} carry {{failed verification}} `
+            + `(${currentTagIds.size} of the pool carried a current-event tag)\n`
+        );
+        if (eligible.length === 0) {
+            stderr.write('pick-pilot: no article in the base pool survived the activity filter\n');
+            return 1;
+        }
+
+        const short = shortlist(eligible, {
             size: opts.shortlistSize, weights: DEFAULT_WEIGHTS, thresholds: DEFAULT_THRESHOLDS,
         });
         // Flagged articles are the scarcer population and score lower on
@@ -321,6 +415,7 @@ export async function runPickPilot(opts, {
             tableRatioCeiling: opts.tableRatioMax,
         };
         const checked = [];
+        const contentRejections = [];
         let flaggedSurvivors = 0;
         let survivors = 0;
         let fetchFailures = 0;
@@ -346,7 +441,10 @@ export async function runPickPilot(opts, {
                     candidate.tableRatio = computeTableRatio(citations);
                 }
                 checked.push(candidate);
-                if (passesContentFilter(candidate, contentFilter)) {
+                const reason = contentRejection(candidate, contentFilter);
+                if (reason) {
+                    contentRejections.push(reason);
+                } else {
                     survivors++;
                     if (candidate.failedVerification) flaggedSurvivors++;
                 }
@@ -361,7 +459,8 @@ export async function runPickPilot(opts, {
         }
         stderr.write(
             `pick-pilot: fetched ${checked.length} article(s), ${fetchFailures} failed, `
-            + `${survivors} passed the offline filter (${flaggedSurvivors} flagged)\n`
+            + `${survivors} passed the content filter (${flaggedSurvivors} flagged); `
+            + `dropped ${contentRejections.length} (${countReasons(contentRejections)})\n`
         );
 
         ranked = finalizeRanking(checked, {
@@ -369,6 +468,7 @@ export async function runPickPilot(opts, {
             flaggedQuota,
             offlineRatioCeiling: opts.offlineRatioMax,
             tableRatioCeiling: opts.tableRatioMax,
+            ...activityFilter,
             weights: DEFAULT_WEIGHTS,
             thresholds: DEFAULT_THRESHOLDS,
         });

@@ -226,12 +226,11 @@ export async function selectCandidates(query, {
 // buildCandidateQuery()/selectCandidates()'s pagination.
 //
 // This is the base population service/pilot-selection.js scores and filters
-// from for the 100-article pilot mix: recent edit velocity is a cheap proxy
-// for "this article is a current event" (elections, disasters, deaths,
-// ongoing tournaments all spike edit counts) that catches articles the
-// {{current}} tag misses — not every developing story gets self-tagged, and
-// the tag is commonly removed within days of the event settling down while
-// the edit spike (and the citation backlog it leaves) is still there.
+// from for the pilot mix. Recent edit velocity is what gets an article into
+// the pool at all; it is deliberately NOT what ranks it, because velocity is
+// a record of the past. See that module's header, and
+// docs/design-plans/2026-09-16-selecting-for-future-activity.md, for why the
+// burst this query measures is now scored as a penalty rather than a boost.
 
 /**
  * Formats a Date as MediaWiki's rev_timestamp form: BINARY(14), UTC,
@@ -405,4 +404,110 @@ export async function selectCreationDates(query, { pageIds }) {
         }
     }
     return dates;
+}
+
+// --- Long-run activity profile ---
+//
+// The base-pool query above answers "how much was this edited lately". That
+// cannot distinguish an article with a future from one with only a past: a
+// tournament final and a well-watched biography can post the same 14-day
+// count. Separating them needs the *shape* of the editing over months, which
+// is what this pair of functions measures — per candidate page id, so it is a
+// bounded index range per page (like selectCreationDates above) rather than
+// another aggregate over the whole revision table.
+//
+// Bucketed rather than a single long count on purpose: the number of distinct
+// months an article was edited in is the signal, not the total. 400 edits in
+// one month and 400 spread over six are the same number and completely
+// different articles.
+
+/**
+ * Splits the history window into consecutive buckets, newest first.
+ *
+ * Bucket 0 is [now - bucketDays, now); the oldest bucket's start is clamped to
+ * now - historyDays so the window is exactly as long as asked for even when
+ * bucketDays does not divide it evenly.
+ */
+export function activityBuckets({ now = new Date(), historyDays = 180, bucketDays = 30 } = {}) {
+    if (!(now instanceof Date) || Number.isNaN(now.getTime())) {
+        throw new TypeError('activityBuckets requires a valid now');
+    }
+    if (!(historyDays > 0) || !(bucketDays > 0) || bucketDays > historyDays) {
+        throw new RangeError(`activityBuckets requires 0 < bucketDays <= historyDays (got: ${bucketDays}, ${historyDays})`);
+    }
+
+    const msPerDay = 86400000;
+    const oldest = now.getTime() - historyDays * msPerDay;
+    const count = Math.ceil(historyDays / bucketDays);
+
+    return Array.from({ length: count }, (_, i) => ({
+        end: new Date(now.getTime() - i * bucketDays * msPerDay),
+        start: new Date(Math.max(oldest, now.getTime() - (i + 1) * bucketDays * msPerDay)),
+    }));
+}
+
+/**
+ * Per page: total edits in the history window, how many distinct editors made
+ * them, when the last one landed, and the per-bucket counts.
+ *
+ * One conditional SUM per bucket over a single scan of that page's revision
+ * range — the same trick buildTopEditedQuery() uses for its burst count, and
+ * the reason this costs one query rather than one per bucket.
+ */
+export function buildActivityProfileQuery({ pageIds, buckets }) {
+    if (!pageIds?.length) throw new TypeError('buildActivityProfileQuery requires at least one page id');
+    if (!buckets?.length) throw new TypeError('buildActivityProfileQuery requires at least one bucket');
+
+    const bucketColumns = buckets
+        .map((_, i) => `            SUM(CASE WHEN r.rev_timestamp >= ? AND r.rev_timestamp < ? THEN 1 ELSE 0 END) AS bucket${i}`)
+        .join(',\n');
+
+    const sql = `
+        SELECT
+            r.rev_page              AS pageId,
+            COUNT(*)                AS historyEditCount,
+            COUNT(DISTINCT r.rev_actor) AS distinctEditors,
+            MAX(r.rev_timestamp)    AS lastEditAt,
+${bucketColumns}
+        FROM revision r
+        WHERE r.rev_page IN (${pageIds.map(() => '?').join(', ')})
+          AND r.rev_timestamp >= ?
+        GROUP BY r.rev_page
+    `.trim().replace(/\n {8}/g, '\n');
+
+    // Textual order: every bucket's pair of bounds sits in the SELECT list,
+    // ahead of the WHERE clause's id list and window start.
+    const bucketParams = buckets.flatMap(b => [formatRevTimestamp(b.start), formatRevTimestamp(b.end)]);
+    const oldest = buckets[buckets.length - 1].start;
+
+    return { sql, params: [...bucketParams, ...pageIds, formatRevTimestamp(oldest)] };
+}
+
+export function normalizeActivityProfileRow(row, bucketCount) {
+    const counts = Array.from({ length: bucketCount }, (_, i) => Number(row[`bucket${i}`] ?? 0));
+    return {
+        pageId: Number(row.pageId),
+        historyEditCount: Number(row.historyEditCount ?? 0),
+        // Null rather than 0 for an absent column: "nobody edited it" and "we
+        // did not measure" must not score the same. See pilot-selection.js's
+        // editorBreadthFactor().
+        distinctEditors: row.distinctEditors == null ? null : Number(row.distinctEditors),
+        lastEditAt: parseRevTimestamp(row.lastEditAt),
+        bucketCounts: counts,
+        activeBuckets: counts.filter(n => n > 0).length,
+        bucketCount,
+    };
+}
+
+/** Returns Map<pageId, profile>. Pages with no revisions in the window are absent. */
+export async function selectActivityProfiles(query, { pageIds, buckets }) {
+    const profiles = new Map();
+    for (const chunk of chunkIds(pageIds)) {
+        const { sql, params } = buildActivityProfileQuery({ pageIds: chunk, buckets });
+        for (const row of (await query(sql, params)) || []) {
+            const profile = normalizeActivityProfileRow(row, buckets.length);
+            profiles.set(profile.pageId, profile);
+        }
+    }
+    return profiles;
 }
