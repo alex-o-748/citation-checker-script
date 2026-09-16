@@ -147,3 +147,34 @@ recent deaths, AFC and new-page patrol. The recurring answer from more than one
 participant was that source verification is hard to confine to a subset because
 it is everywhere in the workflow. None of that is addressed here — this change
 is only about not wasting slots on articles nobody will return to.
+
+## Addendum, same day: a BLP quota
+
+Participants in the 2026-09-10 enwiki thread and the 2026-09-14 call asked for
+biographies of living people. `--blp-share` (default 0.15) reserves slots for
+them on exactly the terms `--flagged-share` already had.
+
+Deliberately a quota and not a scoring term. A watched biography is edited every
+month by several people, so it already scores well on the signals above — the
+reserve is insurance that a few are present, not a thumb on the scale, and a run
+that selects more BLPs than the quota reserves shows the quota never bound.
+`Category:Living people` is the selector, named by Levivich in the thread, and it
+is `null` rather than an enwiki fallback for any wiki whose category name no
+editor there has confirmed: a wrong name matches nothing silently, and the run
+would report a filled mix while reserving nothing.
+
+Two things this addendum does **not** do, both noted so the next person doesn't
+read the quota as more than it is:
+
+- **It does not address precision.** Levivich's argument is about *consequence* —
+  a citation that genuinely fails matters more on a BLP than on a railway line —
+  and the quota serves that. But `batch-volume-sizing.md` puts precision at
+  roughly a third at a 3% base rate, so most flags on these articles will still
+  be wrong, and a false "this source does not support the claim" is at its most
+  costly on a living person. Pairing the BLP quota with the density axis (BLP ∩
+  `{{failed verification}}`, BLP ∩ unreviewed) is the thing that would move
+  precision, and it is not built.
+- **It does not settle the Legal question.** Isaac Johnson raised on 2026-08-13
+  that Legal may require excluding BLPs from the sample, pending a re-check;
+  no answer is on record. `--blp-share 0` is the off switch if it comes back a
+  no, which is why the quota is a flag and not a weight baked into the score.

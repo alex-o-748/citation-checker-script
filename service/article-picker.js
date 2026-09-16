@@ -97,8 +97,24 @@ export const WIKI_FAILED_VERIFICATION_TEMPLATES = Object.freeze({
     ruwiki: Object.freeze(['Не_соответствует_источнику', 'Нет_в_источнике']),
 });
 
+// The category every biography of a living person carries, by policy — the one
+// selector for BLPs, and the one Levivich named by hand in the 2026-09-10
+// enwiki thread ("WP:BLPs, which are all in Category:Living people").
+//
+// enwiki only, and `null` for anything else rather than a fallback: unlike the
+// template tables above, a wrong category name here would make the BLP quota
+// silently reserve nothing, with the run reporting a filled mix either way.
+// A wiki gets an entry when a human editor on that wiki confirms the name.
+export const WIKI_LIVING_PEOPLE_CATEGORIES = Object.freeze({
+    enwiki: 'Living_people',
+});
+
 export function currentEventTemplatesForWiki(wikiDb) {
     return WIKI_CURRENT_EVENT_TEMPLATES[wikiDb] ?? CURRENT_EVENT_TEMPLATES;
+}
+
+export function livingPeopleCategoryForWiki(wikiDb) {
+    return WIKI_LIVING_PEOPLE_CATEGORIES[wikiDb] ?? null;
 }
 
 export function failedVerificationTemplatesForWiki(wikiDb) {
@@ -367,6 +383,44 @@ export async function selectTagMembership(query, { templates, pageIds }) {
     const found = new Set();
     for (const chunk of chunkIds(pageIds)) {
         const { sql, params } = buildTagMembershipQuery({ templates, pageIds: chunk });
+        for (const row of (await query(sql, params)) || []) found.add(Number(row.pageId));
+    }
+    return found;
+}
+
+/**
+ * Which of `pageIds` sit in `category` (a category title in DB form —
+ * underscores, no `Category:` prefix).
+ *
+ * Deliberately the same shape as buildTagMembershipQuery() above: ask about the
+ * base pool's own ids rather than enumerating the category, which for
+ * `Living_people` is over a million pages.
+ *
+ * SCHEMA NOTE. `cl_to` is the long-standing column and is what this query
+ * binds. Categorylinks normalization has been in flight upstream the same way
+ * templatelinks was (T299417, which is why the query above joins `linktarget`)
+ * — so if this ever returns zero rows against a category that certainly has
+ * members, check whether `cl_to` has been replaced by a `linktarget` join
+ * before looking anywhere else.
+ */
+export function buildCategoryMembershipQuery({ category, pageIds }) {
+    if (!category) throw new TypeError('buildCategoryMembershipQuery requires a category');
+    if (!pageIds?.length) throw new TypeError('buildCategoryMembershipQuery requires at least one page id');
+
+    const sql = `
+        SELECT cl_from AS pageId
+        FROM categorylinks
+        WHERE cl_to = ?
+          AND cl_from IN (${pageIds.map(() => '?').join(', ')})
+    `.trim().replace(/\n {8}/g, '\n');
+
+    return { sql, params: [category, ...pageIds] };
+}
+
+export async function selectCategoryMembership(query, { category, pageIds }) {
+    const found = new Set();
+    for (const chunk of chunkIds(pageIds)) {
+        const { sql, params } = buildCategoryMembershipQuery({ category, pageIds: chunk });
         for (const row of (await query(sql, params)) || []) found.add(Number(row.pageId));
     }
     return found;

@@ -10,12 +10,14 @@ import {
     activityBuckets,
     buildActivityProfileQuery,
     buildCandidateQuery,
+    buildCategoryMembershipQuery,
     buildCreationDateQuery,
     buildTagMembershipQuery,
     buildTopEditedQuery,
     currentEventTemplatesForWiki,
     failedVerificationTemplatesForWiki,
     formatRevTimestamp,
+    livingPeopleCategoryForWiki,
     normalizeActivityProfileRow,
     normalizeRow,
     normalizeTopEditedRow,
@@ -23,6 +25,7 @@ import {
     resolveCriterion,
     selectActivityProfiles,
     selectCandidates,
+    selectCategoryMembership,
     selectCreationDates,
     selectTagMembership,
     selectTopEdited,
@@ -451,4 +454,48 @@ test('selectActivityProfiles chunks by page id and keys the result by page id', 
     assert.deepEqual(seen, [500, 200], 'chunked at 500 ids per query');
     assert.equal(profiles.size, 700);
     assert.equal(profiles.get(42).activeBuckets, 2);
+});
+
+// --- BLP membership (Category:Living people) ---
+
+test('livingPeopleCategoryForWiki returns null for an unconfirmed wiki rather than guessing', () => {
+    // A wrong category name matches nothing silently, and the BLP quota would
+    // then reserve nothing while the run reported a filled mix.
+    assert.equal(livingPeopleCategoryForWiki('enwiki'), 'Living_people');
+    assert.equal(livingPeopleCategoryForWiki('ruwiki'), null);
+    assert.equal(livingPeopleCategoryForWiki('frwiki'), null);
+});
+
+test('buildCategoryMembershipQuery asks only about the given ids and binds the category', () => {
+    const { sql, params } = buildCategoryMembershipQuery({
+        category: 'Living_people', pageIds: [10, 20, 30],
+    });
+
+    assert.match(sql, /cl_from IN \(\?, \?, \?\)/);
+    assert.doesNotMatch(sql, /Living_people/, 'category title is bound, not inlined');
+    assert.doesNotMatch(sql, /LIMIT/i, 'membership is bounded by the id list, not by a row cap');
+    assert.equal((sql.match(/\?/g) || []).length, params.length);
+    assert.deepEqual(params, ['Living_people', 10, 20, 30]);
+});
+
+test('buildCategoryMembershipQuery rejects empty inputs rather than matching everything', () => {
+    assert.throws(() => buildCategoryMembershipQuery({ category: '', pageIds: [1] }), TypeError);
+    assert.throws(() => buildCategoryMembershipQuery({ category: 'Living_people', pageIds: [] }), TypeError);
+});
+
+test('selectCategoryMembership chunks by page id like the tag lookup does', async () => {
+    const seen = [];
+    const query = async (sql, params) => {
+        const ids = params.slice(1);
+        seen.push(ids.length);
+        return ids.filter(id => id % 2 === 0).map(id => ({ pageId: id }));
+    };
+
+    const pageIds = Array.from({ length: 700 }, (_, i) => i + 1);
+    const found = await selectCategoryMembership(query, { category: 'Living_people', pageIds });
+
+    assert.deepEqual(seen, [500, 200], 'chunked at 500 ids per query');
+    assert.equal(found.has(2), true);
+    assert.equal(found.has(3), false);
+    assert.equal(found.has(700), true);
 });

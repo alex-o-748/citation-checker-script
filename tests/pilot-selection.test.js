@@ -27,7 +27,7 @@ import {
     passesContentFilter,
     finalizeRanking,
     splitFlaggedPool,
-    flaggedQuotaFor,
+    quotaFor,
     allocateWithQuota,
 } from '../service/pilot-selection.js';
 
@@ -412,12 +412,12 @@ test('DEFAULT_THRESHOLDS keeps the fresh window inside the stale window', () => 
 
 // --- The flagged quota ---
 
-test('flaggedQuotaFor rounds the share and clamps it to 0..1', () => {
-    assert.equal(flaggedQuotaFor(100, 0.4), 40);
-    assert.equal(flaggedQuotaFor(100, 0), 0);
-    assert.equal(flaggedQuotaFor(100, 2), 100);
-    assert.equal(flaggedQuotaFor(100, -1), 0);
-    assert.equal(flaggedQuotaFor(7, 0.4), 3);
+test('quotaFor rounds the share and clamps it to 0..1', () => {
+    assert.equal(quotaFor(100, 0.4), 40);
+    assert.equal(quotaFor(100, 0), 0);
+    assert.equal(quotaFor(100, 2), 100);
+    assert.equal(quotaFor(100, -1), 0);
+    assert.equal(quotaFor(7, 0.4), 3);
 });
 
 test('splitFlaggedPool separates the pools, each keeping its order', () => {
@@ -480,4 +480,82 @@ test('an unfillable quota leaves its slots to the general ranking rather than pa
     ];
     const got = allocateWithQuota(scored, { limit: 3, flaggedQuota: 2 });
     assert.deepEqual(got.map(c => c.title), ['a', 'b', 'c']);
+});
+
+// --- The BLP quota ---
+//
+// Same mechanism as the flagged quota, for a population asked for by
+// participants in the 2026-09-10 enwiki thread and the 2026-09-14 call.
+
+test('the BLP quota reserves slots a pure score ranking would not have given', () => {
+    const scored = [
+        ...Array.from({ length: 5 }, (_, i) => ({ title: `top-${i}`, score: 100 - i })),
+        { title: 'blp-low', score: 5, isBlp: true },
+    ];
+
+    const noQuota = allocateWithQuota(scored, { limit: 5 });
+    assert.ok(!noQuota.some(c => c.isBlp), 'outscored entirely');
+
+    const withQuota = allocateWithQuota(scored, { limit: 5, blpQuota: 1 });
+    assert.ok(withQuota.some(c => c.title === 'blp-low'));
+    assert.equal(withQuota.length, 5);
+});
+
+test('an article that is both flagged and a BLP is taken once and counts for both', () => {
+    const scored = [
+        { title: 'both', score: 10, failedVerification: true, isBlp: true },
+        { title: 'plain-a', score: 9 },
+        { title: 'plain-b', score: 8 },
+    ];
+    const got = allocateWithQuota(scored, { limit: 3, flaggedQuota: 1, blpQuota: 1 });
+    assert.equal(got.length, 3);
+    assert.equal(got.filter(c => c.title === 'both').length, 1);
+    assert.deepEqual(got.map(c => c.title), ['both', 'plain-a', 'plain-b'],
+        'the two reserves did not spend two slots on one article');
+});
+
+test('the two quotas together never exceed the limit', () => {
+    const scored = [
+        ...Array.from({ length: 6 }, (_, i) => ({ title: `f${i}`, score: 50 - i, failedVerification: true })),
+        ...Array.from({ length: 6 }, (_, i) => ({ title: `b${i}`, score: 40 - i, isBlp: true })),
+    ];
+    const got = allocateWithQuota(scored, { limit: 4, flaggedQuota: 6, blpQuota: 6 });
+    assert.equal(got.length, 4);
+});
+
+test('an unfillable BLP quota leaves its slots to the general ranking', () => {
+    const scored = [{ title: 'a', score: 3 }, { title: 'b', score: 2 }];
+    const got = allocateWithQuota(scored, { limit: 2, blpQuota: 2 });
+    assert.deepEqual(got.map(c => c.title), ['a', 'b']);
+});
+
+test('finalizeRanking threads the BLP quota through both filters', () => {
+    const candidates = [
+        ...Array.from({ length: 3 }, (_, i) => durableSignals({
+            title: `busy-${i}`, sustainedEditCount: 500, distinctEditors: 60,
+        })),
+        durableSignals({ title: 'quiet-blp', sustainedEditCount: 5, distinctEditors: 4, isBlp: true }),
+        // A BLP the content filter rejects must not be bought back by the quota.
+        durableSignals({ title: 'offline-blp', isBlp: true, offlineRatio: 0.95 }),
+    ];
+    const ranked = finalizeRanking(candidates, { limit: 3, blpQuota: 2 });
+
+    assert.equal(ranked.length, 3);
+    assert.ok(ranked.some(c => c.title === 'quiet-blp'), 'the quota reached past the score ranking');
+    assert.ok(!ranked.some(c => c.title === 'offline-blp'), 'a quota is not an exemption from the filters');
+});
+
+test('mergeSignals reads BLP membership by page id', () => {
+    const merged = mergeSignals([
+        { pageId: 1, title: 'A Living Person', editCount: 10, recentEditCount: 1 },
+        { pageId: 2, title: 'A Bridge', editCount: 10, recentEditCount: 1 },
+    ], { blpIds: new Set([1]) });
+
+    assert.equal(merged[0].isBlp, true);
+    assert.equal(merged[1].isBlp, false);
+});
+
+test('BLP membership is a quota only — it does not touch the score', () => {
+    const base = { sustainedEditCount: 10, activeBuckets: 6, bucketCount: 6, distinctEditors: 20 };
+    assert.equal(scoreCandidate({ ...base, isBlp: true }), scoreCandidate(base));
 });

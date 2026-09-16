@@ -131,6 +131,23 @@ export const DEFAULT_MAX_IDLE_DAYS = 21;
 // padding them.
 export const DEFAULT_FLAGGED_QUOTA_SHARE = 0.4;
 
+// Share of the pilot reserved for biographies of living people.
+//
+// Asked for by participants in both the 2026-09-10 enwiki thread and the
+// 2026-09-14 volunteer call. Levivich's reason is about *consequence*, not
+// density: a citation that genuinely fails matters more on a BLP than on a
+// railway line. A second reason, offered by Peter and agreed as also good,
+// is practical — BLPs lean on news and other web-accessible sources, so more
+// of their citations are fetchable at all.
+//
+// A floor rather than a weight, and a modest one, for the same reason the
+// flagged quota is a floor: high-activity BLPs already score well on the
+// durability signals (a watched biography is edited every month by several
+// people), so this is insurance that a few are present, not a thumb on the
+// scale. If a run reports more BLPs selected than the quota reserves, the
+// quota never bound and the mix got there on its own.
+export const DEFAULT_BLP_QUOTA_SHARE = 0.15;
+
 // Above this fraction of citations lacking a URL, an article is excluded
 // outright rather than merely penalized: the sweep can only fetch a URL, so
 // a majority-offline article mostly returns SOURCE UNAVAILABLE regardless of
@@ -286,6 +303,7 @@ export function editorBreadthFactor(distinctEditors, { editorBreadthTarget } = D
 export function mergeSignals(topEdited, {
     currentTagIds = new Set(),
     failedVerificationIds = new Set(),
+    blpIds = new Set(),
     creationDates = new Map(),
     activityProfiles = new Map(),
     burstBaseline = 0,
@@ -301,6 +319,7 @@ export function mergeSignals(topEdited, {
             ...candidate,
             currentTag: currentTagIds.has(candidate.pageId),
             failedVerification: failedVerificationIds.has(candidate.pageId),
+            isBlp: blpIds.has(candidate.pageId),
             createdAt: created ? created.toISOString() : null,
             ageDays: created ? (now.getTime() - created.getTime()) / 86400000 : null,
             burstRatio: editCount > 0 && recentEditCount != null
@@ -473,18 +492,40 @@ export function splitFlaggedPool(candidates) {
     };
 }
 
-export function flaggedQuotaFor(limit, share = DEFAULT_FLAGGED_QUOTA_SHARE) {
+export function quotaFor(limit, share = DEFAULT_FLAGGED_QUOTA_SHARE) {
     return Math.round(limit * Math.min(1, Math.max(0, share)));
 }
 
 /**
- * Takes `limit` candidates from a scored, descending ranking, reserving up to
- * `flaggedQuota` slots for flagged articles before filling the rest by score.
- * Returns the selection in score order, so the output reads as one ranking.
+ * Takes `limit` candidates from a scored, descending ranking, reserving slots
+ * for flagged articles and for BLPs before filling the rest by score. Returns
+ * the selection in score order, so the output reads as one ranking.
+ *
+ * Both reserves behave the same way, and the way the flagged one always has:
+ * a floor, not a partition. An article in either population still competes for
+ * the remaining slots on score, an unfillable reserve leaves its slots to the
+ * general ranking rather than padding them, and an article that is both is
+ * taken once.
  */
-export function allocateWithQuota(scored, { limit = 100, flaggedQuota = 0 } = {}) {
-    const reserved = scored.filter(c => c.failedVerification).slice(0, Math.min(flaggedQuota, limit));
-    const taken = new Set(reserved);
+export function allocateWithQuota(scored, { limit = 100, flaggedQuota = 0, blpQuota = 0 } = {}) {
+    const taken = new Set();
+
+    // An article already reserved by the previous quota still counts toward
+    // this one — it is in the mix, which is what the quota asks for — so the
+    // two reserves never spend two slots on one article.
+    const reserve = (predicate, count) => {
+        let added = 0;
+        for (const candidate of scored) {
+            if (added >= count || taken.size >= limit) break;
+            if (!predicate(candidate)) continue;
+            taken.add(candidate);
+            added++;
+        }
+    };
+
+    reserve(c => c.failedVerification, flaggedQuota);
+    reserve(c => c.isBlp, blpQuota);
+
     for (const candidate of scored) {
         if (taken.size >= limit) break;
         taken.add(candidate);
@@ -501,6 +542,7 @@ export function allocateWithQuota(scored, { limit = 100, flaggedQuota = 0 } = {}
 export function finalizeRanking(candidates, {
     limit = 100,
     flaggedQuota = 0,
+    blpQuota = 0,
     offlineRatioCeiling = DEFAULT_OFFLINE_RATIO_CEILING,
     tableRatioCeiling = DEFAULT_TABLE_RATIO_CEILING,
     minActiveBuckets = DEFAULT_MIN_ACTIVE_BUCKETS,
@@ -515,5 +557,5 @@ export function finalizeRanking(candidates, {
         .map(c => ({ ...c, score: scoreCandidate(c, weights, thresholds), tier: tierOf(c, thresholds) }))
         .sort((a, b) => b.score - a.score);
 
-    return allocateWithQuota(scored, { limit, flaggedQuota });
+    return allocateWithQuota(scored, { limit, flaggedQuota, blpQuota });
 }

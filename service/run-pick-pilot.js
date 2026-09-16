@@ -53,9 +53,11 @@ import {
     selectTagMembership,
     selectCreationDates,
     selectActivityProfiles,
+    selectCategoryMembership,
     activityBuckets,
     currentEventTemplatesForWiki,
     failedVerificationTemplatesForWiki,
+    livingPeopleCategoryForWiki,
 } from './article-picker.js';
 import { collectCitations } from '../core/citations.js';
 import { fetchArticleHtml, hostForWiki } from '../core/wikipedia.js';
@@ -68,9 +70,10 @@ import {
     computeOfflineRatio,
     computeTableRatio,
     splitFlaggedPool,
-    flaggedQuotaFor,
+    quotaFor,
     tierOf,
     DEFAULT_FLAGGED_QUOTA_SHARE,
+    DEFAULT_BLP_QUOTA_SHARE,
     DEFAULT_MIN_ACTIVE_BUCKETS,
     DEFAULT_MAX_IDLE_DAYS,
     DEFAULT_WEIGHTS,
@@ -99,6 +102,7 @@ export function parseCliArgs(argv) {
             'offline-ratio-max': { type: 'string', default: String(DEFAULT_OFFLINE_RATIO_CEILING) },
             'table-ratio-max':   { type: 'string', default: String(DEFAULT_TABLE_RATIO_CEILING) },
             'flagged-share':     { type: 'string', default: String(DEFAULT_FLAGGED_QUOTA_SHARE) },
+            'blp-share':         { type: 'string', default: String(DEFAULT_BLP_QUOTA_SHARE) },
             'exclude-titles-file': { type: 'string' },
             'scan-all':          { type: 'boolean', default: false },
             out:                 { type: 'string', default: 'pilot-100.txt' },
@@ -124,6 +128,7 @@ export function parseCliArgs(argv) {
         offlineRatioMax: Number(values['offline-ratio-max']),
         tableRatioMax: Number(values['table-ratio-max']),
         flaggedShare: Number(values['flagged-share']),
+        blpShare: Number(values['blp-share']),
         excludeTitlesFile: values['exclude-titles-file'],
         scanAll: values['scan-all'],
         out: values.out,
@@ -195,6 +200,13 @@ Options:
                              unfillable reserve leaves its slots to the general
                              ranking. Without it the much larger untagged
                              population crowds them out entirely.
+  --blp-share <f>           Share reserved for biographies of living people
+                             (Category:Living people), 0..1 (default: ${DEFAULT_BLP_QUOTA_SHARE}).
+                             A floor on the same terms as --flagged-share, and
+                             a modest one: high-activity BLPs already score
+                             well here, so this only insures a few are present.
+                             0 disables it, as does a wiki with no confirmed
+                             category name (enwiki is the only one so far).
   --scan-all                Fetch the entire shortlist instead of stopping at
                              --max survivors. Ranks more exactly, costs roughly
                              twice the fetches.
@@ -223,6 +235,7 @@ function validate(opts, stderr) {
         ['offline-ratio-max', opts.offlineRatioMax >= 0 && opts.offlineRatioMax <= 1],
         ['table-ratio-max', opts.tableRatioMax >= 0 && opts.tableRatioMax <= 1],
         ['flagged-share', opts.flaggedShare >= 0 && opts.flaggedShare <= 1],
+        ['blp-share', opts.blpShare >= 0 && opts.blpShare <= 1],
     ];
     for (const [flag, ok] of checks) {
         if (!ok) {
@@ -244,7 +257,7 @@ function renderTitlesFile(ranked, opts, generatedAt) {
             + `allow-event-titles=${opts.allowEventTitles}`,
         `# base-pool=${opts.basePool} shortlist-size=${opts.shortlistSize} `
             + `offline-ratio-max=${opts.offlineRatioMax} table-ratio-max=${opts.tableRatioMax} `
-            + `flagged-share=${opts.flaggedShare}`,
+            + `flagged-share=${opts.flaggedShare} blp-share=${opts.blpShare}`,
         '# Selected for articles likely to still be edited when this batch reaches an editor:',
         '# editing spread across months, by several people, without a recent spike. Biased toward',
         '# {{failed verification}}; biased against one-shot event pages, articles whose citations',
@@ -341,16 +354,29 @@ export async function runPickPilot(opts, {
         const buckets = activityBuckets({
             now: runAt, historyDays: opts.historyDays, bucketDays: opts.historyBucketDays,
         });
-        const [currentTagIds, failedVerificationIds, creationDates, activityProfiles] = await Promise.all([
+        // Null for any wiki whose Living-people category name hasn't been
+        // confirmed by an editor there — the quota then reserves nothing,
+        // which the run says out loud rather than silently filling.
+        const blpCategory = livingPeopleCategoryForWiki(opts.wiki);
+
+        const [currentTagIds, failedVerificationIds, creationDates, activityProfiles, blpIds] = await Promise.all([
             selectTagMembership(query, { templates: currentEventTemplatesForWiki(opts.wiki), pageIds }),
             selectTagMembership(query, { templates: failedVerificationTemplatesForWiki(opts.wiki), pageIds }),
             selectCreationDates(query, { pageIds }),
             selectActivityProfiles(query, { pageIds, buckets }),
+            blpCategory ? selectCategoryMembership(query, { category: blpCategory, pageIds }) : new Set(),
         ]);
+        if (!blpCategory && opts.blpShare > 0) {
+            stderr.write(
+                `pick-pilot: no Living-people category recorded for ${opts.wiki} — `
+                + '--blp-share reserves nothing on this wiki\n'
+            );
+        }
 
         const merged = mergeSignals(topEdited, {
             currentTagIds,
             failedVerificationIds,
+            blpIds,
             creationDates,
             activityProfiles,
             burstBaseline: opts.burstWindowDays / opts.editWindowDays,
@@ -378,6 +404,7 @@ export async function runPickPilot(opts, {
             + `activity filter (${countReasons(rejected)}); ${eligible.length} eligible, of which `
             + `${durableCount} read as durably edited and `
             + `${eligible.filter(c => c.failedVerification).length} carry {{failed verification}} `
+            + `and ${eligible.filter(c => c.isBlp).length} BLP(s) `
             + `(${currentTagIds.size} of the pool carried a current-event tag)\n`
         );
         if (eligible.length === 0) {
@@ -393,12 +420,20 @@ export async function runPickPilot(opts, {
         // first: otherwise the fetch budget is spent on current-events
         // candidates and the quota has nothing left to fill itself from.
         // Fetch order has no bearing on any article's score.
-        const flaggedQuota = flaggedQuotaFor(opts.max, opts.flaggedShare);
+        const flaggedQuota = quotaFor(opts.max, opts.flaggedShare);
+        const blpQuota = quotaFor(opts.max, opts.blpShare);
         const { flagged, rest } = splitFlaggedPool(short);
+        // BLPs get a pass of their own for the same reason flagged articles
+        // do — a reserved slot cannot be filled by an article the run never
+        // fetched. The passes overlap (an article can be both, or be reached
+        // again by the general pass), so checkPool() skips anything already
+        // checked rather than paying for a second fetch.
+        const blps = rest.filter(c => c.isBlp);
         stderr.write(
             `pick-pilot: checking citations until ${opts.max} survive `
-            + `(${flaggedQuota} slot(s) reserved for {{failed verification}}; `
-            + `${flagged.length} such article(s) in the shortlist of ${short.length})...\n`
+            + `(${flaggedQuota} slot(s) reserved for {{failed verification}}, `
+            + `${blpQuota} for BLPs; ${flagged.length} flagged and ${blps.length} BLP(s) `
+            + `in the shortlist of ${short.length})...\n`
         );
 
         // core/urls.js logs one console.log per citation it examines — fine
@@ -416,7 +451,9 @@ export async function runPickPilot(opts, {
         };
         const checked = [];
         const contentRejections = [];
+        const checkedIds = new Set();
         let flaggedSurvivors = 0;
+        let blpSurvivors = 0;
         let survivors = 0;
         let fetchFailures = 0;
 
@@ -426,6 +463,8 @@ export async function runPickPilot(opts, {
         const checkPool = async (pool, stopAt, countsToward) => {
             for (const candidate of pool) {
                 if (!opts.scanAll && countsToward() >= stopAt) return;
+                if (checkedIds.has(candidate.pageId)) continue;
+                checkedIds.add(candidate.pageId);
                 const { html } = await fetchArticleFn({
                     title: candidate.title, revisionId: candidate.revisionId,
                 });
@@ -447,25 +486,28 @@ export async function runPickPilot(opts, {
                 } else {
                     survivors++;
                     if (candidate.failedVerification) flaggedSurvivors++;
+                    if (candidate.isBlp) blpSurvivors++;
                 }
             }
         };
 
         try {
             await checkPool(flagged, flaggedQuota, () => flaggedSurvivors);
+            await checkPool(blps, blpQuota, () => blpSurvivors);
             await checkPool(rest, opts.max, () => survivors);
         } finally {
             console.log = realLog;
         }
         stderr.write(
             `pick-pilot: fetched ${checked.length} article(s), ${fetchFailures} failed, `
-            + `${survivors} passed the content filter (${flaggedSurvivors} flagged); `
+            + `${survivors} passed the content filter (${flaggedSurvivors} flagged, ${blpSurvivors} BLP); `
             + `dropped ${contentRejections.length} (${countReasons(contentRejections)})\n`
         );
 
         ranked = finalizeRanking(checked, {
             limit: opts.max,
             flaggedQuota,
+            blpQuota,
             offlineRatioCeiling: opts.offlineRatioMax,
             tableRatioCeiling: opts.tableRatioMax,
             ...activityFilter,

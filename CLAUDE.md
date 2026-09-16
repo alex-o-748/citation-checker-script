@@ -302,6 +302,25 @@ Both filters return a *reason string* rather than a boolean, and the runner
 tallies them, because the commitment made on the 2026-09-14 volunteer call was
 to show how a batch was generated before it ships.
 
+**BLPs get a quota, not a boost.** Participants in the 2026-09-10 enwiki thread
+and the 2026-09-14 call asked for biographies of living people in the mix, so
+`--blp-share` (default 0.15) reserves slots the way `--flagged-share` always
+has — a floor, not a partition, and `allocateWithQuota()` takes an article that
+is both flagged and a BLP once. `scoreCandidate()` is untouched: a watched
+biography already scores well on persistence and editor breadth, so the quota
+is insurance that a few are present rather than a thumb on the scale. If a run
+reports more BLPs selected than the quota reserves, the quota never bound.
+Membership is `Category:Living people` via `selectCategoryMembership()` —
+`enwiki` only in `WIKI_LIVING_PEOPLE_CATEGORIES`, and **`null` rather than a
+fallback for any other wiki**, because a wrong category name matches nothing
+silently and the run would report a filled mix while reserving nothing. Like
+flagged articles, BLPs get their own fetch pass: a reserved slot cannot be
+filled by an article that was never fetched.
+
+Note `--blp-share 0` disables it outright — the switch to reach for if the
+Legal question Isaac raised on 2026-08-13 (whether BLPs must be excluded from
+the sample) comes back as a no.
+
 Rationale, costs and the alternatives rejected (page views, `page_assessments`,
 a category blacklist): `docs/design-plans/2026-09-16-selecting-for-future-activity.md`.
 

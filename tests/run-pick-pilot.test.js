@@ -21,6 +21,7 @@ test('parseCliArgs applies documented defaults', () => {
     assert.equal(opts.offlineRatioMax, 0.6);
     assert.equal(opts.tableRatioMax, 0.5);
     assert.equal(opts.flaggedShare, 0.4);
+    assert.equal(opts.blpShare, 0.15);
     assert.equal(opts.scanAll, false);
     assert.equal(opts.out, 'pilot-100.txt');
     assert.equal(opts.jsonOut, undefined);
@@ -33,7 +34,7 @@ test('parseCliArgs applies overrides', () => {
         '--min-active-buckets', '10', '--max-idle-days', '45', '--allow-event-titles',
         '--base-pool', '500', '--shortlist-size', '50',
         '--max', '20', '--offline-ratio-max', '0.4', '--table-ratio-max', '0.3',
-        '--flagged-share', '0.25', '--scan-all',
+        '--flagged-share', '0.25', '--blp-share', '0.1', '--scan-all',
         '--out', 'out.txt', '--json-out', 'out.json',
     ]);
     assert.equal(opts.editWindowDays, 7);
@@ -47,6 +48,7 @@ test('parseCliArgs applies overrides', () => {
     assert.equal(opts.offlineRatioMax, 0.4);
     assert.equal(opts.tableRatioMax, 0.3);
     assert.equal(opts.flaggedShare, 0.25);
+    assert.equal(opts.blpShare, 0.1);
     assert.equal(opts.scanAll, true);
     assert.equal(opts.jsonOut, 'out.json');
 });
@@ -56,7 +58,7 @@ test('HELP_TEXT documents every flag and the Toolforge-job memory caveat', () =>
         '--history-days', '--history-bucket-days', '--min-active-buckets',
         '--max-idle-days', '--allow-event-titles', '--base-pool',
         '--shortlist-size', '--max', '--offline-ratio-max', '--table-ratio-max',
-        '--flagged-share', '--scan-all',
+        '--flagged-share', '--blp-share', '--scan-all',
         '--out', '--json-out']) {
         assert.ok(HELP_TEXT.includes(flag), `HELP_TEXT missing ${flag}`);
     }
@@ -136,6 +138,7 @@ const topEditedRows = [
     { pageId: 6, pageTitle: 'League_Records_Table', revisionId: 66, editCount: 200, recentEditCount: 20 },
     { pageId: 1, pageTitle: 'Breaking_Story', revisionId: 11, editCount: 600, recentEditCount: 580 },
     { pageId: 3, pageTitle: 'Disputed_Claim', revisionId: 33, editCount: 40, recentEditCount: 9 },
+    { pageId: 7, pageTitle: 'A_Living_Person', revisionId: 77, editCount: 25, recentEditCount: 3 },
 ];
 
 const creationRows = [
@@ -145,6 +148,7 @@ const creationRows = [
     { pageId: 4, createdAt: Buffer.from(mwTs(daysAgo(4000))) },
     { pageId: 5, createdAt: Buffer.from(mwTs(daysAgo(2))) },
     { pageId: 6, createdAt: Buffer.from(mwTs(daysAgo(3000))) },
+    { pageId: 7, createdAt: Buffer.from(mwTs(daysAgo(2500))) },
 ];
 
 // Six 30-day buckets, newest first. The distinction the whole rewrite turns
@@ -164,6 +168,9 @@ const activityProfileRows = [
     profileRow(4, [200, 260, 240, 300, 250, 250], 40, 1),
     profileRow(5, [295, 5, 0, 0, 0, 0], 30, 1),
     profileRow(6, [20, 40, 45, 50, 40, 45], 15, 1),
+    // Durably edited but quiet — it scores below everything else, so it only
+    // appears if the BLP quota reaches past the ranking for it.
+    profileRow(7, [3, 6, 5, 4, 6, 5], 6, 2),
 ];
 
 function fakeConnection({ onQuery } = {}) {
@@ -171,6 +178,10 @@ function fakeConnection({ onQuery } = {}) {
         execute: async (sql, params) => {
             onQuery?.(sql, params);
             if (/AS historyEditCount/.test(sql)) return [activityProfileRows];
+            if (/FROM categorylinks/.test(sql)) {
+                assert.equal(params[0], 'Living_people');
+                return [[{ pageId: 7 }]];
+            }
             if (/GROUP BY p\.page_id/.test(sql)) return [topEditedRows];
             if (/MIN\(rev_timestamp\)/.test(sql)) return [creationRows];
             // Tag membership: [NS_TEMPLATE, ...templates, NS_MAIN, ...pageIds]
@@ -205,7 +216,7 @@ const baseOpts = (overrides = {}) => ({
     historyDays: 180, historyBucketDays: 30, minActiveBuckets: 3, maxIdleDays: 21,
     allowEventTitles: false, basePool: 1000,
     shortlistSize: 10, max: 10, offlineRatioMax: 0.6, tableRatioMax: 0.5,
-    flaggedShare: 0.4, scanAll: false,
+    flaggedShare: 0.4, blpShare: 0.15, scanAll: false,
     out: 'pilot.txt', jsonOut: undefined,
     ...overrides,
 });
@@ -224,7 +235,7 @@ test('a steadily edited page outranks a far busier breaking story, which is drop
     assert.ok(!titles.includes('Breaking Story'),
         '600 edits in one month is a finished story, not a page with a future');
     assert.ok(!titles.includes('Print Heavy'), 'offline-heavy article dropped entirely');
-    assert.deepEqual(titles, ['Perennial Page', 'Disputed Claim']);
+    assert.deepEqual(titles, ['Perennial Page', 'Disputed Claim', 'A Living Person']);
 });
 
 // An event title is rejected before a fetch is ever spent on it — persistence
@@ -331,7 +342,7 @@ test('--scan-all fetches the whole eligible shortlist instead of stopping early'
         },
     }));
 
-    assert.equal(fetched.length, 4, 'six in the base pool, two rejected before any fetch');
+    assert.equal(fetched.length, 5, 'seven in the base pool, two rejected before any fetch');
 });
 
 test('the activity filter rejecting everything fails cleanly rather than writing an empty pilot', async () => {
@@ -434,7 +445,7 @@ test('--exclude-titles-file drops matching base-pool articles before scoring', a
     assert.equal(code, 0);
     const titles = written.split('\n').filter(l => l && !l.startsWith('#'));
     assert.ok(!titles.includes('Perennial Page'));
-    assert.deepEqual(titles, ['Disputed Claim'], 'the one selectable article left');
+    assert.deepEqual(titles, ['Disputed Claim', 'A Living Person']);
 });
 
 test('without --exclude-titles-file, the exclude file is never read', async () => {
@@ -450,7 +461,7 @@ test('--exclude-titles-file that removes every candidate fails cleanly rather th
     const code = await runPickPilot(baseOpts({ excludeTitlesFile: 'batch1.txt' }), baseIo({
         readExcludeTitlesFile: async () =>
             'Breaking Story\nPerennial Page\nDisputed Claim\nPrint Heavy\n'
-            + '2026 Open Mens singles\nLeague Records Table\n',
+            + '2026 Open Mens singles\nLeague Records Table\nA Living Person\n',
     }));
     assert.equal(code, 1);
 });
@@ -460,4 +471,61 @@ test('a missing --exclude-titles-file surfaces as an error rather than silently 
         readExcludeTitlesFile: async () => { throw new Error('ENOENT: no such file'); },
     }));
     assert.equal(code, 1);
+});
+
+// --- The BLP quota (Category:Living people) ---
+
+test('a quiet BLP makes the mix on the quota, and is dropped without one', async () => {
+    const titlesFor = async opts => {
+        let written;
+        await runPickPilot(opts, baseIo({
+            writeFile: async (path, content) => { written = content; },
+        }));
+        return written.split('\n').filter(l => l && !l.startsWith('#'));
+    };
+
+    // max 2 leaves no room for it on score: it ranks below both the perennial
+    // page and the flagged one.
+    assert.ok(!(await titlesFor(baseOpts({ max: 2, blpShare: 0 }))).includes('A Living Person'));
+    assert.ok((await titlesFor(baseOpts({ max: 2, blpShare: 0.5 }))).includes('A Living Person'));
+});
+
+test('BLP membership is asked about the base pool, by category, and lands on the candidate', async () => {
+    const categoryCalls = [];
+    const files = {};
+    const code = await runPickPilot(baseOpts({ jsonOut: 'pilot.json' }), baseIo({
+        connectReplicas: async () => fakeConnection({
+            onQuery: (sql, params) => {
+                if (/FROM categorylinks/.test(sql)) categoryCalls.push(params);
+            },
+        }),
+        writeFile: async (path, content) => { files[path] = content; },
+    }));
+
+    assert.equal(code, 0);
+    assert.equal(categoryCalls.length, 1);
+    assert.equal(categoryCalls[0][0], 'Living_people');
+    assert.ok(categoryCalls[0].includes(7) && categoryCalls[0].includes(2),
+        'every base-pool id is asked about');
+
+    const byTitle = Object.fromEntries(JSON.parse(files['pilot.json']).map(c => [c.title, c]));
+    assert.equal(byTitle['A Living Person'].isBlp, true);
+    assert.equal(byTitle['Perennial Page'].isBlp, false);
+});
+
+// A wrong category name matches nothing silently, so a wiki without a
+// confirmed one skips the query and says so rather than reporting a filled mix.
+test('a wiki with no confirmed Living-people category skips the query and warns', async () => {
+    const categoryCalls = [];
+    const warnings = [];
+    const code = await runPickPilot(baseOpts({ wiki: 'ruwiki' }), baseIo({
+        connectReplicas: async () => fakeConnection({
+            onQuery: sql => { if (/FROM categorylinks/.test(sql)) categoryCalls.push(sql); },
+        }),
+        stderr: { write(line) { warnings.push(line); } },
+    }));
+
+    assert.equal(code, 0);
+    assert.equal(categoryCalls.length, 0);
+    assert.ok(warnings.some(w => /--blp-share reserves nothing/.test(w)));
 });
