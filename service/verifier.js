@@ -128,7 +128,16 @@ export async function verifyCitation(claimText, source, {
         return {
             verdict: 'SOURCE UNAVAILABLE',
             supportScore: null,
-            reasonType: null,
+            // The one thing a reader of a SOURCE UNAVAILABLE row wants to
+            // know is which kind it is: the citation has no URL at all
+            // ('no_url' — an editor's problem, nothing to fetch) or the
+            // fetch failed ('fetch_failed' — the tool's problem, or a
+            // paywall). service/claim-extractor.js's resolveSource() already
+            // works that out; it used to be dropped here and the row went out
+            // with an empty reason_type, indistinguishable between the two.
+            // A pipeline-level code in a field otherwise carrying the model's
+            // own vocabulary follows the 'source_too_large' precedent below.
+            reasonType: source?.unavailableReason ?? null,
             rationale: null,
             sourceQuote: null,
             quoteStatus: null,

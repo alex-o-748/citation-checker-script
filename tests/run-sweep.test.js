@@ -143,6 +143,11 @@ const baseIo = (overrides = {}) => ({
     appendFindingFn: async () => {},
     startCsvFn: async () => {},
     readCsvFn: async () => { throw new Error('ENOENT'); },
+    // --titles-file resolves each title to a page id + current revision
+    // before fetching; faked here so no test reaches the Action API.
+    resolveTitleInfoFn: async titles => new Map(
+        titles.map((title, i) => [title, { pageId: 1000 + i, revisionId: 2000 + i }])
+    ),
     stdout: { write() {} },
     stderr: { write() {} },
     ...overrides,
@@ -235,8 +240,78 @@ test('--titles-file bypasses Wiki Replicas entirely and checks the listed titles
 
     assert.equal(code, 0);
     assert.equal(replicasCalled, false, 'no Wiki Replicas connection should be opened');
-    assert.deepEqual(seenTitle, { title: 'Test Article', revisionId: null }, 'no revision to pin without a Replicas row');
+    assert.deepEqual(
+        seenTitle,
+        { title: 'Test Article', revisionId: 2000 },
+        'the resolved current revision is pinned, so the run reads one fixed revision per article'
+    );
     assert.equal(written.length, 4);
+});
+
+// The regression this fixes: a --titles-file sweep wrote every row with an
+// empty page_id, revision_id and permalink, which is most of what makes the
+// CSV shareable — a reviewer could not get from a row back to the claim.
+test('--titles-file rows carry the page id, revision and permalink', async () => {
+    let written;
+    const code = await runSweep(baseOpts({ titlesFile: 'articles.txt' }), baseIo({
+        readTitlesFile: async () => 'Test Article\n',
+        appendFindingFn: async (_path, finding) => { (written ??= []).push(finding); },
+    }));
+
+    assert.equal(code, 0);
+    for (const finding of written) {
+        assert.equal(finding.pageId, 1000);
+        assert.equal(finding.revisionId, 2000);
+    }
+    assert.match(
+        rowsToCsv(written).split('\n')[1],
+        /https:\/\/en\.wikipedia\.org\/w\/index\.php\?curid=1000&oldid=2000/
+    );
+});
+
+test('--titles-file resolves titles against the --wiki host, not always en', async () => {
+    let seenOptions;
+    await runSweep(baseOpts({ titlesFile: 'articles.txt', wiki: 'ruwiki' }), baseIo({
+        readTitlesFile: async () => 'Тест\n',
+        resolveTitleInfoFn: async (titles, options) => {
+            seenOptions = options;
+            return new Map([[titles[0], { pageId: 5, revisionId: 6 }]]);
+        },
+    }));
+    assert.equal(seenOptions.host, 'ru.wikipedia.org');
+});
+
+// Degrade, don't abort: a host that can reach the REST API and the model but
+// not the Action API should still produce findings — just without permalinks.
+test('a failing title resolution warns loudly and still checks every article', async () => {
+    const stderrChunks = [];
+    let written;
+    const code = await runSweep(baseOpts({ titlesFile: 'articles.txt' }), baseIo({
+        readTitlesFile: async () => 'Test Article\n',
+        resolveTitleInfoFn: async () => { throw new Error('ECONNREFUSED'); },
+        appendFindingFn: async (_path, finding) => { (written ??= []).push(finding); },
+        stderr: { write: chunk => stderrChunks.push(chunk) },
+    }));
+
+    assert.equal(code, 0);
+    assert.equal(written.length, 4, 'the sweep still ran');
+    assert.equal(written[0].pageId, null);
+    assert.match(stderrChunks.join(''), /WARNING.*ECONNREFUSED/s);
+});
+
+test('a title that does not resolve is named in a warning rather than silently skipped', async () => {
+    const stderrChunks = [];
+    let fetchCount = 0;
+    const code = await runSweep(baseOpts({ titlesFile: 'articles.txt', max: undefined }), baseIo({
+        readTitlesFile: async () => 'Real Article\nMispelled Artcle\n',
+        resolveTitleInfoFn: async () => new Map([['Real Article', { pageId: 9, revisionId: 10 }]]),
+        fetchArticle: async () => { fetchCount++; return { html: articleWithSoloCitations(1), status: 200, error: null }; },
+        stderr: { write: chunk => stderrChunks.push(chunk) },
+    }));
+
+    assert.equal(code, 0);
+    assert.equal(fetchCount, 2, 'an unresolved title is still checked, just without a permalink');
+    assert.match(stderrChunks.join(''), /WARNING — 1 of 2 title\(s\) did not resolve.*Mispelled Artcle/s);
 });
 
 test('--titles-file with no explicit --max processes every listed title, not the default 5', async () => {
@@ -482,6 +557,41 @@ test('an article that fails to fetch is counted but contributes no citations', a
     }));
     assert.equal(code, 0);
     assert.deepEqual(written, []);
+});
+
+// The failure mode this guards: a 1223-citation article contributed zero rows
+// to a 100-article batch and nothing in the log said which one was missing or
+// why — only a count, printed hours later at the end of the run.
+test('a skipped article is named on stderr, with its status and error', async () => {
+    const stderrChunks = [];
+    const code = await runSweep(baseOpts(), baseIo({
+        fetchArticle: async () => ({ html: null, status: 404, error: 'not found' }),
+        stderr: { write: chunk => stderrChunks.push(chunk) },
+    }));
+
+    assert.equal(code, 0);
+    const out = stderrChunks.join('');
+    assert.match(out, /sweep: skipped Test Article — fetch_failed \(HTTP 404\): not found/);
+});
+
+test('a timed-out article fetch is named even with no HTTP status to report', async () => {
+    const stderrChunks = [];
+    await runSweep(baseOpts(), baseIo({
+        fetchArticle: async () => ({ html: null, status: null, error: 'Request to Wikipedia timed out after 20000ms' }),
+        stderr: { write: chunk => stderrChunks.push(chunk) },
+    }));
+    const out = stderrChunks.join('');
+    assert.match(out, /sweep: skipped Test Article — fetch_failed: Request to Wikipedia timed out/);
+    assert.doesNotMatch(out, /HTTP null/);
+});
+
+test('an article with no citations is named too, distinctly from a fetch failure', async () => {
+    const stderrChunks = [];
+    await runSweep(baseOpts(), baseIo({
+        fetchArticle: async () => ({ html: '<!DOCTYPE html><body><p>No citations here.</p></body>', status: 200, error: null }),
+        stderr: { write: chunk => stderrChunks.push(chunk) },
+    }));
+    assert.match(stderrChunks.join(''), /sweep: skipped Test Article — no_citations/);
 });
 
 test('the timing summary reports real fetch and verify durations, not zeros', async () => {
