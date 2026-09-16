@@ -103,7 +103,7 @@ export function parseCliArgs(argv) {
             'table-ratio-max':   { type: 'string', default: String(DEFAULT_TABLE_RATIO_CEILING) },
             'flagged-share':     { type: 'string', default: String(DEFAULT_FLAGGED_QUOTA_SHARE) },
             'blp-share':         { type: 'string', default: String(DEFAULT_BLP_QUOTA_SHARE) },
-            'exclude-titles-file': { type: 'string' },
+            'exclude-titles-file': { type: 'string', multiple: true },
             'scan-all':          { type: 'boolean', default: false },
             out:                 { type: 'string', default: 'pilot-100.txt' },
             'json-out':          { type: 'string' },
@@ -129,7 +129,7 @@ export function parseCliArgs(argv) {
         tableRatioMax: Number(values['table-ratio-max']),
         flaggedShare: Number(values['flagged-share']),
         blpShare: Number(values['blp-share']),
-        excludeTitlesFile: values['exclude-titles-file'],
+        excludeTitlesFiles: values['exclude-titles-file'] ?? [],
         scanAll: values['scan-all'],
         out: values.out,
         jsonOut: values['json-out'],
@@ -190,9 +190,12 @@ Options:
   --exclude-titles-file <path>
                              Skip any base-pool article whose title appears in
                              this file (same one-title-per-line format
-                             --titles-file uses elsewhere) — a prior pilot's
-                             titles file, so a second batch covers new ground
-                             instead of re-picking the first batch's articles.
+                             --titles-file uses elsewhere) — a prior batch's
+                             titles file, so the next batch covers new ground
+                             instead of re-picking articles already checked.
+                             Repeatable: pass it once per prior batch, e.g.
+                               --exclude-titles-file service/article-lists/pilot-100.txt \\
+                               --exclude-titles-file service/article-lists/pilot-100-batch2.txt
   --flagged-share <f>       Share of the pilot reserved for articles carrying
                              {{failed verification}}, 0..1 (default: ${DEFAULT_FLAGGED_QUOTA_SHARE}).
                              A floor, not a partition: those articles still
@@ -323,9 +326,12 @@ export async function runPickPilot(opts, {
         const burstSinceDate = new Date(runAt.getTime() - opts.burstWindowDays * MS_PER_DAY);
 
         let excludeTitles = null;
-        if (opts.excludeTitlesFile) {
-            const text = await readExcludeTitlesFile(opts.excludeTitlesFile);
-            excludeTitles = new Set(parseTitlesFile(text));
+        if (opts.excludeTitlesFiles?.length) {
+            excludeTitles = new Set();
+            for (const path of opts.excludeTitlesFiles) {
+                const text = await readExcludeTitlesFile(path);
+                for (const title of parseTitlesFile(text)) excludeTitles.add(title);
+            }
         }
 
         const topEditedAll = await selectTopEdited(query, {
@@ -342,7 +348,8 @@ export async function runPickPilot(opts, {
         if (excludeTitles) {
             stderr.write(
                 `pick-pilot: --exclude-titles-file dropped ${topEditedAll.length - topEdited.length} of `
-                + `${topEditedAll.length} base-pool article(s) already in ${opts.excludeTitlesFile}\n`
+                + `${topEditedAll.length} base-pool article(s) already in `
+                + `${opts.excludeTitlesFiles.join(', ')} (${excludeTitles.size} title(s))\n`
             );
             if (topEdited.length === 0) {
                 stderr.write('pick-pilot: nothing left to select after --exclude-titles-file\n');

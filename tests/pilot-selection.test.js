@@ -133,18 +133,54 @@ test('burstFactor clamps and treats a missing ratio as neutral', () => {
 
 // --- Event-shaped titles ---
 
-test('isEventShaped catches year-anchored occasion titles', () => {
+// Real titles from the two batches selected under the old criteria
+// (service/article-lists/), which is where the vocabulary list came from.
+test('isEventShaped catches a scheduled occasion: a year AND what kind of occasion', () => {
     for (const title of [
         '2026 US Open (tennis)',
-        '2026 Atlantic hurricane season',
-        '2026 in film',
+        '2026 US Open – Men\'s singles qualifying',
+        '2026 Asian Games',
+        '2026 Czech Darts Open',
+        '2026 AVC Men\'s Volleyball Continental Championship',
+        '2026 Barranquilla Open – Singles',
+        '2026 China Masters',
+        '2026 ITF Men\'s World Tennis Tour (July–September)',
+        '2026 FIFA U-20 Women\'s World Cup squads',
+        '2026–27 F.C. Copenhagen season',
+        '2026 UTB season',
+        '2026 Western Michigan Broncos football team',
+        '2026 Israeli legislative election',
+        '2026 Holborn and St Pancras by-election',
+        '2028 Republican Party presidential primaries',
+        '2026 BFI London Film Festival',
+        '1880–81 Birmingham Senior Cup',
+        '2027 AFC U-20 Asian Cup qualification',
         '2025-26 Premier League',
-        '2025–26 UEFA Champions League',
         'Athletics at the 2026 Summer Olympics',
         'Kenya at the 2026 Commonwealth Games',
         'Deaths in September 2026',
     ]) {
-        assert.equal(isEventShaped(title), true, `${title} should read as an occasion`);
+        assert.equal(isEventShaped(title), true, `${title} should read as a scheduled occasion`);
+    }
+});
+
+// The correction that narrowed this rule: a year prefix alone over-rejected.
+// These are open-ended situations that stay live for months, and the
+// persistence signal judges them correctly without help from the title.
+test('isEventShaped leaves an open-ended situation alone even when its title carries a year', () => {
+    for (const title of [
+        '2026 Yemen offensives',
+        '2026–2027 El Niño event',
+        '2026 Nepal–Tibet floods',
+        '2026 Grand Canyon flood',
+        '2026 Nigerien coup attempt',
+        '2026 OpenAI agent cyberattacks',
+        '2026 Musée Renoir theft',
+        '2026 Kuhestak wedding airstrike',
+        '2026 in the United Kingdom',
+    ]) {
+        assert.equal(isEventShaped(title), false,
+            `${title} is an ongoing situation, not a scheduled occasion`);
     }
 });
 
@@ -170,13 +206,19 @@ test('isEventShaped tolerates a missing title', () => {
     assert.equal(isEventShaped(''), false);
 });
 
-// Guards the comment on EVENT_TITLE_PATTERNS: every pattern is anchored on a
-// four-digit year, which is what keeps "US Open" from matching alongside
-// "2026 US Open". A bare topic word here would take out real subjects.
-test('every event-title pattern is anchored on a year or an explicit date form', () => {
-    for (const pattern of EVENT_TITLE_PATTERNS) {
-        assert.match(pattern.source, /(1\\d\{3\}|2\\d\{3\}|Deaths in)/,
-            `${pattern} must be year-anchored, not a bare topic word`);
+// Guards the rule the vocabulary list lives under: the year is what makes the
+// occasion words safe to use at all. Strip the date and every pattern must
+// stop matching, or a bare topic word is taking out real subjects.
+test('no event-title pattern fires on a title with no date in it', () => {
+    for (const title of [
+        'US Open (tennis)', 'Stanley Cup', 'Premier League', 'Monsoon season',
+        'Summer Olympic Games', 'General election', 'Cannes Film Festival',
+        'Academy Awards', 'World Series', 'Grand Prix motor racing',
+    ]) {
+        for (const pattern of EVENT_TITLE_PATTERNS) {
+            assert.equal(pattern.test(title), false,
+                `${pattern} matched "${title}" with no date present`);
+        }
     }
 });
 

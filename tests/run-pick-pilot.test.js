@@ -434,7 +434,7 @@ test('--wiki reaches the REST host when fetchArticle is not injected (the hostFo
 
 test('--exclude-titles-file drops matching base-pool articles before scoring', async () => {
     let written;
-    const code = await runPickPilot(baseOpts({ excludeTitlesFile: 'batch1.txt' }), baseIo({
+    const code = await runPickPilot(baseOpts({ excludeTitlesFiles: ['batch1.txt'] }), baseIo({
         readExcludeTitlesFile: async path => {
             assert.equal(path, 'batch1.txt');
             return 'Breaking Story\n# a comment\nPerennial Page\n';
@@ -458,7 +458,7 @@ test('without --exclude-titles-file, the exclude file is never read', async () =
 });
 
 test('--exclude-titles-file that removes every candidate fails cleanly rather than writing an empty pilot', async () => {
-    const code = await runPickPilot(baseOpts({ excludeTitlesFile: 'batch1.txt' }), baseIo({
+    const code = await runPickPilot(baseOpts({ excludeTitlesFiles: ['batch1.txt'] }), baseIo({
         readExcludeTitlesFile: async () =>
             'Breaking Story\nPerennial Page\nDisputed Claim\nPrint Heavy\n'
             + '2026 Open Mens singles\nLeague Records Table\nA Living Person\n',
@@ -467,7 +467,7 @@ test('--exclude-titles-file that removes every candidate fails cleanly rather th
 });
 
 test('a missing --exclude-titles-file surfaces as an error rather than silently including everything', async () => {
-    const code = await runPickPilot(baseOpts({ excludeTitlesFile: 'nope.txt' }), baseIo({
+    const code = await runPickPilot(baseOpts({ excludeTitlesFiles: ['nope.txt'] }), baseIo({
         readExcludeTitlesFile: async () => { throw new Error('ENOENT: no such file'); },
     }));
     assert.equal(code, 1);
@@ -528,4 +528,35 @@ test('a wiki with no confirmed Living-people category skips the query and warns'
     assert.equal(code, 0);
     assert.equal(categoryCalls.length, 0);
     assert.ok(warnings.some(w => /--blp-share reserves nothing/.test(w)));
+});
+
+test('--exclude-titles-file is repeatable, so a batch can skip every prior one', async () => {
+    const read = [];
+    let written;
+    const code = await runPickPilot(
+        baseOpts({ excludeTitlesFiles: ['batch1.txt', 'batch2.txt'] }),
+        baseIo({
+            readExcludeTitlesFile: async path => {
+                read.push(path);
+                return path === 'batch1.txt' ? 'Perennial Page\n' : 'A Living Person\n';
+            },
+            writeFile: async (path, content) => { written = content; },
+        })
+    );
+
+    assert.equal(code, 0);
+    assert.deepEqual(read, ['batch1.txt', 'batch2.txt'], 'every file is read');
+    const titles = written.split('\n').filter(l => l && !l.startsWith('#'));
+    assert.ok(!titles.includes('Perennial Page'), 'excluded by the first file');
+    assert.ok(!titles.includes('A Living Person'), 'excluded by the second');
+    assert.deepEqual(titles, ['Disputed Claim']);
+});
+
+test('parseCliArgs collects repeated --exclude-titles-file into a list', () => {
+    assert.deepEqual(parseCliArgs(['node', 'p.js']).excludeTitlesFiles, []);
+    assert.deepEqual(
+        parseCliArgs(['node', 'p.js', '--exclude-titles-file', 'a.txt',
+            '--exclude-titles-file', 'b.txt']).excludeTitlesFiles,
+        ['a.txt', 'b.txt']
+    );
 });

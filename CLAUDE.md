@@ -286,12 +286,22 @@ window) and event-shaped titles (`--allow-event-titles` disables). The title
 filter is not redundant with persistence: a *forthcoming* event is edited
 steadily every month of the run-up and looks durable right until it happens.
 
-`EVENT_TITLE_PATTERNS` are deliberately small and **every one is anchored on a
-four-digit year** — that anchor is what keeps `2026 US Open` matching while `US
-Open` does not, with a lookahead excusing works titled with a year (`1984
-(novel)`). If the list needs to grow, grow it with year-anchored patterns, never
-with bare topic words: `cup`, `final`, `season` would take `Stanley Cup` and
-`Monsoon season` with them.
+`EVENT_TITLE_PATTERNS` needs **a year AND occasion vocabulary** — a year prefix
+alone is not enough, and treating it as enough is a mistake this filter already
+made once. Measured against the two batches picked under the old criteria, 68 of
+200 titles carried a year: overwhelmingly fixtures and elections, but a real
+minority were open-ended situations that stay live for months (`2026 Yemen
+offensives`, `2026-2027 El Nino event`, `2026 Nepal-Tibet floods`, `2026 in the
+United Kingdom`). Persistence judges those correctly on its own and the title
+rule was overriding it.
+
+So the year is the **guard** and the vocabulary is the **test**: a scheduled
+occasion has a date in its name *and* says what kind of occasion it is (`Open`,
+`Cup`, `season`, `election`, `Festival`…). The year anchor is what makes those
+words safe — it is why `2026 US Open` matches while `US Open`, `Stanley Cup` and
+`Monsoon season` do not, and `tests/pilot-selection.test.js` pins that by
+asserting no pattern fires on a dateless title. Grow the list with occasion
+nouns if it needs growing; never drop the year guard.
 
 The long-run history comes from `buildActivityProfileQuery()` — one conditional
 `SUM` per bucket over each candidate's own `(rev_page, rev_timestamp)` range,

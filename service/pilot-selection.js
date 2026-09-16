@@ -188,21 +188,54 @@ export const DEFAULT_TABLE_RATIO_CEILING = 0.5;
 // topic words (cup, final, championship, season) would take out "Stanley Cup"
 // and "Monsoon season" with them — if this list ever needs to grow, grow it
 // with year-anchored patterns, not vocabulary.
+// A year prefix alone is NOT enough, and assuming it was is a mistake this
+// filter already made once. Measured against the two batches selected under
+// the old criteria, 68 of 200 titles carried a year — overwhelmingly fixtures
+// and elections, but a real minority were open-ended situations that stay live
+// for months: "2026 Yemen offensives", "2026-2027 El Nino event", "2026
+// Nepal-Tibet floods", "2026 Nigerien coup attempt", "2026 in the United
+// Kingdom". Those are exactly the articles the persistence signal handles
+// correctly on its own, and the title rule was overriding it.
+//
+// So the year is the guard and the vocabulary is the test. A scheduled
+// occasion has a date in its name *and* says what kind of occasion it is.
+const YEAR = String.raw`(?:1\d{3}|2\d{3})`;
+
+// Only ever consulted for a title that already carries a year — which is what
+// keeps "Stanley Cup", "Monsoon season" and "US Open" out of it. Note \bOpen\b
+// does not match "OpenAI".
+const SCHEDULED_OCCASION = new RegExp(String.raw`\b(?:` + [
+    // Competitions and fixtures
+    'Open', 'Cup', 'Championships?', 'Masters', 'Olympics', 'Games', 'Grand Prix',
+    'Challenger', 'Classic', 'Invitational', 'Tournament', 'League', 'Trophy',
+    'Series', 'Playoffs?', 'Finals?', 'Qualifiers?', 'Qualifying', 'Qualification',
+    'Singles', 'Doubles', 'Squads', 'Season', 'Tour', 'Conference',
+    'football team', 'football game',
+    // Scheduled political and civic events
+    'Elections?', 'Primaries', 'Primary', 'Referendum', 'Census',
+    // Scheduled culture
+    'Festival', 'Awards?', 'Contest', 'Expo',
+].join('|') + String.raw`)\b`, 'i');
+
 export const EVENT_TITLE_PATTERNS = Object.freeze([
-    // "2026 US Open (tennis)", "2026 Atlantic hurricane season", "2026 in film",
-    // "2025-26 Premier League" (with a hyphen or an en/em dash range).
+    // "2026 US Open (tennis)", "2026-27 F.C. Copenhagen season",
+    // "2028 Republican Party presidential primaries".
     //
     // The lookahead excludes a work *titled* with a year, where the year is
     // the whole title and what follows is a parenthesized disambiguator:
     // "1984 (novel)", "1917 (2019 film)". Those are subjects.
-    /^(?:1\d{3}|2\d{3})(?:[-–—]\d{2,4})?[ _](?!\()/,
-    // "Athletics at the 2026 Summer Olympics", "Kenya at the 2026 Games"
-    /\bat the (?:1\d{3}|2\d{3})[ _]/i,
+    {
+        test: title => new RegExp(String.raw`^${YEAR}(?:[-–—]\d{2,4})?[ _](?!\()`).test(title)
+            && SCHEDULED_OCCASION.test(title),
+    },
+    // "Athletics at the 2026 Summer Olympics", "Kenya at the 2026 Games" —
+    // "at the <year>" is already a fixture construction, so it stands alone.
+    new RegExp(String.raw`\bat the ${YEAR}[ _]`, 'i'),
     // "Deaths in September 2026"
     /^Deaths in[ _]/i,
 ]);
 
-/** Whether a title names an occasion rather than a subject. */
+/** Whether a title names a scheduled occasion rather than a subject. */
 export function isEventShaped(title) {
     if (typeof title !== 'string' || !title) return false;
     return EVENT_TITLE_PATTERNS.some(pattern => pattern.test(title));
