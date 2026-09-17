@@ -2029,7 +2029,10 @@ async function fetchViaProxy(fetchUrl, pageNum, workerBase, sourceUrl, onRequest
             data = await response.json();
         } catch (_) {
             report(proxyStatus, false, `non-JSON response (HTTP ${proxyStatus})`);
-            return { content: null, error: `Proxy returned non-JSON response (HTTP ${proxyStatus})`, status: proxyStatus };
+            // proxyFailure: the proxy did not answer in its own protocol at
+            // all — a front-proxy error page rather than a verdict about the
+            // source. See isRetryableProxyResult().
+            return { content: null, error: `Proxy returned non-JSON response (HTTP ${proxyStatus})`, status: proxyStatus, proxyFailure: true };
         }
 
         const status = (data && typeof data.status === 'number') ? data.status : proxyStatus;
@@ -2065,7 +2068,81 @@ async function fetchViaProxy(fetchUrl, pageNum, workerBase, sourceUrl, onRequest
         const message = timeoutMessage(error, timeoutMs, 'Source fetch');
         report(null, false, message);
         console.error('Proxy fetch failed:', message);
-        return { content: null, error: message, status: null };
+        return { content: null, error: message, status: null, proxyFailure: true };
+    }
+}
+
+// --- Retrying a failed proxy fetch ---
+//
+// fetchViaProxy() returns rather than throws, so a transient failure used to
+// become a permanent `SOURCE UNAVAILABLE` row with nothing in between. That is
+// not theoretical: on 2026-09-17 `source-fetcher` was found crash-looping (27
+// restarts in two days, JS heap OOM), and every request that landed inside a
+// restart window came back 502 from the front proxy. Across two 100-article
+// batches that silently destroyed 689 sources; a third run lost 27% of its
+// fetches the same way. Each of those windows lasts seconds. A single retry
+// would have ridden out most of them.
+//
+// WHAT IS RETRIED, AND WHAT DELIBERATELY IS NOT. Only failures of the *proxy
+// itself* — a 429/5xx from the gateway, or no response at all (timeout or
+// transport error reaching it). A failure the proxy reports *about the source*
+// is a property of that URL and will reproduce identically: 403, 404, 405,
+// robots.txt exclusions, "empty or too short", a bad PDF page number. Retrying
+// those buys nothing and adds load to a service that is already the
+// bottleneck.
+const RETRYABLE_PROXY_STATUS = new Set([429, 500, 502, 503, 504]);
+
+// The proxy never answered: status is null only when fetchViaProxy's own catch
+// fired. Match the two transport shapes rather than retrying every such case,
+// so a genuine client bug doesn't get retried four times.
+const TRANSIENT_TRANSPORT = /timed out|fetch failed/i;
+
+function isRetryableProxyResult(result) {
+    if (!result || result.content) return false;
+    // The decisive test, and a subtle one the pre-existing Wayback test caught:
+    // `status` carries the *upstream* code when the proxy reports one
+    // (`data.status`), so a 503 from the publisher and a 503 from our gateway
+    // are indistinguishable by status alone. They are distinguishable by
+    // whether the proxy answered in its own protocol: a crash-looping backend
+    // yields a front-proxy HTML error page (non-JSON) or no response at all,
+    // never a JSON body describing a source. Only the former is ours to retry.
+    if (!result.proxyFailure) return false;
+    if (typeof result.status === 'number') return RETRYABLE_PROXY_STATUS.has(result.status);
+    return TRANSIENT_TRANSPORT.test(result.error ?? '');
+}
+
+// Fewer attempts and a tighter backoff than the model-call path: a sweep makes
+// one of these per citation and mature articles carry hundreds, so the 5-try /
+// 30s-cap defaults in core/retry.js would add hours. 1s + 2s + 4s spans a pod
+// restart while costing at most ~7s on a source that is genuinely gone.
+const DEFAULT_SOURCE_FETCH_RETRY = Object.freeze({
+    maxRetries: 4,
+    minBackoffMs: 1000,
+    maxBackoffMs: 8000,
+    jitterMs: 250,
+});
+
+// Translates fetchViaProxy's returned failure into the thrown form withRetry
+// expects, then translates it back. The thrown messages are shaped to match
+// core/retry.js's isRetryableError() — "HTTP <status>" and the exact string
+// "fetch failed" — so the retry decision stays in one place rather than being
+// re-implemented here.
+async function fetchViaProxyWithRetry(fetchUrl, pageNum, workerBase, sourceUrl, onRequest, timeoutMs, retry) {
+    let lastResult = null;
+    try {
+        return await withRetry(async () => {
+            const result = await fetchViaProxy(fetchUrl, pageNum, workerBase, sourceUrl, onRequest, timeoutMs);
+            lastResult = result;
+            if (isRetryableProxyResult(result)) {
+                throw new Error(typeof result.status === 'number' ? `HTTP ${result.status}` : 'fetch failed');
+            }
+            return result;
+        }, { ...DEFAULT_SOURCE_FETCH_RETRY, ...(retry ?? {}) });
+    } catch (_) {
+        // Every attempt failed. Return the last real result so the caller still
+        // gets the proxy's own status and message — the CSV's fetch_status
+        // column is what makes an outage diagnosable after the fact.
+        return lastResult ?? { content: null, error: 'Source fetch failed', status: null };
     }
 }
 
@@ -2105,7 +2182,7 @@ async function findWaybackSnapshot(url, onRequest, timeoutMs) {
 // which must never send traffic to a third-party publisher (see
 // service/ia-load-test.js). Default behavior (live-first, Wayback as a
 // fallback) is unchanged for the userscript, CLI, and batch pipeline.
-async function fetchSourceContent(url, pageNum, { workerBase = 'https://publicai-proxy.alaexis.workers.dev', archiveFirst = false, onRequest, timeoutMs = DEFAULT_SOURCE_FETCH_TIMEOUT_MS } = {}) {
+async function fetchSourceContent(url, pageNum, { workerBase = 'https://publicai-proxy.alaexis.workers.dev', archiveFirst = false, onRequest, timeoutMs = DEFAULT_SOURCE_FETCH_TIMEOUT_MS, retry } = {}) {
     if (isGoogleBooksUrl(url)) {
         console.log('[CitationVerifier] Skipping Google Books URL:', url);
         return { content: null, error: 'Google Books URL skipped (no fetchable content)', status: null };
@@ -2115,7 +2192,7 @@ async function fetchSourceContent(url, pageNum, { workerBase = 'https://publicai
     if (archiveInfo) {
         const rawUrl = `https://web.archive.org/web/${archiveInfo.timestamp}id_/${archiveInfo.originalUrl}`;
         console.log('[CitationVerifier] Fetching via Wayback raw endpoint');
-        return fetchViaProxy(rawUrl, pageNum, workerBase, url, onRequest, timeoutMs);
+        return fetchViaProxyWithRetry(rawUrl, pageNum, workerBase, url, onRequest, timeoutMs, retry);
     }
 
     if (archiveFirst) {
@@ -2123,16 +2200,20 @@ async function fetchSourceContent(url, pageNum, { workerBase = 'https://publicai
         if (!waybackUrl) {
             return { content: null, error: 'No Wayback snapshot available for this URL', status: null };
         }
-        return fetchViaProxy(waybackUrl, pageNum, workerBase, url, onRequest, timeoutMs);
+        return fetchViaProxyWithRetry(waybackUrl, pageNum, workerBase, url, onRequest, timeoutMs, retry);
     }
 
-    const result = await fetchViaProxy(url, pageNum, workerBase, url, onRequest, timeoutMs);
+    // Retried before the Wayback fallback on purpose: a 502 from our own proxy
+    // says nothing about whether the publisher is reachable, so falling back to
+    // an archive snapshot on that basis would substitute a worse source for a
+    // live one that was never actually tried.
+    const result = await fetchViaProxyWithRetry(url, pageNum, workerBase, url, onRequest, timeoutMs, retry);
 
     if (!result.content) {
         const waybackUrl = await findWaybackSnapshot(url, onRequest, timeoutMs);
         if (waybackUrl) {
             console.log('[CitationVerifier] Live fetch failed, trying Wayback snapshot');
-            return fetchViaProxy(waybackUrl, pageNum, workerBase, url, onRequest, timeoutMs);
+            return fetchViaProxyWithRetry(waybackUrl, pageNum, workerBase, url, onRequest, timeoutMs, retry);
         }
     }
 
