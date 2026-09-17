@@ -364,21 +364,39 @@ export async function runPickPilot(opts, {
         // Null for any wiki whose Living-people category name hasn't been
         // confirmed by an editor there — the quota then reserves nothing,
         // which the run says out loud rather than silently filling.
-        const blpCategory = livingPeopleCategoryForWiki(opts.wiki);
+        const blpCategory = opts.blpShare > 0 ? livingPeopleCategoryForWiki(opts.wiki) : null;
+        if (opts.blpShare > 0 && !blpCategory) {
+            stderr.write(
+                `pick-pilot: no Living-people category recorded for ${opts.wiki} — `
+                + '--blp-share reserves nothing on this wiki\n'
+            );
+        }
+
+        // The BLP lookup is the one query here that is a nice-to-have: losing
+        // it costs the quota its reserve, not the run. Everything else in this
+        // Promise.all is load-bearing and should still take the run down.
+        //
+        // This is not hypothetical — the first version of the query was
+        // written against the pre-normalization `cl_to` column and failed
+        // instantly, discarding a 2000-article base pool that had already been
+        // selected and filtered. A degradable signal should degrade.
+        const selectBlpIds = blpCategory
+            ? selectCategoryMembership(query, { category: blpCategory, pageIds }).catch(error => {
+                stderr.write(
+                    `pick-pilot: BLP category lookup failed (${error.message}) — `
+                    + 'continuing without the BLP quota\n'
+                );
+                return new Set();
+            })
+            : Promise.resolve(new Set());
 
         const [currentTagIds, failedVerificationIds, creationDates, activityProfiles, blpIds] = await Promise.all([
             selectTagMembership(query, { templates: currentEventTemplatesForWiki(opts.wiki), pageIds }),
             selectTagMembership(query, { templates: failedVerificationTemplatesForWiki(opts.wiki), pageIds }),
             selectCreationDates(query, { pageIds }),
             selectActivityProfiles(query, { pageIds, buckets }),
-            blpCategory ? selectCategoryMembership(query, { category: blpCategory, pageIds }) : new Set(),
+            selectBlpIds,
         ]);
-        if (!blpCategory && opts.blpShare > 0) {
-            stderr.write(
-                `pick-pilot: no Living-people category recorded for ${opts.wiki} — `
-                + '--blp-share reserves nothing on this wiki\n'
-            );
-        }
 
         const merged = mergeSignals(topEdited, {
             currentTagIds,

@@ -15,6 +15,7 @@
 
 export const NS_MAIN = 0;
 export const NS_TEMPLATE = 10;
+export const NS_CATEGORY = 14;
 
 // Maintenance templates worth checking, most-specific first.
 //
@@ -396,25 +397,33 @@ export async function selectTagMembership(query, { templates, pageIds }) {
  * base pool's own ids rather than enumerating the category, which for
  * `Living_people` is over a million pages.
  *
- * SCHEMA NOTE. `cl_to` is the long-standing column and is what this query
- * binds. Categorylinks normalization has been in flight upstream the same way
- * templatelinks was (T299417, which is why the query above joins `linktarget`)
- * — so if this ever returns zero rows against a category that certainly has
- * members, check whether `cl_to` has been replaced by a `linktarget` join
- * before looking anywhere else.
+ * SCHEMA NOTE — categorylinks was normalized, exactly as templatelinks was.
+ * `cl_to` no longer exists; the target moved behind `cl_target_id -> lt_id`,
+ * the same `linktarget` indirection buildCandidateQuery() uses for templates.
+ * Confirmed against enwiki_p on 2026-09-17, where the first version of this
+ * query (written against `cl_to`) failed outright with "Unknown column 'cl_to'
+ * in 'WHERE'" — a loud failure rather than a silent empty result, which is the
+ * one mercy of this schema change. `DESCRIBE categorylinks` now reads:
+ * cl_from, cl_sortkey, cl_timestamp, cl_sortkey_prefix, cl_type,
+ * cl_collation_id, cl_target_id.
+ *
+ * No `cl_type = 'page'` filter: this only ever asks about page ids already
+ * known to be in main namespace, so subcat/file rows cannot match anyway.
  */
 export function buildCategoryMembershipQuery({ category, pageIds }) {
     if (!category) throw new TypeError('buildCategoryMembershipQuery requires a category');
     if (!pageIds?.length) throw new TypeError('buildCategoryMembershipQuery requires at least one page id');
 
     const sql = `
-        SELECT cl_from AS pageId
-        FROM categorylinks
-        WHERE cl_to = ?
-          AND cl_from IN (${pageIds.map(() => '?').join(', ')})
+        SELECT cl.cl_from AS pageId
+        FROM categorylinks cl
+        JOIN linktarget lt ON lt.lt_id = cl.cl_target_id
+        WHERE lt.lt_namespace = ?
+          AND lt.lt_title = ?
+          AND cl.cl_from IN (${pageIds.map(() => '?').join(', ')})
     `.trim().replace(/\n {8}/g, '\n');
 
-    return { sql, params: [category, ...pageIds] };
+    return { sql, params: [NS_CATEGORY, category, ...pageIds] };
 }
 
 export async function selectCategoryMembership(query, { category, pageIds }) {

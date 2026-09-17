@@ -179,7 +179,7 @@ function fakeConnection({ onQuery } = {}) {
             onQuery?.(sql, params);
             if (/AS historyEditCount/.test(sql)) return [activityProfileRows];
             if (/FROM categorylinks/.test(sql)) {
-                assert.equal(params[0], 'Living_people');
+                assert.equal(params[1], 'Living_people', 'namespace is bound first');
                 return [[{ pageId: 7 }]];
             }
             if (/GROUP BY p\.page_id/.test(sql)) return [topEditedRows];
@@ -504,7 +504,7 @@ test('BLP membership is asked about the base pool, by category, and lands on the
 
     assert.equal(code, 0);
     assert.equal(categoryCalls.length, 1);
-    assert.equal(categoryCalls[0][0], 'Living_people');
+    assert.equal(categoryCalls[0][1], 'Living_people');
     assert.ok(categoryCalls[0].includes(7) && categoryCalls[0].includes(2),
         'every base-pool id is asked about');
 
@@ -559,4 +559,56 @@ test('parseCliArgs collects repeated --exclude-titles-file into a list', () => {
             '--exclude-titles-file', 'b.txt']).excludeTitlesFiles,
         ['a.txt', 'b.txt']
     );
+});
+
+// The BLP lookup is the one degradable query in stage 1. It died on enwiki_p
+// against the pre-normalization `cl_to` column and took a 2000-article base
+// pool with it; losing the quota must cost the reserve, not the run.
+test('a failed BLP category lookup warns and continues instead of killing the run', async () => {
+    const warnings = [];
+    let written;
+    const code = await runPickPilot(baseOpts(), baseIo({
+        connectReplicas: async () => ({
+            execute: async (sql, params) => {
+                if (/FROM categorylinks/.test(sql)) throw new Error("Unknown column 'cl_to' in 'WHERE'");
+                return fakeConnection().execute(sql, params);
+            },
+            end: async () => {},
+        }),
+        stderr: { write(line) { warnings.push(line); } },
+        writeFile: async (path, content) => { written = content; },
+    }));
+
+    assert.equal(code, 0, 'the run completes');
+    assert.ok(warnings.some(w => /BLP category lookup failed/.test(w)));
+    assert.ok(warnings.some(w => /continuing without the BLP quota/.test(w)));
+    const titles = written.split('\n').filter(l => l && !l.startsWith('#'));
+    assert.ok(titles.includes('Perennial Page'), 'the rest of the mix still lands');
+});
+
+test('--blp-share 0 skips the category query entirely', async () => {
+    const categoryCalls = [];
+    const code = await runPickPilot(baseOpts({ blpShare: 0 }), baseIo({
+        connectReplicas: async () => fakeConnection({
+            onQuery: sql => { if (/FROM categorylinks/.test(sql)) categoryCalls.push(sql); },
+        }),
+    }));
+
+    assert.equal(code, 0);
+    assert.equal(categoryCalls.length, 0,
+        'no reserve wanted means no query — the escape hatch when the lookup is broken');
+});
+
+test('a load-bearing stage-1 query failing still halts the run', async () => {
+    // The BLP catch must not have widened into swallowing everything.
+    const code = await runPickPilot(baseOpts(), baseIo({
+        connectReplicas: async () => ({
+            execute: async (sql, params) => {
+                if (/AS historyEditCount/.test(sql)) throw new Error('replica went away');
+                return fakeConnection().execute(sql, params);
+            },
+            end: async () => {},
+        }),
+    }));
+    assert.equal(code, 1);
 });

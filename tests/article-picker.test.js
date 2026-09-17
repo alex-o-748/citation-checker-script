@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
     CRITERIA,
     CURRENT_EVENT_TEMPLATES,
+    NS_CATEGORY,
     NS_MAIN,
     NS_TEMPLATE,
     UnknownCriterionError,
@@ -471,11 +472,23 @@ test('buildCategoryMembershipQuery asks only about the given ids and binds the c
         category: 'Living_people', pageIds: [10, 20, 30],
     });
 
-    assert.match(sql, /cl_from IN \(\?, \?, \?\)/);
+    assert.match(sql, /cl\.cl_from IN \(\?, \?, \?\)/);
     assert.doesNotMatch(sql, /Living_people/, 'category title is bound, not inlined');
     assert.doesNotMatch(sql, /LIMIT/i, 'membership is bounded by the id list, not by a row cap');
     assert.equal((sql.match(/\?/g) || []).length, params.length);
-    assert.deepEqual(params, ['Living_people', 10, 20, 30]);
+    assert.deepEqual(params, [NS_CATEGORY, 'Living_people', 10, 20, 30]);
+});
+
+// categorylinks was normalized exactly as templatelinks was: cl_to is gone and
+// the target lives behind cl_target_id -> lt_id. The first version of this
+// query used cl_to and died on enwiki_p with "Unknown column 'cl_to'",
+// discarding a 2000-article base pool. Guarding it the same way the
+// templatelinks query is guarded, since this suite cannot reach the database.
+test('the category query joins linktarget, not the dropped cl_to column', () => {
+    const { sql } = buildCategoryMembershipQuery({ category: 'Living_people', pageIds: [1] });
+    assert.match(sql, /JOIN linktarget lt ON lt\.lt_id = cl\.cl_target_id/);
+    assert.doesNotMatch(sql, /\bcl_to\b/);
+    assert.match(sql, /lt\.lt_namespace = \?/, 'namespace is bound, and it is the category one');
 });
 
 test('buildCategoryMembershipQuery rejects empty inputs rather than matching everything', () => {
@@ -486,7 +499,7 @@ test('buildCategoryMembershipQuery rejects empty inputs rather than matching eve
 test('selectCategoryMembership chunks by page id like the tag lookup does', async () => {
     const seen = [];
     const query = async (sql, params) => {
-        const ids = params.slice(1);
+        const ids = params.slice(2);
         seen.push(ids.length);
         return ids.filter(id => id % 2 === 0).map(id => ({ pageId: id }));
     };

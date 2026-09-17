@@ -327,6 +327,19 @@ silently and the run would report a filled mix while reserving nothing. Like
 flagged articles, BLPs get their own fetch pass: a reserved slot cannot be
 filled by an article that was never fetched.
 
+**`categorylinks` was normalized exactly as `templatelinks` was** — `cl_to` is
+gone and the target lives behind `cl_target_id -> lt_id`, so the query joins
+`linktarget` like `buildCandidateQuery()` does. Confirmed against `enwiki_p` on
+2026-09-17, where the first version (written against `cl_to`) failed with
+*"Unknown column 'cl_to' in 'WHERE'"* and discarded a 2000-article base pool
+that had already been selected and filtered.
+
+That failure is also why the BLP lookup is the **one degradable query** in
+stage 1: it is `.catch()`-ed to a warning and an empty set, while every other
+query in the same `Promise.all` still halts the run. A nice-to-have signal
+should cost its own reserve when it breaks, not the whole run. `--blp-share 0`
+skips the query outright, which is the escape hatch when it is broken.
+
 Note `--blp-share 0` disables it outright — the switch to reach for if the
 Legal question Isaac raised on 2026-08-13 (whether BLPs must be excluded from
 the sample) comes back as a no.
