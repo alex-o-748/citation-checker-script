@@ -1,0 +1,112 @@
+# Pilot mix: 100 article(s), generated 2026-09-17T06:41:41.574Z
+# wiki=enwiki edit-window-days=30 burst-window-days=3
+# history-days=180 history-bucket-days=30 min-active-buckets=3 max-idle-days=21 allow-event-titles=false
+# base-pool=2000 shortlist-size=300 offline-ratio-max=0.6 table-ratio-max=0.5 flagged-share=0.4 blp-share=0.15
+# Selected for articles likely to still be edited when this batch reaches an editor:
+# editing spread across months, by several people, without a recent spike. Biased toward
+# {{failed verification}}; biased against one-shot event pages, articles whose citations
+# are mostly unfetchable, and pages whose citations sit in results tables.
+# See service/pilot-selection.js.
+#
+# node service/run-sweep.js --titles-file <this file> --live-source-fetch \
+#     --max 100 --out pilot-findings.csv
+Dolly Parton
+Sergej Jakirović
+Coyote vs. Acme
+Hull City A.F.C.
+Tim Curry
+United States Congress
+Harald V
+Bethlehem Kudumba Unit
+Toxic (2026 film)
+Buddy (2026 film)
+Haakon VIII
+Southern Hemisphere
+List of Google Easter eggs
+2026 Iran war
+Natalie Harp
+Lanterns (TV series)
+Hayden Panettiere
+Mirzapur (film)
+Democratic Autonomous Administration of North and East Syria
+2026–27 La Liga
+Spider-Man: Brand New Day
+2026 in film
+Miss Grand International 2026
+Proposed acquisition of Warner Bros. Discovery by Paramount Skydance
+Associate international cricket in 2026
+2026 in Philippine television
+Yayoi Kusama
+Tornadoes of 2026
+Jason Arday
+Murder of Tupac Shakur
+The Dog Stars (film)
+Timeline of operating systems
+Miss World 2026
+The Odyssey (2026 film)
+Grand Theft Auto VI
+International cricket in 2026
+2026 in animation
+Michael Olise
+Miss Universe 2026
+Nancy Grace Roman Space Telescope
+List of fictional ships
+Adéla (singer)
+Insidious: Out of the Further
+2026 in the United States
+Modernist film
+Obsession (2025 film)
+Coco Gauff
+Gloria Steinem
+AdventHealth
+2026 in professional wrestling
+Uttarakhand
+Sam Smith
+2026
+The End of Oak Street
+Lesbian Space Princess
+Antisemitism in Australia
+John Ternus
+List of American films of 2026
+Elena Rybakina
+Inde Navarrette
+Upcoming structural changes to local government in England
+2026 in Israel
+Bigg Boss (Tamil TV series) season 10
+Awarapan 2
+Eurovision Song Contest 2027
+Mexico–United States border wall
+Milo Yiannopoulos
+Izso Glickstein
+List of UK top-ten singles in 2026
+Online age verification laws by country
+Timeline of the Gaza war (3 October 2025 – present)
+Eurovision Song Contest Asia
+The Art of Personal Chaos
+World Baseball Classic
+Mutiny (2026 film)
+You Seem Pretty Sad for a Girl So in Love
+List of Tamil films of 2026
+Amanda Anisimova
+Spanish–Ottoman Wars
+Gianni Infantino
+India men's national field hockey team
+Mirza Fakhrul Islam Alamgir
+Geneva County massacre
+Michael Jordan
+Olive
+Dvaravati
+Vietnam national football team
+Osama bin Laden
+Tropical cyclones in 2026
+The Eternal Sunshine Tour
+Peter Cullen
+September 11 attacks
+Atlantic slave trade
+Falun Gong
+Paul Martin (illustrator)
+Ayutthaya Kingdom
+Shelley Fabares
+2026 in American television
+Miss Earth 2026
+List of current UFC fighters
