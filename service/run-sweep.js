@@ -46,13 +46,12 @@
 //   node service/run-sweep.js --max 5 --out findings.csv
 //   node service/run-sweep.js --max 50 --live-source-fetch --out findings.csv
 //   node service/run-sweep.js --max 5 --out findings.csv --store   # also ToolsDB
-//   node service/run-sweep.js --max 50 --concurrency 16 --out findings.csv
+//   node service/run-sweep.js --max 50 --concurrency 16 --fetch-concurrency 4 --out findings.csv
 //   node service/run-sweep.js --titles-file articles.txt --live-source-fetch --out findings.csv
 //   node service/run-sweep.js --help
 //
-// --concurrency controls only the verify stage (model calls); fetching stays
-// serial. See --concurrency's --help text and scripts/probe-concurrency.js
-// for how to (re-)measure the ceiling for whatever backend you're calling.
+// Model and source concurrency are separate controls: --concurrency governs
+// verification, while --fetch-concurrency bounds source requests.
 
 import { JSDOM } from 'jsdom';
 import { parseArgs } from 'node:util';
@@ -87,6 +86,7 @@ export function parseCliArgs(argv) {
             model:               { type: 'string' },
             'delay-ms':          { type: 'string', default: '1000' },
             concurrency:         { type: 'string', default: '1' },
+            'fetch-concurrency': { type: 'string', default: '4' },
             'live-source-fetch': { type: 'boolean', default: false },
             store:               { type: 'boolean', default: false },
             resume:              { type: 'boolean', default: false },
@@ -111,6 +111,7 @@ export function parseCliArgs(argv) {
         model: values.model || PROVIDER_MODELS[values.provider],
         delayMs: Number(values['delay-ms']),
         concurrency: Number(values.concurrency),
+        fetchConcurrency: Number(values['fetch-concurrency']),
         liveSourceFetch: values['live-source-fetch'],
         store: values.store,
         resume: values.resume,
@@ -160,6 +161,10 @@ Options:
                          you're calling and worth re-measuring
                          (scripts/probe-concurrency.js) before trusting a
                          number this comment will go stale on.
+  --fetch-concurrency <n>
+                        Source requests to run at once within an article
+                         (default: 4). Kept separate from model concurrency so
+                         each backend can be tuned independently.
   --live-source-fetch   Fetch real sources via tf-source-fetcher instead of the
                          stub. Needs no permission — WMCS cleared unattended
                          fetching from Toolforge on 2026-09-13. It stays
@@ -283,6 +288,10 @@ export async function runSweep(opts, {
     }
     if (!Number.isInteger(opts.concurrency) || opts.concurrency < 1) {
         stderr.write(`sweep: --concurrency must be a positive integer (got: ${opts.concurrency})\n`);
+        return 2;
+    }
+    if (!Number.isInteger(opts.fetchConcurrency) || opts.fetchConcurrency < 1) {
+        stderr.write(`sweep: --fetch-concurrency must be a positive integer (got: ${opts.fetchConcurrency})\n`);
         return 2;
     }
 
@@ -503,9 +512,8 @@ export async function runSweep(opts, {
     const realLog = console.log;
     console.log = () => {};
 
-    // Producer/pool split: a single producer coroutine drives runBatch()
-    // (fetch stays serial — out of scope here, see scripts/probe-concurrency.js
-    // for the model-call-only concurrency this measures) and yields one task
+    // Producer/pool split: a single producer coroutine drives runBatch(),
+    // which uses its own bounded pool for source fetches, and yields one task
     // per solo citation or per group; opts.concurrency worker coroutines pull
     // from that *same* async generator concurrently. Multiple concurrent
     // `for await` consumers over one shared async generator is a real,
@@ -525,8 +533,8 @@ export async function runSweep(opts, {
     let haltError = null;
 
     // Answers "is fetch or verify the bottleneck" without guessing. `fetchMs`
-    // is true wall-clock time (the producer is the only thing calling
-    // articles.next(), so these deltas never overlap with each other — they
+    // is wall-clock time for the bounded fetch phase (the producer is the only
+    // thing calling articles.next(), so these deltas never overlap — they
     // DO overlap with worker time, since fetch(article N+1) and verify
     // (article N's citations) run concurrently by design, so fetchMs isn't
     // simply subtractable from the run's total wall-clock; it's a real lower
@@ -584,7 +592,12 @@ export async function runSweep(opts, {
         // article's worth of fetching slip through after halting before it
         // took effect. Driving runBatch's iterator by hand puts the check
         // before each fetch instead of after.
-        const articles = runBatch(candidates, { parseHtml, fetchArticle: fetchArticleFn, fetchSource });
+        const articles = runBatch(candidates, {
+            parseHtml,
+            fetchArticle: fetchArticleFn,
+            fetchSource,
+            sourceConcurrency: opts.fetchConcurrency,
+        });
         while (true) {
             if (halted) return;
             const fetchStartedAt = Date.now();
@@ -710,7 +723,7 @@ export async function runSweep(opts, {
         `${resumeSkipped ? ` (${resumeSkipped} article(s) skipped as already done)` : ''}.\n`
     );
     stderr.write(
-        `sweep: timing — fetch (serial, wall-clock): ${(timing.fetchMs / 1000).toFixed(3)}s. ` +
+        `sweep: timing — fetch (${opts.fetchConcurrency} concurrent, wall-clock): ${(timing.fetchMs / 1000).toFixed(3)}s. ` +
         `verify: ${timing.verifyCalls} call(s), ${(timing.verifyMs / 1000).toFixed(3)}s summed across ` +
         `${opts.concurrency} concurrent worker(s) (~${timing.verifyCalls ? (timing.verifyMs / timing.verifyCalls).toFixed(0) : 0}ms/call avg, ` +
         `min ${timing.verifyCalls ? timing.verifyMinMs : 0}ms, max ${timing.verifyMaxMs}ms; ` +

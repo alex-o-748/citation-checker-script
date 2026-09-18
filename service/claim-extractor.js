@@ -47,6 +47,7 @@ export async function processArticle(candidate, {
     // keeps flags meaning "this citation doesn't support what's right next
     // to it" rather than "something in this whole span isn't supported".
     claimScope = 'sentence',
+    sourceConcurrency = 1,
     signal,
 } = {}) {
     if (typeof parseHtml !== 'function') {
@@ -78,24 +79,40 @@ export async function processArticle(candidate, {
         return { ...base, outcome: ARTICLE_OUTCOMES.NO_CITATIONS, citations: [] };
     }
 
-    const results = [];
-    for (const citation of citations) {
-        if (signal?.aborted) break;
-        results.push({
-            citationNumber: citation.citationNumber,
-            refName: citation.refName,
-            claimText: citation.claimText,
-            url: citation.url,
-            pageNum: citation.pageNum,
-            groupId: citation.groupId,
-            groupSize: citation.groupSize,
-            groupIndex: citation.groupIndex,
-            groupCitationNumbers: citation.groupCitationNumbers,
-            source: await resolveSource(citation, fetchSource, sourceCache),
-        });
+    if (!Number.isInteger(sourceConcurrency) || sourceConcurrency < 1) {
+        throw new TypeError('sourceConcurrency must be a positive integer');
     }
 
-    return { ...base, outcome: ARTICLE_OUTCOMES.OK, citations: results };
+    // Keep output in document order while bounding in-flight source requests.
+    // Workers claim distinct array indexes synchronously before their first
+    // await, so no queue or lock is needed.
+    const results = new Array(citations.length);
+    let nextIndex = 0;
+    const worker = async () => {
+        while (!signal?.aborted) {
+            const index = nextIndex++;
+            if (index >= citations.length) return;
+            const citation = citations[index];
+            results[index] = {
+                citationNumber: citation.citationNumber,
+                refName: citation.refName,
+                claimText: citation.claimText,
+                url: citation.url,
+                pageNum: citation.pageNum,
+                groupId: citation.groupId,
+                groupSize: citation.groupSize,
+                groupIndex: citation.groupIndex,
+                groupCitationNumbers: citation.groupCitationNumbers,
+                source: await resolveSource(citation, fetchSource, sourceCache),
+            };
+        }
+    };
+    await Promise.all(Array.from(
+        { length: Math.min(sourceConcurrency, citations.length) },
+        worker
+    ));
+
+    return { ...base, outcome: ARTICLE_OUTCOMES.OK, citations: results.filter(Boolean) };
 }
 
 // Cache key must include the page number: the same PDF cited at two different
@@ -110,30 +127,36 @@ async function resolveSource(citation, fetchSource, cache) {
     }
 
     const key = sourceCacheKey(citation.url, citation.pageNum);
-    if (cache.has(key)) {
-        return { ...cache.get(key), cached: true };
+    const cached = cache.get(key);
+    if (cached) {
+        return { ...await cached, cached: true };
     }
 
-    let result;
-    try {
-        const fetched = await fetchSource(citation.url, citation.pageNum);
-        result = {
-            content: fetched?.content ?? null,
-            status: fetched?.status ?? null,
-            error: fetched?.error ?? null,
-            unavailableReason: fetched?.content ? null : 'fetch_failed',
-        };
-    } catch (error) {
-        // A throwing fetcher must not take down the article. Recorded as a
-        // fetch failure with no status, matching "we never got a response".
-        result = {
-            content: null,
-            status: null,
-            error: error?.message || String(error),
-            unavailableReason: 'fetch_failed',
-        };
-    }
-
+    // Cache the promise before starting the request. Parallel citations that
+    // point to the same URL/page then share one in-flight fetch rather than
+    // racing past a cache that used to be populated only after completion.
+    const pending = (async () => {
+        try {
+            const fetched = await fetchSource(citation.url, citation.pageNum);
+            return {
+                content: fetched?.content ?? null,
+                status: fetched?.status ?? null,
+                error: fetched?.error ?? null,
+                unavailableReason: fetched?.content ? null : 'fetch_failed',
+            };
+        } catch (error) {
+            return {
+                content: null,
+                status: null,
+                error: error?.message || String(error),
+                unavailableReason: 'fetch_failed',
+            };
+        }
+    })();
+    cache.set(key, pending);
+    const result = await pending;
+    // Retain the plain resolved value so the cache does not unnecessarily
+    // keep async promise reaction state alive for the rest of a long sweep.
     cache.set(key, result);
     return { ...result, cached: false };
 }

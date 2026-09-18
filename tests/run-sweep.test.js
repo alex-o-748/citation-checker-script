@@ -23,6 +23,7 @@ test('parseCliArgs defaults match run-replay.js\'s conventions (liftwing, no key
     assert.equal(opts.model, 'llm-qwen36-27b');
     assert.equal(opts.delayMs, 1000);
     assert.equal(opts.concurrency, 1);
+    assert.equal(opts.fetchConcurrency, 4);
     assert.equal(opts.liveSourceFetch, false);
     assert.equal(opts.store, false);
     assert.equal(opts.out, 'findings.csv');
@@ -32,7 +33,7 @@ test('parseCliArgs applies overrides', () => {
     const opts = parseCliArgs([
         'node', 'sweep.js', '--criterion', 'citation-needed', '--max', '10',
         '--provider', 'claude', '--model', 'claude-opus-5', '--live-source-fetch',
-        '--concurrency', '8', '--store', '--out', 'out.csv',
+        '--concurrency', '8', '--fetch-concurrency', '6', '--store', '--out', 'out.csv',
     ]);
     assert.equal(opts.criterion, 'citation-needed');
     assert.equal(opts.max, 10);
@@ -40,6 +41,7 @@ test('parseCliArgs applies overrides', () => {
     assert.equal(opts.model, 'claude-opus-5');
     assert.equal(opts.liveSourceFetch, true);
     assert.equal(opts.concurrency, 8);
+    assert.equal(opts.fetchConcurrency, 6);
     assert.equal(opts.store, true);
     assert.equal(opts.out, 'out.csv');
 });
@@ -156,6 +158,7 @@ const baseIo = (overrides = {}) => ({
 const baseOpts = (overrides = {}) => ({
     criterion: 'failed-verification', wiki: 'enwiki', max: 1,
     provider: 'liftwing', model: 'llm-qwen36-27b', delayMs: 0, concurrency: 1,
+    fetchConcurrency: 4,
     liveSourceFetch: false, store: false, out: 'findings.csv',
     ...overrides,
 });
@@ -376,6 +379,14 @@ test('a non-positive-integer --concurrency is rejected before any connection is 
     );
     assert.equal(code, 2);
     assert.equal(connected, false);
+});
+
+test('a non-positive-integer --fetch-concurrency is rejected before any connection is made', async () => {
+    const code = await runSweep(
+        baseOpts({ fetchConcurrency: 0 }),
+        baseIo({ connectReplicas: async () => assert.fail('must validate before connecting') })
+    );
+    assert.equal(code, 2);
 });
 
 test('a Wiki Replicas connection failure is a fatal error', async () => {
@@ -613,7 +624,7 @@ test('the timing summary reports real fetch and verify durations, not zeros', as
     assert.equal(code, 0);
 
     const output = stderrChunks.join('');
-    const timingLine = output.match(/sweep: timing — fetch \(serial, wall-clock\): ([\d.]+)s\. verify: (\d+) call\(s\), ([\d.]+)s/);
+    const timingLine = output.match(/sweep: timing — fetch \(4 concurrent, wall-clock\): ([\d.]+)s\. verify: (\d+) call\(s\), ([\d.]+)s/);
     assert.ok(timingLine, `expected a timing summary line, got:\n${output}`);
 
     const [, fetchSec, verifyCalls, verifySec] = timingLine;
