@@ -2092,23 +2092,41 @@ async function fetchViaProxy(fetchUrl, pageNum, workerBase, sourceUrl, onRequest
 // bottleneck.
 const RETRYABLE_PROXY_STATUS = new Set([429, 500, 502, 503, 504]);
 
-// The proxy never answered: status is null only when fetchViaProxy's own catch
-// fired. Match the two transport shapes rather than retrying every such case,
-// so a genuine client bug doesn't get retried four times.
-const TRANSIENT_TRANSPORT = /timed out|fetch failed/i;
+// Messages the fetcher uses when IT could not complete a request at all, as
+// opposed to reporting what a source said back. This is the load-bearing
+// distinction, and the first version of this module got it wrong.
+//
+// That version keyed on whether the proxy had answered in its own protocol at
+// all, reasoning that a JSON body always describes a source. It does not: when
+// `source-fetcher` cannot reach a publisher it reports its own transport
+// failure *as JSON*, carrying a 5xx status — `{"error": "fetch failed",
+// "status": 502}`. Measured on a 100-article run, 2026-09-18: of 2,742 failing
+// rows, **2,201 were exactly that shape** and the gate declined to retry every
+// one. Only 526 were the non-JSON front-proxy error the gate did catch.
+//
+// What separates the two is the wording, which is stable: the fetcher says
+// "Source returned HTTP 403" when the publisher answered, and "fetch failed"
+// or "terminated" when it never got that far.
+//
+// `Request to source timed out` is deliberately absent. That one *is* about
+// the publisher — it is slow, not unreachable — and four attempts against the
+// 60s source-fetch timeout is punitive for something that will time out again.
+const PROXY_TRANSPORT_FAILURE = /^(?:fetch failed|terminated)$|^Source fetch timed out/i;
 
 function isRetryableProxyResult(result) {
     if (!result || result.content) return false;
-    // The decisive test, and a subtle one the pre-existing Wayback test caught:
-    // `status` carries the *upstream* code when the proxy reports one
-    // (`data.status`), so a 503 from the publisher and a 503 from our gateway
-    // are indistinguishable by status alone. They are distinguishable by
-    // whether the proxy answered in its own protocol: a crash-looping backend
-    // yields a front-proxy HTML error page (non-JSON) or no response at all,
-    // never a JSON body describing a source. Only the former is ours to retry.
+
+    // The fetcher's own transport failure, however it was reported — in JSON
+    // with a 5xx status, or from fetchViaProxy's catch with no status at all.
+    if (PROXY_TRANSPORT_FAILURE.test((result.error ?? '').trim())) return true;
+
+    // Otherwise the proxy answered about the source, and `status` carries the
+    // *upstream* code — so a 503 from the publisher and a 503 from our gateway
+    // look identical by status and are opposites in meaning. Only the gateway's
+    // own failure (a front-proxy error page, never valid JSON) is ours to
+    // retry; the publisher's is a property of that URL and reproduces.
     if (!result.proxyFailure) return false;
-    if (typeof result.status === 'number') return RETRYABLE_PROXY_STATUS.has(result.status);
-    return TRANSIENT_TRANSPORT.test(result.error ?? '');
+    return typeof result.status === 'number' && RETRYABLE_PROXY_STATUS.has(result.status);
 }
 
 // Fewer attempts and a tighter backoff than the model-call path: a sweep makes

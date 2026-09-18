@@ -536,3 +536,55 @@ test('exhausting every attempt still reports the proxy status it last saw', asyn
         global.fetch = originalFetch;
     }
 });
+
+// The shape that defeated the first version of the gate. Measured on a
+// 100-article run, 2026-09-18: 2,201 of 2,742 failing rows arrived as valid
+// JSON carrying a 5xx status and the fetcher's own transport message, and none
+// of them was retried.
+test('the fetcher reporting its OWN transport failure as JSON is retried', () => {
+    assert.equal(isRetryableProxyResult({ content: null, status: 502, error: 'fetch failed' }), true);
+    assert.equal(isRetryableProxyResult({ content: null, status: 503, error: 'fetch failed' }), true);
+    assert.equal(isRetryableProxyResult({ content: null, status: 502, error: 'terminated' }), true);
+});
+
+test('the fetcher reporting what a source SAID is still not retried', () => {
+    // "Source returned HTTP <n>" is the fetcher's wording for a publisher that
+    // answered. Those reproduce, and retrying hammers a site that is already
+    // struggling.
+    for (const error of ['Source returned HTTP 502', 'Source returned HTTP 403',
+                         'Source returned HTTP 405', 'Blocked by robots.txt',
+                         'Source content was empty or too short to verify',
+                         'Invalid page number. PDF has 10 pages.']) {
+        assert.equal(isRetryableProxyResult({ content: null, status: 502, error }), false, error);
+    }
+});
+
+// Four attempts against a 60s timeout is punitive for a publisher that is
+// merely slow, and it will time out again.
+test('a slow source is not retried, though an unreachable proxy is', () => {
+    assert.equal(
+        isRetryableProxyResult({ content: null, status: 504, error: 'Request to source timed out' }), false);
+    assert.equal(
+        isRetryableProxyResult({ content: null, status: null, error: 'Source fetch timed out after 60000ms', proxyFailure: true }),
+        true);
+});
+
+test('a JSON-reported transport failure survives a round trip through fetchSourceContent', async () => {
+    let calls = 0;
+    const originalFetch = global.fetch;
+    global.fetch = async url => {
+        if (String(url).includes('archive.org/wayback')) return { ok: false, status: 404, json: async () => ({}) };
+        calls++;
+        if (calls === 1) return { status: 200, json: async () => ({ error: 'fetch failed', status: 502 }) };
+        return { status: 200, json: async () => ({ content: 'y'.repeat(200), status: 200 }) };
+    };
+    try {
+        const result = await fetchSourceContent('https://example.com/a', null, {
+            retry: { minBackoffMs: 0, maxBackoffMs: 0, jitterMs: 0 },
+        });
+        assert.equal(calls, 2, 'retried the fetcher-side failure exactly once');
+        assert.ok(result.content.includes('y'.repeat(200)));
+    } finally {
+        global.fetch = originalFetch;
+    }
+});
