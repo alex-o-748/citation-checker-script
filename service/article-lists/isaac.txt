@@ -1,0 +1,422 @@
+# Isaac's article batch: 400 enwiki pages supplied 2026-09-18.
+# Group comments preserve the labels from the source spreadsheet; run-sweep
+# ignores comment lines and processes every title below.
+#
+# node service/run-sweep.js --titles-file service/article-lists/isaac.txt \
+#     --live-source-fetch --max 400 --out isaac-findings.csv
+
+# ctop (50)
+Islamic terrorism
+Political positions of Donald Trump
+Kardashian family
+Khalsa
+Bhogta
+Judea and Samaria Division
+Committee for the Propagation of Virtue and the Prevention of Vice (Gaza Strip)
+Revolution 60
+Oliver Larkin (politician)
+Jatapu people
+Dua Lipa
+Oliver Anthony
+Audrey M. Shuey
+Maggie De Block
+Hittin
+Biology and sexual orientation
+Fir'im
+Terrorist incidents in the West Bank in 2001
+Infowars
+Al-Ansar Mosque airstrike
+Caroline Cossey
+Killing of Nahida and Samar Anton
+Owen Cooper
+Muslim Gaddi
+Neo-Zionism
+World Conference against Racism 2001
+Jenna Talackova
+Operation Defensive Shield
+All India Dalit Mahila Adhikar Manch
+Palestinian refugee camps in the West Bank
+Yigal Allon
+PAL PAC
+J. Harrison Ghee
+Khond people
+Yom Kippur War
+Hind Khoury
+United Nations General Assembly Resolution 194
+Erica Andrews
+Arshi Khan
+North India
+Patricio Manuel
+Helvíkovice
+Dana Rivers
+Burning of the Jaffna Public Library
+Bob Vylan
+Jacobin (magazine)
+William Rodriguez
+2018 Google walkouts
+Israeli occupations navbox
+Ali Shaath
+
+# dubious (50)
+List of Ezhavas
+Friedrich Eckenfelder
+Montreal/Archive 3
+Colonial Spanish horse
+Choricero peppers
+Demonym
+Bilorichenska coal mine
+1998–2002 Argentine great depression
+Ogress/Archive 1
+County Meath
+USS Nicholas (DD-449)
+1982 in games
+Scottish Aeroplane Syndicate Avis
+Maf654321/Na'vi Language
+List of works by Karl Parsons
+Al-Midya
+Edelbrock
+Vedic timeline
+Pineapple cake
+Forced confession
+Coccinia grandis
+Miguel Antonio Otero (born 1829)
+List of state leaders in the 1900s
+Tom.Reding/DoMP
+Don Juan of Persia
+Modern paganism in the United Kingdom
+Lom, Bulgaria
+Tourism in Indonesia
+2004 Equatorial Guinea coup attempt
+List of calendars
+Captain (ice hockey)
+Resumptive pronoun
+WeijiBaikeBianji/Intelligence Draft
+Bulkhead (partition)
+Low comedy
+Dubious
+Raymond Andrew
+Associativity isomorphism
+Rockall
+3rd Foreign Parachute Battalion
+Al-Dawood Air
+Willbown
+Bongwarrior/Archive 19
+Pan American Petroleum and Transport Company
+Nahal Oren (archaeological site)
+Fantr/Alligator (1962 novel)
+Thantalteresco
+Arago spot
+Botai culture
+Mr.BuriramCN/Transport by capital city/A
+
+# failed-verification (50)
+TreCoolGuy/Untitled Man of Steel sequel
+Domenico Ghirlandaio
+Brian Wecht
+Techno Kitten Adventure
+Lorna Brown (ice skater and choreographer)
+Vajiko Chachkhiani
+Myth (video game series)
+People's Mojahedin Organization of Iran/Archive 57
+Big Bill Broonzy
+Shengle
+Name of the Czech Republic
+Toronto Fire Services
+Melchior Wathelet
+Beef clod
+Dubin v. United States
+Charles Wicksteed (engineer)
+Amis people
+Delmarva Peninsula
+Blake Ferguson (rugby league)
+Reform of local government in Northern Ireland
+Bowlus
+Lyra2
+Peddabrahmadevam railway station
+Annaglogh Lead Mines
+MS Berge Stahl
+Chaetolopha pseudooxyntis
+Diphosphenes
+Avatha paucimacula
+Irfan Siddiqui
+Crossfire Hurricane (FBI investigation)
+Wowpedia
+King James Version
+Anstalt
+X-Men Origins: Wolverine
+History of Thailand
+Ion Perez
+African-American middle class
+Jos Vantyler
+Ludendorff Bridge
+Gerhard Struber
+Wheels of Fire
+Christina McPhee
+PIAT
+Regulation and prevalence of homeopathy
+2022 Mexico City Grand Prix
+Gutulya
+The Sun Comes Out World Tour
+Guanajuato
+Compact executive car
+Lukáš Plank
+
+# ai-generated (50)
+Ark Kings Academy
+Omhajer subregion
+Agencies of the African Union
+Faruk Kirunda
+Fluid Truck
+Our Secrets (film)
+Collaborative writing
+Saami Brothers
+Mara Clara
+Bajo sexto
+Cyclones Mandous and ARB 03
+Music of Pakistan
+Emmanuel Senyo Amedahe
+Gyaarah Gyaarah
+Russification of Belarus
+Leif Randt
+Urs Schnyder
+Information and media literacy
+Woliborka Viaduct
+Starrgirl
+Paolo Buoni
+Anne Pélagie Yotchou Tzudjom
+Lantmannaskolan i Berg
+Kiyoshi Ikeda
+Pengiran Muhammad Yusuf
+Biel Gamez Rodrigo
+Kashima, Kagoshima
+Kirmen Uribe
+LC Waikiki
+Starbright (film)
+Mario Morris
+Hong Kong Panel Study of Social Dynamics
+November 2020 Station 19 and Grey's Anatomy crossover event
+2013 Syrian chemical weapons protests in Albania
+Dominion Publishing House
+CEBRA
+After the Hunt
+Wearne's Air Service
+Benjamin A. Green
+T-symmetry
+Biological data visualization
+Estefan Cortes-Vargas
+Kaiyetoro Eleko Beach
+Holy Trinity Church, North Hobart
+Falah bin Al-Mohsen Al-Nabhan
+Cannabis Control and Regulatory Authority
+José Manuel Saraiva
+Feras Fayyad
+Sibu
+Satya Dharma
+
+# ga-candidates (50)
+Murder of Dominique "Rem'mie" Fells
+Naksansa
+Yoga and politics
+Punisher (album)
+Liberty line
+Scrupulosity
+Odessa pogroms
+Stanley Woodward Jr.
+2026 European Athletics Championships – Women's 800 metres
+Colin McDonald (attorney)
+The Amazing Race 9
+Second Doctor
+Joanne Harris
+Pseudothryptus
+Laura Kampf
+Cheongpyeongsa
+Northallerton railway station
+Bricks & Minifigs–Reckless Ben controversy
+Max Hovey
+Following
+Han Kwang-song
+Centrohelid
+Skyroot Aerospace
+1882 Liechtenstein general election
+Tornio–Haparanda railway
+Bawi system
+Larry McMurtry
+1875 Liechtenstein general election
+Wheelchair rugby
+Victim or the Crime
+Battle of the Ialomița
+Maureen Harding Clark
+Hemet, or the Landlady Don't Drink Tea
+Fate/Stay Night (2006 TV series)
+Ardlui railway station
+Thanatos: If I Can't Be Yours
+Vojin Đuričić
+Modafinil
+2026 Tour Championship
+Syriac Democratic Union
+2026 German Masters
+RCCX
+Ribblehead railway station
+People's Court (Germany)
+Operation Shylock
+Dalwhinnie railway station
+Nicole Scherzinger 2012
+David Warrington
+Empress Dowager Xiaoding
+Plato's Atlantis
+
+# history (50)
+Queen Victoria
+Byzantine Empire
+Asia
+Marie Antoinette
+Mary I
+Mary, Queen of Scots
+Latin
+Queen Elizabeth the Queen Mother
+Henry VII of England
+Charlemagne
+Richard II of England
+William III of England
+Yugoslavia
+Richard I of England
+Septuagint
+Anne, Queen of Great Britain
+Crusades
+Bronze Age
+Prussia
+Richard III of England
+Ancient Egypt
+Auschwitz concentration camp
+Ancient Greece
+Yahweh
+Catherine of Aragon
+Constantinople
+Mary of Teck
+Thirteen Colonies
+Greek mythology
+Indus Valley Civilisation
+Ancient Rome
+Lucille Ball
+Ming dynasty
+Alfred the Great
+Neanderthal
+Celts
+Edward IV
+Anglo-Saxons
+Vikings
+Amelia Earhart
+Maria Theresa
+Phoenicia
+Knights Templar
+British Museum
+Henry VI of England
+Rosa Parks
+Lady Jane Grey
+Dragon
+Göbekli Tepe
+American frontier
+
+# blp (50)
+Uwe Boll
+John Robertson (Glasgow MP)
+Louis Chedid
+Wayne Denning
+Calfreezy
+Leki Maka
+Helen Clayton
+Nicklas Nielsen
+Ronnie Archer-Morgan
+Lisandro Fiks
+Elizabeth Kell
+Joe Vedepo
+Marijo Tot
+Scott Gump
+Bahram Jalali
+Tang Guoliang
+Ludovic Mercier
+Pan Jiamin
+Jennifer Holliday (softball)
+Fernando de Moraes
+Brian Virtue
+Charles V. Shank
+Oleksii Marchenko (general)
+Nikolai Korovkin
+Cody Wills
+León Arslanián
+Marta Filizola
+Michael Kim (television anchor)
+Alex Fenson
+Anders Sandberg
+Golden Tate
+Riekert Hattingh
+Toshimitsu Izawa
+Andrew Black (footballer, born 1995)
+Hugo Beltrami
+Sunil Kumar (born 1957)
+Jean-Christophe Cesto
+Elvir Koljić
+Santiago Echeverría
+Lukhanyo Am
+Grimes
+James Dale (scientist)
+Jim Norman (politician)
+Charlise Dunn
+Katalin Kristó
+Matiar Rahman Chowdhury
+Ron Ghitter
+Yukinori Kishida
+Tamara Gómez Garrido
+Mark Mouland
+
+# npp (50)
+Alexandro Tirelli
+Pittachhara Forest
+John Rootes
+Everyone Is Doing Great
+Gary Henson
+Bankers' Books Evidence Act, 2026
+Al Roberts (comedian)
+JCW The Assault
+New Declaration of the Japan Socialist Party
+Al-Suqaylabiyah (People's Assembly electoral district)
+Samuel Mwandha
+Marlène Kouassi
+Umayyad invasions of Asia Minor (720–740)
+Way Dynamic
+John Boyd (Canadian communist)
+Mikay (singer)
+Project Canary
+Esposizione Aeronautica Italiana
+Sebastiano (fortress)
+Tsediso Michael Makoelle
+Michel Borwicz
+Carlo Filiberto I d'Este
+Baruk (house)
+1922 SAAFL season
+Chin-Chin
+Cati family
+HMIS Amritsar
+Gut Genug
+BGYO (EP)
+Valley Girl Problems
+Lenin (film)
+Buganda Road Primary School
+Historic center of Sulmona
+Alex Pocklington
+II (Denzel Curry and Kenneth Blume album)
+Russian Submarine Kuguar (K-337)
+Shot Darts
+Centella Cave
+2026 Women's European Volleyball League league round
+Rainbow Cities Network
+Capt. Earl W. Winsor
+Trail, Ohio
+Nathanael Lessore
+Brittany Cox
+Gustave Vanaise
+Dead Pioneers
+Katukiro of Busoga
+SUSTech School of Medicine
+Shaikh Abdul Nabi
+Veton Elshani
