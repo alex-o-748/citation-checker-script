@@ -165,6 +165,33 @@ test('the same source is fetched once per article and reported as cached', async
     assert.equal(result.citations[1].source.content, 'text of https://example.com/same');
 });
 
+test('sourceConcurrency bounds parallel fetches and preserves citation order', async () => {
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const html = article(
+        '<p>The first bridge opened in nineteen ninety one.@@1@@ ' +
+        'The second bridge opened in nineteen ninety two.@@2@@ ' +
+        'The third bridge opened in nineteen ninety three.@@3@@ ' +
+        'The fourth bridge opened in nineteen ninety four.@@4@@</p>',
+        Object.fromEntries([1, 2, 3, 4].map(id => [id, link(`https://example.com/${id}`)]))
+    );
+    const result = await processArticle(candidate, {
+        parseHtml,
+        fetchArticle: async () => ({ html, status: 200 }),
+        sourceConcurrency: 2,
+        fetchSource: async url => {
+            inFlight++;
+            maxInFlight = Math.max(maxInFlight, inFlight);
+            await new Promise(resolve => setTimeout(resolve, url.endsWith('/1') ? 15 : 5));
+            inFlight--;
+            return { content: url, status: 200 };
+        },
+    });
+
+    assert.equal(maxInFlight, 2);
+    assert.deepEqual(result.citations.map(c => c.citationNumber), ['1', '2', '3', '4']);
+});
+
 test('sourceCacheKey separates pages of the same PDF', () => {
     assert.equal(sourceCacheKey('https://e.com/a.pdf', null), 'https://e.com/a.pdf');
     assert.notEqual(
