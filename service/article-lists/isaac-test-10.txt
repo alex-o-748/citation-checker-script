@@ -1,0 +1,15 @@
+# Test subbatch: first 10 articles from Isaac's 400-article batch.
+# wiki=enwiki; source=service/article-lists/isaac.txt; label=ctop
+#
+# node service/run-sweep.js --titles-file service/article-lists/isaac-test-10.txt \
+#     --live-source-fetch --max 10 --out isaac-test-10-findings.csv
+Islamic terrorism
+Political positions of Donald Trump
+Kardashian family
+Khalsa
+Bhogta
+Judea and Samaria Division
+Committee for the Propagation of Virtue and the Prevention of Vice (Gaza Strip)
+Revolution 60
+Oliver Larkin (politician)
+Jatapu people
