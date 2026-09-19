@@ -4,21 +4,29 @@ import assert from 'node:assert/strict';
 import {
     CRITERIA,
     CURRENT_EVENT_TEMPLATES,
+    NS_CATEGORY,
     NS_MAIN,
     NS_TEMPLATE,
     UnknownCriterionError,
+    activityBuckets,
+    buildActivityProfileQuery,
     buildCandidateQuery,
+    buildCategoryMembershipQuery,
     buildCreationDateQuery,
     buildTagMembershipQuery,
     buildTopEditedQuery,
     currentEventTemplatesForWiki,
     failedVerificationTemplatesForWiki,
     formatRevTimestamp,
+    livingPeopleCategoryForWiki,
+    normalizeActivityProfileRow,
     normalizeRow,
     normalizeTopEditedRow,
     parseRevTimestamp,
     resolveCriterion,
+    selectActivityProfiles,
     selectCandidates,
+    selectCategoryMembership,
     selectCreationDates,
     selectTagMembership,
     selectTopEdited,
@@ -346,4 +354,161 @@ test('selectCreationDates parses timestamps into Dates and skips unparseable row
     const dates = await selectCreationDates(query, { pageIds: [1, 2] });
     assert.equal(dates.get(1).toISOString(), '2026-09-04T12:00:00.000Z');
     assert.equal(dates.has(2), false);
+});
+
+// --- Long-run activity profile ---
+
+test('activityBuckets divides the window newest-first and clamps the oldest bucket', () => {
+    const now = new Date('2026-09-16T00:00:00Z');
+    const buckets = activityBuckets({ now, historyDays: 180, bucketDays: 30 });
+
+    assert.equal(buckets.length, 6);
+    assert.equal(buckets[0].end.toISOString(), now.toISOString());
+    assert.equal(buckets[0].start.toISOString(), '2026-08-17T00:00:00.000Z');
+    assert.equal(buckets[5].start.toISOString(), '2026-03-20T00:00:00.000Z',
+        'oldest bucket starts exactly historyDays back');
+
+    // Consecutive and non-overlapping: each bucket's start is the next one's end.
+    for (let i = 0; i < buckets.length - 1; i++) {
+        assert.equal(buckets[i].start.getTime(), buckets[i + 1].end.getTime());
+    }
+});
+
+test('activityBuckets clamps an uneven division rather than overrunning the window', () => {
+    const now = new Date('2026-09-16T00:00:00Z');
+    const buckets = activityBuckets({ now, historyDays: 100, bucketDays: 30 });
+    assert.equal(buckets.length, 4);
+    assert.equal(now.getTime() - buckets[3].start.getTime(), 100 * 86400000,
+        'the window is exactly 100 days, not 120');
+});
+
+test('activityBuckets validates its inputs', () => {
+    assert.throws(() => activityBuckets({ now: new Date('bad') }), TypeError);
+    assert.throws(() => activityBuckets({ historyDays: 0 }), RangeError);
+    assert.throws(() => activityBuckets({ historyDays: 30, bucketDays: 60 }), RangeError);
+});
+
+test('buildActivityProfileQuery emits one conditional SUM per bucket over a single scan', () => {
+    const now = new Date('2026-09-16T00:00:00Z');
+    const buckets = activityBuckets({ now, historyDays: 90, bucketDays: 30 });
+    const { sql, params } = buildActivityProfileQuery({ pageIds: [7, 8], buckets });
+
+    assert.equal((sql.match(/AS bucket\d+/g) || []).length, 3);
+    assert.match(sql, /COUNT\(DISTINCT r\.rev_actor\) AS distinctEditors/);
+    assert.match(sql, /MAX\(r\.rev_timestamp\)\s+AS lastEditAt/);
+    assert.match(sql, /GROUP BY r\.rev_page/);
+    assert.equal((sql.match(/FROM revision/g) || []).length, 1,
+        'one scan per page range, not one query per bucket');
+    assert.equal((sql.match(/\?/g) || []).length, params.length);
+
+    // Textual order: bucket bounds (SELECT), then the id list, then the
+    // window start (WHERE). Swapping these silently mis-buckets every edit.
+    assert.deepEqual(params.slice(0, 2), ['20260817000000', '20260916000000']);
+    assert.deepEqual(params.slice(-3), [7, 8, '20260618000000']);
+});
+
+test('buildActivityProfileQuery rejects empty inputs rather than matching everything', () => {
+    const buckets = activityBuckets({ historyDays: 60, bucketDays: 30 });
+    assert.throws(() => buildActivityProfileQuery({ pageIds: [], buckets }), TypeError);
+    assert.throws(() => buildActivityProfileQuery({ pageIds: [1], buckets: [] }), TypeError);
+});
+
+test('normalizeActivityProfileRow counts the buckets that saw any edit at all', () => {
+    const profile = normalizeActivityProfileRow({
+        pageId: '3', historyEditCount: '41', distinctEditors: '12',
+        lastEditAt: Buffer.from('20260915093000'),
+        bucket0: '5', bucket1: '0', bucket2: '30', bucket3: '6', bucket4: '0', bucket5: '0',
+    }, 6);
+
+    assert.equal(profile.pageId, 3);
+    assert.equal(profile.historyEditCount, 41);
+    assert.equal(profile.distinctEditors, 12);
+    assert.equal(profile.lastEditAt.toISOString(), '2026-09-15T09:30:00.000Z');
+    assert.deepEqual(profile.bucketCounts, [5, 0, 30, 6, 0, 0]);
+    assert.equal(profile.activeBuckets, 3, 'three buckets saw edits, not three months of edits');
+    assert.equal(profile.bucketCount, 6);
+});
+
+test('normalizeActivityProfileRow keeps an unmeasured editor count null rather than zero', () => {
+    // "nobody edited it" and "we did not measure" must not score the same.
+    const profile = normalizeActivityProfileRow({ pageId: 1, historyEditCount: 0 }, 2);
+    assert.equal(profile.distinctEditors, null);
+    assert.deepEqual(profile.bucketCounts, [0, 0]);
+    assert.equal(profile.activeBuckets, 0);
+});
+
+test('selectActivityProfiles chunks by page id and keys the result by page id', async () => {
+    const seen = [];
+    const query = async (sql, params) => {
+        const ids = params.filter(p => typeof p === 'number');
+        seen.push(ids.length);
+        return ids.map(id => ({
+            pageId: id, historyEditCount: 10, distinctEditors: 4,
+            lastEditAt: Buffer.from('20260915000000'), bucket0: 1, bucket1: 1,
+        }));
+    };
+
+    const buckets = activityBuckets({ historyDays: 60, bucketDays: 30 });
+    const pageIds = Array.from({ length: 700 }, (_, i) => i + 1);
+    const profiles = await selectActivityProfiles(query, { pageIds, buckets });
+
+    assert.deepEqual(seen, [500, 200], 'chunked at 500 ids per query');
+    assert.equal(profiles.size, 700);
+    assert.equal(profiles.get(42).activeBuckets, 2);
+});
+
+// --- BLP membership (Category:Living people) ---
+
+test('livingPeopleCategoryForWiki returns null for an unconfirmed wiki rather than guessing', () => {
+    // A wrong category name matches nothing silently, and the BLP quota would
+    // then reserve nothing while the run reported a filled mix.
+    assert.equal(livingPeopleCategoryForWiki('enwiki'), 'Living_people');
+    assert.equal(livingPeopleCategoryForWiki('ruwiki'), null);
+    assert.equal(livingPeopleCategoryForWiki('frwiki'), null);
+});
+
+test('buildCategoryMembershipQuery asks only about the given ids and binds the category', () => {
+    const { sql, params } = buildCategoryMembershipQuery({
+        category: 'Living_people', pageIds: [10, 20, 30],
+    });
+
+    assert.match(sql, /cl\.cl_from IN \(\?, \?, \?\)/);
+    assert.doesNotMatch(sql, /Living_people/, 'category title is bound, not inlined');
+    assert.doesNotMatch(sql, /LIMIT/i, 'membership is bounded by the id list, not by a row cap');
+    assert.equal((sql.match(/\?/g) || []).length, params.length);
+    assert.deepEqual(params, [NS_CATEGORY, 'Living_people', 10, 20, 30]);
+});
+
+// categorylinks was normalized exactly as templatelinks was: cl_to is gone and
+// the target lives behind cl_target_id -> lt_id. The first version of this
+// query used cl_to and died on enwiki_p with "Unknown column 'cl_to'",
+// discarding a 2000-article base pool. Guarding it the same way the
+// templatelinks query is guarded, since this suite cannot reach the database.
+test('the category query joins linktarget, not the dropped cl_to column', () => {
+    const { sql } = buildCategoryMembershipQuery({ category: 'Living_people', pageIds: [1] });
+    assert.match(sql, /JOIN linktarget lt ON lt\.lt_id = cl\.cl_target_id/);
+    assert.doesNotMatch(sql, /\bcl_to\b/);
+    assert.match(sql, /lt\.lt_namespace = \?/, 'namespace is bound, and it is the category one');
+});
+
+test('buildCategoryMembershipQuery rejects empty inputs rather than matching everything', () => {
+    assert.throws(() => buildCategoryMembershipQuery({ category: '', pageIds: [1] }), TypeError);
+    assert.throws(() => buildCategoryMembershipQuery({ category: 'Living_people', pageIds: [] }), TypeError);
+});
+
+test('selectCategoryMembership chunks by page id like the tag lookup does', async () => {
+    const seen = [];
+    const query = async (sql, params) => {
+        const ids = params.slice(2);
+        seen.push(ids.length);
+        return ids.filter(id => id % 2 === 0).map(id => ({ pageId: id }));
+    };
+
+    const pageIds = Array.from({ length: 700 }, (_, i) => i + 1);
+    const found = await selectCategoryMembership(query, { category: 'Living_people', pageIds });
+
+    assert.deepEqual(seen, [500, 200], 'chunked at 500 ids per query');
+    assert.equal(found.has(2), true);
+    assert.equal(found.has(3), false);
+    assert.equal(found.has(700), true);
 });

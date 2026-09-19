@@ -249,9 +249,103 @@ Runnable entry points, each a thin wiring layer over the components above:
 | Runner | Does | Outbound network |
 |---|---|---|
 | `service/run-pick.js` | Stage 1 only, prints selected articles as JSON | Wiki Replicas |
+| `service/run-pick-pilot.js` | Stage 1 + a citation-extraction pass, writing a `--titles-file` for `run-sweep.js` — the batch mix (see **Article selection** below) | Wiki Replicas, Wikipedia REST |
 | `service/run-extract.js` | Stages 1-3, prints a citations/URLs/fetched/failed funnel | Wiki Replicas, Wikipedia REST, source fetcher (opt-in) |
 | `service/run-replay.js` | Stages 4-5 over `benchmark/dataset.json`'s stored claim/source pairs instead of live fetching — the integration test for verify+store with zero third-party requests | Model API only (+ Wikipedia REST to resolve page IDs) |
 | `service/run-sweep.js` | **All six stages**, writing a CSV by default and (with `--store`) also upserting into ToolsDB | Wiki Replicas, Wikipedia REST, model API, source fetcher (opt-in) |
+
+### Article selection picks for FUTURE activity, not past activity (read before touching `service/pilot-selection.js`)
+
+The batch mix (`service/run-pick-pilot.js`) used to select for articles being
+edited *right now* — recent edit count, with the two largest boosts going to a
+recently created page and to editing concentrated in a burst. **That is a
+description of a current event, and it is the wrong target.** A batch is
+selected, reviewed by volunteers and delivered into suggestion mode days to
+weeks later; an article picked *because* it was spiking is, by then, one nobody
+is working on. Sports events are the clearest case — a tournament final takes
+hundreds of edits in three days and then effectively none, ever — and they, plus
+elections, disasters and recent deaths, swept the old ranking.
+
+As of 2026-09-16 the signals are the same and **the signs are inverted**. Burst,
+novelty and `{{current}}` are now penalties; the volume term scores the window's
+edit count with the burst window's edits *removed*. What earns a slot instead:
+
+| Signal | Term | Why |
+|---|---|---|
+| **Persistence** | `+50`, the largest | How many of the history window's six months saw any edit. Counting *which buckets were touched* — people coming back — not how many edits each holds. 400 edits in one month and 400 across six are the same number and different articles. |
+| **Editor breadth** | `+25`, saturating at 30 | Distinct editors. One prolific editor and thirty occasional ones produce the same count and very different odds of anyone returning. |
+| **Sustained volume** | `+12·log2` | The window's count minus the burst window's — what the article does when it is not spiking. |
+
+`{{failed verification}}` (`+35`, with its 40% quota) and the offline-citation
+penalty are unchanged.
+
+Two **hard filters** run before an article fetch is spent on a candidate:
+`--min-active-buckets` (default 3 of 6 — and an article with *no* measured
+history is rejected, never waved through, since that is a page younger than the
+window) and event-shaped titles (`--allow-event-titles` disables). The title
+filter is not redundant with persistence: a *forthcoming* event is edited
+steadily every month of the run-up and looks durable right until it happens.
+
+`EVENT_TITLE_PATTERNS` needs **a year AND occasion vocabulary** — a year prefix
+alone is not enough, and treating it as enough is a mistake this filter already
+made once. Measured against the two batches picked under the old criteria, 68 of
+200 titles carried a year: overwhelmingly fixtures and elections, but a real
+minority were open-ended situations that stay live for months (`2026 Yemen
+offensives`, `2026-2027 El Nino event`, `2026 Nepal-Tibet floods`, `2026 in the
+United Kingdom`). Persistence judges those correctly on its own and the title
+rule was overriding it.
+
+So the year is the **guard** and the vocabulary is the **test**: a scheduled
+occasion has a date in its name *and* says what kind of occasion it is (`Open`,
+`Cup`, `season`, `election`, `Festival`…). The year anchor is what makes those
+words safe — it is why `2026 US Open` matches while `US Open`, `Stanley Cup` and
+`Monsoon season` do not, and `tests/pilot-selection.test.js` pins that by
+asserting no pattern fires on a dateless title. Grow the list with occasion
+nouns if it needs growing; never drop the year guard.
+
+The long-run history comes from `buildActivityProfileQuery()` — one conditional
+`SUM` per bucket over each candidate's own `(rev_page, rev_timestamp)` range,
+chunked 500 ids at a time, like `selectCreationDates()`. It is **not** a second
+aggregate over the whole revision table.
+
+Both filters return a *reason string* rather than a boolean, and the runner
+tallies them, because the commitment made on the 2026-09-14 volunteer call was
+to show how a batch was generated before it ships.
+
+**BLPs get a quota, not a boost.** Participants in the 2026-09-10 enwiki thread
+and the 2026-09-14 call asked for biographies of living people in the mix, so
+`--blp-share` (default 0.15) reserves slots the way `--flagged-share` always
+has — a floor, not a partition, and `allocateWithQuota()` takes an article that
+is both flagged and a BLP once. `scoreCandidate()` is untouched: a watched
+biography already scores well on persistence and editor breadth, so the quota
+is insurance that a few are present rather than a thumb on the scale. If a run
+reports more BLPs selected than the quota reserves, the quota never bound.
+Membership is `Category:Living people` via `selectCategoryMembership()` —
+`enwiki` only in `WIKI_LIVING_PEOPLE_CATEGORIES`, and **`null` rather than a
+fallback for any other wiki**, because a wrong category name matches nothing
+silently and the run would report a filled mix while reserving nothing. Like
+flagged articles, BLPs get their own fetch pass: a reserved slot cannot be
+filled by an article that was never fetched.
+
+**`categorylinks` was normalized exactly as `templatelinks` was** — `cl_to` is
+gone and the target lives behind `cl_target_id -> lt_id`, so the query joins
+`linktarget` like `buildCandidateQuery()` does. Confirmed against `enwiki_p` on
+2026-09-17, where the first version (written against `cl_to`) failed with
+*"Unknown column 'cl_to' in 'WHERE'"* and discarded a 2000-article base pool
+that had already been selected and filtered.
+
+That failure is also why the BLP lookup is the **one degradable query** in
+stage 1: it is `.catch()`-ed to a warning and an empty set, while every other
+query in the same `Promise.all` still halts the run. A nice-to-have signal
+should cost its own reserve when it breaks, not the whole run. `--blp-share 0`
+skips the query outright, which is the escape hatch when it is broken.
+
+Note `--blp-share 0` disables it outright — the switch to reach for if the
+Legal question Isaac raised on 2026-08-13 (whether BLPs must be excluded from
+the sample) comes back as a no.
+
+Rationale, costs and the alternatives rejected (page views, `page_assessments`,
+a category blacklist): `docs/design-plans/2026-09-16-selecting-for-future-activity.md`.
 
 ## Development Workflow
 

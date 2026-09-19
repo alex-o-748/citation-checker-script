@@ -8,14 +8,20 @@ import { NS_MAIN, NS_TEMPLATE } from '../service/article-picker.js';
 test('parseCliArgs applies documented defaults', () => {
     const opts = parseCliArgs(['node', 'pick-pilot.js']);
     assert.equal(opts.wiki, 'enwiki');
-    assert.equal(opts.editWindowDays, 14);
+    assert.equal(opts.editWindowDays, 30);
     assert.equal(opts.burstWindowDays, 3);
-    assert.equal(opts.basePool, 1000);
+    assert.equal(opts.historyDays, 180);
+    assert.equal(opts.historyBucketDays, 30);
+    assert.equal(opts.minActiveBuckets, 3);
+    assert.equal(opts.maxIdleDays, 21);
+    assert.equal(opts.allowEventTitles, false);
+    assert.equal(opts.basePool, 2000);
     assert.equal(opts.shortlistSize, 300);
     assert.equal(opts.max, 100);
     assert.equal(opts.offlineRatioMax, 0.6);
     assert.equal(opts.tableRatioMax, 0.5);
     assert.equal(opts.flaggedShare, 0.4);
+    assert.equal(opts.blpShare, 0.15);
     assert.equal(opts.scanAll, false);
     assert.equal(opts.out, 'pilot-100.txt');
     assert.equal(opts.jsonOut, undefined);
@@ -24,25 +30,35 @@ test('parseCliArgs applies documented defaults', () => {
 test('parseCliArgs applies overrides', () => {
     const opts = parseCliArgs([
         'node', 'pick-pilot.js', '--wiki', 'frwiki', '--edit-window-days', '7',
-        '--burst-window-days', '2', '--base-pool', '500', '--shortlist-size', '50',
+        '--burst-window-days', '2', '--history-days', '365', '--history-bucket-days', '7',
+        '--min-active-buckets', '10', '--max-idle-days', '45', '--allow-event-titles',
+        '--base-pool', '500', '--shortlist-size', '50',
         '--max', '20', '--offline-ratio-max', '0.4', '--table-ratio-max', '0.3',
-        '--flagged-share', '0.25', '--scan-all',
+        '--flagged-share', '0.25', '--blp-share', '0.1', '--scan-all',
         '--out', 'out.txt', '--json-out', 'out.json',
     ]);
     assert.equal(opts.editWindowDays, 7);
     assert.equal(opts.burstWindowDays, 2);
+    assert.equal(opts.historyDays, 365);
+    assert.equal(opts.historyBucketDays, 7);
+    assert.equal(opts.minActiveBuckets, 10);
+    assert.equal(opts.maxIdleDays, 45);
+    assert.equal(opts.allowEventTitles, true);
     assert.equal(opts.max, 20);
     assert.equal(opts.offlineRatioMax, 0.4);
     assert.equal(opts.tableRatioMax, 0.3);
     assert.equal(opts.flaggedShare, 0.25);
+    assert.equal(opts.blpShare, 0.1);
     assert.equal(opts.scanAll, true);
     assert.equal(opts.jsonOut, 'out.json');
 });
 
 test('HELP_TEXT documents every flag and the Toolforge-job memory caveat', () => {
-    for (const flag of ['--wiki', '--edit-window-days', '--burst-window-days', '--base-pool',
+    for (const flag of ['--wiki', '--edit-window-days', '--burst-window-days',
+        '--history-days', '--history-bucket-days', '--min-active-buckets',
+        '--max-idle-days', '--allow-event-titles', '--base-pool',
         '--shortlist-size', '--max', '--offline-ratio-max', '--table-ratio-max',
-        '--flagged-share', '--scan-all',
+        '--flagged-share', '--blp-share', '--scan-all',
         '--out', '--json-out']) {
         assert.ok(HELP_TEXT.includes(flag), `HELP_TEXT missing ${flag}`);
     }
@@ -89,11 +105,13 @@ const offlineHeavyHtml = article(
     }
 );
 
-// A tournament draw: every citation sits in a results table, and every one of
-// them has a perfectly fetchable URL. This is the shape that dominated the
-// first real run — six 2026 US Open draw pages plus a dozen other results
-// tables — and that the offline filter alone cannot catch.
-const bracketHtml = `<!DOCTYPE html><body><table class="wikitable"><tbody>
+// A results page: every citation sits in a table, and every one of them has a
+// perfectly fetchable URL. This is the shape that dominated the first real run
+// — six 2026 US Open draw pages plus a dozen other results tables. Selecting
+// for durability removes the one-off draws at the source, but a *recurring*
+// records table is durable and still worthless to verify, so the table filter
+// is what has to catch it.
+const tableHtml = `<!DOCTYPE html><body><table class="wikitable"><tbody>
 <tr><td>Alcaraz def. Sinner 6-4, 7-5, 6-2 in the final match.<sup id="cite_ref-b1" class="reference"><a href="./Test#cite_note-b1">[1]</a></sup></td></tr>
 <tr><td>Swiatek def. Gauff 7-6, 6-3 in the semifinal round.<sup id="cite_ref-b2" class="reference"><a href="./Test#cite_note-b2">[2]</a></sup></td></tr>
 </tbody></table><ol class="references">
@@ -105,17 +123,22 @@ const NOW = new Date('2026-09-09T00:00:00Z');
 const daysAgo = n => new Date(NOW.getTime() - n * 86400000);
 const mwTs = date => date.toISOString().replace(/[-:T]/g, '').slice(0, 14);
 
-// pageId 1: brand new and bursty — a breaking story, no tag anywhere.
-// pageId 2: ancient and evenly edited, but far more edits — the perennial
-//           page the mix should NOT read as a current event.
-// pageId 3: ancient, {{failed verification}}, evenly edited.
-// pageId 4: ancient, huge edit count, but mostly offline sourcing.
+// pageId 1: brand new and bursty, edited in one month only — a breaking story.
+//           Far more edits than the articles that should beat it.
+// pageId 2: ancient, evenly edited across every month — the page the mix
+//           should now rank first.
+// pageId 3: ancient, {{failed verification}}, evenly edited, modest volume.
+// pageId 4: ancient, persistent, huge edit count, but mostly offline sourcing.
+// pageId 5: a finished tournament — an event title AND a one-month history.
+// pageId 6: persistent and web-sourced, but every citation is in a table.
 const topEditedRows = [
     { pageId: 5, pageTitle: '2026_Open_Mens_singles', revisionId: 55, editCount: 300, recentEditCount: 295 },
     { pageId: 4, pageTitle: 'Print_Heavy', revisionId: 44, editCount: 900, recentEditCount: 200 },
     { pageId: 2, pageTitle: 'Perennial_Page', revisionId: 22, editCount: 400, recentEditCount: 86 },
-    { pageId: 1, pageTitle: 'Breaking_Story', revisionId: 11, editCount: 60, recentEditCount: 58 },
+    { pageId: 6, pageTitle: 'League_Records_Table', revisionId: 66, editCount: 200, recentEditCount: 20 },
+    { pageId: 1, pageTitle: 'Breaking_Story', revisionId: 11, editCount: 600, recentEditCount: 580 },
     { pageId: 3, pageTitle: 'Disputed_Claim', revisionId: 33, editCount: 40, recentEditCount: 9 },
+    { pageId: 7, pageTitle: 'A_Living_Person', revisionId: 77, editCount: 25, recentEditCount: 3 },
 ];
 
 const creationRows = [
@@ -124,12 +147,41 @@ const creationRows = [
     { pageId: 3, createdAt: Buffer.from(mwTs(daysAgo(4000))) },
     { pageId: 4, createdAt: Buffer.from(mwTs(daysAgo(4000))) },
     { pageId: 5, createdAt: Buffer.from(mwTs(daysAgo(2))) },
+    { pageId: 6, createdAt: Buffer.from(mwTs(daysAgo(3000))) },
+    { pageId: 7, createdAt: Buffer.from(mwTs(daysAgo(2500))) },
+];
+
+// Six 30-day buckets, newest first. The distinction the whole rewrite turns
+// on lives here: pages 1 and 5 have all their edits in bucket 0.
+const profileRow = (pageId, bucketCounts, distinctEditors, idleDays) => ({
+    pageId,
+    historyEditCount: bucketCounts.reduce((a, b) => a + b, 0),
+    distinctEditors,
+    lastEditAt: Buffer.from(mwTs(daysAgo(idleDays))),
+    ...Object.fromEntries(bucketCounts.map((n, i) => [`bucket${i}`, n])),
+});
+
+const activityProfileRows = [
+    profileRow(1, [600, 0, 0, 0, 0, 0], 45, 1),
+    profileRow(2, [86, 140, 150, 160, 180, 184], 25, 1),
+    profileRow(3, [9, 30, 35, 36, 35, 35], 8, 2),
+    profileRow(4, [200, 260, 240, 300, 250, 250], 40, 1),
+    profileRow(5, [295, 5, 0, 0, 0, 0], 30, 1),
+    profileRow(6, [20, 40, 45, 50, 40, 45], 15, 1),
+    // Durably edited but quiet — it scores below everything else, so it only
+    // appears if the BLP quota reaches past the ranking for it.
+    profileRow(7, [3, 6, 5, 4, 6, 5], 6, 2),
 ];
 
 function fakeConnection({ onQuery } = {}) {
     return {
         execute: async (sql, params) => {
             onQuery?.(sql, params);
+            if (/AS historyEditCount/.test(sql)) return [activityProfileRows];
+            if (/FROM categorylinks/.test(sql)) {
+                assert.equal(params[1], 'Living_people', 'namespace is bound first');
+                return [[{ pageId: 7 }]];
+            }
             if (/GROUP BY p\.page_id/.test(sql)) return [topEditedRows];
             if (/MIN\(rev_timestamp\)/.test(sql)) return [creationRows];
             // Tag membership: [NS_TEMPLATE, ...templates, NS_MAIN, ...pageIds]
@@ -144,7 +196,7 @@ function fakeConnection({ onQuery } = {}) {
 
 function htmlForTitle(title) {
     if (title === 'Print Heavy') return offlineHeavyHtml;
-    if (title === '2026 Open Mens singles') return bracketHtml;
+    if (title === '2026 Open Mens singles' || title === 'League Records Table') return tableHtml;
     return onlineHeavyHtml;
 }
 
@@ -160,14 +212,19 @@ const baseIo = (overrides = {}) => ({
 });
 
 const baseOpts = (overrides = {}) => ({
-    wiki: 'enwiki', editWindowDays: 14, burstWindowDays: 3, basePool: 1000,
+    wiki: 'enwiki', editWindowDays: 30, burstWindowDays: 3,
+    historyDays: 180, historyBucketDays: 30, minActiveBuckets: 3, maxIdleDays: 21,
+    allowEventTitles: false, basePool: 1000,
     shortlistSize: 10, max: 10, offlineRatioMax: 0.6, tableRatioMax: 0.5,
-    flaggedShare: 0.4, scanAll: false,
+    flaggedShare: 0.4, blpShare: 0.15, scanAll: false,
     out: 'pilot.txt', jsonOut: undefined,
     ...overrides,
 });
 
-test('an untagged breaking story outranks a much busier perennial page', async () => {
+// The headline behaviour change of 2026-09-16, as an end-to-end assertion:
+// the breaking story has 15x the edits of the article that now wins, and it
+// does not appear at all.
+test('a steadily edited page outranks a far busier breaking story, which is dropped outright', async () => {
     let written;
     const code = await runPickPilot(baseOpts(), baseIo({
         writeFile: async (path, content) => { written = content; },
@@ -175,16 +232,55 @@ test('an untagged breaking story outranks a much busier perennial page', async (
 
     assert.equal(code, 0);
     const titles = written.split('\n').filter(l => l && !l.startsWith('#'));
-    assert.equal(titles[0], 'Breaking Story',
-        'recency + burst must beat a 6x higher edit count with no {{current}} tag anywhere');
+    assert.ok(!titles.includes('Breaking Story'),
+        '600 edits in one month is a finished story, not a page with a future');
     assert.ok(!titles.includes('Print Heavy'), 'offline-heavy article dropped entirely');
-    assert.deepEqual(titles, ['Breaking Story', 'Perennial Page', 'Disputed Claim']);
+    assert.deepEqual(titles, ['Perennial Page', 'Disputed Claim', 'A Living Person']);
 });
 
-// The regression the first real run exposed: a draw page is newly created,
-// almost entirely bursty and fully web-sourced, so every signal ranks it top
-// and the offline filter waves it through.
-test('a tournament draw is dropped despite topping every current-events signal', async () => {
+// An event title is rejected before a fetch is ever spent on it — persistence
+// alone would not catch a *forthcoming* event, which is edited steadily right
+// up until it happens.
+test('an event-titled article is dropped at stage 1, without being fetched', async () => {
+    const fetched = [];
+    const code = await runPickPilot(baseOpts({ scanAll: true }), baseIo({
+        fetchArticle: async ({ title }) => {
+            fetched.push(title);
+            return { html: htmlForTitle(title), status: 200, error: null };
+        },
+    }));
+
+    assert.equal(code, 0);
+    assert.ok(!fetched.includes('2026 Open Mens singles'));
+    assert.ok(!fetched.includes('Breaking Story'));
+});
+
+test('--allow-event-titles lets the event page be considered again', async () => {
+    const fetched = [];
+    await runPickPilot(baseOpts({ scanAll: true, allowEventTitles: true }), baseIo({
+        fetchArticle: async ({ title }) => {
+            fetched.push(title);
+            return { html: htmlForTitle(title), status: 200, error: null };
+        },
+    }));
+    // Still not selected — its one-month history fails --min-active-buckets —
+    // but the title is no longer what stops it.
+    assert.ok(!fetched.includes('2026 Open Mens singles'),
+        'the event page has a one-month history too, so persistence still rejects it');
+
+    const bothOff = [];
+    await runPickPilot(baseOpts({ scanAll: true, allowEventTitles: true, minActiveBuckets: 0 }), baseIo({
+        fetchArticle: async ({ title }) => {
+            bothOff.push(title);
+            return { html: htmlForTitle(title), status: 200, error: null };
+        },
+    }));
+    assert.ok(bothOff.includes('2026 Open Mens singles'), 'with both filters off it is back');
+});
+
+// Durability does not make an article worth verifying: a recurring records
+// table is edited every month and its claims are still score lines.
+test('a persistent results page is dropped by the table filter, not by the activity one', async () => {
     let written;
     const code = await runPickPilot(baseOpts({ scanAll: true }), baseIo({
         writeFile: async (path, content) => { written = content; },
@@ -192,21 +288,19 @@ test('a tournament draw is dropped despite topping every current-events signal',
 
     assert.equal(code, 0);
     const titles = written.split('\n').filter(l => l && !l.startsWith('#'));
-    assert.ok(!titles.includes('2026 Open Mens singles'),
-        'table-heavy article excluded — its claims are score lines, not assertions');
-    assert.equal(titles[0], 'Breaking Story');
+    assert.ok(!titles.includes('League Records Table'));
 });
 
-test('raising --table-ratio-max lets the draw page back in', async () => {
+test('raising --table-ratio-max lets the results page back in', async () => {
     let written;
     await runPickPilot(baseOpts({ scanAll: true, tableRatioMax: 1 }), baseIo({
         writeFile: async (path, content) => { written = content; },
     }));
     const titles = written.split('\n').filter(l => l && !l.startsWith('#'));
-    assert.ok(titles.includes('2026 Open Mens singles'));
+    assert.ok(titles.includes('League Records Table'));
 });
 
-test('the mix is reported by tier, and a burstless old page is not called a current event', async () => {
+test('the mix is reported by tier, and a durable page is labelled from its spread', async () => {
     const files = {};
     const code = await runPickPilot(baseOpts({ jsonOut: 'pilot.json' }), baseIo({
         writeFile: async (path, content) => { files[path] = content; },
@@ -215,11 +309,13 @@ test('the mix is reported by tier, and a burstless old page is not called a curr
     assert.equal(code, 0);
     const parsed = JSON.parse(files['pilot.json']);
     const byTitle = Object.fromEntries(parsed.map(c => [c.title, c]));
-    assert.equal(byTitle['Breaking Story'].tier, 'current');
-    assert.equal(byTitle['Perennial Page'].tier, 'baseline');
-    assert.equal(byTitle['Disputed Claim'].tier, 'flagged');
-    assert.equal(byTitle['Breaking Story'].currentTag, false, 'no tag was involved');
-    assert.ok(byTitle['Breaking Story'].ageDays < 5);
+    assert.equal(byTitle['Perennial Page'].tier, 'durable');
+    assert.equal(byTitle['Disputed Claim'].tier, 'durable+flagged');
+    assert.equal(byTitle['Perennial Page'].activeBuckets, 6);
+    assert.equal(byTitle['Perennial Page'].distinctEditors, 25);
+    assert.equal(byTitle['Perennial Page'].sustainedEditCount, 314,
+        'the volume term scores the floor, not the spike');
+    assert.equal(byTitle['Disputed Claim'].eventShaped, false);
 });
 
 test('the run stops fetching once --max articles have survived the content filter', async () => {
@@ -232,12 +328,12 @@ test('the run stops fetching once --max articles have survived the content filte
     }));
 
     assert.equal(code, 0);
-    assert.deepEqual(fetched, ['2026 Open Mens singles', 'Breaking Story'],
+    assert.deepEqual(fetched, ['Print Heavy', 'Perennial Page'],
         'a rejected article does not count toward the stop, so the run keeps going '
         + 'until it has a real survivor — then stops');
 });
 
-test('--scan-all fetches the whole shortlist instead of stopping early', async () => {
+test('--scan-all fetches the whole eligible shortlist instead of stopping early', async () => {
     const fetched = [];
     await runPickPilot(baseOpts({ max: 1, scanAll: true }), baseIo({
         fetchArticle: async ({ title }) => {
@@ -246,7 +342,17 @@ test('--scan-all fetches the whole shortlist instead of stopping early', async (
         },
     }));
 
-    assert.equal(fetched.length, 5);
+    assert.equal(fetched.length, 5, 'seven in the base pool, two rejected before any fetch');
+});
+
+test('the activity filter rejecting everything fails cleanly rather than writing an empty pilot', async () => {
+    let wrote = false;
+    // Every fixture's last edit is at least a day old, so this rejects all six.
+    const code = await runPickPilot(baseOpts({ maxIdleDays: 0.5 }), baseIo({
+        writeFile: async () => { wrote = true; },
+    }));
+    assert.equal(code, 1);
+    assert.equal(wrote, false);
 });
 
 test('tag membership is asked about the base pool rather than pulled with a row cap', async () => {
@@ -268,7 +374,7 @@ test('tag membership is asked about the base pool rather than pulled with a row 
 test('a fetch failure drops the article instead of aborting the run', async () => {
     let written;
     const code = await runPickPilot(baseOpts(), baseIo({
-        fetchArticle: async ({ title }) => (title === 'Breaking Story'
+        fetchArticle: async ({ title }) => (title === 'Perennial Page'
             ? { html: null, status: 404, error: 'gone' }
             : { html: htmlForTitle(title), status: 200, error: null }),
         writeFile: async (path, content) => { written = content; },
@@ -276,8 +382,8 @@ test('a fetch failure drops the article instead of aborting the run', async () =
 
     assert.equal(code, 0);
     const titles = written.split('\n').filter(l => l && !l.startsWith('#'));
-    assert.ok(!titles.includes('Breaking Story'));
-    assert.ok(titles.includes('Perennial Page'));
+    assert.ok(!titles.includes('Perennial Page'));
+    assert.ok(titles.includes('Disputed Claim'));
 });
 
 test('runPickPilot rejects a burst window longer than the edit window before any I/O', async () => {
@@ -328,7 +434,7 @@ test('--wiki reaches the REST host when fetchArticle is not injected (the hostFo
 
 test('--exclude-titles-file drops matching base-pool articles before scoring', async () => {
     let written;
-    const code = await runPickPilot(baseOpts({ excludeTitlesFile: 'batch1.txt' }), baseIo({
+    const code = await runPickPilot(baseOpts({ excludeTitlesFiles: ['batch1.txt'] }), baseIo({
         readExcludeTitlesFile: async path => {
             assert.equal(path, 'batch1.txt');
             return 'Breaking Story\n# a comment\nPerennial Page\n';
@@ -338,9 +444,8 @@ test('--exclude-titles-file drops matching base-pool articles before scoring', a
 
     assert.equal(code, 0);
     const titles = written.split('\n').filter(l => l && !l.startsWith('#'));
-    assert.ok(!titles.includes('Breaking Story'));
     assert.ok(!titles.includes('Perennial Page'));
-    assert.deepEqual(titles, ['Disputed Claim'], 'the one base-pool article not excluded');
+    assert.deepEqual(titles, ['Disputed Claim', 'A Living Person']);
 });
 
 test('without --exclude-titles-file, the exclude file is never read', async () => {
@@ -353,16 +458,157 @@ test('without --exclude-titles-file, the exclude file is never read', async () =
 });
 
 test('--exclude-titles-file that removes every candidate fails cleanly rather than writing an empty pilot', async () => {
-    const code = await runPickPilot(baseOpts({ excludeTitlesFile: 'batch1.txt' }), baseIo({
+    const code = await runPickPilot(baseOpts({ excludeTitlesFiles: ['batch1.txt'] }), baseIo({
         readExcludeTitlesFile: async () =>
-            'Breaking Story\nPerennial Page\nDisputed Claim\nPrint Heavy\n2026 Open Mens singles\n',
+            'Breaking Story\nPerennial Page\nDisputed Claim\nPrint Heavy\n'
+            + '2026 Open Mens singles\nLeague Records Table\nA Living Person\n',
     }));
     assert.equal(code, 1);
 });
 
 test('a missing --exclude-titles-file surfaces as an error rather than silently including everything', async () => {
-    const code = await runPickPilot(baseOpts({ excludeTitlesFile: 'nope.txt' }), baseIo({
+    const code = await runPickPilot(baseOpts({ excludeTitlesFiles: ['nope.txt'] }), baseIo({
         readExcludeTitlesFile: async () => { throw new Error('ENOENT: no such file'); },
+    }));
+    assert.equal(code, 1);
+});
+
+// --- The BLP quota (Category:Living people) ---
+
+test('a quiet BLP makes the mix on the quota, and is dropped without one', async () => {
+    const titlesFor = async opts => {
+        let written;
+        await runPickPilot(opts, baseIo({
+            writeFile: async (path, content) => { written = content; },
+        }));
+        return written.split('\n').filter(l => l && !l.startsWith('#'));
+    };
+
+    // max 2 leaves no room for it on score: it ranks below both the perennial
+    // page and the flagged one.
+    assert.ok(!(await titlesFor(baseOpts({ max: 2, blpShare: 0 }))).includes('A Living Person'));
+    assert.ok((await titlesFor(baseOpts({ max: 2, blpShare: 0.5 }))).includes('A Living Person'));
+});
+
+test('BLP membership is asked about the base pool, by category, and lands on the candidate', async () => {
+    const categoryCalls = [];
+    const files = {};
+    const code = await runPickPilot(baseOpts({ jsonOut: 'pilot.json' }), baseIo({
+        connectReplicas: async () => fakeConnection({
+            onQuery: (sql, params) => {
+                if (/FROM categorylinks/.test(sql)) categoryCalls.push(params);
+            },
+        }),
+        writeFile: async (path, content) => { files[path] = content; },
+    }));
+
+    assert.equal(code, 0);
+    assert.equal(categoryCalls.length, 1);
+    assert.equal(categoryCalls[0][1], 'Living_people');
+    assert.ok(categoryCalls[0].includes(7) && categoryCalls[0].includes(2),
+        'every base-pool id is asked about');
+
+    const byTitle = Object.fromEntries(JSON.parse(files['pilot.json']).map(c => [c.title, c]));
+    assert.equal(byTitle['A Living Person'].isBlp, true);
+    assert.equal(byTitle['Perennial Page'].isBlp, false);
+});
+
+// A wrong category name matches nothing silently, so a wiki without a
+// confirmed one skips the query and says so rather than reporting a filled mix.
+test('a wiki with no confirmed Living-people category skips the query and warns', async () => {
+    const categoryCalls = [];
+    const warnings = [];
+    const code = await runPickPilot(baseOpts({ wiki: 'ruwiki' }), baseIo({
+        connectReplicas: async () => fakeConnection({
+            onQuery: sql => { if (/FROM categorylinks/.test(sql)) categoryCalls.push(sql); },
+        }),
+        stderr: { write(line) { warnings.push(line); } },
+    }));
+
+    assert.equal(code, 0);
+    assert.equal(categoryCalls.length, 0);
+    assert.ok(warnings.some(w => /--blp-share reserves nothing/.test(w)));
+});
+
+test('--exclude-titles-file is repeatable, so a batch can skip every prior one', async () => {
+    const read = [];
+    let written;
+    const code = await runPickPilot(
+        baseOpts({ excludeTitlesFiles: ['batch1.txt', 'batch2.txt'] }),
+        baseIo({
+            readExcludeTitlesFile: async path => {
+                read.push(path);
+                return path === 'batch1.txt' ? 'Perennial Page\n' : 'A Living Person\n';
+            },
+            writeFile: async (path, content) => { written = content; },
+        })
+    );
+
+    assert.equal(code, 0);
+    assert.deepEqual(read, ['batch1.txt', 'batch2.txt'], 'every file is read');
+    const titles = written.split('\n').filter(l => l && !l.startsWith('#'));
+    assert.ok(!titles.includes('Perennial Page'), 'excluded by the first file');
+    assert.ok(!titles.includes('A Living Person'), 'excluded by the second');
+    assert.deepEqual(titles, ['Disputed Claim']);
+});
+
+test('parseCliArgs collects repeated --exclude-titles-file into a list', () => {
+    assert.deepEqual(parseCliArgs(['node', 'p.js']).excludeTitlesFiles, []);
+    assert.deepEqual(
+        parseCliArgs(['node', 'p.js', '--exclude-titles-file', 'a.txt',
+            '--exclude-titles-file', 'b.txt']).excludeTitlesFiles,
+        ['a.txt', 'b.txt']
+    );
+});
+
+// The BLP lookup is the one degradable query in stage 1. It died on enwiki_p
+// against the pre-normalization `cl_to` column and took a 2000-article base
+// pool with it; losing the quota must cost the reserve, not the run.
+test('a failed BLP category lookup warns and continues instead of killing the run', async () => {
+    const warnings = [];
+    let written;
+    const code = await runPickPilot(baseOpts(), baseIo({
+        connectReplicas: async () => ({
+            execute: async (sql, params) => {
+                if (/FROM categorylinks/.test(sql)) throw new Error("Unknown column 'cl_to' in 'WHERE'");
+                return fakeConnection().execute(sql, params);
+            },
+            end: async () => {},
+        }),
+        stderr: { write(line) { warnings.push(line); } },
+        writeFile: async (path, content) => { written = content; },
+    }));
+
+    assert.equal(code, 0, 'the run completes');
+    assert.ok(warnings.some(w => /BLP category lookup failed/.test(w)));
+    assert.ok(warnings.some(w => /continuing without the BLP quota/.test(w)));
+    const titles = written.split('\n').filter(l => l && !l.startsWith('#'));
+    assert.ok(titles.includes('Perennial Page'), 'the rest of the mix still lands');
+});
+
+test('--blp-share 0 skips the category query entirely', async () => {
+    const categoryCalls = [];
+    const code = await runPickPilot(baseOpts({ blpShare: 0 }), baseIo({
+        connectReplicas: async () => fakeConnection({
+            onQuery: sql => { if (/FROM categorylinks/.test(sql)) categoryCalls.push(sql); },
+        }),
+    }));
+
+    assert.equal(code, 0);
+    assert.equal(categoryCalls.length, 0,
+        'no reserve wanted means no query — the escape hatch when the lookup is broken');
+});
+
+test('a load-bearing stage-1 query failing still halts the run', async () => {
+    // The BLP catch must not have widened into swallowing everything.
+    const code = await runPickPilot(baseOpts(), baseIo({
+        connectReplicas: async () => ({
+            execute: async (sql, params) => {
+                if (/AS historyEditCount/.test(sql)) throw new Error('replica went away');
+                return fakeConnection().execute(sql, params);
+            },
+            end: async () => {},
+        }),
     }));
     assert.equal(code, 1);
 });
