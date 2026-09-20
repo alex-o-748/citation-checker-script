@@ -68,7 +68,7 @@ import { assembleFinding, assembleGroupFinding } from './finding-builder.js';
 import { upsertFinding } from './findings-store.js';
 import { openToolsDbConnection } from './toolsdb.js';
 import { resolveTitleInfo } from './wikipedia-pageids.js';
-import { csvHeaderLine, appendFinding, csvPageTitles } from './csv-report.js';
+import { csvHeaderLine, appendFinding, csvPageTitles, cleanCsvPath, writeCleanCsv } from './csv-report.js';
 import { PROMPT_VERSION } from '../core/prompts.js';
 import { PROVIDER_MODELS, PROVIDER_ENV_VARS } from './provider-config.js';
 
@@ -181,6 +181,8 @@ Options:
                          them — check the CSV's per-article row counts against
                          the article if completeness matters.
   --out <path>          CSV output path (default: findings.csv)
+                        A cleaned copy is also written beside it as
+                        <name>-clean.csv.
   --help, -h            Show this help and exit.
 
 A halt on an auth/billing error (401/402/403) from the model stops the run
@@ -262,6 +264,7 @@ export async function runSweep(opts, {
     appendFindingFn = appendFinding,
     startCsvFn = async (path, header) => fsWriteFile(path, header, 'utf8'),
     readCsvFn = path => fsReadFile(path, 'utf8'),
+    writeCleanCsvFn = writeCleanCsv,
     // JSDOM.fragment() parses without building a full Window/browsing
     // context (CSSOM, timers, navigator, ...) -- new JSDOM(html).window
     // leaks several MB per article that global.gc() never reclaims, which
@@ -433,7 +436,15 @@ export async function runSweep(opts, {
         );
         if (candidates.length === 0) {
             stderr.write('sweep: nothing left to do\n');
-            return 0;
+            const cleanOut = cleanCsvPath(opts.out);
+            try {
+                await writeCleanCsvFn(opts.out, cleanOut);
+                stderr.write(`sweep: wrote clean CSV to ${cleanOut}\n`);
+                return 0;
+            } catch (error) {
+                stderr.write(`sweep: could not write clean CSV: ${error.message}\n`);
+                return 1;
+            }
         }
     } else {
         await startCsvFn(opts.out, csvHeaderLine());
@@ -698,6 +709,15 @@ export async function runSweep(opts, {
     // findings.length here is the true final count, not a lower bound.
     const haltCode = haltError ? describeHalt(stderr, opts.provider, haltError, findings.length) : null;
 
+    const cleanOut = cleanCsvPath(opts.out);
+    let cleanError = null;
+    try {
+        await writeCleanCsvFn(opts.out, cleanOut);
+    } catch (error) {
+        cleanError = error;
+        stderr.write(`sweep: could not write clean CSV: ${error.message}\n`);
+    }
+
     stderr.write(
         `sweep: done. ${funnel.articles} article(s) (${funnel.articlesFailed} failed/no citations), ` +
         `${funnel.citationsSeen} citation(s) seen -> ${funnel.citationsWithUrl} had a URL -> ` +
@@ -709,6 +729,7 @@ export async function runSweep(opts, {
         `sweep: wrote ${findings.length} finding(s) to ${opts.out}${toolsDbQuery ? ' and ToolsDB' : ''}` +
         `${resumeSkipped ? ` (${resumeSkipped} article(s) skipped as already done)` : ''}.\n`
     );
+    if (!cleanError) stderr.write(`sweep: wrote clean CSV to ${cleanOut}.\n`);
     stderr.write(
         `sweep: timing — fetch (serial, wall-clock): ${(timing.fetchMs / 1000).toFixed(3)}s. ` +
         `verify: ${timing.verifyCalls} call(s), ${(timing.verifyMs / 1000).toFixed(3)}s summed across ` +
@@ -726,7 +747,7 @@ export async function runSweep(opts, {
         `mostly retry backoff, not model latency.\n`
     );
 
-    return haltCode ?? 0;
+    return haltCode ?? (cleanError ? 1 : 0);
 }
 
 // Halts on ANY error verifyCitation()/verifyGroup() throws, not just

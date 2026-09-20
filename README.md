@@ -91,6 +91,29 @@ Not supported in Phase 1:
 - `?curid=<pageid>` form
 - non-`en` Wikipedias
 
+## Batch CSV output
+
+The batch runner keeps its complete findings CSV and automatically creates a
+second, reviewer-ready file with `-clean` before the extension:
+
+```sh
+node service/run-sweep.js --titles-file articles.txt --out findings.csv
+# writes findings.csv and findings-clean.csv
+```
+
+The clean file excludes every check made against truncated source content. If
+a collective check was completed for an adjacent citation group, it also
+excludes that group's individual checks so the group is represented once.
+
+To clean a CSV from an earlier run without changing the original file:
+
+```sh
+node service/clean-csv.js previous-findings.csv
+# writes previous-findings-clean.csv
+
+node service/clean-csv.js previous-findings.csv --out ready-to-share.csv
+```
+
 ## Repository Layout
 
 ```
