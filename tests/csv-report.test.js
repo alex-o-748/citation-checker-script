@@ -9,6 +9,9 @@ import {
     findingToCsvLine,
     appendFinding,
     csvPageTitles,
+    cleanCsvText,
+    cleanCsvPath,
+    parseCsv,
 } from '../service/csv-report.js';
 
 const baseFinding = () => ({
@@ -222,4 +225,47 @@ test('check_id is a column so a row can be quoted', () => {
 test('page_title stays the first column, which --resume depends on', () => {
     const header = rowsToCsv([]).trim().split('\n')[0].split(',');
     assert.equal(header[0], 'page_title');
+});
+
+test('cleanCsvText removes truncated checks and individual checks covered by a group check', () => {
+    const csv = rowsToCsv([
+        { ...baseFinding(), citationNumber: '1', sourceTruncated: true },
+        { ...baseFinding(), citationNumber: '2', groupId: 'g1' },
+        { ...baseFinding(), citationNumber: '3', groupId: 'g1' },
+        { ...baseFinding(), citationNumber: '2, 3', groupId: 'g1', isCollective: true },
+        { ...baseFinding(), citationNumber: '4', groupId: 'g2' },
+        { ...baseFinding(), citationNumber: '5' },
+    ]);
+    const records = parseCsv(cleanCsvText(csv));
+    const citationIndex = records[0].indexOf('citation_number');
+    assert.deepEqual(records.slice(1).map(row => row[citationIndex]), ['2, 3', '4', '5']);
+});
+
+test('a truncated collective check does not hide its usable individual checks', () => {
+    const csv = rowsToCsv([
+        { ...baseFinding(), citationNumber: '2', groupId: 'g1' },
+        { ...baseFinding(), citationNumber: '3', groupId: 'g1' },
+        { ...baseFinding(), citationNumber: '2, 3', groupId: 'g1', isCollective: true, sourceTruncated: true },
+    ]);
+    const records = parseCsv(cleanCsvText(csv));
+    const citationIndex = records[0].indexOf('citation_number');
+    assert.deepEqual(records.slice(1).map(row => row[citationIndex]), ['2', '3']);
+});
+
+test('cleaning scopes repeated group IDs to their article revision', () => {
+    const csv = rowsToCsv([
+        { ...baseFinding(), pageId: 1, revisionId: 10, citationNumber: '1', groupId: 'same' },
+        { ...baseFinding(), pageId: 1, revisionId: 10, citationNumber: 'all', groupId: 'same', isCollective: true },
+        { ...baseFinding(), pageId: 2, revisionId: 20, citationNumber: '1', groupId: 'same' },
+    ]);
+    const records = parseCsv(cleanCsvText(csv));
+    const citationIndex = records[0].indexOf('citation_number');
+    assert.deepEqual(records.slice(1).map(row => row[citationIndex]), ['all', '1']);
+});
+
+test('cleaner handles quoted newlines and derives a non-destructive output path', () => {
+    const csv = rowsToCsv([{ ...baseFinding(), claimText: 'line one\nline two, "quoted"' }]);
+    assert.equal(parseCsv(cleanCsvText(csv))[1][8], 'line one\nline two, "quoted"');
+    assert.equal(cleanCsvPath('reports/run.csv'), 'reports/run-clean.csv');
+    assert.equal(cleanCsvPath('findings'), 'findings-clean.csv');
 });

@@ -143,6 +143,7 @@ const baseIo = (overrides = {}) => ({
     appendFindingFn: async () => {},
     startCsvFn: async () => {},
     readCsvFn: async () => { throw new Error('ENOENT'); },
+    writeCleanCsvFn: async () => {},
     // --titles-file resolves each title to a page id + current revision
     // before fetching; faked here so no test reaches the Action API.
     resolveTitleInfoFn: async titles => new Map(
@@ -695,6 +696,15 @@ test('a fresh run starts the CSV with a header and no resume read', async () => 
     assert.equal(started.path, 'findings.csv');
     assert.match(started.header, /^page_title,page_id,/);
     assert.equal(readAttempted, false, '--resume was not passed, so the existing file is not consulted');
+});
+
+test('a completed batch automatically writes a separate clean CSV', async () => {
+    let cleaned;
+    const code = await runSweep(baseOpts({ out: 'reports/run.csv' }), baseIo({
+        writeCleanCsvFn: async (input, output) => { cleaned = { input, output }; },
+    }));
+    assert.equal(code, 0);
+    assert.deepEqual(cleaned, { input: 'reports/run.csv', output: 'reports/run-clean.csv' });
 });
 
 test('--resume skips articles already present in the CSV and does not rewrite the header', async () => {
