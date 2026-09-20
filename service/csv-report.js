@@ -19,7 +19,8 @@
 // are dropped — they mean nothing to a reader and exist only to dedupe rows
 // in ToolsDB.
 
-import { appendFile as fsAppendFile, writeFile as fsWriteFile } from 'node:fs/promises';
+import { appendFile as fsAppendFile, readFile as fsReadFile, writeFile as fsWriteFile } from 'node:fs/promises';
+import { extname } from 'node:path';
 import { hostForWiki } from '../core/wikipedia.js';
 
 // A reviewer reading a row needs to click through to the claim in the
@@ -76,6 +77,94 @@ function csvCell(value) {
     if (value === null || value === undefined) return '';
     const s = String(value);
     return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+// Parses RFC4180 records, including quoted newlines. This deliberately lives
+// beside csvCell(): the cleaner below is also intended for CSVs from previous
+// runs, so it cannot rely on the in-memory finding objects of the current run.
+export function parseCsv(text) {
+    const records = [];
+    let record = [];
+    let field = '';
+    let inQuotes = false;
+    for (let i = 0; i < text.length; i++) {
+        const char = text[i];
+        if (inQuotes) {
+            if (char !== '"') field += char;
+            else if (text[i + 1] === '"') { field += '"'; i++; }
+            else inQuotes = false;
+        } else if (char === '"' && field === '') inQuotes = true;
+        else if (char === ',') { record.push(field); field = ''; }
+        else if (char === '\n' || char === '\r') {
+            if (char === '\r' && text[i + 1] === '\n') i++;
+            record.push(field);
+            records.push(record);
+            record = [];
+            field = '';
+        } else field += char;
+    }
+    if (field !== '' || record.length) {
+        record.push(field);
+        records.push(record);
+    }
+    return records;
+}
+
+export function cleanCsvPath(path) {
+    const extension = extname(path);
+    return extension
+        ? `${path.slice(0, -extension.length)}-clean${extension}`
+        : `${path}-clean.csv`;
+}
+
+/**
+ * Removes findings based on truncated source text, then collapses a completed
+ * adjacent-citation group to its collective finding. Group IDs are only
+ * meaningful within an article revision, so the key includes page identity.
+ */
+export function cleanCsvText(text) {
+    const records = parseCsv(text);
+    if (records.length === 0) throw new Error('CSV is empty');
+    const header = records[0];
+    const indexes = Object.fromEntries(header.map((name, index) => [name, index]));
+    for (const name of ['source_truncated', 'is_collective', 'group_id']) {
+        if (indexes[name] === undefined) throw new Error(`CSV is missing required column: ${name}`);
+    }
+    const truthy = value => /^(?:1|true|yes)$/i.test(value.trim());
+    const inputRows = records.slice(1);
+    const groupKey = row => [
+        indexes.page_id === undefined ? '' : row[indexes.page_id],
+        indexes.revision_id === undefined ? '' : row[indexes.revision_id],
+        indexes.page_title === undefined ? '' : row[indexes.page_title],
+        row[indexes.group_id],
+    ].join('\u0000');
+    // Group replacement is based on the raw report, not on the rows that
+    // survive truncation filtering. A collective check still supersedes its
+    // member checks when that collective itself used truncated source text;
+    // in that case the group disappears from the clean report altogether.
+    // Looking for collectives only after dropping truncated rows used to
+    // leave a misleading assortment of individual members behind.
+    const collectiveGroups = new Set(inputRows
+        .filter(row => row[indexes.group_id] && truthy(row[indexes.is_collective] || ''))
+        .map(groupKey));
+    const cleanRows = inputRows.filter(row => {
+        if (truthy(row[indexes.source_truncated] || '')) return false;
+        return !row[indexes.group_id]
+            || truthy(row[indexes.is_collective] || '')
+            || !collectiveGroups.has(groupKey(row));
+    });
+    return [header, ...cleanRows]
+        .map(row => row.map(csvCell).join(','))
+        .join('\n') + '\n';
+}
+
+export async function writeCleanCsv(inputPath, outputPath = cleanCsvPath(inputPath), {
+    readFile = path => fsReadFile(path, 'utf8'),
+    writeFile = fsWriteFile,
+} = {}) {
+    const text = await readFile(inputPath);
+    await writeFile(outputPath, cleanCsvText(text), 'utf8');
+    return outputPath;
 }
 
 export function findingToCsvRow(finding) {
