@@ -499,7 +499,10 @@ export async function runPickPilot(opts, {
                     candidate.offlineRatio = null;
                     candidate.tableRatio = null;
                 } else {
-                    const citations = collectCitations(parseHtml(html));
+                    // Skipped citations (claim too short) are excluded, as
+                    // collectCitations() used to drop them outright — so the
+                    // selection ratios mean what they meant before.
+                    const citations = collectCitations(parseHtml(html)).filter(c => !c.skipReason);
                     candidate.citationCount = citations.length;
                     candidate.offlineRatio = computeOfflineRatio(citations);
                     candidate.tableRatio = computeTableRatio(citations);

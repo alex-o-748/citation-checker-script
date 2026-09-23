@@ -91,7 +91,12 @@ export async function processArticle(candidate, {
             groupSize: citation.groupSize,
             groupIndex: citation.groupIndex,
             groupCitationNumbers: citation.groupCitationNumbers,
-            source: await resolveSource(citation, fetchSource, sourceCache),
+            skipReason: citation.skipReason,
+            // A skipped citation never reaches a model, so fetching its
+            // source would spend a third party's bandwidth for nothing.
+            source: citation.skipReason
+                ? { content: null, status: null, error: null, unavailableReason: null, cached: false }
+                : await resolveSource(citation, fetchSource, sourceCache),
         });
     }
 

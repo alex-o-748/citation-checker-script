@@ -5,7 +5,7 @@
 
 import { parseArgs } from 'node:util';
 import { JSDOM } from 'jsdom';
-import { extractClaimText } from '../core/claim.js';
+import { extractClaimText, isClaimTooShort, MIN_CLAIM_LENGTH } from '../core/claim.js';
 import { extractReferenceUrl, extractPageNumber } from '../core/urls.js';
 import { logVerification } from '../core/worker.js';
 import { modelFor } from '../core/models.js';
@@ -213,7 +213,7 @@ Exit codes:
   2   bad command-line arguments
   3   Wikipedia article not found (404)
   4   Wikipedia fetch failed (5xx or network error)
-  5   citation number not present in article
+  5   citation number not present in article, or its claim text is too short to check
   6   citation has no fetchable source URL
   7   source unavailable (fetch returned empty or the URL was unfetchable)
   8   required API key environment variable is missing
@@ -309,6 +309,13 @@ export async function runVerify(opts, { stdout = process.stdout, stderr = proces
     const claim = extractClaimText(refSup);
     if (!claim) {
         stderr.write(`ccs: could not extract claim text for citation [${citationNumber}]\n`);
+        return 5;
+    }
+    if (isClaimTooShort(claim)) {
+        stderr.write(
+            `ccs: skipped citation [${citationNumber}]: the text before it ("${claim}") is shorter than `
+            + `${MIN_CLAIM_LENGTH} characters, too short to check as a claim\n`
+        );
         return 5;
     }
 

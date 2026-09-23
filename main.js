@@ -454,6 +454,13 @@ const VERDICTS = Object.freeze({
     SOURCE_UNAVAILABLE:  'SOURCE UNAVAILABLE',
 });
 
+// Not a model verdict — a pipeline outcome, like 'ERROR': the citation was
+// never sent to a model because there was nothing checkable to send (see
+// core/claim.js's CLAIM_TOO_SHORT, which a SKIPPED result carries as its
+// reason). Deliberately outside VERDICTS / VERDICT_LIST, so the benchmark's
+// confusion matrix and canonicalizeVerdict() never see it.
+const SKIPPED_VERDICT = 'SKIPPED';
+
 // Ordered by the support score guide in core/prompts.js. Confusion-matrix
 // rows/columns in analyze_results.js iterate this list.
 const VERDICT_LIST = Object.freeze([
@@ -1301,6 +1308,20 @@ function lastSentence(text) {
     return parts[parts.length - 1].trim();
 }
 
+// Claims shorter than this are not a checkable statement: a bare name at the
+// start of a list item ("R. Sankar[9] - ..."), a lone date, a stray bullet.
+const MIN_CLAIM_LENGTH = 10;
+
+// Reason code for a citation that was skipped because the text preceding it is
+// too short to check. Carried as `skipReason` on collectCitations() entries and
+// as `reasonType` on a SKIPPED verdict (core/verdicts.js), so a skipped
+// citation is recorded and visible rather than silently dropped.
+const CLAIM_TOO_SHORT = 'claim_too_short';
+
+function isClaimTooShort(claimText, minLength = MIN_CLAIM_LENGTH) {
+    return !claimText || claimText.trim().length < minLength;
+}
+
 function extractClaimText(refElement, { scope = 'paragraph' } = {}) {
     const container = refElement.closest('p, li, td, div, section');
     if (!container) {
@@ -1356,19 +1377,21 @@ function extractClaimText(refElement, { scope = 'paragraph' } = {}) {
         .replace(/\s+/g, ' ')                    // Collapse the gap left by the marker strip
         .trim();
 
-    // If we got nothing meaningful, fall back to the container text
-    if (!claimText || claimText.length < 10) {
-        claimText = container.textContent
-            .replace(/\[\d+\]/g, '')
-            .replace(/\s+/g, ' ')
-            .replace(MAINTENANCE_MARKER_RE, '')
-            .replace(/\s+/g, ' ')
-            .trim();
-    }
-
-    // Applied last, after the paragraph-scope text is settled (including its
-    // own too-short fallback above) — narrowing to the final sentence is a
-    // separate concern from finding the claim's boundary in the first place.
+    // Applied last, after the paragraph-scope text is settled — narrowing to
+    // the final sentence is a separate concern from finding the claim's
+    // boundary in the first place.
+    //
+    // There is deliberately no "too short, use the whole container instead"
+    // fallback, here or above. There used to be one, from the first version
+    // of main.js: a claim under MIN_CLAIM_LENGTH was replaced by the
+    // container's full text. In a list item like
+    //   "R. Sankar[9] - former Chief Minister of Kerala. First Congress ..."
+    // the text before [9] is just "R. Sankar", so the claim became the whole
+    // bullet — including everything *after* the citation — and sentence scope
+    // then kept only the last sentence, which is the one furthest from [9].
+    // A claim is only ever text that precedes its citation. When that text is
+    // too short to be a claim, callers skip the citation and say so (see
+    // isClaimTooShort() and CLAIM_TOO_SHORT) rather than guess.
     if (scope === 'sentence') {
         claimText = lastSentence(claimText);
     }
@@ -1389,9 +1412,9 @@ function extractClaimText(refElement, { scope = 'paragraph' } = {}) {
 // itself is the root.
 
 
-// Claims shorter than this are extraction noise (a stray bullet, a lone date)
-// rather than a verifiable statement. Matches main.js's original threshold.
-const MIN_CLAIM_LENGTH = 10;
+// Defined in core/claim.js; re-exported here because this is where callers
+// have always imported it from.
+
 
 // Returns the fragment id a footnote anchor points at, or null if the href
 // isn't a footnote link.
@@ -1448,7 +1471,6 @@ function collectCitations(root, { minClaimLength = MIN_CLAIM_LENGTH, claimScope 
         if (!refId) continue;
 
         const claimText = extractClaimText(refElement, { scope: claimScope });
-        if (!claimText || claimText.length < minClaimLength) continue;
 
         citations.push({
             refElement,
@@ -1458,6 +1480,12 @@ function collectCitations(root, { minClaimLength = MIN_CLAIM_LENGTH, claimScope 
             claimText,
             url: extractReferenceUrl(refElement, doc),
             pageNum: extractPageNumber(refElement, doc),
+            // A citation whose preceding text is too short to be a claim is
+            // kept and flagged, not dropped: it used to be silently skipped
+            // here, which made it invisible in both the userscript report and
+            // the batch CSV. Every consumer checks this before fetching or
+            // calling a model, and records a SKIPPED result instead.
+            skipReason: isClaimTooShort(claimText, minClaimLength) ? CLAIM_TOO_SHORT : null,
         });
     }
 
@@ -2748,6 +2776,8 @@ function useToolforgeSourceFetcher() {
         'not supported': 'non confirmées',
         'unavailable': 'indisponibles',
         'errors': 'erreurs',
+        'skipped': 'ignorées',
+        'Skipped': 'Ignorée',
         'Show {label} citations': 'Afficher les citations {label}',
         'Hide {label} citations': 'Masquer les citations {label}',
         '{count} citations checked': '{count} citations vérifiées',
@@ -2874,6 +2904,9 @@ function useToolforgeSourceFetcher() {
 
         // Status strip
         'Could not extract claim text': 'Impossible d’extraire le texte de l’affirmation',
+        'Skipped (claim too short to check)': 'Ignorée (affirmation trop courte pour être vérifiée)',
+        'Skipped: the text before this citation ("{claim}") is too short to check as a claim.': 'Ignorée : le texte qui précède cette citation (« {claim} ») est trop court pour être vérifié comme une affirmation.',
+        'The text before this citation is too short to check as a claim.': 'Le texte qui précède cette citation est trop court pour être vérifié comme une affirmation.',
         'No URL found in reference. Please paste the source text below.':
             'Aucune URL trouvée dans la référence. Veuillez coller le texte de la source ci-dessous.',
         'Google Books sources cannot be fetched. Please paste the source text below.':
@@ -3039,6 +3072,8 @@ function useToolforgeSourceFetcher() {
         'not supported': 'no respaldadas',
         'unavailable': 'no disponibles',
         'errors': 'errores',
+        'skipped': 'omitidas',
+        'Skipped': 'Omitida',
         'Show {label} citations': 'Mostrar las citas «{label}»',
         'Hide {label} citations': 'Ocultar las citas «{label}»',
         '{count} citations checked': '{count} citas comprobadas',
@@ -3165,6 +3200,9 @@ function useToolforgeSourceFetcher() {
 
         // Status strip
         'Could not extract claim text': 'No se ha podido extraer el texto de la afirmación',
+        'Skipped (claim too short to check)': 'Omitida (afirmación demasiado corta para verificarla)',
+        'Skipped: the text before this citation ("{claim}") is too short to check as a claim.': 'Omitida: el texto que precede a esta cita («{claim}») es demasiado corto para verificarlo como afirmación.',
+        'The text before this citation is too short to check as a claim.': 'El texto que precede a esta cita es demasiado corto para verificarlo como afirmación.',
         'No URL found in reference. Please paste the source text below.':
             'No se ha encontrado ninguna URL en la referencia; el texto de la fuente puede pegarse a continuación.',
         'Google Books sources cannot be fetched. Please paste the source text below.':
@@ -3326,6 +3364,8 @@ function useToolforgeSourceFetcher() {
         'not supported': 'не подтверждено',
         'unavailable': 'недоступно',
         'errors': 'ошибки',
+        'skipped': 'пропущено',
+        'Skipped': 'Пропущено',
         'Show {label} citations': 'Показать сноски «{label}»',
         'Hide {label} citations': 'Скрыть сноски «{label}»',
         '{count} citations checked': 'Проверено сносок: {count}',
@@ -3452,6 +3492,9 @@ function useToolforgeSourceFetcher() {
 
         // Status strip
         'Could not extract claim text': 'Не удалось извлечь текст утверждения',
+        'Skipped (claim too short to check)': 'Пропущено (утверждение слишком короткое для проверки)',
+        'Skipped: the text before this citation ("{claim}") is too short to check as a claim.': 'Пропущено: текст перед этой сноской («{claim}») слишком короткий, чтобы проверить его как утверждение.',
+        'The text before this citation is too short to check as a claim.': 'Текст перед этой сноской слишком короткий, чтобы проверить его как утверждение.',
         'No URL found in reference. Please paste the source text below.':
             'В сноске не найден URL. Вставьте текст источника ниже.',
         'Google Books sources cannot be fetched. Please paste the source text below.':
@@ -4688,6 +4731,7 @@ function useToolforgeSourceFetcher() {
                 .verifier-summary-bar .seg-not-supported { background: var(--sv-seg-not-supported); }
                 .verifier-summary-bar .seg-unavailable { background: var(--sv-seg-unavailable); }
                 .verifier-summary-bar .seg-error { background: var(--sv-seg-error); }
+                .verifier-summary-bar .seg-skipped { background: var(--sv-seg-error); }
                 .verifier-summary-counts {
                     display: flex;
                     flex-wrap: wrap;
@@ -4742,7 +4786,8 @@ function useToolforgeSourceFetcher() {
                 #verifier-report-results.filter-hide-partial .verifier-report-card.verdict-partial,
                 #verifier-report-results.filter-hide-not-supported .verifier-report-card.verdict-not-supported,
                 #verifier-report-results.filter-hide-unavailable .verifier-report-card.verdict-unavailable,
-                #verifier-report-results.filter-hide-error .verifier-report-card.verdict-error {
+                #verifier-report-results.filter-hide-error .verifier-report-card.verdict-error,
+                #verifier-report-results.filter-hide-skipped .verifier-report-card.verdict-skipped {
                     display: none;
                 }
                 .verifier-filter-empty {
@@ -4772,6 +4817,7 @@ function useToolforgeSourceFetcher() {
                 .verifier-report-card.verdict-not-supported { border-left-color: var(--sv-seg-not-supported); }
                 .verifier-report-card.verdict-unavailable { border-left-color: var(--sv-seg-unavailable); }
                 .verifier-report-card.verdict-error { border-left-color: var(--sv-seg-error); }
+                .verifier-report-card.verdict-skipped { border-left-color: var(--sv-seg-error); border-left-style: dashed; }
                 .report-card-header {
                     display: flex;
                     justify-content: space-between;
@@ -4799,6 +4845,7 @@ function useToolforgeSourceFetcher() {
                 .report-card-verdict.not-supported { background: var(--sv-err-bg); color: var(--sv-err-fg); }
                 .report-card-verdict.unavailable { background: var(--sv-na-bg); color: var(--sv-na-fg); }
                 .report-card-verdict.error { background: var(--sv-na-bg); color: var(--sv-na-fg); }
+                .report-card-verdict.skipped { background: var(--sv-na-bg); color: var(--sv-na-fg); }
                 .reason-type-tag {
                     display: inline-block;
                     font-size: 11px;
@@ -5043,6 +5090,7 @@ function useToolforgeSourceFetcher() {
                 .verifier-report-group-row.verdict-not-supported { border-left-color: var(--sv-seg-not-supported); }
                 .verifier-report-group-row.verdict-unavailable { border-left-color: var(--sv-seg-unavailable); }
                 .verifier-report-group-row.verdict-error { border-left-color: var(--sv-seg-error); }
+                .verifier-report-group-row.verdict-skipped { border-left-color: var(--sv-seg-error); border-left-style: dashed; }
                 .verifier-report-group-row .report-card-verdict {
                     background: transparent;
                     color: var(--sv-ink-4);
@@ -5475,6 +5523,15 @@ function useToolforgeSourceFetcher() {
                 const claim = this.extractClaimText(refElement);
                 if (!claim) {
                     this.updateStatus(this.t('Could not extract claim text'), true);
+                    return;
+                }
+                // Only the text before a citation is its claim. When that is
+                // too short to be a statement (a bare name at the start of a
+                // list item: "R. Sankar[9] - ..."), say so rather than check
+                // it — core/claim.js no longer substitutes the whole
+                // container, which dragged in text after the citation.
+                if (isClaimTooShort(claim)) {
+                    this.updateStatus(this.t('Skipped: the text before this citation ("{claim}") is too short to check as a claim.', { claim }), true);
                     return;
                 }
                 
@@ -6404,9 +6461,9 @@ function useToolforgeSourceFetcher() {
         }
 
         loadReportFilters() {
-            // Filter keys match CSS verdict classes: supported, partial, not-supported, unavailable, error
+            // Filter keys match CSS verdict classes: supported, partial, not-supported, unavailable, error, skipped
             // By default, hide 'supported' since those citations are usually not actionable.
-            const defaults = { supported: true, partial: false, 'not-supported': false, unavailable: false, error: false };
+            const defaults = { supported: true, partial: false, 'not-supported': false, unavailable: false, error: false, skipped: false };
             try {
                 const stored = localStorage.getItem('verifier_report_filters');
                 if (!stored) return defaults;
@@ -6433,7 +6490,7 @@ function useToolforgeSourceFetcher() {
         applyReportFilters() {
             const resultsEl = document.getElementById('verifier-report-results');
             if (!resultsEl) return;
-            const classes = ['supported', 'partial', 'not-supported', 'unavailable', 'error'];
+            const classes = ['supported', 'partial', 'not-supported', 'unavailable', 'error', 'skipped'];
             // Solo .verifier-report-card visibility is still driven by these
             // CSS-only filter-hide-* classes (see #verifier-report-results
             // CSS rules in createStyles).
@@ -6509,12 +6566,13 @@ function useToolforgeSourceFetcher() {
             // citation. The individual per-source rows shown inside group
             // blocks are debug detail and don't feed the pills.
             const units = this.getReportUnits();
-            const counts = { supported: 0, partial: 0, 'not-supported': 0, unavailable: 0, error: 0 };
+            const counts = { supported: 0, partial: 0, 'not-supported': 0, unavailable: 0, error: 0, skipped: 0 };
             for (const u of units) {
                 if (u.verdict === 'SUPPORTED') counts.supported++;
                 else if (u.verdict === 'PARTIALLY SUPPORTED') counts.partial++;
                 else if (u.verdict === 'NOT SUPPORTED') counts['not-supported']++;
                 else if (u.verdict === 'SOURCE UNAVAILABLE') counts.unavailable++;
+                else if (u.verdict === SKIPPED_VERDICT) counts.skipped++;
                 else counts.error++;
             }
             const total = units.length;
@@ -6541,7 +6599,8 @@ function useToolforgeSourceFetcher() {
                 (this.reportFilters.partial ? counts.partial : 0) +
                 (this.reportFilters['not-supported'] ? counts['not-supported'] : 0) +
                 (this.reportFilters.unavailable ? counts.unavailable : 0) +
-                (this.reportFilters.error ? counts.error : 0);
+                (this.reportFilters.error ? counts.error : 0) +
+                (this.reportFilters.skipped ? counts.skipped : 0);
 
             // Each unit is one claim; a group unit covers groupSize citations.
             const citationCount = units.reduce((n, u) => n + (u.groupSize || 1), 0);
@@ -6556,6 +6615,7 @@ function useToolforgeSourceFetcher() {
                     ${segHtml(counts['not-supported'], 'seg-not-supported')}
                     ${segHtml(counts.unavailable, 'seg-unavailable')}
                     ${segHtml(counts.error, 'seg-error')}
+                    ${segHtml(counts.skipped, 'seg-skipped')}
                 </div>
                 <div class="verifier-summary-counts">
                     ${chip('supported', counts.supported, 'supported', '#28a745')}
@@ -6563,6 +6623,7 @@ function useToolforgeSourceFetcher() {
                     ${chip('not-supported', counts['not-supported'], 'not supported', '#dc3545')}
                     ${chip('unavailable', counts.unavailable, 'unavailable', '#6c757d')}
                     ${counts.error > 0 ? chip('error', counts.error, 'errors', '#adb5bd') : ''}
+                    ${counts.skipped > 0 ? chip('skipped', counts.skipped, 'skipped', '#adb5bd') : ''}
                 </div>
                 <div class="verifier-summary-meta">
                     ${claimsLabel}${hiddenCount > 0 ? this.t(' · {count} hidden by filter', { count: hiddenCount }) : ''}${this.reportTokenUsage.input + this.reportTokenUsage.output > 0 ? this.t(' · {input} input + {output} output tokens', { input: this.reportTokenUsage.input.toLocaleString(), output: this.reportTokenUsage.output.toLocaleString() }) : ''}
@@ -6591,6 +6652,7 @@ function useToolforgeSourceFetcher() {
                 case 'PARTIALLY SUPPORTED': return { cls: 'partial', label: this.t('Partial') };
                 case 'NOT SUPPORTED': return { cls: 'not-supported', label: this.t('Not Supported') };
                 case 'SOURCE UNAVAILABLE': return { cls: 'unavailable', label: this.t('Unavailable') };
+                case SKIPPED_VERDICT: return { cls: 'skipped', label: this.t('Skipped') };
                 default: return { cls: 'error', label: this.t(verdict) };
             }
         }
@@ -6898,6 +6960,7 @@ function useToolforgeSourceFetcher() {
                     case 'PARTIALLY SUPPORTED': verdictWiki = this.t('{{bang}} Partially supported'); break;
                     case 'NOT SUPPORTED': verdictWiki = this.t('{{cross}} Not supported'); break;
                     case 'SOURCE UNAVAILABLE': verdictWiki = this.t('{{hmmm}} Source unavailable'); break;
+                    case SKIPPED_VERDICT: verdictWiki = this.t('Skipped (claim too short to check)'); break;
                     default: verdictWiki = r.verdict; break;
                 }
                 if (r.verdict === 'NOT SUPPORTED' && r.reason_type) {
@@ -7203,10 +7266,14 @@ function useToolforgeSourceFetcher() {
             // Estimate time and show confirmation. Adjacent citations that
             // share a claim get one extra "collective" LLM call per group (in
             // addition to the per-source calls), so account for those.
-            const uniqueUrls = new Set(citations.filter(c => c.url).map(c => c.url));
-            const multiGroupIds = new Set(citations.filter(c => c.groupSize > 1).map(c => c.groupId));
+            // Skipped citations (claim too short to check) get a row in the
+            // report but no fetch or model call, so they stay out of the
+            // estimate and the collective-check count.
+            const checkable = citations.filter(c => !c.skipReason);
+            const uniqueUrls = new Set(checkable.filter(c => c.url).map(c => c.url));
+            const multiGroupIds = new Set(checkable.filter(c => c.groupSize > 1).map(c => c.groupId));
             const multiGroupCount = multiGroupIds.size;
-            const estimatedSeconds = citations.length * 7 + multiGroupCount * 8;
+            const estimatedSeconds = checkable.length * 7 + multiGroupCount * 8;
             const estimatedMinutes = Math.ceil(estimatedSeconds / 60);
             const groupNote = multiGroupCount > 0
                 ? this.t(
@@ -7223,7 +7290,7 @@ function useToolforgeSourceFetcher() {
                         estimatedMinutes > 1
                             ? 'This will verify {citations} citations from {sources} unique sources.{groupNote}\n\nEstimated time: ~{minutes} minutes.\n\nContinue?'
                             : 'This will verify {citations} citations from {sources} unique sources.{groupNote}\n\nEstimated time: ~{minutes} minute.\n\nContinue?',
-                        { citations: citations.length, sources: uniqueUrls.size, groupNote, minutes: estimatedMinutes }
+                        { citations: checkable.length, sources: uniqueUrls.size, groupNote, minutes: estimatedMinutes }
                     )
                 ).done(result => resolve(result));
             });
@@ -7268,7 +7335,22 @@ function useToolforgeSourceFetcher() {
 
                 let result;
 
-                if (!citation.url) {
+                if (citation.skipReason) {
+                    // Nothing checkable before the citation: record it so it
+                    // is visible in the report, but never fetch or call a
+                    // model, and don't log it — no verdict was produced.
+                    result = {
+                        citationNumber: citation.citationNumber,
+                        claimText: citation.claimText,
+                        url: citation.url || null,
+                        refElement: citation.refElement,
+                        verdict: SKIPPED_VERDICT,
+                        support_score: null,
+                        reason_type: citation.skipReason,
+                        comments: this.t('The text before this citation is too short to check as a claim.'),
+                        truncated: false
+                    };
+                } else if (!citation.url) {
                     // No URL found
                     result = {
                         citationNumber: citation.citationNumber,
@@ -7433,7 +7515,16 @@ function useToolforgeSourceFetcher() {
                 // collective check: the whole group's sources are cached by now
                 // (group members are contiguous and processed in order), so we
                 // assemble them and ask for a single verdict over the combination.
-                if (isGroupClose(citation) && !this.reportCancelled) {
+                if (isGroupClose(citation) && citation.skipReason) {
+                    // A group shares one claim, so every member was skipped
+                    // and has its own SKIPPED row; there is nothing to
+                    // combine. The placeholder makes getReportUnits() list
+                    // those member rows rather than omit the group.
+                    this.reportGroupResults.set(citation.groupId, { skipped: true, groupId: citation.groupId });
+                    this.hideGroupCollectiveSlot(citation.groupId);
+                    this.renderReportSummary();
+                    this.applyReportFilters();
+                } else if (isGroupClose(citation) && !this.reportCancelled) {
                     const groupToken = (citation.groupCitationNumbers || []).map(n => `[${n}]`).join('');
                     this.updateReportProgress(completed, progressTotal, this.t('Checking combined sources {token}', { token: groupToken }), startTime);
                     await this.verifyGroupCollective(citation, citations, startTime, delayBetweenCalls, completed, progressTotal);

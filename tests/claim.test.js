@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
-import { extractClaimText, getCitationGroup, hasTextBetween, lastSentence, MAINTENANCE_MARKER_RE } from '../core/claim.js';
+import { extractClaimText, getCitationGroup, hasTextBetween, lastSentence, MAINTENANCE_MARKER_RE, isClaimTooShort, MIN_CLAIM_LENGTH } from '../core/claim.js';
 
 function mkDoc(html) {
   return new JSDOM(`<!DOCTYPE html><body>${html}</body>`).window.document;
@@ -253,4 +253,27 @@ test('getCitationGroup handles mixed groups and singletons in the same paragraph
   assert.deepEqual(refIds(getCitationGroup(doc.getElementById('cite_ref-3'))), ['cite_ref-3']);
   assert.deepEqual(refIds(getCitationGroup(doc.getElementById('cite_ref-4'))), ['cite_ref-4', 'cite_ref-5']);
   assert.deepEqual(refIds(getCitationGroup(doc.getElementById('cite_ref-5'))), ['cite_ref-4', 'cite_ref-5']);
+});
+
+test('extractClaimText never returns text that follows the citation, even when the text before it is short', () => {
+  // List of Ezhavas, "R. Sankar[9] - former Chief Minister of Kerala. First
+  // Congress leader ...": the old too-short fallback returned the whole <li>,
+  // and sentence scope then kept its last sentence — all of it after [9].
+  const doc = mkDoc(`
+    <ul><li><a href="/wiki/R._Sankar">R. Sankar</a><sup id="cite_ref-9" class="reference"><a href="#cite_note-9">[9]</a></sup> - former Chief Minister of Kerala. First Congress leader to become Chief Minister, and first Ezhava to hold the post.</li></ul>
+  `);
+  const ref = doc.getElementById('cite_ref-9');
+  assert.equal(extractClaimText(ref), 'R. Sankar');
+  assert.ok(!extractClaimText(ref, { scope: 'sentence' }).includes('Congress'));
+  assert.equal(isClaimTooShort(extractClaimText(ref)), true);
+});
+
+test('isClaimTooShort uses MIN_CLAIM_LENGTH and treats empty or whitespace as too short', () => {
+  assert.equal(MIN_CLAIM_LENGTH, 10);
+  assert.equal(isClaimTooShort(''), true);
+  assert.equal(isClaimTooShort(null), true);
+  assert.equal(isClaimTooShort('   '), true);
+  assert.equal(isClaimTooShort('123456789'), true);
+  assert.equal(isClaimTooShort('1234567890'), false);
+  assert.equal(isClaimTooShort('Yes.', 1), false);
 });

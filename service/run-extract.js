@@ -118,11 +118,14 @@ function printArticle(result) {
         return { citations: 0, withUrl: 0, fetched: 0, failed: 0 };
     }
 
-    const withUrlCitations = result.citations.filter(c => c.url);
+    // Skipped citations (claim too short to check) are never fetched, so
+    // they stay out of the fetch funnel rather than reading as failures.
+    const skipped = result.citations.filter(c => c.skipReason).length;
+    const withUrlCitations = result.citations.filter(c => c.url && !c.skipReason);
     const fetched = withUrlCitations.filter(c => c.source.content).length;
     const failed = withUrlCitations.length - fetched;
     const withUrl = withUrlCitations.length;
-    process.stdout.write(`  citations: ${result.citations.length} (${withUrl} with a fetchable URL)\n`);
+    process.stdout.write(`  citations: ${result.citations.length} (${withUrl} with a fetchable URL${skipped ? `, ${skipped} skipped: claim too short` : ''})\n`);
     if (withUrl > 0) {
         process.stdout.write(`  sources: ${fetched} fetched, ${failed} failed (of ${withUrl} attempted)\n`);
     }

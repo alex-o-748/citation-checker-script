@@ -121,6 +121,20 @@ export function lastSentence(text) {
     return parts[parts.length - 1].trim();
 }
 
+// Claims shorter than this are not a checkable statement: a bare name at the
+// start of a list item ("R. Sankar[9] - ..."), a lone date, a stray bullet.
+export const MIN_CLAIM_LENGTH = 10;
+
+// Reason code for a citation that was skipped because the text preceding it is
+// too short to check. Carried as `skipReason` on collectCitations() entries and
+// as `reasonType` on a SKIPPED verdict (core/verdicts.js), so a skipped
+// citation is recorded and visible rather than silently dropped.
+export const CLAIM_TOO_SHORT = 'claim_too_short';
+
+export function isClaimTooShort(claimText, minLength = MIN_CLAIM_LENGTH) {
+    return !claimText || claimText.trim().length < minLength;
+}
+
 export function extractClaimText(refElement, { scope = 'paragraph' } = {}) {
     const container = refElement.closest('p, li, td, div, section');
     if (!container) {
@@ -176,19 +190,21 @@ export function extractClaimText(refElement, { scope = 'paragraph' } = {}) {
         .replace(/\s+/g, ' ')                    // Collapse the gap left by the marker strip
         .trim();
 
-    // If we got nothing meaningful, fall back to the container text
-    if (!claimText || claimText.length < 10) {
-        claimText = container.textContent
-            .replace(/\[\d+\]/g, '')
-            .replace(/\s+/g, ' ')
-            .replace(MAINTENANCE_MARKER_RE, '')
-            .replace(/\s+/g, ' ')
-            .trim();
-    }
-
-    // Applied last, after the paragraph-scope text is settled (including its
-    // own too-short fallback above) — narrowing to the final sentence is a
-    // separate concern from finding the claim's boundary in the first place.
+    // Applied last, after the paragraph-scope text is settled — narrowing to
+    // the final sentence is a separate concern from finding the claim's
+    // boundary in the first place.
+    //
+    // There is deliberately no "too short, use the whole container instead"
+    // fallback, here or above. There used to be one, from the first version
+    // of main.js: a claim under MIN_CLAIM_LENGTH was replaced by the
+    // container's full text. In a list item like
+    //   "R. Sankar[9] - former Chief Minister of Kerala. First Congress ..."
+    // the text before [9] is just "R. Sankar", so the claim became the whole
+    // bullet — including everything *after* the citation — and sentence scope
+    // then kept only the last sentence, which is the one furthest from [9].
+    // A claim is only ever text that precedes its citation. When that text is
+    // too short to be a claim, callers skip the citation and say so (see
+    // isClaimTooShort() and CLAIM_TOO_SHORT) rather than guess.
     if (scope === 'sentence') {
         claimText = lastSentence(claimText);
     }
