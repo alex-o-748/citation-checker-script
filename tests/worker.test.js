@@ -421,8 +421,7 @@ test('the timer is cleared on a fast response, so the process can exit', async (
 test('the default timeout is generous enough for the two-hop fetch path', async () => {
     // Client -> tf-source-fetcher -> publisher. Cutting the client off before
     // the fetcher's own timeout would abandon work it was about to return.
-    assert.ok(DEFAULT_SOURCE_FETCH_TIMEOUT_MS >= 30_000);
-    assert.ok(DEFAULT_SOURCE_FETCH_TIMEOUT_MS <= 120_000);
+    assert.equal(DEFAULT_SOURCE_FETCH_TIMEOUT_MS, 30_000);
 });
 
 // --- Source-fetch retry (2026-09-17) ---

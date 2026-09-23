@@ -32,9 +32,10 @@ const DEFAULT_USER_AGENT =
 // client waits on tf-source-fetcher, which is itself waiting on a
 // third-party publisher under its own FETCH_TIMEOUT_MS. Cutting the client
 // off first would abandon work the fetcher was about to return. Measured
-// per-citation fetch cost is ~2.6s, so this is roughly 20x the average and
-// only ever fires on a genuine hang.
-export const DEFAULT_SOURCE_FETCH_TIMEOUT_MS = 60000;
+// per-citation fetch cost is ~2.6s, so 30 seconds leaves ample headroom while
+// preventing one genuinely stalled connection from occupying a fetch-pool
+// slot for a full minute.
+export const DEFAULT_SOURCE_FETCH_TIMEOUT_MS = 30000;
 
 // AbortController is available in every target: browsers (the userscript) and
 // Node 16+ (CLI, benchmark, batch pipeline).
