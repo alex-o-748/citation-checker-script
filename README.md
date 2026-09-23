@@ -40,6 +40,13 @@ API keys for paid providers are stored in `localStorage` and configured from the
 
 The CLI reuses `core/` to verify a single citation from the terminal — the same verification the userscript performs in-page, minus the UI.
 
+## Verify HTTP API
+
+A per-citation `POST /v1/verify` server is available for deployment and reuses
+the same core verification pipeline. Its contract, limits, copyable `curl`
+example, and current deployment status are in
+[`docs/verify-api.md`](docs/verify-api.md).
+
 ### Install (from a clone)
 
 ```sh
