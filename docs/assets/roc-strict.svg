@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="680" viewBox="0 0 920 680" role="img" aria-labelledby="title desc">
+<title id="title">ROC curves for citation-verification providers on the strict benchmark set</title>
+<desc id="desc">False positive rate is on the horizontal axis and true positive rate is on the vertical axis. Curves closer to the upper-left corner distinguish failing citations better. Eight providers are shown, with AUC values in the legend.</desc>
+<rect width="100%" height="100%" fill="#fff"/>
+<style>text{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#202122}.grid{stroke:#c8ccd1;stroke-width:1}.axis{stroke:#202122;stroke-width:1.5}.curve{fill:none;stroke-width:3;stroke-linejoin:round;stroke-linecap:round}.tick{font-size:13px}.label{font-size:16px;font-weight:600}.legend{font-size:13px}</style>
+<text x="105" y="34" font-size="22" font-weight="700">Detecting citations that need review</text>
+<text x="105" y="56" font-size="13" fill="#54595d">Strict set (whole source available) · positive class = anything but SUPPORTED</text>
+<line class="grid" x1="105.0" y1="70" x2="105.0" y2="575"/>
+<line class="grid" x1="105" y1="575.0" x2="865" y2="575.0"/>
+<text class="tick" x="105.0" y="599" text-anchor="middle">0.0</text>
+<text class="tick" x="91" y="580.0" text-anchor="end">0.0</text>
+<line class="grid" x1="257.0" y1="70" x2="257.0" y2="575"/>
+<line class="grid" x1="105" y1="474.0" x2="865" y2="474.0"/>
+<text class="tick" x="257.0" y="599" text-anchor="middle">0.2</text>
+<text class="tick" x="91" y="479.0" text-anchor="end">0.2</text>
+<line class="grid" x1="409.0" y1="70" x2="409.0" y2="575"/>
+<line class="grid" x1="105" y1="373.0" x2="865" y2="373.0"/>
+<text class="tick" x="409.0" y="599" text-anchor="middle">0.4</text>
+<text class="tick" x="91" y="378.0" text-anchor="end">0.4</text>
+<line class="grid" x1="561.0" y1="70" x2="561.0" y2="575"/>
+<line class="grid" x1="105" y1="272.0" x2="865" y2="272.0"/>
+<text class="tick" x="561.0" y="599" text-anchor="middle">0.6</text>
+<text class="tick" x="91" y="277.0" text-anchor="end">0.6</text>
+<line class="grid" x1="713.0" y1="70" x2="713.0" y2="575"/>
+<line class="grid" x1="105" y1="171.0" x2="865" y2="171.0"/>
+<text class="tick" x="713.0" y="599" text-anchor="middle">0.8</text>
+<text class="tick" x="91" y="176.0" text-anchor="end">0.8</text>
+<line class="grid" x1="865.0" y1="70" x2="865.0" y2="575"/>
+<line class="grid" x1="105" y1="70.0" x2="865" y2="70.0"/>
+<text class="tick" x="865.0" y="599" text-anchor="middle">1.0</text>
+<text class="tick" x="91" y="75.0" text-anchor="end">1.0</text>
+<line class="axis" x1="105" y1="575" x2="865" y2="575"/>
+<line class="axis" x1="105" y1="70" x2="105" y2="575"/>
+<line x1="105" y1="575" x2="865" y2="70" stroke="#72777d" stroke-width="1.5" stroke-dasharray="7 6"/>
+<polyline class="curve" points="105.0,575.0 118.8,568.0 118.8,561.0 146.5,532.9 146.5,469.8 146.5,308.5 339.9,84.0 367.5,84.0 436.6,84.0 464.3,84.0 837.4,70.0 851.2,70.0 865.0,70.0 865.0,70.0" stroke="#3366cc"/>
+<circle cx="339.9" cy="84.0" r="4" fill="#3366cc" stroke="#fff" stroke-width="1.5"><title>gemini-3.7-flash raw-verdict operating point: FPR 0.309, TPR 0.972</title></circle>
+<polyline class="curve" points="105.0,575.0 105.0,568.6 105.0,562.2 105.0,555.8 118.1,504.7 131.2,370.4 380.2,114.7 471.9,89.2 865.0,70.0 865.0,70.0" stroke="#dc3912"/>
+<circle cx="354.0" cy="127.5" r="4" fill="#dc3912" stroke="#fff" stroke-width="1.5"><title>gemini-2.5-flash raw-verdict operating point: FPR 0.328, TPR 0.886</title></circle>
+<polyline class="curve" points="105.0,575.0 118.1,562.2 131.2,562.2 131.2,536.6 131.2,523.9 131.2,517.5 236.0,210.6 419.5,133.9 485.0,121.1 825.7,70.0 865.0,70.0 865.0,70.0" stroke="#ff9900"/>
+<circle cx="236.0" cy="210.6" r="4" fill="#ff9900" stroke="#fff" stroke-width="1.5"><title>claude-sonnet-4-5 raw-verdict operating point: FPR 0.172, TPR 0.722</title></circle>
+<polyline class="curve" points="105.0,575.0 105.0,568.4 158.3,548.4 171.7,495.3 185.0,468.7 198.3,402.2 345.0,103.2 345.0,96.6 371.7,96.6 411.7,96.6 505.0,96.6 531.7,96.6 678.3,70.0 718.3,70.0 851.7,70.0 865.0,70.0 865.0,70.0" stroke="#109618"/>
+<circle cx="331.7" cy="103.2" r="4" fill="#109618" stroke="#fff" stroke-width="1.5"><title>claude-sonnet-5 raw-verdict operating point: FPR 0.298, TPR 0.934</title></circle>
+<polyline class="curve" points="105.0,575.0 118.3,575.0 118.3,557.6 145.0,479.2 171.7,331.2 291.7,174.5 598.3,113.5 865.0,70.0 865.0,70.0" stroke="#990099"/>
+<circle cx="171.7" cy="331.2" r="4" fill="#990099" stroke="#fff" stroke-width="1.5"><title>qwen-sealion raw-verdict operating point: FPR 0.088, TPR 0.483</title></circle>
+<polyline class="curve" points="105.0,575.0 105.0,548.4 185.0,468.7 238.3,455.4 278.3,156.4 291.7,129.8 318.3,116.5 611.7,89.9 865.0,70.0 865.0,70.0" stroke="#0099c6"/>
+<circle cx="278.3" cy="163.0" r="4" fill="#0099c6" stroke="#fff" stroke-width="1.5"><title>liftwing-qwen3.6-27b raw-verdict operating point: FPR 0.228, TPR 0.816</title></circle>
+<polyline class="curve" points="105.0,575.0 105.0,568.4 171.7,515.2 198.3,508.6 251.7,442.1 251.7,415.5 278.3,249.4 385.0,96.6 531.7,89.9 865.0,70.0 865.0,70.0" stroke="#dd4477"/>
+<circle cx="385.0" cy="96.6" r="4" fill="#dd4477" stroke="#fff" stroke-width="1.5"><title>hf-gpt-oss-20b raw-verdict operating point: FPR 0.368, TPR 0.947</title></circle>
+<polyline class="curve" points="105.0,575.0 105.0,566.3 118.3,548.9 185.0,522.8 185.0,514.1 185.0,505.3 398.3,252.8 638.3,148.4 651.7,148.4 771.7,96.1 785.0,70.0 865.0,70.0 865.0,70.0" stroke="#66aa00"/>
+<circle cx="398.3" cy="252.8" r="4" fill="#66aa00" stroke="#fff" stroke-width="1.5"><title>apertus-70b raw-verdict operating point: FPR 0.386, TPR 0.638</title></circle>
+<text class="label" x="485.0" y="646" text-anchor="middle">False-positive rate → good citations flagged</text>
+<text class="label" transform="translate(26 322.5) rotate(-90)" text-anchor="middle">True-positive rate → failing citations caught</text>
+<rect x="546" y="271" width="292" height="210" rx="6" fill="#fff" fill-opacity=".92" stroke="#a2a9b1"/>
+<text x="560" y="295" font-size="13" font-weight="700">Provider (AUC)</text>
+<line x1="560" y1="314" x2="584" y2="314" stroke="#3366cc" stroke-width="3"/>
+<text class="legend" x="592" y="318">gemini-3.7-flash (0.873)</text>
+<line x1="560" y1="334" x2="584" y2="334" stroke="#dc3912" stroke-width="3"/>
+<text class="legend" x="592" y="338">gemini-2.5-flash (0.842)</text>
+<line x1="560" y1="354" x2="584" y2="354" stroke="#ff9900" stroke-width="3"/>
+<text class="legend" x="592" y="358">claude-sonnet-4-5 (0.804)</text>
+<line x1="560" y1="374" x2="584" y2="374" stroke="#109618" stroke-width="3"/>
+<text class="legend" x="592" y="378">claude-sonnet-5 (0.802)</text>
+<line x1="560" y1="394" x2="584" y2="394" stroke="#990099" stroke-width="3"/>
+<text class="legend" x="592" y="398">qwen-sealion (0.797)</text>
+<line x1="560" y1="414" x2="584" y2="414" stroke="#0099c6" stroke-width="3"/>
+<text class="legend" x="592" y="418">liftwing-qwen3.6-27b (0.791)</text>
+<line x1="560" y1="434" x2="584" y2="434" stroke="#dd4477" stroke-width="3"/>
+<text class="legend" x="592" y="438">hf-gpt-oss-20b (0.767)</text>
+<line x1="560" y1="454" x2="584" y2="454" stroke="#66aa00" stroke-width="3"/>
+<text class="legend" x="592" y="458">apertus-70b (0.629)</text>
+</svg>
