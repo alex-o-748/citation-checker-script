@@ -22,7 +22,8 @@ import {
 } from '../core/prompts.js';
 import { callProviderAPI } from '../core/providers.js';
 import { parseVerificationResult } from '../core/parsing.js';
-import { canonicalizeVerdict } from '../core/verdicts.js';
+import { canonicalizeVerdict, SKIPPED_VERDICT } from '../core/verdicts.js';
+import { isClaimTooShort, CLAIM_TOO_SHORT } from '../core/claim.js';
 import { verifyQuote } from '../core/quote.js';
 import { withRetry, isSourceTooLargeError } from '../core/retry.js';
 import { groupSourceEntries, shouldSkipCollective } from '../core/groups.js';
@@ -92,6 +93,10 @@ export function makeModelCaller({ provider, apiKey, model, workerBase }) {
  * verified before they are shown": the log/store layer keeps what the UI
  * hides, because a not-found quote is exactly the row worth inspecting later.
  *
+ * A claim too short to check (core/claim.js's isClaimTooShort()) returns
+ * `verdict: 'SKIPPED'`, `reasonType: 'claim_too_short'` without calling the
+ * model, and takes precedence over a missing source.
+ *
  * Throws ProviderAuthError on a 401/402/403 from the model call. Callers
  * (runners) must halt the whole batch on this rather than record it as a
  * per-citation failure.
@@ -122,6 +127,23 @@ export async function verifyCitation(claimText, source, {
 } = {}) {
     if (typeof callModel !== 'function') {
         throw new TypeError('verifyCitation requires a callModel(systemPrompt, userContent) function');
+    }
+
+    // Checked before the source: a claim too short to check is skipped
+    // whether or not its source was fetched (claim-extractor.js doesn't fetch
+    // one for it). Recorded as a row rather than dropped, so a reader can see
+    // which citations the sweep passed over and why.
+    if (isClaimTooShort(claimText)) {
+        return {
+            verdict: SKIPPED_VERDICT,
+            supportScore: null,
+            reasonType: CLAIM_TOO_SHORT,
+            rationale: null,
+            sourceQuote: null,
+            quoteStatus: null,
+            usage: null,
+            fetchStatus: null,
+        };
     }
 
     if (!source?.content) {
@@ -237,6 +259,13 @@ export async function verifyGroup(members, {
     const groupId = members[0].groupId;
     const claimText = members[0].claimText;
     const memberCitationNumbers = members.map(m => m.citationNumber);
+
+    // Every member of a group shares one claim (core/claim.js walks back
+    // past adjacent refs), so a too-short claim skips the whole group; each
+    // member's own SKIPPED row already records it.
+    if (isClaimTooShort(claimText)) {
+        return { skipped: true, groupId };
+    }
 
     // Dedupe by cache key so a source cited twice in the group (named refs)
     // is sent once, with both citation numbers on its label. Each member

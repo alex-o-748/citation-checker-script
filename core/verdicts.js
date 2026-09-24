@@ -16,6 +16,13 @@ export const VERDICTS = Object.freeze({
     SOURCE_UNAVAILABLE:  'SOURCE UNAVAILABLE',
 });
 
+// Not a model verdict — a pipeline outcome, like 'ERROR': the citation was
+// never sent to a model because there was nothing checkable to send (see
+// core/claim.js's CLAIM_TOO_SHORT, which a SKIPPED result carries as its
+// reason). Deliberately outside VERDICTS / VERDICT_LIST, so the benchmark's
+// confusion matrix and canonicalizeVerdict() never see it.
+export const SKIPPED_VERDICT = 'SKIPPED';
+
 // Ordered by the support score guide in core/prompts.js. Confusion-matrix
 // rows/columns in analyze_results.js iterate this list.
 export const VERDICT_LIST = Object.freeze([

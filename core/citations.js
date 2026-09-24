@@ -9,12 +9,12 @@
 // container), while Parsoid REST HTML has no such wrapper and the document
 // itself is the root.
 
-import { extractClaimText, getCitationGroup } from './claim.js';
+import { extractClaimText, getCitationGroup, isClaimTooShort, MIN_CLAIM_LENGTH, CLAIM_TOO_SHORT } from './claim.js';
 import { extractReferenceUrl, extractPageNumber } from './urls.js';
 
-// Claims shorter than this are extraction noise (a stray bullet, a lone date)
-// rather than a verifiable statement. Matches main.js's original threshold.
-export const MIN_CLAIM_LENGTH = 10;
+// Defined in core/claim.js; re-exported here because this is where callers
+// have always imported it from.
+export { MIN_CLAIM_LENGTH };
 
 // Returns the fragment id a footnote anchor points at, or null if the href
 // isn't a footnote link.
@@ -71,7 +71,6 @@ export function collectCitations(root, { minClaimLength = MIN_CLAIM_LENGTH, clai
         if (!refId) continue;
 
         const claimText = extractClaimText(refElement, { scope: claimScope });
-        if (!claimText || claimText.length < minClaimLength) continue;
 
         citations.push({
             refElement,
@@ -81,6 +80,12 @@ export function collectCitations(root, { minClaimLength = MIN_CLAIM_LENGTH, clai
             claimText,
             url: extractReferenceUrl(refElement, doc),
             pageNum: extractPageNumber(refElement, doc),
+            // A citation whose preceding text is too short to be a claim is
+            // kept and flagged, not dropped: it used to be silently skipped
+            // here, which made it invisible in both the userscript report and
+            // the batch CSV. Every consumer checks this before fetching or
+            // calling a model, and records a SKIPPED result instead.
+            skipReason: isClaimTooShort(claimText, minClaimLength) ? CLAIM_TOO_SHORT : null,
         });
     }
 

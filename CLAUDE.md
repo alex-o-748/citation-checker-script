@@ -365,6 +365,16 @@ a category blacklist): `docs/design-plans/2026-09-16-selecting-for-future-activi
 - Claim extraction uses "between citations" logic by design (not full sentences) for precision
 - `extractClaimText(refElement, { scope })` (`core/claim.js`) supports two claim scopes. `scope: 'paragraph'` (the default, used by `main.js` and the CLI/benchmark) is the full "between citations" span, which can include multiple sentences when the previous citation is more than one sentence back. `scope: 'sentence'` narrows that span to only its final sentence (via `lastSentence()`) — `core/citations.js`'s `collectCitations(root, { claimScope })` threads this through, and `service/claim-extractor.js`'s `processArticle()` defaults `claimScope` to `'sentence'` for the batch pipeline. This matters because in an unattended batch run, a multi-sentence claim where only the first sentence lacks support reads as a false NOT SUPPORTED on the whole span — there's no editor present to notice that only part of the claim is a "citation needed" case, not an "unsupported" one. The interactive userscript defaults to paragraph scope, where a human reads the full claim and isn't misled by that ambiguity — but it also exposes a "Claim scope" setting (Settings panel, persisted to `localStorage` as `verifier_claim_scope`) letting an editor switch to sentence scope for both single-citation checks and "Verify All Citations", for the same false-positive reason batch mode defaults to it.
 
+### A claim is only ever text before its citation (read before touching `extractClaimText`'s short-claim handling)
+
+`extractClaimText()` used to replace a claim under `MIN_CLAIM_LENGTH` (10 chars) with the **whole container's text** — a rule present since the first commit. In a list item like `R. Sankar[9] - former Chief Minister of Kerala. First Congress leader …` that pulled in everything *after* `[9]`, and once sentence scope landed (2026-08-24) the batch pipeline kept only the last sentence — the one furthest from the citation. That fallback is gone. A claim too short to check is now **kept and flagged, never widened or silently dropped**:
+
+- `collectCitations()` sets `skipReason: 'claim_too_short'` (`CLAIM_TOO_SHORT`, `isClaimTooShort()` in `core/claim.js`) instead of discarding the citation.
+- The batch pipeline doesn't fetch its source, and `service/verifier.js` returns `verdict: 'SKIPPED'` (`SKIPPED_VERDICT`, `core/verdicts.js`) with `reason_type: 'claim_too_short'` and no model call, so it is a CSV row you can filter on. A group sharing such a claim is skipped too.
+- The userscript shows a "Skipped" card and summary chip in Verify All (no fetch, no model call, no log row), and a status message on a single click. The CLI exits 5.
+
+`SKIPPED` is a pipeline outcome like `ERROR`, deliberately outside `VERDICTS` / `VERDICT_LIST`, so benchmark scoring never sees it.
+
 ### Claim extraction must not use DOM Range (read before touching `core/claim.js`)
 
 `core/claim.js` walks the DOM directly (`textBetween`) to get the text between

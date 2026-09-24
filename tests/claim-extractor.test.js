@@ -275,3 +275,22 @@ test('processArticle rejects missing collaborators loudly', async () => {
         TypeError
     );
 });
+
+test('a citation whose claim is too short is carried through as skipped, and its source is never fetched', async () => {
+    const fetched = [];
+    const result = await processArticle(candidate, {
+        parseHtml,
+        fetchSource: async (url, ...rest) => { fetched.push(url); return fetchSourceOk(url, ...rest); },
+        fetchArticle: async () => ({
+            html: article('<ul><li>R. Sankar@@9@@ - former Chief Minister of Kerala.</li><li>Pinarayi Vijayan is the incumbent Chief Minister.@@10@@</li></ul>',
+                { 9: link('https://example.com/sankar'), 10: link('https://example.com/vijayan') }),
+            status: 200, error: null,
+        }),
+    });
+
+    const [sankar, vijayan] = result.citations;
+    assert.equal(sankar.skipReason, 'claim_too_short');
+    assert.equal(sankar.source.content, null);
+    assert.equal(vijayan.skipReason, null);
+    assert.deepEqual(fetched, ['https://example.com/vijayan']);
+});

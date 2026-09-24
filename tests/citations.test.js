@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 
 import { collectCitations, attachGroupMetadata, refIdFromHref, refNameFromNoteId } from '../core/citations.js';
+import { CLAIM_TOO_SHORT } from '../core/claim.js';
 
 // Builds a document shaped like rendered Wikipedia article HTML: inline
 // <sup class="reference"> anchors in the prose, and a footnote list whose <li>
@@ -151,12 +152,10 @@ test('works against Parsoid-style hrefs, which do not start with #', () => {
     assert.equal(citations[0].url, 'https://example.com/bridge');
 });
 
-test('a short leading claim falls back to the container text rather than being dropped', () => {
-    // extractClaimText() has its own fallback: when the between-citations slice
-    // comes out under 10 characters it returns the whole container instead. So
-    // "Yes." does not reach collectCitations()'s guard — it arrives as the full
-    // paragraph. Pinning this down because the two thresholds look like they
-    // duplicate each other and don't.
+test('a short leading claim is kept and flagged as skipped, never widened to the container', () => {
+    // extractClaimText() used to replace a slice under 10 characters with the
+    // whole container, which pulled in text *after* the citation. Now the
+    // slice stays what it is and collectCitations() flags it instead.
     const doc = buildDoc(
         '<p>Yes.@@1@@ The bridge opened to traffic in 1998.@@2@@</p>',
         { 1: link('https://example.com/a'), 2: link('https://example.com/b') }
@@ -165,27 +164,46 @@ test('a short leading claim falls back to the container text rather than being d
     const citations = collectCitations(doc.getElementById('mw-content-text'));
 
     assert.deepEqual(citations.map(c => c.citationNumber), ['1', '2']);
-    assert.equal(
-        citations[0].claimText,
-        'Yes. The bridge opened to traffic in 1998.',
-        'short slice falls back to the whole container'
-    );
-    assert.equal(
-        citations[1].claimText,
-        'The bridge opened to traffic in 1998.',
-        'the second citation still gets its own between-citations slice'
-    );
+    assert.equal(citations[0].claimText, 'Yes.');
+    assert.equal(citations[0].skipReason, CLAIM_TOO_SHORT);
+    assert.equal(citations[1].claimText, 'The bridge opened to traffic in 1998.');
+    assert.equal(citations[1].skipReason, null);
 });
 
-test('drops a citation when even the container text is too short', () => {
-    // The guard in collectCitations() only bites once extractClaimText()'s own
-    // fallback has also come up short — i.e. the whole container is trivial.
+test('a list item that opens with a short name before its citation is skipped, not given the text after it', () => {
+    // The List of Ezhavas case: "R. Sankar[9] - former Chief Minister of
+    // Kerala. First Congress leader ...". The old container fallback plus
+    // sentence scope produced "First Congress leader to become Chief
+    // Minister, and first Ezhava to hold the post." — text that follows [9].
     const doc = buildDoc(
-        '<p>Yes.@@1@@</p>',
+        '<ul><li><a href="/wiki/R._Sankar">R. Sankar</a>@@9@@ - former Chief Minister of Kerala. '
+        + 'First <a href="/wiki/Congress">Congress</a> leader to become Chief Minister, and first Ezhava to hold the post.</li></ul>',
+        { 9: link('https://example.com/sankar') }
+    );
+    const root = doc.getElementById('mw-content-text');
+
+    const [paragraph] = collectCitations(root);
+    assert.equal(paragraph.claimText, 'R. Sankar');
+    assert.equal(paragraph.skipReason, CLAIM_TOO_SHORT);
+
+    // lastSentence() splits the initial off ("Sankar") — it is naive about
+    // abbreviations by design — but either way nothing after [9] gets in.
+    const [sentence] = collectCitations(root, { claimScope: 'sentence' });
+    assert.ok(!sentence.claimText.includes('Congress'), sentence.claimText);
+    assert.equal(sentence.skipReason, CLAIM_TOO_SHORT);
+});
+
+test('sentence scope skips a citation whose final sentence is too short, even when the span before it is long', () => {
+    const doc = buildDoc(
+        '<p>The bridge opened to traffic in 1998. Yes.@@1@@</p>',
         { 1: link('https://example.com/a') }
     );
+    const root = doc.getElementById('mw-content-text');
 
-    assert.deepEqual(collectCitations(doc.getElementById('mw-content-text')), []);
+    assert.equal(collectCitations(root)[0].skipReason, null);
+    const [narrowed] = collectCitations(root, { claimScope: 'sentence' });
+    assert.equal(narrowed.claimText, 'Yes.');
+    assert.equal(narrowed.skipReason, CLAIM_TOO_SHORT);
 });
 
 test('minClaimLength is configurable', () => {
@@ -195,8 +213,8 @@ test('minClaimLength is configurable', () => {
     );
 
     const root = doc.getElementById('mw-content-text');
-    assert.equal(collectCitations(root).length, 0);
-    assert.equal(collectCitations(root, { minClaimLength: 1 }).length, 1);
+    assert.equal(collectCitations(root)[0].skipReason, CLAIM_TOO_SHORT);
+    assert.equal(collectCitations(root, { minClaimLength: 1 })[0].skipReason, null);
 });
 
 test('claimScope "sentence" narrows a two-sentence claim to the last sentence', () => {

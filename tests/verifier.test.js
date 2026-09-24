@@ -44,7 +44,7 @@ test('a no-URL / unfetched source resolves to SOURCE UNAVAILABLE without calling
 });
 
 test('a fetch failure carries its status through untouched', async () => {
-    const result = await verifyCitation('claim', { content: null, status: 403 }, {
+    const result = await verifyCitation('The bridge opened in 1998.', { content: null, status: 403 }, {
         callModel: async () => ({ text: '{}', usage: {} }),
     });
     assert.equal(result.fetchStatus, 403, '403 must stay distinguishable from a dead link');
@@ -54,12 +54,12 @@ test('a fetch failure carries its status through untouched', async () => {
 // reason_type, and "this citation has no URL to check" looked exactly like
 // "we tried and the fetch failed" — two problems with different owners.
 test('a SOURCE UNAVAILABLE row records which kind of unavailable it is', async () => {
-    const noUrl = await verifyCitation('claim', {
+    const noUrl = await verifyCitation('The bridge opened in 1998.', {
         content: null, status: null, error: null, unavailableReason: 'no_url',
     }, { callModel: async () => ({ text: '{}', usage: {} }) });
     assert.equal(noUrl.reasonType, 'no_url');
 
-    const failed = await verifyCitation('claim', {
+    const failed = await verifyCitation('The bridge opened in 1998.', {
         content: null, status: 402, error: 'HTTP 402', unavailableReason: 'fetch_failed',
     }, { callModel: async () => ({ text: '{}', usage: {} }) });
     assert.equal(failed.reasonType, 'fetch_failed');
@@ -67,7 +67,7 @@ test('a SOURCE UNAVAILABLE row records which kind of unavailable it is', async (
 });
 
 test('an unavailable source with no reason recorded stays null rather than guessing', async () => {
-    const result = await verifyCitation('claim', { content: null }, {
+    const result = await verifyCitation('The bridge opened in 1998.', { content: null }, {
         callModel: async () => ({ text: '{}', usage: {} }),
     });
     assert.equal(result.reasonType, null);
@@ -111,7 +111,7 @@ test('a quote the source does not contain is still recorded, with its own status
 
 test('a malformed model response surfaces as the PARSE_ERROR sentinel, not a throw', async () => {
     const src = source('Source URL: https://example.com\n\nSource Content:\nSome text.');
-    const result = await verifyCitation('claim', src, {
+    const result = await verifyCitation('The bridge opened in 1998.', src, {
         callModel: async () => ({ text: 'not json at all', usage: { input: 5, output: 5 } }),
     });
     assert.equal(result.verdict, 'PARSE_ERROR');
@@ -120,7 +120,7 @@ test('a malformed model response surfaces as the PARSE_ERROR sentinel, not a thr
 test('a transient 503 is retried and eventually succeeds', async () => {
     let attempts = 0;
     const src = source('Source URL: https://example.com\n\nSource Content:\nSome text about a bridge.');
-    const result = await verifyCitation('claim', src, {
+    const result = await verifyCitation('The bridge opened in 1998.', src, {
         callModel: async () => {
             attempts++;
             if (attempts < 3) throw new Error('PublicAI API request failed (503): upstream unavailable');
@@ -138,7 +138,7 @@ for (const status of [401, 402, 403]) {
         let attempts = 0;
         const src = source('Source URL: https://example.com\n\nSource Content:\nSome text.');
         await assert.rejects(
-            () => verifyCitation('claim', src, {
+            () => verifyCitation('The bridge opened in 1998.', src, {
                 callModel: async () => {
                     attempts++;
                     throw new Error(`PublicAI API request failed (${status}): insufficient wallet balance`);
@@ -154,7 +154,7 @@ for (const status of [401, 402, 403]) {
 test('a context-length-exceeded failure resolves to a per-citation ERROR result, not a throw, and is not retried', async () => {
     let attempts = 0;
     const src = source('Source URL: https://example.com\n\nSource Content:\nSome very long text about a bridge.');
-    const result = await verifyCitation('claim', src, {
+    const result = await verifyCitation('The bridge opened in 1998.', src, {
         callModel: async () => {
             attempts++;
             throw new Error(
@@ -204,7 +204,7 @@ test('isAuthOrBillingError is narrower than a generic 4xx', () => {
 
 test('verifyCitation requires a callModel function', async () => {
     await assert.rejects(
-        () => verifyCitation('claim', source('x'), {}),
+        () => verifyCitation('The bridge opened in 1998.', source('x'), {}),
         TypeError
     );
 });
@@ -392,4 +392,28 @@ test('verifyGroup passes articleLangCode through to the system prompt', async ()
         articleLangCode: 'ru',
     });
     assert.match(capturedSystemPrompt, /Write the "comments" field in Russian \(русский\)\./);
+});
+
+test('a claim too short to check is SKIPPED without calling the model, even when the source is missing', async () => {
+    let called = false;
+    const callModel = async () => { called = true; return { text: '{}', usage: {} }; };
+
+    for (const src of [source(withContent('R. Sankar was an Ezhava leader.')), { content: null, unavailableReason: 'no_url' }]) {
+        const result = await verifyCitation('R. Sankar', src, { callModel });
+        assert.equal(result.verdict, 'SKIPPED');
+        assert.equal(result.reasonType, 'claim_too_short');
+        assert.equal(result.usage, null);
+    }
+    assert.equal(called, false);
+});
+
+test('a group whose shared claim is too short is skipped without calling the model', async () => {
+    let called = false;
+    const members = [
+        { ...member('1', { content: withContent('first source') }), claimText: 'R. Sankar' },
+        { ...member('2', { content: withContent('second source'), groupIndex: 1 }), claimText: 'R. Sankar' },
+    ];
+    const result = await verifyGroup(members, { callModel: async () => { called = true; return { text: '{}', usage: {} }; } });
+    assert.deepEqual(result, { skipped: true, groupId: 'g1' });
+    assert.equal(called, false);
 });
