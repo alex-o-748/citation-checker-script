@@ -804,3 +804,99 @@ test('--wiki enwiki (the default) leaves the system prompt unlocalized', async (
     }));
     assert.doesNotMatch(capturedSystemPrompt, /LANGUAGE:/);
 });
+
+// --- severity pass (--severity) ---
+
+// Answers the verdict prompt with NOT SUPPORTED and the severity prompt with
+// one contradicted central subclaim, telling them apart by system prompt.
+function severityModel(calls) {
+    return () => async (systemPrompt, userContent) => {
+        const isSeverity = systemPrompt.includes('decide which citation problems to fix first');
+        calls.push({ isSeverity, userContent });
+        const body = isSeverity
+            ? { subclaims: [{ text: 'opened in 1998', status: 'contradicted', central: true }] }
+            : { support_score: 10, verdict: 'NOT SUPPORTED', reason_type: 'contradiction', source_quote: '', comments: 'no' };
+        return { text: JSON.stringify(body), usage: { input: 1, output: 1 } };
+    };
+}
+
+const blpArticleHtml = okArticleHtml.replace(
+    '</body>',
+    '<link rel="mw:PageProp/Category" href="./Category:Living_people"></body>'
+).replace('<p>', '<h2>History</h2><p>');
+
+test('parseCliArgs: --severity is off by default', () => {
+    assert.equal(parseCliArgs(['node', 'sweep.js']).severity, false);
+    assert.equal(parseCliArgs(['node', 'sweep.js', '--severity']).severity, true);
+});
+
+test('--severity ranks every flagged finding, solo and collective, with context and BLP', async () => {
+    const calls = [];
+    const written = [];
+    const stderrChunks = [];
+    const code = await runSweep(baseOpts({ severity: true }), baseIo({
+        fetchArticle: async () => ({ html: blpArticleHtml, status: 200, error: null }),
+        makeModelCallerFn: severityModel(calls),
+        appendFindingFn: async (_path, finding) => { written.push(finding); },
+        stderr: { write: s => stderrChunks.push(s) },
+    }));
+
+    assert.equal(code, 0);
+    assert.equal(written.length, 4);
+    for (const f of written) {
+        assert.equal(f.severityTier, 'T1');
+        assert.equal(f.isBlp, true);
+        assert.equal(f.sectionTitle, 'History');
+        assert.equal(f.severityPromptVersion, 's1');
+    }
+    const severityCalls = calls.filter(c => c.isSeverity);
+    assert.equal(severityCalls.length, 4, 'one per flagged finding');
+    assert.match(severityCalls[0].userContent, /^Article: Test Article$/m);
+    assert.match(severityCalls[0].userContent, /^Paragraph \(context only, not evidence\): The bridge opened in 1998\./m);
+    const collectiveCall = severityCalls.find(c => c.userContent.includes('b.example') && c.userContent.includes('c.example'));
+    assert.ok(collectiveCall, 'the collective pass reads the assembled group text');
+    assert.match(stderrChunks.join(''), /severity tiers: \{"T1":4\}/);
+
+    const csv = rowsToCsv(written);
+    assert.match(csv.split('\n')[1], /,1,History,T1,/);
+});
+
+test('without --severity no extra call is made and the columns stay empty', async () => {
+    const calls = [];
+    const written = [];
+    await runSweep(baseOpts(), baseIo({
+        makeModelCallerFn: severityModel(calls),
+        appendFindingFn: async (_path, finding) => { written.push(finding); },
+    }));
+    assert.equal(calls.filter(c => c.isSeverity).length, 0);
+    assert.ok(written.every(f => f.severityTier === null));
+    assert.ok(written.every(f => f.isBlp === false), 'enwiki article with no Living people category');
+});
+
+test('--severity skips unflagged findings', async () => {
+    const calls = [];
+    await runSweep(baseOpts({ severity: true }), baseIo({
+        makeModelCallerFn: () => async (systemPrompt) => {
+            calls.push(systemPrompt.includes('decide which citation problems to fix first'));
+            return { text: JSON.stringify({ support_score: 90, verdict: 'SUPPORTED', source_quote: '', comments: 'ok' }), usage: {} };
+        },
+    }));
+    assert.equal(calls.filter(Boolean).length, 0);
+});
+
+test('an auth error in the severity pass halts the run but keeps the already-paid verdict', async () => {
+    const written = [];
+    const code = await runSweep(baseOpts({ severity: true }), baseIo({
+        makeModelCallerFn: () => async (systemPrompt) => {
+            if (systemPrompt.includes('decide which citation problems to fix first')) {
+                throw new Error('API request failed (402): wallet empty');
+            }
+            return { text: JSON.stringify({ support_score: 10, verdict: 'NOT SUPPORTED', reason_type: 'omission', source_quote: '', comments: 'no' }), usage: {} };
+        },
+        appendFindingFn: async (_path, finding) => { written.push(finding); },
+    }));
+    assert.equal(code, 3);
+    assert.equal(written.length, 1);
+    assert.equal(written[0].verdict, 'NOT SUPPORTED');
+    assert.equal(written[0].severityError, 'halted');
+});

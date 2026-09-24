@@ -13,6 +13,7 @@
 // fetcher for whichever transport the egress decision lands on.
 
 import { collectCitations } from '../core/citations.js';
+import { attachArticleContext, articleCategories } from '../core/article-context.js';
 import { fetchArticleHtml } from '../core/wikipedia.js';
 
 // Why an article yielded nothing, as a machine-readable code. Same reasoning as
@@ -73,10 +74,15 @@ export async function processArticle(candidate, {
 
     // Parsoid output has no #mw-content-text wrapper, so the document is the
     // root — see core/citations.js.
-    const citations = collectCitations(parseHtml(html), { claimScope });
+    const root = parseHtml(html);
+    const citations = collectCitations(root, { claimScope });
+    // Categories ride on the article record, not each citation: the severity
+    // pass reads Category:Living people off them (see core/article-context.js).
+    const categories = articleCategories(root);
     if (citations.length === 0) {
-        return { ...base, outcome: ARTICLE_OUTCOMES.NO_CITATIONS, citations: [] };
+        return { ...base, outcome: ARTICLE_OUTCOMES.NO_CITATIONS, categories, citations: [] };
     }
+    attachArticleContext(citations, root);
 
     const results = [];
     for (const citation of citations) {
@@ -92,6 +98,8 @@ export async function processArticle(candidate, {
             groupIndex: citation.groupIndex,
             groupCitationNumbers: citation.groupCitationNumbers,
             skipReason: citation.skipReason,
+            sectionTitle: citation.sectionTitle,
+            paragraphText: citation.paragraphText,
             // A skipped citation never reaches a model, so fetching its
             // source would spend a third party's bandwidth for nothing.
             source: citation.skipReason
@@ -100,7 +108,7 @@ export async function processArticle(candidate, {
         });
     }
 
-    return { ...base, outcome: ARTICLE_OUTCOMES.OK, citations: results };
+    return { ...base, outcome: ARTICLE_OUTCOMES.OK, categories, citations: results };
 }
 
 // Cache key must include the page number: the same PDF cited at two different

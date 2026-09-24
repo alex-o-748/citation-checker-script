@@ -59,12 +59,13 @@ import { parseArgs } from 'node:util';
 import { readFile as fsReadFile, writeFile as fsWriteFile } from 'node:fs/promises';
 
 import { openReplicaConnection, makeQueryFn } from './replicas.js';
-import { selectCandidates, CRITERIA } from './article-picker.js';
+import { selectCandidates, CRITERIA, isBlpByCategories } from './article-picker.js';
 import { runBatch, ARTICLE_OUTCOMES } from './claim-extractor.js';
 import { fetchArticleHtml, hostForWiki, langCodeForWiki } from '../core/wikipedia.js';
 import { fetchSourceContent } from '../core/worker.js';
 import { verifyCitation, verifyGroup, makeModelCaller, ProviderAuthError } from './verifier.js';
 import { assembleFinding, assembleGroupFinding } from './finding-builder.js';
+import { assessSeverity, needsSeverity, assembleGroupText } from './severity-assessor.js';
 import { upsertFinding } from './findings-store.js';
 import { openToolsDbConnection } from './toolsdb.js';
 import { resolveTitleInfo } from './wikipedia-pageids.js';
@@ -90,6 +91,7 @@ export function parseCliArgs(argv) {
             'live-source-fetch': { type: 'boolean', default: false },
             store:               { type: 'boolean', default: false },
             resume:              { type: 'boolean', default: false },
+            severity:            { type: 'boolean', default: false },
             out:                 { type: 'string', default: 'findings.csv' },
             help:                { type: 'boolean', short: 'h', default: false },
         },
@@ -114,6 +116,7 @@ export function parseCliArgs(argv) {
         liveSourceFetch: values['live-source-fetch'],
         store: values.store,
         resume: values.resume,
+        severity: values.severity,
         out: values.out,
     };
 }
@@ -180,6 +183,12 @@ Options:
                          articles per interruption rather than duplicating
                          them — check the CSV's per-article row counts against
                          the article if completeness matters.
+  --severity            Run the severity pass on every flagged finding: one
+                         extra model call per NOT SUPPORTED / PARTIALLY
+                         SUPPORTED row, filling severity_tier and
+                         severity_subclaims (see core/severity.js). Off by
+                         default because it adds model calls in proportion to
+                         the flag rate.
   --out <path>          CSV output path (default: findings.csv)
                         A cleaned copy is also written beside it as
                         <name>-clean.csv.
@@ -490,6 +499,8 @@ export async function runSweep(opts, {
         verified: 0, flagged: 0, published: 0,
         groupsChecked: 0, groupsSkipped: 0, groupsFlagged: 0,
     };
+    // Severity pass tallies, by tier ('T1'...'disagreement', or 'error').
+    const severityCounts = {};
     const verdictCounts = {};
 
     const recordVerdict = verdict => {
@@ -625,7 +636,10 @@ export async function runSweep(opts, {
                 continue;
             }
 
-            const wikiCandidate = { wiki: opts.wiki, pageId: article.pageId, title: article.title, revisionId: article.revisionId };
+            const wikiCandidate = {
+                wiki: opts.wiki, pageId: article.pageId, title: article.title, revisionId: article.revisionId,
+                isBlp: isBlpByCategories(article.categories, opts.wiki),
+            };
             const { solos, groups } = splitCitations(article.citations);
 
             for (const citation of [...solos, ...groups.flat()]) {
@@ -638,6 +652,29 @@ export async function runSweep(opts, {
                 yield { kind: 'group', wikiCandidate, members };
             }
         }
+    }
+
+    // The severity pass for one flagged finding, or null when it doesn't
+    // apply. Throws like verifyCitation() does, so the caller halts the same
+    // way on an auth/billing error.
+    async function rankFinding({ claimText, sourceInfo, sourceTruncated, verification, wikiCandidate, context }) {
+        if (!opts.severity || !needsSeverity(verification)) return null;
+        const { onAttemptFailed, finish } = trackRetries();
+        let severity;
+        try {
+            severity = await assessSeverity({
+                claimText, sourceInfo, sourceTruncated, verification,
+                articleTitle: wikiCandidate.title,
+                sectionTitle: context?.sectionTitle ?? null,
+                paragraphText: context?.paragraphText ?? null,
+            }, { callModel, retry: { onAttemptFailed } });
+        } finally {
+            finish();
+        }
+        const key = severity.tier ?? 'error';
+        severityCounts[key] = (severityCounts[key] || 0) + 1;
+        if (severity.usage) await sleep(opts.delayMs);
+        return severity;
     }
 
     async function worker(tasks) {
@@ -661,9 +698,26 @@ export async function runSweep(opts, {
                 if (verification.usage) { funnel.verified++; await sleep(opts.delayMs); }
                 if (recordVerdict(verification.verdict)) funnel.flagged++;
 
+                let severity;
+                try {
+                    const content = task.citation.source?.content ?? null;
+                    severity = await rankFinding({
+                        claimText: task.citation.claimText,
+                        sourceInfo: content,
+                        sourceTruncated: Boolean(content?.includes('\nTruncated: true')),
+                        verification, wikiCandidate: task.wikiCandidate, context: task.citation,
+                    });
+                } catch (error) {
+                    // The verdict is already paid for, so it is still
+                    // recorded, unranked; the run halts after it.
+                    if (!halted) { halted = true; haltError = error; }
+                    severity = { tier: null, subclaims: null, error: 'halted' };
+                }
+
                 await record(assembleFinding({
                     candidate: task.wikiCandidate, citation: task.citation, verification,
                     provider: opts.provider, model: opts.model, promptVersion: PROMPT_VERSION,
+                    severity,
                 }));
             } else {
                 let verification;
@@ -684,9 +738,26 @@ export async function runSweep(opts, {
                 if (verification.usage) await sleep(opts.delayMs);
                 if (recordVerdict(verification.verdict)) funnel.groupsFlagged++;
 
+                let severity;
+                try {
+                    severity = await rankFinding({
+                        claimText: task.members[0].claimText,
+                        // The same assembled text verifyGroup() judged.
+                        sourceInfo: assembleGroupText(task.members),
+                        sourceTruncated: task.members.some(m => m.source?.content?.includes('\nTruncated: true')),
+                        verification, wikiCandidate: task.wikiCandidate, context: task.members[0],
+                    });
+                } catch (error) {
+                    // The verdict is already paid for, so it is still
+                    // recorded, unranked; the run halts after it.
+                    if (!halted) { halted = true; haltError = error; }
+                    severity = { tier: null, subclaims: null, error: 'halted' };
+                }
+
                 await record(assembleGroupFinding({
                     candidate: task.wikiCandidate, members: task.members, verification,
                     provider: opts.provider, model: opts.model, promptVersion: PROMPT_VERSION,
+                    severity,
                 }));
             }
         }
@@ -726,6 +797,7 @@ export async function runSweep(opts, {
         `sweep: adjacent-citation groups: ${funnel.groupsChecked} checked, ${funnel.groupsSkipped} skipped ` +
         `(<=1 usable source), ${funnel.groupsFlagged} flagged.\n` +
         `sweep: verdicts: ${JSON.stringify(verdictCounts)}\n` +
+        (opts.severity ? `sweep: severity tiers: ${JSON.stringify(severityCounts)}\n` : '') +
         `sweep: wrote ${findings.length} finding(s) to ${opts.out}${toolsDbQuery ? ' and ToolsDB' : ''}` +
         `${resumeSkipped ? ` (${resumeSkipped} article(s) skipped as already done)` : ''}.\n`
     );

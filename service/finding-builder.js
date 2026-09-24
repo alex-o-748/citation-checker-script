@@ -73,11 +73,19 @@ function computeExpiresAt(hasContent, fetchedAt, ttlDays) {
 // fetchStatus). `verification` is either verifyCitation()'s or
 // verifyGroup()'s return value — both carry verdict/supportScore/reasonType/
 // rationale/sourceQuote/quoteStatus/usage under the same names.
-function finishFinding(base, { verification, provider, model, promptVersion, hasContent, fetchedAt, ttlDays, checkId }) {
+function finishFinding(base, { verification, provider, model, promptVersion, hasContent, fetchedAt, ttlDays, checkId, severity }) {
     const modelRan = Boolean(verification.usage);
     return {
         ...base,
         checkId,
+        // Severity pass (service/severity-assessor.js). All null when it
+        // didn't run — the finding wasn't flagged, or the run didn't ask for
+        // it — so "unranked" and "ranked lowest" never look alike. CSV-only
+        // for now, like fetchError: findings-store.js has no columns for them.
+        severityTier: severity?.tier ?? null,
+        severitySubclaims: severity?.subclaims ?? null,
+        severityError: severity?.error ?? null,
+        severityPromptVersion: severity?.promptVersion ?? null,
         verdict: verification.verdict,
         supportScore: verification.supportScore,
         reasonType: verification.reasonType,
@@ -120,6 +128,9 @@ function finishFinding(base, { verification, provider, model, promptVersion, has
  * @param {string} [args.checkId] - Overrides the minted id. Injectable for
  *   the same reason `fetchedAt` is: minting reads a random source, and this
  *   module's contract is to stay pure and testable.
+ * @param {object} [args.severity] - service/severity-assessor.js's
+ *   assessSeverity() result, when the severity pass ran for this finding.
+ *   `candidate.isBlp` and `citation.sectionTitle` are copied through too.
  */
 export function assembleFinding({
     candidate,
@@ -131,6 +142,7 @@ export function assembleFinding({
     fetchedAt = new Date(),
     ttlDays = FINDING_TTL_DAYS,
     checkId = mintCheckId(),
+    severity = null,
 }) {
     const hasContent = Boolean(citation.source?.content);
 
@@ -156,8 +168,10 @@ export function assembleFinding({
             // reason code (reasonType) is the part worth storing.
             fetchError: citation.source?.error ?? null,
             sourceTruncated: Boolean(citation.source?.content?.includes('\nTruncated: true')),
+            isBlp: candidate.isBlp ?? null,
+            sectionTitle: citation.sectionTitle ?? null,
         },
-        { verification, provider, model, promptVersion, hasContent, fetchedAt, ttlDays, checkId }
+        { verification, provider, model, promptVersion, hasContent, fetchedAt, ttlDays, checkId, severity }
     );
 }
 
@@ -193,6 +207,7 @@ export function assembleGroupFinding({
     fetchedAt = new Date(),
     ttlDays = FINDING_TTL_DAYS,
     checkId = mintCheckId(),
+    severity = null,
 }) {
     if (verification.skipped) {
         throw new TypeError('assembleGroupFinding requires a completed (non-skipped) verifyGroup() result');
@@ -225,7 +240,10 @@ export function assembleGroupFinding({
             fetchStatus: null,
             fetchError: null,
             sourceTruncated: members.some(m => m.source?.content?.includes('\nTruncated: true')),
+            isBlp: candidate.isBlp ?? null,
+            // Members share one claim, so they share its position too.
+            sectionTitle: members[0]?.sectionTitle ?? null,
         },
-        { verification, provider, model, promptVersion, hasContent, fetchedAt, ttlDays, checkId }
+        { verification, provider, model, promptVersion, hasContent, fetchedAt, ttlDays, checkId, severity }
     );
 }
