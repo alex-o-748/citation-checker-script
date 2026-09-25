@@ -118,34 +118,48 @@ export function cleanCsvPath(path) {
 }
 
 /**
- * Removes findings based on truncated source text, then collapses a completed
- * adjacent-citation group to its collective finding. Group IDs are only
- * meaningful within an article revision, so the key includes page identity.
+ * Two independent rules, so neither depends on what the other removed:
+ *
+ * 1. A finding on a truncated source is kept only if it is NOT SUPPORTED /
+ *    contradiction — the one verdict that is both actionable and backed by a
+ *    passage the model actually saw. Everything else on a truncated source
+ *    (omission above all: "not mentioned" may just mean "past the cutoff") is
+ *    dropped.
+ * 2. Once an adjacent-citation group has a collective finding, its individual
+ *    findings are never shown — even when rule 1 dropped the collective
+ *    itself. Falling back to the members there would surface one source's
+ *    partial view of a claim several sources back.
+ *
+ * Group IDs are only meaningful within an article revision, so the key
+ * includes page identity.
  */
 export function cleanCsvText(text) {
     const records = parseCsv(text);
     if (records.length === 0) throw new Error('CSV is empty');
     const header = records[0];
     const indexes = Object.fromEntries(header.map((name, index) => [name, index]));
-    for (const name of ['source_truncated', 'is_collective', 'group_id']) {
+    for (const name of ['source_truncated', 'is_collective', 'group_id', 'verdict', 'reason_type']) {
         if (indexes[name] === undefined) throw new Error(`CSV is missing required column: ${name}`);
     }
     const truthy = value => /^(?:1|true|yes)$/i.test(value.trim());
-    const rows = records.slice(1).filter(row => !truthy(row[indexes.source_truncated] || ''));
+    const rows = records.slice(1);
     const groupKey = row => [
         indexes.page_id === undefined ? '' : row[indexes.page_id],
         indexes.revision_id === undefined ? '' : row[indexes.revision_id],
         indexes.page_title === undefined ? '' : row[indexes.page_title],
         row[indexes.group_id],
     ].join('\u0000');
+    const isCollective = row => truthy(row[indexes.is_collective] || '');
+    const isContradiction = row =>
+        row[indexes.verdict] === 'NOT SUPPORTED' && row[indexes.reason_type] === 'contradiction';
     const collectiveGroups = new Set(rows
-        .filter(row => row[indexes.group_id] && truthy(row[indexes.is_collective] || ''))
+        .filter(row => row[indexes.group_id] && isCollective(row))
         .map(groupKey));
-    const cleanRows = rows.filter(row =>
-        !row[indexes.group_id]
-        || truthy(row[indexes.is_collective] || '')
-        || !collectiveGroups.has(groupKey(row))
-    );
+    const cleanRows = rows.filter(row => {
+        if (truthy(row[indexes.source_truncated] || '') && !isContradiction(row)) return false;
+        if (row[indexes.group_id] && !isCollective(row) && collectiveGroups.has(groupKey(row))) return false;
+        return true;
+    });
     return [header, ...cleanRows]
         .map(row => row.map(csvCell).join(','))
         .join('\n') + '\n';
