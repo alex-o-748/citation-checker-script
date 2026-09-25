@@ -277,3 +277,43 @@ test('isClaimTooShort uses MIN_CLAIM_LENGTH and treats empty or whitespace as to
   assert.equal(isClaimTooShort('1234567890'), false);
   assert.equal(isClaimTooShort('Yes.', 1), false);
 });
+
+// Shape of ru.wikipedia's {{Когда?}}: a TemplateStyles <style> inside the
+// template, followed by the bracketed marker, mid-sentence. From the Moscow
+// Metro article, where the batch CSV carried both the CSS and the whole
+// paragraph.
+const RU_METRO_HTML = `
+  <p>Проезд оплачивают бесконтактными билетами, пропуск на станции контролируется автоматическими турникетами. Недавно<sup class="noprint ts-fix-template"><style data-mw-deduplicate="TemplateStyles:r1">.mw-parser-output .ts-fix-template{font-style:normal;font-weight:normal;white-space:nowrap}</style>[<i><a href="/wiki/x" title="x">когда?</a></i>]</sup> для оплаты проезда в московском метрополитене появились силиконовые, а позднее и кожаные браслеты<sup id="cite_ref-145" class="reference"><a href="#cite_note-145">[145]</a></sup>, а также керамические кольца<sup id="cite_ref-146" class="reference"><a href="#cite_note-146">[146]</a></sup>.</p>
+`;
+
+test('extractClaimText drops TemplateStyles CSS and a Russian maintenance marker', () => {
+  const doc = mkDoc(RU_METRO_HTML);
+  const claim = extractClaimText(doc.getElementById('cite_ref-145'));
+  assert.ok(!claim.includes('mw-parser-output'), `CSS leaked into claim: ${claim}`);
+  assert.ok(!claim.includes('когда'), `maintenance marker leaked into claim: ${claim}`);
+  assert.ok(claim.includes('Недавно для оплаты проезда'), claim);
+});
+
+test('extractClaimText drops a <style> even outside a .noprint template', () => {
+  const doc = mkDoc(`<p>The river is long<span><style>.x{color:red}</style></span> and wide.<sup id="cite_ref-1" class="reference"><a href="#cite_note-1">[1]</a></sup></p>`);
+  assert.equal(extractClaimText(doc.getElementById('cite_ref-1')), 'The river is long and wide.');
+});
+
+test('extractClaimText with scope "sentence" splits Cyrillic sentences', () => {
+  const doc = mkDoc(RU_METRO_HTML);
+  assert.equal(
+    extractClaimText(doc.getElementById('cite_ref-145'), { scope: 'sentence' }),
+    'Недавно для оплаты проезда в московском метрополитене появились силиконовые, а позднее и кожаные браслеты',
+  );
+});
+
+test('lastSentence splits before non-ASCII capitals and «» quotes, not lowercase', () => {
+  assert.equal(lastSentence('Первое предложение. Второе предложение.'), 'Второе предложение.');
+  assert.equal(lastSentence('Il pleut. «Oui», dit-il.'), '«Oui», dit-il.');
+  assert.equal(lastSentence('Έβρεχε. Ήρθε αργά.'), 'Ήρθε αργά.');
+  assert.equal(lastSentence('т. е. одно предложение'), 'т. е. одно предложение');
+});
+
+test('MAINTENANCE_MARKER_RE strips common ru.wikipedia markers', () => {
+  assert.equal('Недавно [когда?] и [нет АИ] тут [источник не указан 100 дней]'.replace(MAINTENANCE_MARKER_RE, ''), 'Недавно  и  тут ');
+});

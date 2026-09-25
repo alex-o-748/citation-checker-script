@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "jsdom": "^24.0.0",
-    "mysql2": "^3.23.3"
+    "mysql2": "^3.23.3",
+    "sentencex": "^1.0.31"
   }
 }
