@@ -1312,11 +1312,12 @@ function getCitationGroup(refElement) {
 }
 
 // Splits on a sentence-ending mark followed by whitespace and what looks like
-// the start of a new sentence, then returns the last piece. Deliberately
-// naive about abbreviations ("Dr. Smith", "U.S. policy") — for this use
-// (finding where the final sentence of a claim begins), under-splitting an
-// abbreviation into the same sentence is the safer failure than over-
-// splitting mid-abbreviation and truncating the real claim.
+// the start of a new sentence, then returns the last piece. Naive about
+// abbreviations and initials: "Dr. Smith", "А. С. Пушкин" and "в 1837 г.
+// Пушкин" all split after the period, cutting the claim short. The batch
+// pipeline therefore replaces this with sentencex, which carries per-language
+// abbreviation lists (service/sentences.js); the userscript keeps this
+// version, where sentence scope is an opt-in and an editor reads the claim.
 //
 // "Looks like the start of a sentence" is any uppercase letter (\p{Lu}, so
 // Cyrillic, Greek, accented Latin all count — an ASCII-only class silently
@@ -1348,7 +1349,13 @@ function isClaimTooShort(claimText, minLength = MIN_CLAIM_LENGTH) {
     return !claimText || claimText.trim().length < minLength;
 }
 
-function extractClaimText(refElement, { scope = 'paragraph' } = {}) {
+// `splitLastSentence` narrows the claim under scope 'sentence'. The default is
+// lastSentence() above, which is what the userscript uses; the batch pipeline
+// injects a sentencex-backed splitter (service/sentences.js) that knows each
+// language's abbreviations, so "А. С. Пушкин" or "Dr. Smith" isn't cut in two.
+// It is injected rather than imported because sentencex is a native Node
+// module and this file also runs in the browser, inlined into main.js.
+function extractClaimText(refElement, { scope = 'paragraph', splitLastSentence = lastSentence } = {}) {
     const container = refElement.closest('p, li, td, div, section');
     if (!container) {
         return '';
@@ -1419,7 +1426,7 @@ function extractClaimText(refElement, { scope = 'paragraph' } = {}) {
     // too short to be a claim, callers skip the citation and say so (see
     // isClaimTooShort() and CLAIM_TOO_SHORT) rather than guess.
     if (scope === 'sentence') {
-        claimText = lastSentence(claimText);
+        claimText = splitLastSentence(claimText);
     }
 
     return claimText;
@@ -1481,7 +1488,7 @@ function refNameFromNoteId(refId) {
     return match ? match[1] : null;
 }
 
-function collectCitations(root, { minClaimLength = MIN_CLAIM_LENGTH, claimScope = 'paragraph' } = {}) {
+function collectCitations(root, { minClaimLength = MIN_CLAIM_LENGTH, claimScope = 'paragraph', splitLastSentence } = {}) {
     if (!root) return [];
     // Document and DocumentFragment both answer getElementById directly and
     // must be used as-is: a DocumentFragment's .ownerDocument is a separate,
@@ -1496,7 +1503,7 @@ function collectCitations(root, { minClaimLength = MIN_CLAIM_LENGTH, claimScope 
         const refId = refIdFromHref(refElement.getAttribute('href'));
         if (!refId) continue;
 
-        const claimText = extractClaimText(refElement, { scope: claimScope });
+        const claimText = extractClaimText(refElement, { scope: claimScope, splitLastSentence });
 
         citations.push({
             refElement,

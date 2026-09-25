@@ -55,7 +55,7 @@ export function refNameFromNoteId(refId) {
     return match ? match[1] : null;
 }
 
-export function collectCitations(root, { minClaimLength = MIN_CLAIM_LENGTH, claimScope = 'paragraph' } = {}) {
+export function collectCitations(root, { minClaimLength = MIN_CLAIM_LENGTH, claimScope = 'paragraph', splitLastSentence } = {}) {
     if (!root) return [];
     // Document and DocumentFragment both answer getElementById directly and
     // must be used as-is: a DocumentFragment's .ownerDocument is a separate,
@@ -70,7 +70,7 @@ export function collectCitations(root, { minClaimLength = MIN_CLAIM_LENGTH, clai
         const refId = refIdFromHref(refElement.getAttribute('href'));
         if (!refId) continue;
 
-        const claimText = extractClaimText(refElement, { scope: claimScope });
+        const claimText = extractClaimText(refElement, { scope: claimScope, splitLastSentence });
 
         citations.push({
             refElement,

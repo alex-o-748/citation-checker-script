@@ -595,7 +595,7 @@ export async function runSweep(opts, {
         // article's worth of fetching slip through after halting before it
         // took effect. Driving runBatch's iterator by hand puts the check
         // before each fetch instead of after.
-        const articles = runBatch(candidates, { parseHtml, fetchArticle: fetchArticleFn, fetchSource });
+        const articles = runBatch(candidates, { parseHtml, fetchArticle: fetchArticleFn, fetchSource, langCode: articleLangCode });
         while (true) {
             if (halted) return;
             const fetchStartedAt = Date.now();
