@@ -1,9 +1,26 @@
 // Extracts the prose claim text bearing a given citation from a parsed
 // Wikipedia Document. Works with both browser DOM and JSDOM.
 
-export const MAINTENANCE_MARKER_RE = /\[(failed verification|verification needed|citation needed|better source[^\]]*|dubious[^\]]*|unreliable source[^\]]*|clarification needed|disputed[^\]]*|page needed|when\??|where\??|who\??|why\??|by whom\??|according to whom\??|original research[^\]]*|specify[^\]]*|vague|opinion|fact)\]/gi;
+export const MAINTENANCE_MARKER_RE = /\[(failed verification|verification needed|citation needed|better source[^\]]*|dubious[^\]]*|unreliable source[^\]]*|clarification needed|disputed[^\]]*|page needed|when\??|where\??|who\??|why\??|by whom\??|according to whom\??|original research[^\]]*|specify[^\]]*|vague|opinion|fact|когда\??|где\??|кто\??|кем\??|почему\??|какой\??|какая\??|какие\??|нет АИ|АИ\??|источник не указан[^\]]*|не в источнике|уточнить|прояснить|значимость факта\??|неавторитетный источник\??)\]/giu;
 
 const TEXT_NODE = 3;
+const ELEMENT_NODE = 1;
+
+// Elements whose text is never article prose. <style> is the one that bites:
+// TemplateStyles emits an inline stylesheet inside the rendered template
+// (ru.wikipedia's {{Когда?}} puts one right in the sentence), and its CSS
+// would otherwise be read as claim text. .noprint marks inline maintenance
+// templates ([citation needed], [когда?], ...) on every wiki, which is a
+// language-independent way to drop them — MAINTENANCE_MARKER_RE only knows
+// the wordings someone has listed.
+const NON_PROSE_SELECTOR = 'style, script, .noprint, .ts-fix-template';
+
+function isNonProse(node) {
+    return node.nodeType === ELEMENT_NODE
+        && typeof node.matches === 'function'
+        && node.matches(NON_PROSE_SELECTOR)
+        && !node.classList.contains('reference');
+}
 
 // --- Text-between-two-points, without Range -------------------------------
 //
@@ -60,7 +77,11 @@ export function textBetween(startAfter, endBefore, root) {
     let text = '';
     while (node && node !== endBefore) {
         if (node.nodeType === TEXT_NODE) text += node.data;
-        node = following(node, root);
+        // Skip a non-prose subtree whole — unless the endpoint sits inside it,
+        // in which case skipping would walk past the end to the root's end.
+        node = isNonProse(node) && !node.contains(endBefore)
+            ? followingSkippingSubtree(node, root)
+            : following(node, root);
     }
     return text;
 }
@@ -109,7 +130,12 @@ export function getCitationGroup(refElement) {
 // (finding where the final sentence of a claim begins), under-splitting an
 // abbreviation into the same sentence is the safer failure than over-
 // splitting mid-abbreviation and truncating the real claim.
-const SENTENCE_SPLIT_RE = /(?<=[.!?])\s+(?=[A-Z0-9"'(À-Ü])/;
+//
+// "Looks like the start of a sentence" is any uppercase letter (\p{Lu}, so
+// Cyrillic, Greek, accented Latin all count — an ASCII-only class silently
+// made sentence scope a no-op on ru.wikipedia), a digit, or an opening quote
+// or bracket, including the «» and „“ quotes non-English wikis use.
+const SENTENCE_SPLIT_RE = /(?<=[.!?…])\s+(?=[\p{Lu}\p{Lt}\d"'(«„“‘])/u;
 
 // Returns just the final sentence of `text` — the sentence immediately
 // preceding wherever `text` ends. Used for the batch pipeline's stricter
