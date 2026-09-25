@@ -5,7 +5,7 @@ import { writeCleanCsv, cleanCsvPath } from './csv-report.js';
 export const HELP_TEXT = `usage: node service/clean-csv.js <input.csv> [--out <path>]
 
 Creates a clean copy of a batch findings CSV. On a truncated source it keeps
-only NOT SUPPORTED / contradiction checks, and once a group has a collective
+only SUPPORTED and NOT SUPPORTED / contradiction checks, and once a group has a collective
 check it removes that group's individual citation checks — even when the
 collective check was itself removed. The input file is never modified.
 `;

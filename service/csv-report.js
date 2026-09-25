@@ -120,11 +120,11 @@ export function cleanCsvPath(path) {
 /**
  * Two independent rules, so neither depends on what the other removed:
  *
- * 1. A finding on a truncated source is kept only if it is NOT SUPPORTED /
- *    contradiction — the one verdict that is both actionable and backed by a
- *    passage the model actually saw. Everything else on a truncated source
- *    (omission above all: "not mentioned" may just mean "past the cutoff") is
- *    dropped.
+ * 1. A finding on a truncated source is kept only if it is SUPPORTED or NOT
+ *    SUPPORTED / contradiction — verdicts resting on a passage the model
+ *    actually saw, which text past the cutoff cannot undo. Everything else on
+ *    a truncated source (omission above all: "not mentioned" may just mean
+ *    "past the cutoff") is dropped.
  * 2. Once an adjacent-citation group has a collective finding, its individual
  *    findings are never shown — even when rule 1 dropped the collective
  *    itself. Falling back to the members there would surface one source's
@@ -150,13 +150,13 @@ export function cleanCsvText(text) {
         row[indexes.group_id],
     ].join('\u0000');
     const isCollective = row => truthy(row[indexes.is_collective] || '');
-    const isContradiction = row =>
-        row[indexes.verdict] === 'NOT SUPPORTED' && row[indexes.reason_type] === 'contradiction';
+    const survivesTruncation = row => row[indexes.verdict] === 'SUPPORTED'
+        || (row[indexes.verdict] === 'NOT SUPPORTED' && row[indexes.reason_type] === 'contradiction');
     const collectiveGroups = new Set(rows
         .filter(row => row[indexes.group_id] && isCollective(row))
         .map(groupKey));
     const cleanRows = rows.filter(row => {
-        if (truthy(row[indexes.source_truncated] || '') && !isContradiction(row)) return false;
+        if (truthy(row[indexes.source_truncated] || '') && !survivesTruncation(row)) return false;
         if (row[indexes.group_id] && !isCollective(row) && collectiveGroups.has(groupKey(row))) return false;
         return true;
     });

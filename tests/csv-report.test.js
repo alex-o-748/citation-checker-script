@@ -229,7 +229,7 @@ test('page_title stays the first column, which --resume depends on', () => {
 
 test('cleanCsvText removes truncated checks and individual checks covered by a group check', () => {
     const csv = rowsToCsv([
-        { ...baseFinding(), citationNumber: '1', sourceTruncated: true },
+        { ...baseFinding(), citationNumber: '1', sourceTruncated: true, verdict: 'NOT SUPPORTED', reasonType: 'omission' },
         { ...baseFinding(), citationNumber: '2', groupId: 'g1' },
         { ...baseFinding(), citationNumber: '3', groupId: 'g1' },
         { ...baseFinding(), citationNumber: '2, 3', groupId: 'g1', isCollective: true },
@@ -256,7 +256,7 @@ test('a dropped collective check still removes its individual checks', () => {
     assert.deepEqual(records.slice(1).map(row => row[citationIndex]), ['4']);
 });
 
-test('on a truncated source only NOT SUPPORTED / contradiction survives', () => {
+test('on a truncated source only SUPPORTED and NOT SUPPORTED / contradiction survive', () => {
     const csv = rowsToCsv([
         { ...baseFinding(), citationNumber: '1', sourceTruncated: true },
         { ...baseFinding(), citationNumber: '2', sourceTruncated: true, verdict: 'PARTIALLY SUPPORTED' },
@@ -266,22 +266,24 @@ test('on a truncated source only NOT SUPPORTED / contradiction survives', () => 
     ]);
     const records = parseCsv(cleanCsvText(csv));
     const citationIndex = records[0].indexOf('citation_number');
-    assert.deepEqual(records.slice(1).map(row => row[citationIndex]), ['4', '5']);
+    assert.deepEqual(records.slice(1).map(row => row[citationIndex]), ['1', '4', '5']);
 });
 
-test('a truncated contradiction collective survives and supersedes its members', () => {
-    const csv = rowsToCsv([
-        { ...baseFinding(), citationNumber: '2', groupId: 'g1' },
-        { ...baseFinding(), citationNumber: '3', groupId: 'g1' },
-        {
-            ...baseFinding(), citationNumber: '2, 3', groupId: 'g1', isCollective: true, sourceTruncated: true,
-            verdict: 'NOT SUPPORTED', reasonType: 'contradiction',
-        },
-    ]);
-    const records = parseCsv(cleanCsvText(csv));
-    const citationIndex = records[0].indexOf('citation_number');
-    assert.deepEqual(records.slice(1).map(row => row[citationIndex]), ['2, 3']);
-});
+for (const [verdict, reasonType] of [['SUPPORTED', undefined], ['NOT SUPPORTED', 'contradiction']]) {
+    test(`a truncated ${verdict} collective survives and supersedes its members`, () => {
+        const csv = rowsToCsv([
+            { ...baseFinding(), citationNumber: '2', groupId: 'g1', sourceTruncated: true },
+            { ...baseFinding(), citationNumber: '3', groupId: 'g1', verdict: 'NOT SUPPORTED', reasonType: 'omission' },
+            {
+                ...baseFinding(), citationNumber: '2, 3', groupId: 'g1', isCollective: true, sourceTruncated: true,
+                verdict, reasonType,
+            },
+        ]);
+        const records = parseCsv(cleanCsvText(csv));
+        const citationIndex = records[0].indexOf('citation_number');
+        assert.deepEqual(records.slice(1).map(row => row[citationIndex]), ['2, 3']);
+    });
+}
 
 test('cleaning scopes repeated group IDs to their article revision', () => {
     const csv = rowsToCsv([
