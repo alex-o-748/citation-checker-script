@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { createServer } from 'node:http';
 import {
     fetchSourceContent,
     logVerification,
@@ -416,6 +417,70 @@ test('the timer is cleared on a fast response, so the process can exit', async (
     assert.ok(result.content, 'a normal fetch is unaffected by the timeout');
     // An uncleared 50s timer would keep the event loop alive; node --test
     // hanging after this file is the symptom if this regresses.
+});
+
+// The timer used to be cleared as soon as the headers arrived, leaving the
+// body read unbounded: undici's own 300s body timeout per attempt in Node,
+// and no limit at all in a browser. These use a real server that sends
+// headers and a partial body, then stalls, because a stubbed fetch can't
+// show how the real one behaves mid-body.
+const nodeFetch = globalThis.fetch;
+
+async function withStalledBodyServer(fn) {
+    const server = createServer((_req, res) => {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.write('{"content": "');
+    });
+    await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+    try {
+        return await fn(`http://127.0.0.1:${server.address().port}`);
+    } finally {
+        server.closeAllConnections();
+        await new Promise(resolve => server.close(resolve));
+    }
+}
+
+// Resolves to 'hung' if `promise` hasn't settled within `ms`.
+async function settlesWithin(promise, ms) {
+    let timer;
+    const guard = new Promise(resolve => { timer = setTimeout(() => resolve('hung'), ms); });
+    try {
+        return await Promise.race([promise, guard]);
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
+test('a proxy response that stalls mid-body times out', async () => {
+    globalThis.fetch = nodeFetch;
+    await withStalledBodyServer(async (workerBase) => {
+        // An archive.org URL goes straight to the proxy with no Wayback
+        // lookup, so the only request is the stalled one.
+        const result = await settlesWithin(fetchSourceContent(
+            'https://web.archive.org/web/20200101000000/https://example.com/a', null,
+            { workerBase, timeoutMs: 200, retry: { maxRetries: 1 } },
+        ), 5000);
+        assert.notEqual(result, 'hung', 'the body read is bounded by timeoutMs');
+        assert.equal(result.content, null);
+        assert.match(result.error, /timed out after 200ms/);
+        // Still classed as the proxy's failure, so it stays retryable.
+        assert.equal(isRetryableProxyResult(result), true);
+    });
+});
+
+test('a Wayback availability response that stalls mid-body times out', async () => {
+    await withStalledBodyServer(async (base) => {
+        globalThis.fetch = (_url, options) => nodeFetch(base, options);
+        try {
+            const result = await settlesWithin(fetchSourceContent(
+                'https://example.com/a', null, { archiveFirst: true, timeoutMs: 200 },
+            ), 5000);
+            assert.notEqual(result, 'hung', 'the availability check is bounded by timeoutMs');
+            assert.equal(result.error, 'No Wayback snapshot available for this URL');
+        } finally {
+            globalThis.fetch = nodeFetch;
+        }
+    });
 });
 
 test('the default timeout is generous enough for the two-hop fetch path', async () => {

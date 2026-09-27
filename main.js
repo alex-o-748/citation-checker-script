@@ -2077,23 +2077,28 @@ async function fetchViaProxy(fetchUrl, pageNum, workerBase, sourceUrl, onRequest
         if (pageNum) {
             proxyUrl += `&page=${pageNum}`;
         }
+        // The timer stays armed until the body is read, not just the headers:
+        // a connection can stall mid-body as easily as before it, and
+        // clearing the timer on headers left that case unbounded.
         const { signal, done } = withTimeout(timeoutMs);
-        let response;
-        try {
-            response = await fetch(proxyUrl, { signal });
-        } finally {
-            done();
-        }
-        const proxyStatus = response.status;
+        let proxyStatus;
         let data = null;
         try {
-            data = await response.json();
-        } catch (_) {
-            report(proxyStatus, false, `non-JSON response (HTTP ${proxyStatus})`);
-            // proxyFailure: the proxy did not answer in its own protocol at
-            // all — a front-proxy error page rather than a verdict about the
-            // source. See isRetryableProxyResult().
-            return { content: null, error: `Proxy returned non-JSON response (HTTP ${proxyStatus})`, status: proxyStatus, proxyFailure: true };
+            const response = await fetch(proxyUrl, { signal });
+            proxyStatus = response.status;
+            try {
+                data = await response.json();
+            } catch (error) {
+                // A stall mid-body is a timeout, handled by the outer catch.
+                if (error?.name === 'AbortError') throw error;
+                report(proxyStatus, false, `non-JSON response (HTTP ${proxyStatus})`);
+                // proxyFailure: the proxy did not answer in its own protocol at
+                // all — a front-proxy error page rather than a verdict about the
+                // source. See isRetryableProxyResult().
+                return { content: null, error: `Proxy returned non-JSON response (HTTP ${proxyStatus})`, status: proxyStatus, proxyFailure: true };
+            }
+        } finally {
+            done();
         }
 
         const status = (data && typeof data.status === 'number') ? data.status : proxyStatus;
@@ -2229,14 +2234,16 @@ async function findWaybackSnapshot(url, onRequest, timeoutMs) {
     const startedAt = Date.now();
     try {
         const apiUrl = `https://archive.org/wayback/available?url=${encodeURIComponent(url)}`;
+        // Armed through the body read, as in fetchViaProxy().
         const { signal, done } = withTimeout(timeoutMs);
         let response;
+        let data;
         try {
             response = await fetch(apiUrl, { headers: { 'User-Agent': DEFAULT_USER_AGENT }, signal });
+            data = await response.json();
         } finally {
             done();
         }
-        const data = await response.json();
         onRequest?.({ kind: 'wayback-availability', url, status: response.status, ok: response.ok, error: null, latencyMs: Date.now() - startedAt, bytes: null });
         const snapshot = data?.archived_snapshots?.closest;
         if (snapshot?.available && snapshot.timestamp) {
