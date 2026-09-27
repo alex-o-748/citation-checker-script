@@ -139,3 +139,43 @@ test('non-JSON and unparseable responses still expose an empty source_quote', ()
   assert.equal(parseVerificationResult('**Verdict:** SUPPORTED').source_quote, '');
   assert.equal(parseVerificationResult('total gibberish').source_quote, '');
 });
+
+// --- Model output is canonicalized, not trusted ---
+//
+// The userscript compares verdicts by exact string, so a model writing
+// 'Partially Supported' used to get an ERROR card while the benchmark and
+// batch pipeline (which normalize) counted the same answer as correct. And
+// reason_type used to pass through verbatim into report-card HTML — steerable
+// by the cited page, so a crafted value was script injection on wikipedia.org.
+
+test('verdict spelling variants are canonicalized', () => {
+  for (const [raw, expected] of [
+    ['Partially Supported', 'PARTIALLY SUPPORTED'],
+    ['PARTIALLY_SUPPORTED', 'PARTIALLY SUPPORTED'],
+    ['supported', 'SUPPORTED'],
+    ['not_supported', 'NOT SUPPORTED'],
+    ['Source Unavailable', 'SOURCE UNAVAILABLE'],
+  ]) {
+    const out = parseVerificationResult(JSON.stringify({ verdict: raw, support_score: 50, comments: '' }));
+    assert.equal(out.verdict, expected, raw);
+  }
+});
+
+test('an unrecognized verdict passes through for diagnostics, and a missing one is UNKNOWN', () => {
+  assert.equal(parseVerificationResult('{"verdict": "MAYBE", "comments": ""}').verdict, 'MAYBE');
+  assert.equal(parseVerificationResult('{"comments": "no verdict"}').verdict, 'UNKNOWN');
+});
+
+test('reason_type outside the prompt enum is dropped', () => {
+  const payload = 'omission"><img src=x onerror="alert(1)"><span class="';
+  const out = parseVerificationResult(JSON.stringify({
+    verdict: 'NOT SUPPORTED', support_score: 10, comments: '', reason_type: payload,
+  }));
+  assert.equal(out.reason_type, null);
+  assert.equal(parseVerificationResult('{"verdict": "NOT SUPPORTED", "reason_type": 7}').reason_type, null);
+});
+
+test('reason_type forgives case and whitespace', () => {
+  const out = parseVerificationResult('{"verdict": "NOT SUPPORTED", "reason_type": " Contradiction "}');
+  assert.equal(out.reason_type, 'contradiction');
+});

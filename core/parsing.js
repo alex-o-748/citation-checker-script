@@ -7,7 +7,7 @@
 // failure, returns the 'PARSE_ERROR' sentinel — chosen to match what the
 // benchmark already records for unrecoverable responses.
 
-import { canonicalizeVerdict } from './verdicts.js';
+import { canonicalizeVerdict, canonicalizeReasonType } from './verdicts.js';
 
 export function parseVerificationResult(response) {
     const trimmed = response.trim();
@@ -23,10 +23,15 @@ export function parseVerificationResult(response) {
         }
         const result = JSON.parse(jsonStr);
         return {
-            verdict: result.verdict || 'UNKNOWN',
+            // Canonicalized so 'Partially Supported' or 'not_supported' mean
+            // the same thing to every consumer — the userscript compares
+            // verdicts by exact string and rendered those as ERROR cards,
+            // while the benchmark and batch pipeline normalized them.
+            // Unrecognized values pass through for diagnostics.
+            verdict: canonicalizeVerdict(result.verdict) || result.verdict || 'UNKNOWN',
             support_score: result.support_score ?? null,
             comments: result.comments || '',
-            reason_type: result.reason_type || null,
+            reason_type: canonicalizeReasonType(result.reason_type),
             // Field-name aliases: models occasionally camelCase the key or
             // shorten it to "quote". Always a string — an absent quote is ''
             // (expected for omission/unavailable), never null, so callers can

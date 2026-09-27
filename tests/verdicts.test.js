@@ -7,6 +7,8 @@ import {
     toTitleCase,
     toShortCode,
     equalSupportedVsRest,
+    REASON_TYPE_LIST,
+    canonicalizeReasonType,
 } from '../core/verdicts.js';
 
 test('VERDICTS exposes the four canonical UPPERCASE strings', () => {
@@ -136,4 +138,14 @@ test('equalSupportedVsRest returns false, not throws, on unrecognized input', ()
     assert.equal(equalSupportedVsRest('PARSE_ERROR', 'Supported'), false);
     assert.equal(equalSupportedVsRest('Supported', null), false);
     assert.equal(equalSupportedVsRest(undefined, undefined), false);
+});
+
+test('canonicalizeReasonType accepts only the two prompt values', () => {
+    assert.deepEqual([...REASON_TYPE_LIST], ['contradiction', 'omission']);
+    assert.equal(canonicalizeReasonType('contradiction'), 'contradiction');
+    assert.equal(canonicalizeReasonType('OMISSION'), 'omission');
+    assert.equal(canonicalizeReasonType('  Omission\n'), 'omission');
+    for (const raw of ['', 'partial', 'omission"><b>', null, undefined, 1, {}]) {
+        assert.equal(canonicalizeReasonType(raw), null, JSON.stringify(raw));
+    }
 });

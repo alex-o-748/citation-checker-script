@@ -52,6 +52,20 @@ export function canonicalizeVerdict(raw) {
     return null;
 }
 
+// The two values the prompt allows for a NOT SUPPORTED verdict's reason_type.
+export const REASON_TYPE_LIST = Object.freeze(['contradiction', 'omission']);
+
+// Returns one of REASON_TYPE_LIST, or null for anything else. Model output
+// is not trusted to stay inside the enum: reason_type is steerable by the
+// cited page (prompt injection), and the userscript used to interpolate it
+// into report-card HTML, so a crafted value was a script-injection vector on
+// wikipedia.org. Case and surrounding whitespace are forgiven.
+export function canonicalizeReasonType(raw) {
+    if (typeof raw !== 'string') return null;
+    const v = raw.trim().toLowerCase();
+    return REASON_TYPE_LIST.includes(v) ? v : null;
+}
+
 // Presenter: canonical UPPERCASE -> title case ('Supported', 'Not supported', ...).
 // Used by benchmark results.json schema and analyze_results.js's confusion matrix.
 const TITLE_CASE = Object.freeze({

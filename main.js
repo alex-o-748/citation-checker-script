@@ -490,6 +490,20 @@ function canonicalizeVerdict(raw) {
     return null;
 }
 
+// The two values the prompt allows for a NOT SUPPORTED verdict's reason_type.
+const REASON_TYPE_LIST = Object.freeze(['contradiction', 'omission']);
+
+// Returns one of REASON_TYPE_LIST, or null for anything else. Model output
+// is not trusted to stay inside the enum: reason_type is steerable by the
+// cited page (prompt injection), and the userscript used to interpolate it
+// into report-card HTML, so a crafted value was a script-injection vector on
+// wikipedia.org. Case and surrounding whitespace are forgiven.
+function canonicalizeReasonType(raw) {
+    if (typeof raw !== 'string') return null;
+    const v = raw.trim().toLowerCase();
+    return REASON_TYPE_LIST.includes(v) ? v : null;
+}
+
 // Presenter: canonical UPPERCASE -> title case ('Supported', 'Not supported', ...).
 // Used by benchmark results.json schema and analyze_results.js's confusion matrix.
 const TITLE_CASE = Object.freeze({
@@ -591,10 +605,15 @@ function parseVerificationResult(response) {
         }
         const result = JSON.parse(jsonStr);
         return {
-            verdict: result.verdict || 'UNKNOWN',
+            // Canonicalized so 'Partially Supported' or 'not_supported' mean
+            // the same thing to every consumer — the userscript compares
+            // verdicts by exact string and rendered those as ERROR cards,
+            // while the benchmark and batch pipeline normalized them.
+            // Unrecognized values pass through for diagnostics.
+            verdict: canonicalizeVerdict(result.verdict) || result.verdict || 'UNKNOWN',
             support_score: result.support_score ?? null,
             comments: result.comments || '',
-            reason_type: result.reason_type || null,
+            reason_type: canonicalizeReasonType(result.reason_type),
             // Field-name aliases: models occasionally camelCase the key or
             // shorten it to "quote". Always a string — an absent quote is ''
             // (expected for omission/unavailable), never null, so callers can
@@ -6686,6 +6705,15 @@ function useToolforgeSourceFetcher() {
             return reasonType === 'contradiction' ? this.t('Contradiction') : this.t('Omission');
         }
 
+        // The reason-type badge for a report card or row. The class is built
+        // from a fixed value, never from result.reason_type itself: that is
+        // model output, and was once interpolated raw into this attribute.
+        reasonTypeTagHtml(result) {
+            if (result.verdict !== 'NOT SUPPORTED' || !result.reason_type) return '';
+            const type = result.reason_type === 'contradiction' ? 'contradiction' : 'omission';
+            return `<span class="reason-type-tag reason-type-${type}">${this.escapeHtml(this.reasonTypeLabel(type))}</span>`;
+        }
+
         verdictClassFor(verdict) {
             switch (verdict) {
                 case 'SUPPORTED': return { cls: 'supported', label: this.t('Supported') };
@@ -6738,16 +6766,14 @@ function useToolforgeSourceFetcher() {
             const truncationHtml = (result.truncated && result.verdict !== 'SUPPORTED')
                 ? `<div class="report-card-truncated">${this.t('⚠ Source is long, only partially checked.')}</div>`
                 : '';
-            const reasonTypeHtml = (result.verdict === 'NOT SUPPORTED' && result.reason_type)
-                ? `<span class="reason-type-tag reason-type-${result.reason_type}">${this.reasonTypeLabel(result.reason_type)}</span>`
-                : '';
+            const reasonTypeHtml = this.reasonTypeTagHtml(result);
             card.innerHTML = `
                 <div class="report-card-header">
                     ${result.url
                         ? `<a class="report-card-citation report-card-citation-link" href="${this.escapeHtml(result.url)}" target="_blank" rel="noopener noreferrer">[${result.citationNumber}]</a>`
                         : `<span class="report-card-citation">[${result.citationNumber}]</span>`}
                     <span class="report-card-header-actions">
-                        <span class="report-card-verdict ${verdictClass}">${verdictLabel}</span>${reasonTypeHtml}
+                        <span class="report-card-verdict ${verdictClass}">${this.escapeHtml(verdictLabel)}</span>${reasonTypeHtml}
                     </span>
                 </div>
                 <div class="report-card-claim">${this.escapeHtml(claimExcerpt)}</div>
@@ -6834,16 +6860,14 @@ function useToolforgeSourceFetcher() {
             const slot = groupEl.querySelector('.verifier-report-group-collective');
             if (!slot) return;
 
-            const reasonTypeHtml = (result.verdict === 'NOT SUPPORTED' && result.reason_type)
-                ? `<span class="reason-type-tag reason-type-${result.reason_type}">${this.reasonTypeLabel(result.reason_type)}</span>`
-                : '';
+            const reasonTypeHtml = this.reasonTypeTagHtml(result);
             const truncationHtml = (result.truncated && result.verdict !== 'SUPPORTED')
                 ? `<div class="report-card-truncated">${this.t('⚠ Combined sources are long, only partially checked.')}</div>`
                 : '';
             slot.innerHTML = `
                 <div class="verifier-report-group-collective-header">
                     <span class="verifier-report-group-collective-label">${this.t('Combined verdict')}</span>
-                    <span class="report-card-verdict ${verdictClass}">${verdictLabel}</span>${reasonTypeHtml}
+                    <span class="report-card-verdict ${verdictClass}">${this.escapeHtml(verdictLabel)}</span>${reasonTypeHtml}
                 </div>
                 ${this.quoteHtml(this.quoteViewOf(result))}
                 ${result.comments ? `<div class="report-card-comment">${this.escapeHtml(result.comments)}</div>` : ''}
@@ -6874,16 +6898,14 @@ function useToolforgeSourceFetcher() {
             const truncationHtml = (result.truncated && result.verdict !== 'SUPPORTED')
                 ? `<div class="report-card-truncated">${this.t('⚠ Source is long, only partially checked.')}</div>`
                 : '';
-            const reasonTypeHtml = (result.verdict === 'NOT SUPPORTED' && result.reason_type)
-                ? `<span class="reason-type-tag reason-type-${result.reason_type}">${this.reasonTypeLabel(result.reason_type)}</span>`
-                : '';
+            const reasonTypeHtml = this.reasonTypeTagHtml(result);
             row.innerHTML = `
                 <div class="verifier-report-group-row-header">
                     ${result.url
                         ? `<a class="report-card-citation report-card-citation-link" href="${this.escapeHtml(result.url)}" target="_blank" rel="noopener noreferrer">[${result.citationNumber}]</a>`
                         : `<span class="report-card-citation">[${result.citationNumber}]</span>`}
                     <span class="report-card-header-actions">
-                        <span class="report-card-verdict ${verdictClass}">${verdictLabel}</span>${reasonTypeHtml}
+                        <span class="report-card-verdict ${verdictClass}">${this.escapeHtml(verdictLabel)}</span>${reasonTypeHtml}
                     </span>
                 </div>
                 ${this.quoteHtml(this.quoteViewOf(result))}
@@ -6909,10 +6931,13 @@ function useToolforgeSourceFetcher() {
                 .replace(/\}/g, '&#125;');
         }
 
+        // Serializing a text node escapes only & < >, so quotes are replaced
+        // by hand: callers interpolate the result into double-quoted
+        // attributes (href, title), where a bare " would end the attribute.
         escapeHtml(str) {
             const div = document.createElement('div');
             div.textContent = str;
-            return div.innerHTML;
+            return div.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
         }
 
         renderReportActions() {
