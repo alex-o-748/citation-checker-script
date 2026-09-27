@@ -12,9 +12,9 @@ const WIKIPEDIA_ORIGIN = /^https:\/\/[a-z0-9-]+\.wikipedia\.org$/i;
 // X-Forwarded-For (https://phabricator.wikimedia.org/T228500), so every
 // request arrives from the proxy and there is no per-client key to limit on.
 // The budget protects tf-llm-router, which the batch sweeps also call:
-// 10/minute is ~0.17 calls/s, under a tenth of the ~2.2 calls/s peak measured
+// 30/minute is 0.5 calls/s, under a quarter of the ~2.2 calls/s peak measured
 // in docs/design-plans/2026-08-25-verify-concurrency-and-the-fetch-question.md.
-const RATE_LIMIT = 10;
+const RATE_LIMIT = 30;
 const RATE_WINDOW_MS = 60_000;
 
 export function createRateLimiter({ limit = RATE_LIMIT, windowMs = RATE_WINDOW_MS, now = Date.now } = {}) {

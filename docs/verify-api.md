@@ -125,14 +125,14 @@ Errors have `{ "error": "..." }`; pipeline failures also include `stage`.
 | `429` | Service-wide request limit exceeded; honor `Retry-After`. |
 | `502` | Provider failure or unreadable model response. |
 
-The included server permits 10 requests/minute **in total, across all
+The included server permits 30 requests/minute **in total, across all
 callers**, and its `RateLimit-*` headers describe that shared budget. It is not
 per client because on Toolforge it cannot be: the front proxy hides client IP
 addresses from tools and sends no `X-Forwarded-For`
 ([T228500](https://phabricator.wikimedia.org/T228500)), so every request
 arrives from the proxy's address. The budget is sized against `tf-llm-router`,
-which the batch sweeps also call: 10/minute is about 0.17 calls/s, under a
-tenth of the ~2.2 calls/s peak measured in
+which the batch sweeps also call: 30/minute is 0.5 calls/s, under a
+quarter of the ~2.2 calls/s peak measured in
 [`design-plans/2026-08-25-verify-concurrency-and-the-fetch-question.md`](design-plans/2026-08-25-verify-concurrency-and-the-fetch-question.md).
 The accepted cost of a global limit is that one heavy caller can use the whole
 budget.
@@ -181,7 +181,7 @@ Inference goes through `tf-llm-router` and source fetches through
 router's `/hf` route calls HuggingFace with whatever credential the router
 holds; that account, not this service, is where model usage is billed.
 What they do draw on is the two Toolforge tools' capacity, shared with the
-batch sweeps: the global limit caps the API at **14,400 checks/day** in total.
+batch sweeps: the global limit caps the API at **43,200 checks/day** in total.
 No billing system is added.
 
 No prompt, verdict vocabulary, parser, truncation rule, citation grouping,

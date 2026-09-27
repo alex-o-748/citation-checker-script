@@ -171,7 +171,7 @@ test('HTTP endpoint supports JSON POST and Wikipedia-scoped CORS', async () => {
     });
     assert.equal(response.status, 200);
     assert.equal(response.headers.get('access-control-allow-origin'), 'https://en.wikipedia.org');
-    assert.equal(response.headers.get('ratelimit-limit'), '10');
+    assert.equal(response.headers.get('ratelimit-limit'), '30');
     assert.deepEqual(await response.json(), { verdict: 'SUPPORTED' });
     const foreign = await fetch(`${base}/v1/verify`, {
       method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'https://example.org' }, body: '{}',
