@@ -10,8 +10,9 @@
     "ccs": "./bin/ccs"
   },
   "scripts": {
-    "test": "node --test 'tests/**/*.test.js'",
-    "build": "node scripts/sync-main.js"
+    "test": "node --test tests/*.test.js",
+    "build": "node scripts/sync-main.js",
+    "start": "node api/server.js"
   },
   "dependencies": {
     "jsdom": "^24.0.0",
