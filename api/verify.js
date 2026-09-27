@@ -6,7 +6,15 @@
 // verification behaviour beside core/pipeline.js.
 
 import { verifyCitation, VERIFY_STAGES } from '../core/pipeline.js';
-import { DEFAULT_PROVIDER, modelFor } from '../core/models.js';
+import { modelFor } from '../core/models.js';
+
+// Every request goes to Lift Wing, which core/providers.js reaches through the
+// tf-llm-router Toolforge tool unless a workerBase overrides it. That keeps
+// the public API's inference inside Wikimedia infrastructure and off the
+// personal Cloudflare worker, whose shared path 429'd after two back-to-back
+// calls where the router took a hundred without error
+// (docs/design-plans/2026-08-25-verify-concurrency-and-the-fetch-question.md).
+const API_PROVIDER = 'liftwing';
 
 export const MAX_CLAIM_CHARS = 10_000;
 export const MAX_SOURCE_CONTENT_CHARS = 50_000;
@@ -85,10 +93,10 @@ function failureStatus(stage) {
 /**
  * Verify a validated public request with the same five-step function used by
  * the CLI and other core consumers. The provider is intentionally not a
- * request parameter: the public service operator chooses one deployment-wide.
+ * request parameter: every request uses API_PROVIDER.
  */
 export async function verifyRequest(body, {
-    provider = DEFAULT_PROVIDER,
+    provider = API_PROVIDER,
     model = modelFor(provider),
     workerBase,
     fetchSource,

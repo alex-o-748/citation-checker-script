@@ -5,6 +5,7 @@ import { createRateLimiter, createVerifyServer } from '../api/server.js';
 import {
   MAX_BODY_BYTES, MAX_CLAIM_CHARS, MAX_SOURCE_CONTENT_CHARS, verifyRequest,
 } from '../api/verify.js';
+import { modelFor } from '../core/models.js';
 
 const MODEL_RESPONSE = {
   verdict: 'SUPPORTED', support_score: 98,
@@ -91,15 +92,38 @@ test('verifyRequest rejects malformed requests before inference', async () => {
   assert.match(badUrl.body.error, /http or https/);
 });
 
-test('rate limiter has a fixed window per client address', () => {
+test('rate limiter is one fixed window shared by every caller', () => {
+  // Toolforge's front proxy hides client addresses, so there is no per-client
+  // key: a caller the limiter can't tell apart must draw on the same budget.
   let now = 1000;
   const limit = createRateLimiter({ limit: 2, windowMs: 5000, now: () => now });
-  assert.deepEqual(limit('a'), { allowed: true, limit: 2, remaining: 1, resetSeconds: 5 });
-  assert.equal(limit('a').allowed, true);
-  assert.equal(limit('a').allowed, false);
-  assert.equal(limit('b').allowed, true);
+  assert.deepEqual(limit(), { allowed: true, limit: 2, remaining: 1, resetSeconds: 5 });
+  assert.equal(limit('ignored-key').allowed, true);
+  assert.equal(limit('another-key').allowed, false);
   now = 6000;
-  assert.equal(limit('a').allowed, true);
+  assert.equal(limit().allowed, true);
+});
+
+test('verifyRequest sends every model call to Lift Wing through tf-llm-router', async () => {
+  const calls = [];
+  const original = globalThis.fetch;
+  globalThis.fetch = async (url, opts) => {
+    calls.push({ url: String(url), body: JSON.parse(opts.body) });
+    return {
+      ok: true, status: 200,
+      json: async () => ({ choices: [{ message: { content: JSON.stringify(MODEL_RESPONSE) } }] }),
+    };
+  };
+  let result;
+  try {
+    result = await verifyRequest({ claim: 'The bridge opened in 1998.', source_content: 'The bridge opened in 1998.' });
+  } finally {
+    globalThis.fetch = original;
+  }
+  assert.equal(result.status, 200);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, 'https://llm-router.toolforge.org/liftwing');
+  assert.equal(calls[0].body.model, modelFor('liftwing'));
 });
 
 async function withServer(options, fn) {

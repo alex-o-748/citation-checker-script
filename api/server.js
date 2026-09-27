@@ -6,40 +6,32 @@ import { MAX_BODY_BYTES, verifyRequest } from './verify.js';
 import { OPENAPI_DOCUMENT } from './openapi.js';
 
 const WIKIPEDIA_ORIGIN = /^https:\/\/[a-z0-9-]+\.wikipedia\.org$/i;
+
+// One budget shared by every caller, not one per client. Toolforge's front
+// proxy deliberately hides client addresses from tools and sends no
+// X-Forwarded-For (https://phabricator.wikimedia.org/T228500), so every
+// request arrives from the proxy and there is no per-client key to limit on.
+// The budget protects tf-llm-router, which the batch sweeps also call:
+// 10/minute is ~0.17 calls/s, under a tenth of the ~2.2 calls/s peak measured
+// in docs/design-plans/2026-08-25-verify-concurrency-and-the-fetch-question.md.
 const RATE_LIMIT = 10;
 const RATE_WINDOW_MS = 60_000;
 
-function clientAddress(req) {
-    // Do not trust X-Forwarded-For here. A deployment with a trusted reverse
-    // proxy must replace this function at that boundary rather than letting a
-    // caller choose its own rate-limit key.
-    return req.socket.remoteAddress || 'unknown';
-}
-
 export function createRateLimiter({ limit = RATE_LIMIT, windowMs = RATE_WINDOW_MS, now = Date.now } = {}) {
-    const clients = new Map();
-    return (key) => {
+    let count = 0;
+    let resetAt = 0;
+    return () => {
         const time = now();
-        // Bound retained state when scanners continually rotate addresses.
-        if (clients.size >= 10_000) {
-            for (const [client, value] of clients) {
-                if (value.resetAt <= time) clients.delete(client);
-            }
-            if (clients.size >= 10_000 && !clients.has(key)) {
-                clients.delete(clients.keys().next().value);
-            }
+        if (resetAt <= time) {
+            count = 0;
+            resetAt = time + windowMs;
         }
-        let entry = clients.get(key);
-        if (!entry || entry.resetAt <= time) {
-            entry = { count: 0, resetAt: time + windowMs };
-            clients.set(key, entry);
-        }
-        entry.count += 1;
+        count += 1;
         return {
-            allowed: entry.count <= limit,
+            allowed: count <= limit,
             limit,
-            remaining: Math.max(0, limit - entry.count),
-            resetSeconds: Math.max(1, Math.ceil((entry.resetAt - time) / 1000)),
+            remaining: Math.max(0, limit - count),
+            resetSeconds: Math.max(1, Math.ceil((resetAt - time) / 1000)),
         };
     };
 }
@@ -82,7 +74,7 @@ async function readJson(req) {
     }
 }
 
-export function createVerifyServer({ verify = verifyRequest, rateLimit = createRateLimiter(), address = clientAddress } = {}) {
+export function createVerifyServer({ verify = verifyRequest, rateLimit = createRateLimiter() } = {}) {
     return createServer(async (req, res) => {
         const cors = corsHeaders(req);
         const pathname = new URL(req.url, 'http://localhost').pathname;
@@ -114,7 +106,7 @@ export function createVerifyServer({ verify = verifyRequest, rateLimit = createR
             return sendJson(res, 415, { error: 'Content-Type must be application/json' }, cors);
         }
 
-        const allowance = rateLimit(address(req));
+        const allowance = rateLimit();
         const rateHeaders = {
             'RateLimit-Limit': String(allowance.limit),
             'RateLimit-Remaining': String(allowance.remaining),

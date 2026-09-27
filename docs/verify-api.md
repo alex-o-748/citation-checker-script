@@ -75,8 +75,10 @@ Send `Content-Type: application/json` with:
 | `source_content` | string | one source field | Source text; maximum 50,000 characters. Takes precedence if both fields are present; whitespace-only text counts as absent. |
 | `page` | positive integer | no | Page to extract from a PDF at `source_url`. |
 
-The endpoint intentionally has no provider or model parameter. Deployment
-selects one existing provider/model pair, avoiding a new model-selection API.
+The endpoint intentionally has no provider or model parameter. Every request
+uses Lift Wing (`liftwing` in `core/models.js`, which names the model), reached
+through the `tf-llm-router` Toolforge tool, so inference stays inside Wikimedia
+infrastructure.
 
 ### Copyable example
 
@@ -116,14 +118,20 @@ Errors have `{ "error": "..." }`; pipeline failures also include `stage`.
 | `413` | Request body exceeds 368,192 bytes. Sized so the character limits above are always the ones reached first, in any script, even when every character is sent as a `\uXXXX` escape. |
 | `415` | Request is not `application/json`. |
 | `422` | Source unavailable or empty. |
-| `429` | Per-client request limit exceeded; honor `Retry-After`. |
+| `429` | Service-wide request limit exceeded; honor `Retry-After`. |
 | `502` | Provider failure or unreadable model response. |
 
-The included server permits 10 requests/minute per directly connected IP and
-returns `RateLimit-*` headers. A production reverse proxy must preserve a
-trusted client address; the application does not trust caller-controlled
-`X-Forwarded-For`. This is a safe local default, not a claim about either
-candidate host's current deployed limit.
+The included server permits 10 requests/minute **in total, across all
+callers**, and its `RateLimit-*` headers describe that shared budget. It is not
+per client because on Toolforge it cannot be: the front proxy hides client IP
+addresses from tools and sends no `X-Forwarded-For`
+([T228500](https://phabricator.wikimedia.org/T228500)), so every request
+arrives from the proxy's address. The budget is sized against `tf-llm-router`,
+which the batch sweeps also call: 10/minute is about 0.17 calls/s, under a
+tenth of the ~2.2 calls/s peak measured in
+[`design-plans/2026-08-25-verify-concurrency-and-the-fetch-question.md`](design-plans/2026-08-25-verify-concurrency-and-the-fetch-question.md).
+The accepted cost of a global limit is that one heavy caller can use the whole
+budget.
 
 CORS response headers are emitted only for HTTPS `*.wikipedia.org` origins.
 CORS is not authentication: command-line and server callers can still use the
@@ -154,20 +162,23 @@ Before deployment, the maintainer must decide:
    whole-article extraction is a separate contract and orchestration surface.
 2. **Migrate the userscript:** recommend no for this change; reconsider after
    the public route has operational evidence.
-3. **Production host:** unresolved. Both candidates were unreachable from the
-   development environment (network proxy HTTP 403), and this repo is not
-   authoritative about current deployment. Confirm externally first.
+3. **Production host:** Toolforge; the global rate limit and Lift Wing routing
+   above assume it. Recommend a tool of its own rather than `source-verifier`
+   (the batch) or `tf-llm-router`: separate quotas, no ToolsDB credentials
+   behind a public endpoint, and deploys that can't change code under a
+   running sweep.
 4. **Prompt changes:** recommend no. This route imports the existing pipeline
    and makes none.
 
 ## Cost exposure and deliberately unchanged behaviour
 
-No current HuggingFace/PublicAI price or exact deployed request limit is
-recorded here, so a defensible dollar figure cannot be derived. At the local
-default, one IP can initiate at most **14,400 checks/day**. If average all-in
-provider cost is `C` dollars/check, exposure is `14,400 × C` dollars/day/IP,
-before stricter upstream limits. Measure `C` from provider usage and replace
-this formula with a dated figure before deployment. No billing system is added.
+Inference runs on Lift Wing, which the Foundation hosts, so API calls draw on
+no personal provider account. What they do draw on is `tf-llm-router`'s
+capacity, shared with the batch sweeps: the global limit caps the API at
+**14,400 checks/day** in total. Source fetches for `source_url` requests still
+take the default fetch path in `core/worker.js` (the Cloudflare worker), not
+`tf-source-fetcher`; moving them is a separate decision, since it would have
+Toolforge fetch URLs chosen by any caller. No billing system is added.
 
 No prompt, verdict vocabulary, parser, truncation rule, citation grouping,
 userscript code, or batch code was changed. No pre-existing verification bug
