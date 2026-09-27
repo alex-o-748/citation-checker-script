@@ -44,7 +44,7 @@ The CLI reuses `core/` to verify a single citation from the terminal — the sam
 
 A per-citation `POST /v1/verify` server is available for deployment and reuses
 the same core verification pipeline. Its contract, limits, copyable `curl`
-example, and current deployment status are in
+example, monitoring board (`GET /status`), and current deployment status are in
 [`docs/verify-api.md`](docs/verify-api.md).
 
 ### Install (from a clone)

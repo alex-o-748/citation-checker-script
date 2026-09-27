@@ -15,7 +15,7 @@ import { fetchSourceContent } from '../core/worker.js';
 // userscript and CLI default, and on 2026-09-27 ~1.5s per text-only check
 // against ~24s for Lift Wing on either route; it also scores higher on the
 // benchmark (65% exact vs 50% for llm-qwen36-27b, 181 rows).
-const API_PROVIDER = 'huggingface';
+export const API_PROVIDER = 'huggingface';
 const LLM_ROUTER_BASE = 'https://llm-router.toolforge.org';
 
 // source_url fetches go to the tf-source-fetcher Toolforge tool, as the batch

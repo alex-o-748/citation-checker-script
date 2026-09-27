@@ -142,6 +142,37 @@ CORS is not authentication: command-line and server callers can still use the
 public endpoint. URL sources go through `tf-source-fetcher`, so
 the API adds no direct-fetch path or bypass around that service's URL policy.
 
+## Monitoring: `GET /status` and `GET /metrics.json`
+
+The server carries its own monitoring board. `/status` is a single HTML page
+(inline CSS, script and SVG — Toolforge forbids third-party resources) that
+polls `/metrics.json` every 15 seconds and shows:
+
+* **Health** over the last 15 minutes: `ok`, `degraded` (more than 25% of
+  calls that reached the pipeline ended in a 5xx), or `idle` (none reached it).
+* Request count, share answered, latency p50/p95, and the shared rate budget
+  left in the current window, for the last hour or the last 24 hours.
+* Requests over time stacked by outcome (answered, source unavailable, upstream
+  error, rate limited, rejected), and average latency over time.
+* Verdict mix, which stage failed (`source` / `provider` / `parse`), and
+  whether callers sent a URL or text.
+* The 20 most recent requests.
+
+`/metrics.json` is the same data for scripts. Neither route spends from the
+verify rate budget or is counted as traffic.
+
+Things to know when reading it:
+
+* **Counters are in-process memory** (`api/metrics.js`). They reset whenever the
+  webservice restarts, and the board shows the uptime so a reset is visible.
+  If Toolforge ever runs more than one replica, each serves only its own counts.
+* **Latency counts only calls that reached the pipeline.** A 400 or 429 returns
+  in microseconds and would otherwise flatter every percentile.
+* **No request content is kept** — no claim, no source text, no URL path or
+  query. The one thing recorded about a source is its hostname, which is what
+  makes a run of 422s from one publisher recognisable. The board is as public
+  as the endpoint, so keep it that way.
+
 ## Audit findings and decisions needed
 
 Corrections to the commission's hypotheses:
