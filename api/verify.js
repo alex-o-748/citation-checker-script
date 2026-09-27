@@ -9,19 +9,20 @@ import { verifyCitation, VERIFY_STAGES } from '../core/pipeline.js';
 import { modelFor } from '../core/models.js';
 import { fetchSourceContent } from '../core/worker.js';
 
-// Every request goes to Lift Wing, which core/providers.js reaches through the
-// tf-llm-router Toolforge tool unless a workerBase overrides it. That keeps
-// the public API's inference inside Wikimedia infrastructure and off the
-// personal Cloudflare worker, whose shared path 429'd after two back-to-back
-// calls where the router took a hundred without error
-// (docs/design-plans/2026-08-25-verify-concurrency-and-the-fetch-question.md).
-const API_PROVIDER = 'liftwing';
+// Every request goes to HuggingFace's gpt-oss-20b through the tf-llm-router
+// Toolforge tool (its /hf route, as `ccs verify --live-llm-router` uses),
+// never through the personal Cloudflare worker. The same model as the
+// userscript and CLI default, and on 2026-09-27 ~1.5s per text-only check
+// against ~24s for Lift Wing on either route; it also scores higher on the
+// benchmark (65% exact vs 50% for llm-qwen36-27b, 181 rows).
+const API_PROVIDER = 'huggingface';
+const LLM_ROUTER_BASE = 'https://llm-router.toolforge.org';
 
 // source_url fetches go to the tf-source-fetcher Toolforge tool, as the batch
 // pipeline's --live-source-fetch does, not to core/worker.js's default (the
 // Cloudflare worker). This is bound here rather than passed as workerBase,
-// because verifyCitation() hands workerBase to the model call too, which
-// would send the Lift Wing request to the fetcher.
+// because verifyCitation() hands workerBase to the model call too: the
+// router's base goes there, the fetcher's here.
 const SOURCE_FETCHER_BASE = 'https://source-fetcher.toolforge.org';
 
 function fetchViaSourceFetcher(url, pageNum) {
@@ -110,7 +111,7 @@ function failureStatus(stage) {
 export async function verifyRequest(body, {
     provider = API_PROVIDER,
     model = modelFor(provider),
-    workerBase,
+    workerBase = LLM_ROUTER_BASE,
     fetchSource = fetchViaSourceFetcher,
     callProvider,
 } = {}) {

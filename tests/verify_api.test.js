@@ -104,7 +104,7 @@ test('rate limiter is one fixed window shared by every caller', () => {
   assert.equal(limit().allowed, true);
 });
 
-test('verifyRequest sends every model call to Lift Wing through tf-llm-router', async () => {
+test('verifyRequest sends every model call to HuggingFace through tf-llm-router', async () => {
   const calls = [];
   const original = globalThis.fetch;
   globalThis.fetch = async (url, opts) => {
@@ -122,8 +122,8 @@ test('verifyRequest sends every model call to Lift Wing through tf-llm-router', 
   }
   assert.equal(result.status, 200);
   assert.equal(calls.length, 1);
-  assert.equal(calls[0].url, 'https://llm-router.toolforge.org/liftwing');
-  assert.equal(calls[0].body.model, modelFor('liftwing'));
+  assert.equal(calls[0].url, 'https://llm-router.toolforge.org/hf');
+  assert.equal(calls[0].body.model, modelFor('huggingface'));
 });
 
 test('verifyRequest fetches source_url through tf-source-fetcher, not the Cloudflare worker', async () => {
@@ -148,7 +148,7 @@ test('verifyRequest fetches source_url through tf-source-fetcher, not the Cloudf
   assert.equal(result.status, 200);
   assert.deepEqual(urls, [
     `https://source-fetcher.toolforge.org/?fetch=${encodeURIComponent('https://example.org/bridge')}&page=2`,
-    'https://llm-router.toolforge.org/liftwing',
+    'https://llm-router.toolforge.org/hf',
   ]);
 });
 

@@ -76,9 +76,13 @@ Send `Content-Type: application/json` with:
 | `page` | positive integer | no | Page to extract from a PDF at `source_url`. |
 
 The endpoint intentionally has no provider or model parameter. Every request
-uses Lift Wing (`liftwing` in `core/models.js`, which names the model), reached
-through the `tf-llm-router` Toolforge tool, so inference stays inside Wikimedia
-infrastructure.
+uses the `huggingface` provider (`openai/gpt-oss-20b`, named in
+`core/models.js`), the same model as the userscript and CLI default, reached
+through the `tf-llm-router` Toolforge tool's `/hf` route rather than the
+personal Cloudflare worker. It was chosen over Lift Wing (`liftwing`) on
+2026-09-27: ~1.5 s per text-only check against ~24 s for Lift Wing on either
+route, and 65% exact accuracy against 50% on the benchmark's 181 rows (binary
+accuracy is level, ~72%).
 
 ### Copyable example
 
@@ -162,8 +166,8 @@ Before deployment, the maintainer must decide:
    whole-article extraction is a separate contract and orchestration surface.
 2. **Migrate the userscript:** recommend no for this change; reconsider after
    the public route has operational evidence.
-3. **Production host:** Toolforge; the global rate limit and Lift Wing routing
-   above assume it. Recommend a tool of its own rather than `source-verifier`
+3. **Production host:** Toolforge; the global rate limit and `tf-llm-router`
+   routing above assume it. Recommend a tool of its own rather than `source-verifier`
    (the batch) or `tf-llm-router`: separate quotas, no ToolsDB credentials
    behind a public endpoint, and deploys that can't change code under a
    running sweep.
@@ -172,8 +176,10 @@ Before deployment, the maintainer must decide:
 
 ## Cost exposure and deliberately unchanged behaviour
 
-Inference runs on Lift Wing, which the Foundation hosts, and source fetches
-run on `tf-source-fetcher`, so neither draws on the personal Cloudflare worker.
+Inference goes through `tf-llm-router` and source fetches through
+`tf-source-fetcher`, so neither draws on the personal Cloudflare worker. The
+router's `/hf` route calls HuggingFace with whatever credential the router
+holds; that account, not this service, is where model usage is billed.
 What they do draw on is the two Toolforge tools' capacity, shared with the
 batch sweeps: the global limit caps the API at **14,400 checks/day** in total.
 No billing system is added.
