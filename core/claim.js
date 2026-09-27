@@ -1,9 +1,26 @@
 // Extracts the prose claim text bearing a given citation from a parsed
 // Wikipedia Document. Works with both browser DOM and JSDOM.
 
-export const MAINTENANCE_MARKER_RE = /\[(failed verification|verification needed|citation needed|better source[^\]]*|dubious[^\]]*|unreliable source[^\]]*|clarification needed|disputed[^\]]*|page needed|when\??|where\??|who\??|why\??|by whom\??|according to whom\??|original research[^\]]*|specify[^\]]*|vague|opinion|fact)\]/gi;
+export const MAINTENANCE_MARKER_RE = /\[(failed verification|verification needed|citation needed|better source[^\]]*|dubious[^\]]*|unreliable source[^\]]*|clarification needed|disputed[^\]]*|page needed|when\??|where\??|who\??|why\??|by whom\??|according to whom\??|original research[^\]]*|specify[^\]]*|vague|opinion|fact|когда\??|где\??|кто\??|кем\??|почему\??|какой\??|какая\??|какие\??|нет АИ|АИ\??|источник не указан[^\]]*|не в источнике|уточнить|прояснить|значимость факта\??|неавторитетный источник\??)\]/giu;
 
 const TEXT_NODE = 3;
+const ELEMENT_NODE = 1;
+
+// Elements whose text is never article prose. <style> is the one that bites:
+// TemplateStyles emits an inline stylesheet inside the rendered template
+// (ru.wikipedia's {{Когда?}} puts one right in the sentence), and its CSS
+// would otherwise be read as claim text. .noprint marks inline maintenance
+// templates ([citation needed], [когда?], ...) on every wiki, which is a
+// language-independent way to drop them — MAINTENANCE_MARKER_RE only knows
+// the wordings someone has listed.
+const NON_PROSE_SELECTOR = 'style, script, .noprint, .ts-fix-template';
+
+function isNonProse(node) {
+    return node.nodeType === ELEMENT_NODE
+        && typeof node.matches === 'function'
+        && node.matches(NON_PROSE_SELECTOR)
+        && !node.classList.contains('reference');
+}
 
 // --- Text-between-two-points, without Range -------------------------------
 //
@@ -60,7 +77,11 @@ export function textBetween(startAfter, endBefore, root) {
     let text = '';
     while (node && node !== endBefore) {
         if (node.nodeType === TEXT_NODE) text += node.data;
-        node = following(node, root);
+        // Skip a non-prose subtree whole — unless the endpoint sits inside it,
+        // in which case skipping would walk past the end to the root's end.
+        node = isNonProse(node) && !node.contains(endBefore)
+            ? followingSkippingSubtree(node, root)
+            : following(node, root);
     }
     return text;
 }
@@ -104,12 +125,18 @@ export function getCitationGroup(refElement) {
 }
 
 // Splits on a sentence-ending mark followed by whitespace and what looks like
-// the start of a new sentence, then returns the last piece. Deliberately
-// naive about abbreviations ("Dr. Smith", "U.S. policy") — for this use
-// (finding where the final sentence of a claim begins), under-splitting an
-// abbreviation into the same sentence is the safer failure than over-
-// splitting mid-abbreviation and truncating the real claim.
-const SENTENCE_SPLIT_RE = /(?<=[.!?])\s+(?=[A-Z0-9"'(À-Ü])/;
+// the start of a new sentence, then returns the last piece. Naive about
+// abbreviations and initials: "Dr. Smith", "А. С. Пушкин" and "в 1837 г.
+// Пушкин" all split after the period, cutting the claim short. The batch
+// pipeline therefore replaces this with sentencex, which carries per-language
+// abbreviation lists (service/sentences.js); the userscript keeps this
+// version, where sentence scope is an opt-in and an editor reads the claim.
+//
+// "Looks like the start of a sentence" is any uppercase letter (\p{Lu}, so
+// Cyrillic, Greek, accented Latin all count — an ASCII-only class silently
+// made sentence scope a no-op on ru.wikipedia), a digit, or an opening quote
+// or bracket, including the «» and „“ quotes non-English wikis use.
+const SENTENCE_SPLIT_RE = /(?<=[.!?…])\s+(?=[\p{Lu}\p{Lt}\d"'(«„“‘])/u;
 
 // Returns just the final sentence of `text` — the sentence immediately
 // preceding wherever `text` ends. Used for the batch pipeline's stricter
@@ -135,7 +162,13 @@ export function isClaimTooShort(claimText, minLength = MIN_CLAIM_LENGTH) {
     return !claimText || claimText.trim().length < minLength;
 }
 
-export function extractClaimText(refElement, { scope = 'paragraph' } = {}) {
+// `splitLastSentence` narrows the claim under scope 'sentence'. The default is
+// lastSentence() above, which is what the userscript uses; the batch pipeline
+// injects a sentencex-backed splitter (service/sentences.js) that knows each
+// language's abbreviations, so "А. С. Пушкин" or "Dr. Smith" isn't cut in two.
+// It is injected rather than imported because sentencex is a native Node
+// module and this file also runs in the browser, inlined into main.js.
+export function extractClaimText(refElement, { scope = 'paragraph', splitLastSentence = lastSentence } = {}) {
     const container = refElement.closest('p, li, td, div, section');
     if (!container) {
         return '';
@@ -206,7 +239,7 @@ export function extractClaimText(refElement, { scope = 'paragraph' } = {}) {
     // too short to be a claim, callers skip the citation and say so (see
     // isClaimTooShort() and CLAIM_TOO_SHORT) rather than guess.
     if (scope === 'sentence') {
-        claimText = lastSentence(claimText);
+        claimText = splitLastSentence(claimText);
     }
 
     return claimText;

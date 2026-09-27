@@ -62,6 +62,15 @@ test('paragraph text drops footnote markers and is shared by citations in one pa
     assert.equal(byNumber['2'].paragraphText, expected);
 });
 
+test('paragraph text skips TemplateStyles CSS and inline maintenance templates, as claim text does', () => {
+    const byNumber = contextFor(
+        '<p>Пушкин родился в Москве' +
+        '<sup class="noprint Inline-Template"><style data-mw-deduplicate="x">.mw-parser-output .ts-x{color:red}</style>' +
+        '[<i>когда?</i>]</sup>.' + ref(1) + '</p>' + notes([1])
+    );
+    assert.equal(byNumber['1'].paragraphText, 'Пушкин родился в Москве.');
+});
+
 test('an over-long paragraph is capped', () => {
     const long = 'word '.repeat(MAX_PARAGRAPH_CHARS);
     const byNumber = contextFor(`<p>${long}and the claim itself.${ref(1)}</p>${notes([1])}`);

@@ -72,9 +72,18 @@ import { resolveTitleInfo } from './wikipedia-pageids.js';
 import { csvHeaderLine, appendFinding, csvPageTitles, cleanCsvPath, writeCleanCsv } from './csv-report.js';
 import { PROMPT_VERSION } from '../core/prompts.js';
 import { PROVIDER_MODELS, PROVIDER_ENV_VARS } from './provider-config.js';
+import { isRetryableError } from '../core/retry.js';
+
+// reason_type on an ERROR row whose model call kept failing transiently.
+export const RETRIES_EXHAUSTED = 'retries_exhausted';
 
 // Same contract as service/run-extract.js's — see that file's comment.
 const TOOLFORGE_SOURCE_FETCHER_BASE = 'https://source-fetcher.toolforge.org';
+
+// How many model calls in a row may exhaust their retries before the sweep
+// stops treating them as one citation's bad luck and halts: a Lift Wing that
+// is actually down should stop the run, not fill the CSV with ERROR rows.
+export const DEFAULT_MAX_CONSECUTIVE_FAILURES = 10;
 
 export function parseCliArgs(argv) {
     const { values } = parseArgs({
@@ -88,6 +97,7 @@ export function parseCliArgs(argv) {
             model:               { type: 'string' },
             'delay-ms':          { type: 'string', default: '1000' },
             concurrency:         { type: 'string', default: '1' },
+            'max-consecutive-failures': { type: 'string', default: String(DEFAULT_MAX_CONSECUTIVE_FAILURES) },
             'live-source-fetch': { type: 'boolean', default: false },
             store:               { type: 'boolean', default: false },
             resume:              { type: 'boolean', default: false },
@@ -113,6 +123,7 @@ export function parseCliArgs(argv) {
         model: values.model || PROVIDER_MODELS[values.provider],
         delayMs: Number(values['delay-ms']),
         concurrency: Number(values.concurrency),
+        maxConsecutiveFailures: Number(values['max-consecutive-failures']),
         liveSourceFetch: values['live-source-fetch'],
         store: values.store,
         resume: values.resume,
@@ -163,6 +174,12 @@ Options:
                          you're calling and worth re-measuring
                          (scripts/probe-concurrency.js) before trusting a
                          number this comment will go stale on.
+  --max-consecutive-failures <n>
+                        Halt once this many model calls in a row have failed
+                         even after retrying (default: ${DEFAULT_MAX_CONSECUTIVE_FAILURES}). A single such
+                         failure is recorded as an ERROR row and the sweep
+                         moves on; a run of them means the model service is
+                         down, and halting beats filling the CSV with ERRORs.
   --live-source-fetch   Fetch real sources via tf-source-fetcher instead of the
                          stub. Needs no permission — WMCS cleared unattended
                          fetching from Toolforge on 2026-09-13. It stays
@@ -194,12 +211,19 @@ Options:
                         <name>-clean.csv.
   --help, -h            Show this help and exit.
 
-A halt on an auth/billing error (401/402/403) from the model stops the run
-immediately, exit code 3 — see ProviderAuthError in service/verifier.js. Any
-other unrecoverable model-call error (e.g. a 429 that exhausted retries)
-halts the same way, exit code 4. Either way the CSV (and, with --store,
-ToolsDB) still gets every finding computed before the halt; nothing already
-written is rolled back.
+A model call that still fails with a transient error (429, 5xx, timeout,
+network) after its retries is recorded as an ERROR row with reason_type
+retries_exhausted, and the sweep continues. --resume treats that article as
+done, so those citations are not retried automatically.
+
+The run halts instead:
+  - on an auth/billing error (401/402/403), immediately, exit code 3 — see
+    ProviderAuthError in service/verifier.js;
+  - after --max-consecutive-failures transient failures in a row, exit code 4;
+  - on any error that isn't transient (not a 429/5xx/network failure, e.g. an
+    unexpected response shape), immediately, exit code 4.
+Either way the CSV (and, with --store, ToolsDB) still gets every finding
+computed before the halt; nothing already written is rolled back.
 `;
 
 // Parses --titles-file's contents: one article title per line, blank lines
@@ -284,6 +308,9 @@ export async function runSweep(opts, {
     readFile,
     readTitlesFile = path => fsReadFile(path, 'utf8'),
     resolveTitleInfoFn = resolveTitleInfo,
+    // Merged into every call's core/retry.js options; tests pass a no-op
+    // sleepFn so exhausting retries doesn't cost real backoff time.
+    retryOptions = {},
 } = {}) {
     // opts.max is left undefined by parseCliArgs when --titles-file is given
     // and --max wasn't — the titles-file branch below resolves that to "every
@@ -295,6 +322,11 @@ export async function runSweep(opts, {
     }
     if (!Number.isInteger(opts.concurrency) || opts.concurrency < 1) {
         stderr.write(`sweep: --concurrency must be a positive integer (got: ${opts.concurrency})\n`);
+        return 2;
+    }
+    const maxConsecutiveFailures = opts.maxConsecutiveFailures ?? DEFAULT_MAX_CONSECUTIVE_FAILURES;
+    if (!Number.isInteger(maxConsecutiveFailures) || maxConsecutiveFailures < 1) {
+        stderr.write(`sweep: --max-consecutive-failures must be a positive integer (got: ${opts.maxConsecutiveFailures})\n`);
         return 2;
     }
 
@@ -546,6 +578,51 @@ export async function runSweep(opts, {
     let halted = false;
     let haltError = null;
 
+    // A transient failure (429/5xx/timeout/network) that outlasted
+    // core/retry.js's attempts is one citation's bad luck, not proof the run
+    // is broken: three sweeps in a row were halted by a single Lift Wing call
+    // timing out on every attempt while the calls around it succeeded. So it
+    // becomes an ERROR row, and only a run of them in a row halts. The count
+    // resets only on a call that actually reached the model — a SOURCE
+    // UNAVAILABLE short-circuit says nothing about whether the model is up.
+    let consecutiveFailures = 0;
+    let transientFailures = 0;
+
+    // Counts a failed model call toward the consecutive-failure breaker, and
+    // trips it. Returns false when the error must halt the run on its own
+    // (auth/billing, or not recognizably transient). Shared by the verdict
+    // calls and the severity pass: both hit the same model service, so a run
+    // of failures in either means the same thing.
+    function countTransientFailure(error) {
+        if (error instanceof ProviderAuthError || !isRetryableError(error)) return false;
+        consecutiveFailures++;
+        if (consecutiveFailures >= maxConsecutiveFailures && !halted) {
+            halted = true;
+            haltError = new Error(
+                `${consecutiveFailures} consecutive model calls failed after retrying; last error: ${error.message}`
+            );
+        }
+        return true;
+    }
+
+    // Returns the ERROR verification to record for `error`, or null when the
+    // error must halt the run: auth/billing, or anything not recognizably
+    // transient (an unexpected response shape is a bug, not bad luck).
+    function absorbFailure(error, fields) {
+        if (!countTransientFailure(error)) return null;
+        transientFailures++;
+        return {
+            ...fields,
+            verdict: 'ERROR',
+            supportScore: null,
+            reasonType: RETRIES_EXHAUSTED,
+            rationale: `Model call failed after retrying: ${error.message}`,
+            sourceQuote: null,
+            quoteStatus: null,
+            usage: null,
+        };
+    }
+
     // Answers "is fetch or verify the bottleneck" without guessing. `fetchMs`
     // is true wall-clock time (the producer is the only thing calling
     // articles.next(), so these deltas never overlap with each other — they
@@ -606,7 +683,7 @@ export async function runSweep(opts, {
         // article's worth of fetching slip through after halting before it
         // took effect. Driving runBatch's iterator by hand puts the check
         // before each fetch instead of after.
-        const articles = runBatch(candidates, { parseHtml, fetchArticle: fetchArticleFn, fetchSource });
+        const articles = runBatch(candidates, { parseHtml, fetchArticle: fetchArticleFn, fetchSource, langCode: articleLangCode });
         while (true) {
             if (halted) return;
             const fetchStartedAt = Date.now();
@@ -655,8 +732,12 @@ export async function runSweep(opts, {
     }
 
     // The severity pass for one flagged finding, or null when it doesn't
-    // apply. Throws like verifyCitation() does, so the caller halts the same
-    // way on an auth/billing error.
+    // apply. Never throws: the verdict it ranks is already paid for and is
+    // recorded either way, so a failure here only leaves the finding
+    // unranked. Same failure policy as the verdict call — a transient failure
+    // that outlasted its retries is recorded (severity_error
+    // retries_exhausted) and counts toward --max-consecutive-failures; an
+    // auth/billing or non-transient error halts the run after this finding.
     async function rankFinding({ claimText, sourceInfo, sourceTruncated, verification, wikiCandidate, context }) {
         if (!opts.severity || !needsSeverity(verification)) return null;
         const { onAttemptFailed, finish } = trackRetries();
@@ -667,13 +748,23 @@ export async function runSweep(opts, {
                 articleTitle: wikiCandidate.title,
                 sectionTitle: context?.sectionTitle ?? null,
                 paragraphText: context?.paragraphText ?? null,
-            }, { callModel, retry: { onAttemptFailed } });
+            }, { callModel, retry: { ...retryOptions, onAttemptFailed } });
+        } catch (error) {
+            if (countTransientFailure(error)) {
+                severity = { tier: null, subclaims: null, error: RETRIES_EXHAUSTED };
+            } else {
+                if (!halted) { halted = true; haltError = error; }
+                severity = { tier: null, subclaims: null, error: 'halted' };
+            }
         } finally {
             finish();
         }
         const key = severity.tier ?? 'error';
         severityCounts[key] = (severityCounts[key] || 0) + 1;
-        if (severity.usage) await sleep(opts.delayMs);
+        if (severity.usage) {
+            consecutiveFailures = 0;
+            await sleep(opts.delayMs);
+        }
         return severity;
     }
 
@@ -686,33 +777,31 @@ export async function runSweep(opts, {
                 const verifyStartedAt = Date.now();
                 const { onAttemptFailed, finish } = trackRetries();
                 try {
-                    verification = await verifyCitation(task.citation.claimText, task.citation.source, { callModel, retry: { onAttemptFailed }, articleLangCode });
-                } catch (error) {
-                    recordVerifyDuration(verifyStartedAt);
-                    finish();
-                    if (!halted) { halted = true; haltError = error; }
-                    continue;
-                }
-                recordVerifyDuration(verifyStartedAt);
-                finish();
-                if (verification.usage) { funnel.verified++; await sleep(opts.delayMs); }
-                if (recordVerdict(verification.verdict)) funnel.flagged++;
-
-                let severity;
-                try {
-                    const content = task.citation.source?.content ?? null;
-                    severity = await rankFinding({
-                        claimText: task.citation.claimText,
-                        sourceInfo: content,
-                        sourceTruncated: Boolean(content?.includes('\nTruncated: true')),
-                        verification, wikiCandidate: task.wikiCandidate, context: task.citation,
+                    verification = await verifyCitation(task.citation.claimText, task.citation.source, {
+                        callModel, retry: { ...retryOptions, onAttemptFailed }, articleLangCode,
                     });
                 } catch (error) {
-                    // The verdict is already paid for, so it is still
-                    // recorded, unranked; the run halts after it.
-                    if (!halted) { halted = true; haltError = error; }
-                    severity = { tier: null, subclaims: null, error: 'halted' };
+                    verification = absorbFailure(error, { fetchStatus: task.citation.source?.status ?? null });
+                    if (!verification && !halted) { halted = true; haltError = error; }
+                } finally {
+                    recordVerifyDuration(verifyStartedAt);
+                    finish();
                 }
+                if (!verification) continue;
+                if (verification.usage) {
+                    consecutiveFailures = 0;
+                    funnel.verified++;
+                    await sleep(opts.delayMs);
+                }
+                if (recordVerdict(verification.verdict)) funnel.flagged++;
+
+                const content = task.citation.source?.content ?? null;
+                const severity = await rankFinding({
+                    claimText: task.citation.claimText,
+                    sourceInfo: content,
+                    sourceTruncated: Boolean(content?.includes('\nTruncated: true')),
+                    verification, wikiCandidate: task.wikiCandidate, context: task.citation,
+                });
 
                 await record(assembleFinding({
                     candidate: task.wikiCandidate, citation: task.citation, verification,
@@ -724,35 +813,36 @@ export async function runSweep(opts, {
                 const verifyStartedAt = Date.now();
                 const { onAttemptFailed, finish } = trackRetries();
                 try {
-                    verification = await verifyGroup(task.members, { callModel, retry: { onAttemptFailed }, articleLangCode });
-                } catch (error) {
-                    recordVerifyDuration(verifyStartedAt);
-                    finish();
-                    if (!halted) { halted = true; haltError = error; }
-                    continue;
-                }
-                recordVerifyDuration(verifyStartedAt);
-                finish();
-                funnel.groupsChecked++;
-                if (verification.skipped) { funnel.groupsSkipped++; continue; }
-                if (verification.usage) await sleep(opts.delayMs);
-                if (recordVerdict(verification.verdict)) funnel.groupsFlagged++;
-
-                let severity;
-                try {
-                    severity = await rankFinding({
-                        claimText: task.members[0].claimText,
-                        // The same assembled text verifyGroup() judged.
-                        sourceInfo: assembleGroupText(task.members),
-                        sourceTruncated: task.members.some(m => m.source?.content?.includes('\nTruncated: true')),
-                        verification, wikiCandidate: task.wikiCandidate, context: task.members[0],
+                    verification = await verifyGroup(task.members, {
+                        callModel, retry: { ...retryOptions, onAttemptFailed }, articleLangCode,
                     });
                 } catch (error) {
-                    // The verdict is already paid for, so it is still
-                    // recorded, unranked; the run halts after it.
-                    if (!halted) { halted = true; haltError = error; }
-                    severity = { tier: null, subclaims: null, error: 'halted' };
+                    verification = absorbFailure(error, {
+                        skipped: false,
+                        groupId: task.members[0].groupId,
+                        memberCitationNumbers: task.members.map(m => m.citationNumber),
+                    });
+                    if (!verification && !halted) { halted = true; haltError = error; }
+                } finally {
+                    recordVerifyDuration(verifyStartedAt);
+                    finish();
                 }
+                if (!verification) continue;
+                funnel.groupsChecked++;
+                if (verification.skipped) { funnel.groupsSkipped++; continue; }
+                if (verification.usage) {
+                    consecutiveFailures = 0;
+                    await sleep(opts.delayMs);
+                }
+                if (recordVerdict(verification.verdict)) funnel.groupsFlagged++;
+
+                const severity = await rankFinding({
+                    claimText: task.members[0].claimText,
+                    // The same assembled text verifyGroup() judged.
+                    sourceInfo: assembleGroupText(task.members),
+                    sourceTruncated: task.members.some(m => m.source?.content?.includes('\nTruncated: true')),
+                    verification, wikiCandidate: task.wikiCandidate, context: task.members[0],
+                });
 
                 await record(assembleGroupFinding({
                     candidate: task.wikiCandidate, members: task.members, verification,
@@ -818,21 +908,27 @@ export async function runSweep(opts, {
         `already included in the verify total above — a high number here means a slow verify average may be ` +
         `mostly retry backoff, not model latency.\n`
     );
+    if (transientFailures) {
+        stderr.write(
+            `sweep: ${transientFailures} model call(s) still failed after retrying and were recorded as ERROR ` +
+            `(reason_type ${RETRIES_EXHAUSTED}); --resume will not retry them.\n`
+        );
+    }
 
     return haltCode ?? (cleanError ? 1 : 0);
 }
 
-// Halts on ANY error verifyCitation()/verifyGroup() throws, not just
-// ProviderAuthError. A retry-exhausted 429/5xx (the case that matters at
-// 1000-article scale) is just as unrecoverable *for this run* as an
-// auth/billing error — core/retry.js already spent up to 5 attempts and a
-// ~30s backoff before this surfaced, so it is not a one-off blip worth
-// pressing on through. Previously only ProviderAuthError was caught here and
-// everything else was rethrown uncaught, which meant a single mid-run 429
-// (observed in practice: --delay-ms 0 against Lift Wing failed on the 3rd
-// citation) crashed the process *before* the CSV write at the bottom of
-// runSweep() ran, silently discarding every finding computed so far — the
-// opposite of what the halt path is for.
+// Reports why the run halted. The worker halts on ProviderAuthError, on any
+// error core/retry.js doesn't recognize as transient, and on a run of
+// --max-consecutive-failures transient failures in a row; a lone transient
+// failure is recorded as an ERROR row instead (see absorbFailure()).
+//
+// Every one of those used to halt, on the reasoning that an error surviving 5
+// attempts is not a blip. In practice one Lift Wing call timing out on every
+// attempt (~316s each time) halted three large sweeps while the calls around
+// it succeeded — hence the consecutive-failure breaker. The halt path itself
+// exists because an uncaught error once crashed the process before the CSV
+// write at the bottom of runSweep() ran, discarding every finding.
 function describeHalt(stderr, provider, error, writtenSoFar) {
     if (error instanceof ProviderAuthError) {
         stderr.write(

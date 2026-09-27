@@ -37,11 +37,15 @@ function headingText(heading) {
     return cleanText(clone.textContent);
 }
 
-// Paragraph text without the footnote markers ("[12]") and inline styles that
-// Parsoid and the skin both embed in running text.
+// What never counts as paragraph prose: footnote markers ("[12]"), edit
+// links, and the same non-prose core/claim.js skips in claim text —
+// TemplateStyles <style> blocks (ru.wikipedia's {{Когда?}} puts one mid-
+// sentence) and .noprint inline maintenance templates ([citation needed]).
+const NON_PROSE_SELECTOR = '.reference, .mw-ref, .mw-editsection, style, script, link, .noprint, .ts-fix-template';
+
 function paragraphText(block, maxChars) {
     const clone = block.cloneNode(true);
-    for (const el of clone.querySelectorAll('.reference, .mw-ref, style, link, .mw-editsection')) el.remove();
+    for (const el of clone.querySelectorAll(NON_PROSE_SELECTOR)) el.remove();
     const text = cleanText(clone.textContent);
     if (!text) return null;
     return text.length > maxChars ? `${text.slice(0, maxChars).trimEnd()}…` : text;

@@ -15,6 +15,7 @@
 import { collectCitations } from '../core/citations.js';
 import { attachArticleContext, articleCategories } from '../core/article-context.js';
 import { fetchArticleHtml } from '../core/wikipedia.js';
+import { sentencexLastSentence } from './sentences.js';
 
 // Why an article yielded nothing, as a machine-readable code. Same reasoning as
 // the verdict reason codes: prose belongs in a presenter, not in a record that
@@ -48,6 +49,11 @@ export async function processArticle(candidate, {
     // keeps flags meaning "this citation doesn't support what's right next
     // to it" rather than "something in this whole span isn't supported".
     claimScope = 'sentence',
+    // The article's language, for sentence splitting: each language has its
+    // own abbreviations ("г.", "ул.", "Dr.") that end in a period without
+    // ending the sentence. See service/sentences.js.
+    langCode = 'en',
+    splitLastSentence = sentencexLastSentence(langCode),
     signal,
 } = {}) {
     if (typeof parseHtml !== 'function') {
@@ -75,7 +81,7 @@ export async function processArticle(candidate, {
     // Parsoid output has no #mw-content-text wrapper, so the document is the
     // root — see core/citations.js.
     const root = parseHtml(html);
-    const citations = collectCitations(root, { claimScope });
+    const citations = collectCitations(root, { claimScope, splitLastSentence });
     // Categories ride on the article record, not each citation: the severity
     // pass reads Category:Living people off them (see core/article-context.js).
     const categories = articleCategories(root);

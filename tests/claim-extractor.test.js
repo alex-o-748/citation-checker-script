@@ -294,3 +294,17 @@ test('a citation whose claim is too short is carried through as skipped, and its
     assert.equal(vijayan.skipReason, null);
     assert.deepEqual(fetched, ['https://example.com/vijayan']);
 });
+
+test('processArticle splits sentence-scope claims with the article language\'s abbreviations', async () => {
+    const ruArticle = article(
+        '<p>Город основан давно. Поэму написал А. С. Пушкин в 1833 году.@@1@@</p>',
+        { 1: link('https://example.com/a') }
+    );
+    const result = await processArticle(candidate, {
+        parseHtml,
+        fetchSource: fetchSourceOk,
+        fetchArticle: async () => ({ html: ruArticle, status: 200, error: null }),
+        langCode: 'ru',
+    });
+    assert.equal(result.citations[0].claimText, 'Поэму написал А. С. Пушкин в 1833 году.');
+});

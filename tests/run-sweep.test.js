@@ -9,6 +9,8 @@ import {
     stubFetchSource,
     HELP_TEXT,
     main,
+    RETRIES_EXHAUSTED,
+    DEFAULT_MAX_CONSECUTIVE_FAILURES,
 } from '../service/run-sweep.js';
 import { ProviderAuthError } from '../service/verifier.js';
 import { rowsToCsv } from '../service/csv-report.js';
@@ -411,11 +413,9 @@ test('a ProviderAuthError halts the sweep and still writes the CSV with what was
 
 test('a non-auth, non-retryable error also halts and still writes the CSV, at exit code 4', async () => {
     // A message that does not match core/retry.js's RETRYABLE_STATUS /
-    // RETRYABLE_NETWORK patterns, so it throws on the first attempt with no
-    // backoff delay — this test is about the runner's halt behavior, not
-    // withRetry's (covered separately by tests/retry.test.js). A retryable
-    // 429 reaches this same catch block after withRetry exhausts its
-    // attempts; the halt path doesn't care which kind of error it was.
+    // RETRYABLE_NETWORK patterns: not recognizably transient, so it is
+    // treated as a bug and halts at once. A retryable 429/5xx that exhausts
+    // its attempts is recorded as an ERROR row instead — tested below.
     let attempts = 0;
     const written = [];
     let started = null;
@@ -435,6 +435,100 @@ test('a non-auth, non-retryable error also halts and still writes the CSV, at ex
     assert.deepEqual(written, [], 'nothing was computed before the halt');
     assert.match(started.header, /^page_title,/, 'the CSV is still created with its header');
     assert.match(stderrChunks.join(''), /halting/);
+});
+
+const LIFT_WING_504 = 'Lift Wing API request failed (504): {"httpCode":504,"httpReason":"upstream request timeout"}';
+const supportedResponse = () => ({
+    text: JSON.stringify({ support_score: 90, verdict: 'SUPPORTED', source_quote: '', comments: 'ok' }),
+    usage: { input: 10, output: 5 },
+});
+const noBackoff = { retryOptions: { sleepFn: async () => {} } };
+
+test('a transient failure that exhausts its retries becomes an ERROR row and the sweep continues', async () => {
+    const written = [];
+    let attempts = 0;
+    const stderrChunks = [];
+    const code = await runSweep(baseOpts(), baseIo({
+        ...noBackoff,
+        fetchArticle: async () => ({ html: articleWithSoloCitations(3), status: 200, error: null }),
+        makeModelCallerFn: () => async (systemPrompt, userContent) => {
+            if (userContent.includes('https://x.example/2')) { attempts++; throw new Error(LIFT_WING_504); }
+            return supportedResponse();
+        },
+        appendFindingFn: async (_path, finding) => { written.push(finding); },
+        stderr: { write: s => stderrChunks.push(s) },
+    }));
+
+    assert.equal(code, 0);
+    assert.equal(attempts, 5, 'the failing call is still retried before it is given up on');
+    assert.deepEqual(written.map(f => f.verdict).sort(), ['ERROR', 'SUPPORTED', 'SUPPORTED']);
+    const error = written.find(f => f.verdict === 'ERROR');
+    assert.equal(error.citationNumber, '2');
+    assert.equal(error.reasonType, RETRIES_EXHAUSTED);
+    assert.match(error.rationale, /504/);
+    assert.doesNotMatch(stderrChunks.join(''), /halting/);
+    assert.match(stderrChunks.join(''), /1 model call\(s\) still failed after retrying/);
+});
+
+test('--max-consecutive-failures transient failures in a row halt the sweep at exit code 4', async () => {
+    const written = [];
+    const stderrChunks = [];
+    const code = await runSweep(baseOpts({ maxConsecutiveFailures: 2 }), baseIo({
+        ...noBackoff,
+        fetchArticle: async () => ({ html: articleWithSoloCitations(5), status: 200, error: null }),
+        makeModelCallerFn: () => async () => { throw new Error(LIFT_WING_504); },
+        appendFindingFn: async (_path, finding) => { written.push(finding); },
+        stderr: { write: s => stderrChunks.push(s) },
+    }));
+
+    assert.equal(code, 4);
+    assert.equal(written.length, 2, 'both failures are recorded, then nothing more is dispatched');
+    assert.ok(written.every(f => f.verdict === 'ERROR'));
+    assert.match(stderrChunks.join(''), /halting — .*2 consecutive model calls failed after retrying/);
+});
+
+test('a successful model call resets the consecutive-failure count', async () => {
+    const written = [];
+    const code = await runSweep(baseOpts({ maxConsecutiveFailures: 2 }), baseIo({
+        ...noBackoff,
+        fetchArticle: async () => ({ html: articleWithSoloCitations(6), status: 200, error: null }),
+        // Citations 1, 3 and 5 fail; 2, 4 and 6 succeed — never two failures in a row.
+        makeModelCallerFn: () => async (systemPrompt, userContent) => {
+            if (/https:\/\/x\.example\/[135]\b/.test(userContent)) throw new Error(LIFT_WING_504);
+            return supportedResponse();
+        },
+        appendFindingFn: async (_path, finding) => { written.push(finding); },
+    }));
+
+    assert.equal(code, 0);
+    assert.equal(written.filter(f => f.verdict === 'ERROR').length, 3);
+    assert.equal(written.filter(f => f.verdict === 'SUPPORTED').length, 3);
+});
+
+test('a group call that exhausts its retries becomes a collective ERROR row', async () => {
+    const written = [];
+    const code = await runSweep(baseOpts(), baseIo({
+        ...noBackoff,
+        makeModelCallerFn: () => async systemPrompt => {
+            if (systemPrompt.includes('cited by MULTIPLE sources')) throw new Error(LIFT_WING_504);
+            return supportedResponse();
+        },
+        appendFindingFn: async (_path, finding) => { written.push(finding); },
+    }));
+
+    assert.equal(code, 0);
+    const collective = written.find(f => f.isCollective);
+    assert.equal(collective.verdict, 'ERROR');
+    assert.equal(collective.reasonType, RETRIES_EXHAUSTED);
+    assert.equal(collective.citationNumber, '2, 3');
+    assert.equal(written.filter(f => !f.isCollective && f.verdict === 'SUPPORTED').length, 3);
+});
+
+test('--max-consecutive-failures defaults to 10 and must be a positive integer', async () => {
+    assert.equal(parseCliArgs(['node', 'run-sweep.js']).maxConsecutiveFailures, DEFAULT_MAX_CONSECUTIVE_FAILURES);
+    assert.equal(DEFAULT_MAX_CONSECUTIVE_FAILURES, 10);
+    assert.equal(parseCliArgs(['node', 'run-sweep.js', '--max-consecutive-failures', '3']).maxConsecutiveFailures, 3);
+    assert.equal(await runSweep(baseOpts({ maxConsecutiveFailures: 0 }), baseIo()), 2);
 });
 
 function sleep(ms) {
@@ -899,4 +993,50 @@ test('an auth error in the severity pass halts the run but keeps the already-pai
     assert.equal(written.length, 1);
     assert.equal(written[0].verdict, 'NOT SUPPORTED');
     assert.equal(written[0].severityError, 'halted');
+});
+
+test('a transient failure in the severity pass leaves the finding unranked and the sweep running', async () => {
+    const written = [];
+    const stderrChunks = [];
+    const code = await runSweep(baseOpts({ severity: true }), baseIo({
+        ...noBackoff,
+        fetchArticle: async () => ({ html: articleWithSoloCitations(2), status: 200, error: null }),
+        makeModelCallerFn: () => async (systemPrompt, userContent) => {
+            if (systemPrompt.includes('decide which citation problems to fix first')) {
+                if (userContent.includes('https://x.example/1')) throw new Error(LIFT_WING_504);
+                return { text: JSON.stringify({ subclaims: [{ text: 'a', status: 'absent', central: true }] }), usage: {} };
+            }
+            return { text: JSON.stringify({ support_score: 10, verdict: 'NOT SUPPORTED', reason_type: 'omission', source_quote: '', comments: 'no' }), usage: {} };
+        },
+        appendFindingFn: async (_path, finding) => { written.push(finding); },
+        stderr: { write: s => stderrChunks.push(s) },
+    }));
+
+    assert.equal(code, 0);
+    const byNumber = Object.fromEntries(written.map(f => [f.citationNumber, f]));
+    assert.equal(byNumber['1'].verdict, 'NOT SUPPORTED', 'the verdict is kept');
+    assert.equal(byNumber['1'].severityTier, null);
+    assert.equal(byNumber['1'].severityError, RETRIES_EXHAUSTED);
+    assert.equal(byNumber['2'].severityTier, 'T2');
+    assert.doesNotMatch(stderrChunks.join(''), /halting/);
+});
+
+test('a failing severity pass alone cannot trip the breaker: the verdict call before it succeeded', async () => {
+    const written = [];
+    const code = await runSweep(baseOpts({ severity: true, maxConsecutiveFailures: 2 }), baseIo({
+        ...noBackoff,
+        fetchArticle: async () => ({ html: articleWithSoloCitations(4), status: 200, error: null }),
+        makeModelCallerFn: () => async (systemPrompt) => {
+            if (systemPrompt.includes('decide which citation problems to fix first')) throw new Error(LIFT_WING_504);
+            return { text: JSON.stringify({ support_score: 10, verdict: 'NOT SUPPORTED', reason_type: 'omission', source_quote: '', comments: 'no' }), usage: {} };
+        },
+        appendFindingFn: async (_path, finding) => { written.push(finding); },
+    }));
+
+    // Verdict succeeds (reset), severity fails (1); verdict succeeds (reset),
+    // severity fails (1). The breaker never reaches 2, which is the right
+    // reading: the model is answering, just not this one prompt.
+    assert.equal(code, 0);
+    assert.equal(written.length, 4);
+    assert.ok(written.every(f => f.severityError === RETRIES_EXHAUSTED));
 });

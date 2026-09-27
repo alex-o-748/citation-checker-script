@@ -117,9 +117,13 @@ failure on 18.4% of calls. A contradiction survives truncation, because the
 conflicting passage is in the part that was read. A NOT SUPPORTED + `omission`
 finding on a truncated source is discounted without a model call.
 
-This is softer than `cleanCsvText()`, which drops every truncated row from the
-`-clean.csv`. That filter is unchanged; the severity columns are in both files
-and the clean file simply has no truncated rows.
+This is the same principle `cleanCsvText()` applies to the `-clean.csv` (since
+2026-09-25). On a truncated source it keeps only SUPPORTED and NOT SUPPORTED /
+contradiction rows. The two differ in one case: a truncated **PARTIALLY
+SUPPORTED** finding whose second pass found a contradiction. It is tiered T1 or
+T2 here, and the cleaner still drops it, because the cleaner only reads the
+first-pass verdict. Making the cleaner keep such rows by `severity_tier` would
+close the gap. It is left open until the tiers are validated.
 
 **Ordering** (`compareSeverity()`): tier, then BLP first within a tier, then
 lower first-pass `support_score` first. BLP is an ordering key, not a tier
@@ -132,6 +136,15 @@ CSV columns (not yet ToolsDB columns; `findings-store.js` is unchanged):
 `is_blp`, `section_title`, `severity_tier`, `severity_subclaims` (JSON),
 `severity_error`, `severity_prompt_version`. A finding the pass didn't run on
 has them empty, so "unranked" never looks like "ranked lowest".
+
+**Failures** follow the sweep's policy for verdict calls
+(`--max-consecutive-failures`). The verdict is already paid for, so it is
+always recorded; a failed severity pass only leaves the finding unranked:
+
+- A transient error that outlasts its retries sets `severity_error` to
+  `retries_exhausted`, and the sweep continues.
+- An auth/billing or non-transient error sets it to `halted`, and the run stops
+  after this finding.
 
 ## Explicitly out of scope for now
 
