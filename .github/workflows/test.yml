@@ -1,0 +1,54 @@
+name: Tests
+
+# Runs the unit tests and the main.js sync check on every pull request and
+# every push to main. Needs no secrets and makes no network calls (the suite
+# stubs every outside request), so it behaves the same on any PR, including
+# one from a fork. This is tier 0 of docs/design-plans/2026-04-26-ci.md; the
+# tiers that call real models are not built.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A new push to a PR cancels that PR's run in progress. Runs on main are
+# never cancelled, so every merged commit gets a result.
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    name: Node ${{ matrix.node }}
+    runs-on: ubuntu-latest
+    # The suite takes about 30s. The cap keeps a hung test from holding a
+    # runner for GitHub's six-hour default.
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        # 18 is Toolforge's node18 image, which runs the batch pipeline in
+        # service/. 22 is what local development uses.
+        node: [18, 22]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      - run: npm ci
+
+      - name: Unit tests
+        run: npm test
+
+      # Runs even when tests fail, so a failure can't hide a stale main.js:
+      # the file Wikipedia loads, which must match core/ after `npm run build`.
+      - name: main.js is in sync with core/
+        if: ${{ !cancelled() }}
+        run: npm run build -- --check

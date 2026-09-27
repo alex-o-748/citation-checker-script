@@ -19,6 +19,7 @@ This doc is an **index** that points you at the right place to read. Substantive
 
 - `npm test` — runs the `core/` unit tests
 - `npm run build -- --check` — confirms the live `main.js` (the file Wikipedia loads) is in sync with `core/`. Fails if you edited `core/` but didn't rebuild.
+- CI runs both of these on every pull request (`.github/workflows/test.yml`), so the PR shows a red X if either fails. Running them locally first saves a round trip.
 - If your change touches the prompt or claim extraction, run the benchmark and check that metrics didn't regress: `cd benchmark && npm run benchmark && npm run analyze` (see [`benchmark/README.md` § Workflow](benchmark/README.md#workflow)). This runs the full 189-row dataset across all configured providers and takes a few minutes; a faster smoke-set workflow is on the roadmap. Running it requires at least one API key — see [`benchmark/README.md` § Run Benchmark](benchmark/README.md#step-3-run-benchmark) for details on each. **If you don't have a key for financial reasons, ping the maintainers — we'll happily set you up with access.**
 
 ## Repository layout (one-line orientation)

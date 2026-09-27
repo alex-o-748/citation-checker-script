@@ -42,7 +42,7 @@ benchmark/
   analysis_v3.json               # Frozen v3 analysis snapshot
 Benchmarking_data_Citations.csv  # Source ground truth data (Dataset version + WMF override columns)
 service/                         # Toolforge batch pipeline: select -> extract -> fetch -> verify -> store (see Batch Pipeline below)
-.github/workflows/               # Scheduled talk-page scraper (not test/build CI)
+.github/workflows/               # CI (test.yml) + scheduled jobs (talk-page scraper, edit-log sweep) + /oc comment bot
 docs/                            # Reference docs + design plans (see docs/README.md)
 ```
 
@@ -350,7 +350,7 @@ a category blacklist): `docs/design-plans/2026-09-16-selecting-for-future-activi
 ## Development Workflow
 
 - **Tests:** `node --test` via `npm test` from the repo root, runs everything in `tests/**/*.test.js`. New helpers should get a sibling `*.test.js` file. Behavioral validation also goes through the benchmark suite against the human-labeled citation dataset.
-- **No test/build CI** is wired up (the only GitHub Actions workflow is a scheduled talk-page scraper).
+- **CI:** `.github/workflows/test.yml` runs `npm test` and `npm run build -- --check` on every pull request and every push to `main`, on Node 18 (Toolforge's `node18` image, which runs `service/`) and Node 22. The suite makes no network calls and needs no secrets. It does not run the LLM benchmark.
 - **No linter** configured
 - **Branching:** Feature branches off `main`, merged via pull requests
 - **Deployment:** Deployed as a Wikipedia User Script (`User:Alaexis/AI_Source_Verification`) with USync for auto-updates
