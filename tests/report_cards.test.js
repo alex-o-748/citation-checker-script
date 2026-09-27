@@ -24,6 +24,8 @@ function extractMethod(src, signature) {
 function harness() {
   const src = fs.readFileSync(MAIN_JS, 'utf8');
   const methods = [
+    'renderReportCard(result, index) {',
+    'reportElementFor(refElement) {',
     'buildSoloCard(result) {',
     'buildGroupBlock(firstResult) {',
     'buildGroupRow(result) {',
@@ -101,4 +103,39 @@ test('escapeHtml is safe inside a double-quoted attribute', () => {
   assert.equal(holder.querySelectorAll('img').length, 0);
   assert.equal(links[0].getAttribute('href'), url, 'the attribute round-trips intact');
   assert.equal(links[0].getAttribute('title'), "it's");
+});
+
+// --- Clicking an article citation during a report run ---
+//
+// handleReferenceClick() used to look for `.report-card`, a class no element
+// carries, so the click was swallowed (preventDefault) and nothing scrolled.
+// Position would not have worked either: group members render as rows inside
+// a group block, so the Nth element on screen is not the Nth result.
+
+test('reportElementFor finds the card or group row for a citation, across groups', () => {
+  const { verifier, document } = harness();
+  const refs = [1, 2, 3, 4].map(() => document.createElement('a'));
+  const results = [
+    { citationNumber: 1, refElement: refs[0], verdict: 'SUPPORTED' },
+    { citationNumber: 2, refElement: refs[1], verdict: 'SUPPORTED', groupId: 'g', groupSize: 2, groupCitationNumbers: [2, 3] },
+    { citationNumber: 3, refElement: refs[2], verdict: 'NOT SUPPORTED', groupId: 'g', groupSize: 2, groupCitationNumbers: [2, 3] },
+    { citationNumber: 4, refElement: refs[3], verdict: 'PARTIALLY SUPPORTED' },
+  ].map((r) => ({ claimText: `Claim ${r.citationNumber}.`, url: null, comments: '', ...r }));
+
+  results.forEach((result, index) => {
+    verifier.reportResults.push(result);
+    verifier.renderReportCard(result, index);
+  });
+
+  const solo = verifier.reportElementFor(refs[3]);
+  assert.ok(solo, 'the solo card after a group is found');
+  assert.ok(solo.classList.contains('verifier-report-card'));
+  assert.match(solo.textContent, /\[4\]/);
+
+  const row = verifier.reportElementFor(refs[2]);
+  assert.ok(row, 'a group member is found');
+  assert.ok(row.classList.contains('verifier-report-group-row'));
+  assert.match(row.textContent, /\[3\]/);
+
+  assert.equal(verifier.reportElementFor(document.createElement('a')), null, 'an unchecked citation finds nothing');
 });

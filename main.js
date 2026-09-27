@@ -5559,16 +5559,12 @@ function useToolforgeSourceFetcher() {
                 // When in report mode, don't switch to single-citation view.
                 // Instead, scroll to the matching report card if one exists.
                 if (this.reportMode) {
-                    const matchIndex = this.reportResults.findIndex(r => r.refElement === refElement);
-                    if (matchIndex !== -1) {
-                        const cards = document.querySelectorAll('#verifier-report-results .report-card');
-                        const card = cards[matchIndex];
-                        if (card) {
-                            card.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                            card.style.transition = 'box-shadow 0.3s';
-                            card.style.boxShadow = '0 0 0 3px #36c';
-                            setTimeout(() => { card.style.boxShadow = ''; }, 1500);
-                        }
+                    const card = this.reportElementFor(refElement);
+                    if (card) {
+                        card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        card.style.transition = 'box-shadow 0.3s';
+                        card.style.boxShadow = '0 0 0 3px #36c';
+                        setTimeout(() => { card.style.boxShadow = ''; }, 1500);
                     }
                     return;
                 }
@@ -6742,7 +6738,9 @@ function useToolforgeSourceFetcher() {
 
             // Solo citation: render the original card layout unchanged.
             if (!result.groupSize || result.groupSize <= 1) {
-                resultsEl.appendChild(this.buildSoloCard(result));
+                const card = this.buildSoloCard(result);
+                card.dataset.resultIndex = index;
+                resultsEl.appendChild(card);
                 return;
             }
 
@@ -6755,7 +6753,19 @@ function useToolforgeSourceFetcher() {
                 resultsEl.appendChild(groupEl);
             }
             const rowsEl = groupEl.querySelector('.verifier-report-group-rows');
-            rowsEl.appendChild(this.buildGroupRow(result));
+            const row = this.buildGroupRow(result);
+            row.dataset.resultIndex = index;
+            rowsEl.appendChild(row);
+        }
+
+        // The rendered card (solo) or row (group member) for the citation
+        // behind refElement, found by the index renderReportCard() stamps on
+        // it. Position can't be used: group members render as rows inside a
+        // group block, so the Nth element on screen is not the Nth result.
+        reportElementFor(refElement) {
+            const index = this.reportResults.findIndex(r => r.refElement === refElement);
+            if (index === -1) return null;
+            return document.querySelector(`#verifier-report-results [data-result-index="${index}"]`);
         }
 
         buildSoloCard(result) {
