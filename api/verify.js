@@ -7,6 +7,7 @@
 
 import { verifyCitation, VERIFY_STAGES } from '../core/pipeline.js';
 import { modelFor } from '../core/models.js';
+import { fetchSourceContent } from '../core/worker.js';
 
 // Every request goes to Lift Wing, which core/providers.js reaches through the
 // tf-llm-router Toolforge tool unless a workerBase overrides it. That keeps
@@ -15,6 +16,17 @@ import { modelFor } from '../core/models.js';
 // calls where the router took a hundred without error
 // (docs/design-plans/2026-08-25-verify-concurrency-and-the-fetch-question.md).
 const API_PROVIDER = 'liftwing';
+
+// source_url fetches go to the tf-source-fetcher Toolforge tool, as the batch
+// pipeline's --live-source-fetch does, not to core/worker.js's default (the
+// Cloudflare worker). This is bound here rather than passed as workerBase,
+// because verifyCitation() hands workerBase to the model call too, which
+// would send the Lift Wing request to the fetcher.
+const SOURCE_FETCHER_BASE = 'https://source-fetcher.toolforge.org';
+
+function fetchViaSourceFetcher(url, pageNum) {
+    return fetchSourceContent(url, pageNum, { workerBase: SOURCE_FETCHER_BASE });
+}
 
 export const MAX_CLAIM_CHARS = 10_000;
 export const MAX_SOURCE_CONTENT_CHARS = 50_000;
@@ -99,7 +111,7 @@ export async function verifyRequest(body, {
     provider = API_PROVIDER,
     model = modelFor(provider),
     workerBase,
-    fetchSource,
+    fetchSource = fetchViaSourceFetcher,
     callProvider,
 } = {}) {
     const validationError = validateVerifyRequest(body);
@@ -119,9 +131,9 @@ export async function verifyRequest(body, {
         sourceContent: body.source_content?.trim() ? body.source_content : null,
         provider,
         model,
+        fetchSource,
     };
     if (workerBase) options.workerBase = workerBase;
-    if (fetchSource) options.fetchSource = fetchSource;
     if (callProvider) options.callProvider = callProvider;
 
     const result = await verifyCitation(options);

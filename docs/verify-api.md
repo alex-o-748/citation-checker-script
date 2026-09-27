@@ -71,7 +71,7 @@ Send `Content-Type: application/json` with:
 | Field | Type | Required | Meaning |
 | --- | --- | --- | --- |
 | `claim` | string | yes | Claim to check; maximum 10,000 characters. |
-| `source_url` | string | one source field | Absolute HTTP(S) source URL, fetched through the existing source-fetch path. |
+| `source_url` | string | one source field | Absolute HTTP(S) source URL, fetched through the `tf-source-fetcher` Toolforge tool. |
 | `source_content` | string | one source field | Source text; maximum 50,000 characters. Takes precedence if both fields are present; whitespace-only text counts as absent. |
 | `page` | positive integer | no | Page to extract from a PDF at `source_url`. |
 
@@ -135,7 +135,7 @@ budget.
 
 CORS response headers are emitted only for HTTPS `*.wikipedia.org` origins.
 CORS is not authentication: command-line and server callers can still use the
-public endpoint. URL sources go through the existing source-fetch service, so
+public endpoint. URL sources go through `tf-source-fetcher`, so
 the API adds no direct-fetch path or bypass around that service's URL policy.
 
 ## Audit findings and decisions needed
@@ -172,13 +172,11 @@ Before deployment, the maintainer must decide:
 
 ## Cost exposure and deliberately unchanged behaviour
 
-Inference runs on Lift Wing, which the Foundation hosts, so API calls draw on
-no personal provider account. What they do draw on is `tf-llm-router`'s
-capacity, shared with the batch sweeps: the global limit caps the API at
-**14,400 checks/day** in total. Source fetches for `source_url` requests still
-take the default fetch path in `core/worker.js` (the Cloudflare worker), not
-`tf-source-fetcher`; moving them is a separate decision, since it would have
-Toolforge fetch URLs chosen by any caller. No billing system is added.
+Inference runs on Lift Wing, which the Foundation hosts, and source fetches
+run on `tf-source-fetcher`, so neither draws on the personal Cloudflare worker.
+What they do draw on is the two Toolforge tools' capacity, shared with the
+batch sweeps: the global limit caps the API at **14,400 checks/day** in total.
+No billing system is added.
 
 No prompt, verdict vocabulary, parser, truncation rule, citation grouping,
 userscript code, or batch code was changed. No pre-existing verification bug

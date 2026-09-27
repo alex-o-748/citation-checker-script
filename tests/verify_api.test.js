@@ -126,6 +126,32 @@ test('verifyRequest sends every model call to Lift Wing through tf-llm-router', 
   assert.equal(calls[0].body.model, modelFor('liftwing'));
 });
 
+test('verifyRequest fetches source_url through tf-source-fetcher, not the Cloudflare worker', async () => {
+  const urls = [];
+  const original = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    urls.push(String(url));
+    if (String(url).startsWith('https://source-fetcher.toolforge.org/')) {
+      return { ok: true, status: 200, json: async () => ({ content: `The bridge opened in 1998. ${'Filler. '.repeat(20)}`, status: 200 }) };
+    }
+    return {
+      ok: true, status: 200,
+      json: async () => ({ choices: [{ message: { content: JSON.stringify(MODEL_RESPONSE) } }] }),
+    };
+  };
+  let result;
+  try {
+    result = await verifyRequest({ claim: 'The bridge opened in 1998.', source_url: 'https://example.org/bridge', page: 2 });
+  } finally {
+    globalThis.fetch = original;
+  }
+  assert.equal(result.status, 200);
+  assert.deepEqual(urls, [
+    `https://source-fetcher.toolforge.org/?fetch=${encodeURIComponent('https://example.org/bridge')}&page=2`,
+    'https://llm-router.toolforge.org/liftwing',
+  ]);
+});
+
 async function withServer(options, fn) {
   const server = createVerifyServer(options);
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
