@@ -2,7 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { createRateLimiter, createVerifyServer } from '../api/server.js';
-import { verifyRequest } from '../api/verify.js';
+import {
+  MAX_BODY_BYTES, MAX_CLAIM_CHARS, MAX_SOURCE_CONTENT_CHARS, verifyRequest,
+} from '../api/verify.js';
 
 const MODEL_RESPONSE = {
   verdict: 'SUPPORTED', support_score: 98,
@@ -53,6 +55,28 @@ test('verifyRequest preserves source content exactly and rejects unknown fields'
 
   const unknown = await verifyRequest({ claim: 'Claim', source_content: source, provider: 'openai' });
   assert.deepEqual(unknown, { status: 400, body: { error: 'Unknown field: provider' } });
+});
+
+test('verifyRequest fetches source_url when source_content is only whitespace', async () => {
+  // Validation treats whitespace-only content as absent; the adapter must too,
+  // or it skips the fetch and the model judges the claim against nothing.
+  let fetched = false;
+  let userContent;
+  const result = await verifyRequest({
+    claim: 'The bridge opened in 1998.', source_url: 'https://example.org/bridge', source_content: ' \n\t ',
+  }, {
+    fetchSource: async () => {
+      fetched = true;
+      return { content: 'Source Content:\nThe span opened to traffic in 1998.', status: 200 };
+    },
+    callProvider: async (_provider, options) => {
+      userContent = options.userContent;
+      return { text: JSON.stringify({ ...MODEL_RESPONSE, source_quote: '' }), usage: null };
+    },
+  });
+  assert.equal(fetched, true);
+  assert.match(userContent, /opened to traffic/);
+  assert.equal(result.status, 200);
 });
 
 test('verifyRequest rejects malformed requests before inference', async () => {
@@ -130,6 +154,37 @@ test('HTTP endpoint requires a JSON content type', async () => {
   });
 });
 
+// Escapes every non-ASCII character as \uXXXX, as Python's json.dumps does by
+// default: six bytes per UTF-16 unit, the most any JSON encoder spends.
+function asciiOnlyJson(value) {
+  return JSON.stringify(value)
+    .replace(/[\u0080-\uffff]/g, c => `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`);
+}
+
+test('HTTP body limit admits the longest claim and source in any script and JSON encoding', async () => {
+  // The documented limits are in characters. The byte cap must never undercut
+  // them, e.g. by turning away a non-English source a Latin one would fit in.
+  let received;
+  await withServer({ verify: async body => { received = body; return { status: 200, body: {} }; } }, async base => {
+    const request = {
+      claim: 'ж'.repeat(MAX_CLAIM_CHARS),
+      source_url: `https://example.org/${'a'.repeat(2000)}`,
+      source_content: '中'.repeat(MAX_SOURCE_CONTENT_CHARS),
+      page: 12,
+    };
+    const response = await fetch(`${base}/v1/verify`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: asciiOnlyJson(request),
+    });
+    assert.equal(response.status, 200);
+    assert.deepEqual(received, request);
+  });
+
+  // So the character limit is the one a caller actually meets.
+  const tooLong = await verifyRequest({ claim: 'c', source_content: '中'.repeat(MAX_SOURCE_CONTENT_CHARS + 1) });
+  assert.equal(tooLong.status, 400);
+  assert.match(tooLong.body.error, /source_content must not exceed/);
+});
+
 test('HTTP endpoint returns 413 before verification and enforces rate limits', async () => {
   let calls = 0;
   await withServer({
@@ -138,7 +193,7 @@ test('HTTP endpoint returns 413 before verification and enforces rate limits', a
   }, async base => {
     const oversized = await fetch(`${base}/v1/verify`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ source_content: 'x'.repeat(70_000) }),
+      body: JSON.stringify({ source_content: 'x'.repeat(MAX_BODY_BYTES) }),
     });
     assert.equal(oversized.status, 413);
     assert.equal(calls, 0);

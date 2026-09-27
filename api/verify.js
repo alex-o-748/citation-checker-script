@@ -8,9 +8,14 @@
 import { verifyCitation, VERIFY_STAGES } from '../core/pipeline.js';
 import { DEFAULT_PROVIDER, modelFor } from '../core/models.js';
 
-export const MAX_BODY_BYTES = 64 * 1024;
 export const MAX_CLAIM_CHARS = 10_000;
 export const MAX_SOURCE_CONTENT_CHARS = 50_000;
+// The character limits above are the contract; the byte cap only has to stop
+// abuse without undercutting them. JSON can spend six bytes on one UTF-16 unit
+// (a \uXXXX escape, which Python's json.dumps emits for every non-ASCII
+// character by default), so size for that worst case, plus headroom for field
+// names, page and a source_url.
+export const MAX_BODY_BYTES = (MAX_CLAIM_CHARS + MAX_SOURCE_CONTENT_CHARS) * 6 + 8 * 1024;
 
 export function validateVerifyRequest(body) {
     if (!body || typeof body !== 'object' || Array.isArray(body)) {
@@ -100,7 +105,10 @@ export async function verifyRequest(body, {
         pageNum: body.page ?? null,
         // Preserve supplied source bytes. Trimming here would make the API a
         // subtly different input path from other verifyCitation() callers.
-        sourceContent: body.source_content || null,
+        // Whitespace-only text is still absent, as validation already treats
+        // it: passing it on would skip the source_url fetch and have the model
+        // judge the claim against nothing.
+        sourceContent: body.source_content?.trim() ? body.source_content : null,
         provider,
         model,
     };

@@ -72,7 +72,7 @@ Send `Content-Type: application/json` with:
 | --- | --- | --- | --- |
 | `claim` | string | yes | Claim to check; maximum 10,000 characters. |
 | `source_url` | string | one source field | Absolute HTTP(S) source URL, fetched through the existing source-fetch path. |
-| `source_content` | string | one source field | Source text; maximum 50,000 characters. Takes precedence if both fields are present. |
+| `source_content` | string | one source field | Source text; maximum 50,000 characters. Takes precedence if both fields are present; whitespace-only text counts as absent. |
 | `page` | positive integer | no | Page to extract from a PDF at `source_url`. |
 
 The endpoint intentionally has no provider or model parameter. Deployment
@@ -113,7 +113,7 @@ Errors have `{ "error": "..." }`; pipeline failures also include `stage`.
 | Status | Meaning |
 | --- | --- |
 | `400` | Invalid JSON field or value. |
-| `413` | Request body exceeds 64 KiB. |
+| `413` | Request body exceeds 368,192 bytes. Sized so the character limits above are always the ones reached first, in any script, even when every character is sent as a `\uXXXX` escape. |
 | `415` | Request is not `application/json`. |
 | `422` | Source unavailable or empty. |
 | `429` | Per-client request limit exceeded; honor `Retry-After`. |
