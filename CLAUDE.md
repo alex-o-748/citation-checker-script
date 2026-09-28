@@ -584,18 +584,19 @@ Rationale and the outstanding benchmark re-run: `docs/design-plans/2026-08-04-so
 
 ### UI localization — every user-facing string goes through `this.t()`
 
-The sidebar UI is localized (currently French and Spanish); the LLM prompts in `core/prompts.js` stay English, because the few-shot examples are tuned against the benchmark. Three pieces in `main.js`, all just above the `WikipediaSourceVerifier` class:
+The sidebar UI is localized (currently French, Spanish, Russian and Hebrew); the LLM prompts in `core/prompts.js` stay English, because the few-shot examples are tuned against the benchmark. Three pieces in `main.js`, all just above the `WikipediaSourceVerifier` class:
 
 | Piece | Holds |
 |-------|-------|
-| `FR_MESSAGES` / `ES_MESSAGES` | Translations, keyed by the **English source string** |
+| `FR_MESSAGES` / `ES_MESSAGES` / `RU_MESSAGES` / `HE_MESSAGES` | Translations, keyed by the **English source string** |
 | `MESSAGES` / `PROMPT_LANGUAGES` | Registry of language code → table, and → the language's name as given to the LLM |
 | `detectUiLang()` | Maps `wgContentLanguage` (then `wgUserLanguage`) to a registry key, else `'en'` |
 | `detectArticleLangCode()` | The wiki's raw content-language code, unrestricted to `MESSAGES` keys — feeds `localizeSystemPrompt()` only |
+| `RTL_LANGS` / `detectDockSide()` | Right-to-left UI languages (sets the sidebar's `dir`), and which screen edge the panel docks to (from `<html dir>`) — see "Right-to-left" below |
 
 `this.t('Verify Claim')` looks the string up in the active table and falls back to the English key, so a missing translation degrades to English rather than showing a key. Interpolate with `{name}` placeholders: `this.t('Set {name} API Key', { name })`.
 
-**To add a user-facing string:** wrap it in `this.t()` and add it to *every* table. **To add a language:** write its table, register it in `MESSAGES` and `PROMPT_LANGUAGES`; `detectUiLang()` and `localizeSystemPrompt()` pick it up with no further wiring.
+**To add a user-facing string:** wrap it in `this.t()` and add it to *every* table. **To add a language:** write its table, register it in `MESSAGES` and `PROMPT_LANGUAGES` (and `core/prompts.js`'s `COMMENT_LANGUAGE_NAMES`, then `npm run build`); `detectUiLang()` and `localizeSystemPrompt()` pick it up with no further wiring. A right-to-left language also goes in `RTL_LANGS`.
 
 **LLM comment language is not gated on a full UI translation.** `localizeSystemPrompt()` names the language explicitly for `fr`/`es` (via `PROMPT_LANGUAGES`, matching the sidebar), but for any other non-English wiki — one with no `MESSAGES` table at all — it falls back to a generic "write in the same language as the claim and source text" directive driven by `detectArticleLangCode()`. So a claim checked on, say, de.wikipedia gets German comments even though the sidebar itself stays English. Only `source_quote` is exempt in all cases: it must stay verbatim in the source's own language, since it's checked character-for-character against the source text.
 
@@ -608,7 +609,16 @@ The sidebar UI is localized (currently French and Spanish); the LLM prompts in `
 
 A bare infinitive reads as a clipped fragment once it has to carry a whole sentence, which is why the two cases differ. French uses the `vous` imperative throughout, matching fr.wikipedia.
 
-`tests/i18n.test.js` enforces this: it fails if the tables disagree on their key set, if a translation drops or renames a `{placeholder}`, if a literal `this.t()` key in `main.js` is untranslated, if a Spanish string slips into the second person, or if language detection stops resolving regional variants (`es-419`) while correctly ignoring codes that merely share a prefix (`frr`, `frp`).
+**Hebrew register:** Hebrew imperatives are gendered (`לחץ` / `לחצי`), so like es.wikipedia the table never addresses the reader: verbal nouns for action labels (`שמירה`, `העלאת PDF`), impersonal `יש ל…` / `אפשר ל…` + infinitive for prose. Its wikitext report uses plain glyphs (✓ ⚠ ✗ ?) instead of `{{tick}}`-style templates, which aren't known to exist on he.wikipedia.
+
+**Right-to-left.** Two independent decisions, on purpose:
+
+- *Text direction* follows the UI language: `createUI()` sets the sidebar's `dir` to `rtl` when `this.lang` is in `RTL_LANGS`.
+- *Dock side* follows the page: `detectDockSide()` reads `<html dir>` (which MediaWiki sets from the interface language and mirrors the skin with), docking the panel left on an RTL page so it stays out of the mirrored navigation. An English sidebar on ar.wikipedia is still docked left.
+
+Only the panel shell (`#source-verifier-sidebar`, the resize handle, `body`'s margin, `setBodyMargin()`, the resize math) knows the dock side. Everything inside the panel uses logical properties (`border-inline-start`, `margin-inline-start`, …) so it mirrors with `dir`. Source text and quotes get `unicode-bidi: plaintext`, since an English source cited on he.wikipedia must read left to right; the claim deliberately doesn't (it is in the article's language, and a Hebrew claim opening with a Latin name would flip). `tests/styles.test.js` fails if a physical `left`/`right` property appears inside the panel.
+
+`tests/i18n.test.js` enforces this: it fails if the tables disagree on their key set, if a translation drops or renames a `{placeholder}`, if a literal `this.t()` key in `main.js` is untranslated, if a Spanish string slips into the second person or a Hebrew one into the gendered second person, or if language detection stops resolving regional variants (`es-419`) while correctly ignoring codes that merely share a prefix (`frr`, `frp`).
 
 ### Styling is token-driven — never write a theme-specific rule (read before touching CSS)
 

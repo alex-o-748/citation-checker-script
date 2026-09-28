@@ -252,13 +252,14 @@ const COMMENT_LANGUAGE_NAMES = {
     fr: 'French (français)',
     es: 'Spanish (español)',
     ru: 'Russian (русский)',
+    he: 'Hebrew (עברית)',
 };
 
 // Appends a language directive to an already-built system prompt rather than
 // localizing generateSystemPrompt() itself — the few-shot examples above stay
 // English and untouched (they're tuned against the benchmark; see CLAUDE.md).
 // Two cases:
-//   - `lang` is a COMMENT_LANGUAGE_NAMES key (fr/es/ru): name the language
+//   - `lang` is a COMMENT_LANGUAGE_NAMES key (fr/es/ru/he): name the language
 //     explicitly, using the same curated name shown to editors elsewhere.
 //   - Any other non-English wiki (`articleLangCode` set and not 'en', no
 //     COMMENT_LANGUAGE_NAMES entry): a generic "match the source" directive,
@@ -2688,7 +2689,8 @@ function useToolforgeSourceFetcher() {
     //
     // Adding a language: write its table, register it in MESSAGES, and add its
     // name to PROMPT_LANGUAGES so verdict comments come back in that language
-    // too. detectUiLang() picks it up automatically — no other wiring.
+    // too. detectUiLang() picks it up automatically — no other wiring, except
+    // that a right-to-left language also goes in RTL_LANGS.
     // `tests/i18n.test.js` fails if a table drifts out of parity with French.
 
     const FR_MESSAGES = {
@@ -3567,20 +3569,328 @@ function useToolforgeSourceFetcher() {
             'источник не подтверждает утверждение (проверено с помощью [[:en:User:Alaexis/AI_Source_Verification|Source Verifier]])',
     };
 
+    // Hebrew. Right-to-left: RTL_LANGS below flips the sidebar's text
+    // direction, and detectDockSide() moves the panel to the left edge on an
+    // RTL page. Register follows he.wikipedia's interface, which avoids
+    // Hebrew's gendered second person (לחץ / לחצי) entirely:
+    //   - action labels (buttons, links, menu items) are verbal nouns:
+    //     "שמירה", "ביטול", "העלאת PDF";
+    //   - running prose uses impersonal "יש ל…" / "אפשר ל…" + infinitive.
+    // Terms: citation = הערת שוליים, claim = טענה (feminine, so verdicts agree:
+    // נתמכת / לא נתמכת), section = פסקה, article = ערך. The wikitext report
+    // uses plain glyphs rather than {{tick}}-style templates, which are not
+    // known to exist on he.wikipedia.
+    const HE_MESSAGES = {
+        // Sidebar structure
+        'Selected Claim': 'הטענה שנבחרה',
+        'Click on a reference number [1] next to a claim to verify it against its source.':
+            'יש ללחוץ על מספר הערת שוליים [1] שליד טענה כדי לבדוק אותה מול המקור שלה.',
+        'Source Content': 'תוכן המקור',
+        'No source loaded yet.': 'עדיין לא נטען מקור.',
+        'Verification Result': 'תוצאת הבדיקה',
+
+        // Buttons and inputs
+        'Close': 'סגירה',
+        'Set API Key': 'הגדרת מפתח API',
+        'Verify Claim': 'בדיקת הטענה',
+        'Verifying...': 'מתבצעת בדיקה…',
+        'Change Key': 'החלפת מפתח',
+        'Remove API Key': 'הסרת מפתח API',
+        'Paste the source text here...': 'יש להדביק כאן את טקסט המקור…',
+        'Load Text': 'טעינת הטקסט',
+        'Cancel': 'ביטול',
+        'Paste source text manually': 'הדבקת טקסט המקור ידנית',
+        'Replace the fetched source content with text you paste in (e.g., the full article from The Wikipedia Library)':
+            'החלפת תוכן המקור שאוחזר בטקסט מודבק (למשל, המאמר המלא מספריית ויקיפדיה)',
+        'Verify All Citations': 'בדיקת כל הערות השוליים',
+        'Stop': 'עצירה',
+        'Back to Report': 'חזרה לדוח',
+        'Save': 'שמירה',
+        'Give feedback': 'שליחת משוב',
+
+        // Feedback controls
+        'Was this right?': 'האם זה נכון?',
+        'Yes': 'כן',
+        'No': 'לא',
+        'This verdict looks right': 'ההכרעה נראית נכונה',
+        'This verdict looks wrong': 'ההכרעה נראית שגויה',
+        'What should it have been?': 'מה הייתה צריכה להיות ההכרעה?',
+        'Thanks — recorded.': 'תודה — נרשם.',
+        'Could not record that, sorry.': 'מצטערים, לא ניתן היה לרשום זאת.',
+        'Comment': 'הערה',
+        'Edit Section': 'עריכת הפסקה',
+        'Copy Report (Wikitext)': 'העתקת הדוח (קוד ויקי)',
+        'Copy Report (Plain Text)': 'העתקת הדוח (טקסט פשוט)',
+
+        // Provider info
+        '✓ Using your {name} API key': '✓ נעשה שימוש במפתח ה־API האישי עבור {name}',
+        '✓ Free to use. Optional: ': '✓ שימוש חינם. אפשרות נוספת: ',
+        'add your {name} API key': 'הוספת מפתח API אישי עבור {name}',
+        '✓ Free to use': '✓ שימוש חינם',
+        'API key configured for {name}': 'מוגדר מפתח API עבור {name}',
+        'API key required for {name}': 'נדרש מפתח API עבור {name}',
+        'Results are logged for research. Your username is not recorded.':
+            'התוצאות נשמרות לצורכי מחקר. שם המשתמש אינו נרשם.',
+        'Claim scope': 'היקף הטענה',
+        'Full claim': 'עד הערת השוליים הקודמת או תחילת הפסקה',
+        'Last sentence only': 'המשפט האחרון בלבד',
+        '"Last sentence only" avoids flagging a multi-sentence claim as unsupported just because an earlier sentence lacks a citation.':
+            '"המשפט האחרון בלבד" מונע סימון של טענה בת כמה משפטים כלא נתמכת רק משום שלאחד המשפטים הקודמים אין הערת שוליים.',
+
+        // Verifier tab + first-run notification
+        'Verify': 'בדיקה',
+        'Verify claims against sources': 'בדיקת טענות מול מקורות',
+        'Source Verifier': 'Source Verifier',
+        'Source Verifier installed — click the ':
+            'Source Verifier הותקן — יש ללחוץ על הלשונית ',
+        ' tab to get started.': ' כדי להתחיל.',
+
+        // Source display
+        '✓ PDF content extracted{pageInfo}': '✓ תוכן ה־PDF חולץ{pageInfo}',
+        ' (page {page} of {total})': ' (עמוד {page} מתוך {total})',
+        ' ({pages} pages)': ' ({pages} עמודים)',
+        '✓ Content fetched successfully': '✓ התוכן אוחזר בהצלחה',
+        'Content will be fetched by AI during verification.':
+            'התוכן יאוחזר על ידי הבינה המלאכותית במהלך הבדיקה.',
+        '⚠ The source is long and can only be checked partially.':
+            '⚠ המקור ארוך וניתן לבדוק אותו באופן חלקי בלבד.',
+        'Source URL:': 'כתובת המקור:',
+        'No URL found. Please paste the source text below:':
+            'לא נמצאה כתובת URL. יש להדביק את טקסט המקור למטה:',
+        'Manual Source Text:': 'טקסט מקור שהוזן ידנית:',
+        'No source loaded.': 'לא נטען מקור.',
+        'Click "Verify Claim" to verify the selected claim against the source.':
+            'יש ללחוץ על "בדיקת הטענה" כדי לבדוק את הטענה שנבחרה מול המקור.',
+        'Part of a group of {count} citations: {numbers}':
+            'חלק מקבוצה של {count} הערות שוליים: {numbers}',
+
+        // Verdicts (full, shown for a single verification). Hebrew has no
+        // letter case, so these match the short forms below.
+        'SUPPORTED': 'נתמכת',
+        'PARTIALLY SUPPORTED': 'נתמכת חלקית',
+        'NOT SUPPORTED': 'לא נתמכת',
+        'SOURCE UNAVAILABLE': 'המקור אינו זמין',
+        'ERROR': 'שגיאה',
+        // Verdicts (short, shown on report cards/chips)
+        'Supported': 'נתמכת',
+        'Partial': 'חלקית',
+        'Not Supported': 'לא נתמכת',
+        'Unavailable': 'לא זמין',
+        // Reason tag on a 'not supported' verdict
+        'Contradiction': 'סתירה',
+        'Omission': 'לא מוזכר',
+
+        // Report progress
+        'Checking citation [{num}]': 'בדיקת הערת השוליים [{num}]',
+        'Fetching source for [{num}]': 'אחזור המקור של [{num}]',
+        'Verifying citation [{num}]': 'ניתוח הערת השוליים [{num}]',
+        'Rate limited, retrying in {secs}s...':
+            'חריגה ממגבלת הבקשות, ניסיון חוזר בעוד {secs} שניות…',
+        'Checking combined sources {token}': 'בדיקת מקורות משולבים {token}',
+        'Completed: {count} citations checked': 'הושלם: נבדקו {count} הערות שוליים',
+        'Completed: {count} citation checked': 'הושלם: נבדקה {count} הערת שוליים',
+        'Cancelled after {done} of {total} citations': 'בוטל לאחר {done} מתוך {total} הערות שוליים',
+        'Cancelled after {done} of {total} citation': 'בוטל לאחר {done} מתוך {total} הערת שוליים',
+        ' · ~{duration} remaining': ' · נותרו כ־{duration}',
+
+        // Report summary (count chips: "3 נתמכות")
+        'supported': 'נתמכות',
+        'partial': 'נתמכות חלקית',
+        'not supported': 'לא נתמכות',
+        'unavailable': 'לא זמינות',
+        'errors': 'שגיאות',
+        'skipped': 'דולגו',
+        'Skipped': 'דולגה',
+        'Show {label} citations': 'הצגת הערות שוליים מסוג "{label}"',
+        'Hide {label} citations': 'הסתרת הערות שוליים מסוג "{label}"',
+        '{count} citations checked': 'נבדקו {count} הערות שוליים',
+        '{count} citation checked': 'נבדקה {count} הערת שוליים',
+        '{citations} citations across {claims} claims':
+            '{citations} הערות שוליים ב־{claims} טענות',
+        '{citations} citations across {claims} claim':
+            '{citations} הערות שוליים ב־{claims} טענה',
+        ' · {count} hidden by filter': ' · {count} מוסתרות על ידי המסנן',
+        ' · {input} input + {output} output tokens':
+            ' · {input} אסימוני קלט + {output} אסימוני פלט',
+        'Revision: ': 'גרסה: ',
+
+        // Report cards / groups
+        '⚠ Source is long, only partially checked.':
+            '⚠ המקור ארוך ונבדק באופן חלקי בלבד.',
+        '⚠ Combined sources are long, only partially checked.':
+            '⚠ המקורות המשולבים ארוכים ונבדקו באופן חלקי בלבד.',
+        'Group of {size} · {numbers}': 'קבוצה של {size} · {numbers}',
+        'Checking combined sources…': 'בדיקת מקורות משולבים…',
+        'Individual sources': 'מקורות בודדים',
+        'Combined verdict': 'הכרעה משולבת',
+        'All citations are hidden by the current filters. Click a filter above to show them.':
+            'כל הערות השוליים מוסתרות על ידי המסננים הנוכחיים. אפשר ללחוץ על אחד המסננים שלמעלה כדי להציג אותן.',
+
+        // Notifications / dialogs
+        'Report copied to clipboard!': 'הדוח הועתק ללוח!',
+        'No citations found on this page.': 'לא נמצאו הערות שוליים בדף זה.',
+        'Are you sure you want to remove the stored API key?':
+            'להסיר את מפתח ה־API השמור?',
+        'Enter your {name} API Key...': 'מפתח API של {name}…',
+        'Set {name} API Key': 'הגדרת מפתח API של {name}',
+        'Enter your {name} API Key to enable source verification:':
+            'יש להזין מפתח API של {name} כדי להפעיל את בדיקת המקורות:',
+        'This will verify {citations} citations from {sources} unique sources.{groupNote}\n\nEstimated time: ~{minutes} minutes.\n\nContinue?':
+            'ייבדקו {citations} הערות שוליים מתוך {sources} מקורות ייחודיים.{groupNote}\n\nזמן משוער: כ־{minutes} דקות.\n\nלהמשיך?',
+        'This will verify {citations} citations from {sources} unique sources.{groupNote}\n\nEstimated time: ~{minutes} minute.\n\nContinue?':
+            'ייבדקו {citations} הערות שוליים מתוך {sources} מקורות ייחודיים.{groupNote}\n\nזמן משוער: כ־{minutes} דקה.\n\nלהמשיך?',
+        '\n\nThis includes {count} combined-source checks for adjacent citation groups.':
+            '\n\nכולל {count} בדיקות של מקורות משולבים עבור קבוצות של הערות שוליים סמוכות.',
+        '\n\nThis includes {count} combined-source check for adjacent citation groups.':
+            '\n\nכולל {count} בדיקה של מקורות משולבים עבור קבוצות של הערות שוליים סמוכות.',
+
+        // Generated result comments
+        'No URL found in reference': 'לא נמצאה כתובת URL בהערת השוליים',
+        'None of the grouped sources could be retrieved.':
+            'לא ניתן היה לאחזר אף אחד מהמקורות שבקבוצה.',
+        'Could not fetch source content': 'לא ניתן היה לאחזר את תוכן המקור',
+
+        // Exported reports (wikitext + plain text)
+        'Citation verification report': 'דוח בדיקת הערות שוליים',
+        'This is an experimental check of the article sources by [[User:Alaexis/AI_Source_Verification|Source Verifier]]. Treat it with caution, be aware of its [[User:Alaexis/AI_Source_Verification#Limitations|limitations]] and feel free to leave feedback at [[User_talk:Alaexis/AI_Source_Verification|the talk page]].':
+            'זוהי בדיקה ניסיונית של מקורות הערך באמצעות [[:en:User:Alaexis/AI_Source_Verification|Source Verifier]]. יש להתייחס אליה בזהירות ולהביא בחשבון את [[:en:User:Alaexis/AI_Source_Verification#Limitations|מגבלותיה]]. משוב יתקבל בברכה ב[[:en:User_talk:Alaexis/AI_Source_Verification|דף השיחה]].',
+        'Revision checked: ': 'הגרסה שנבדקה: ',
+        '! # !! Verdict !! Source !! Quote !! Comments':
+            '! # !! הכרעה !! מקור !! ציטוט !! הערות',
+        '{{tick}} Supported': '✓ נתמכת',
+        '{{bang}} Partially supported': '⚠ נתמכת חלקית',
+        '{{cross}} Not supported': '✗ לא נתמכת',
+        '{{hmmm}} Source unavailable': '? המקור אינו זמין',
+        "''(Combined sources are long, only partially checked.)''":
+            "''(המקורות המשולבים ארוכים ונבדקו באופן חלקי בלבד.)''",
+        "''(Source is long, only partially checked.)''":
+            "''(המקור ארוך ונבדק באופן חלקי בלבד.)''",
+        '(combined)': '(משולב)',
+        // Link text for the source column of the wikitext table: [url source]
+        'source': 'מקור',
+        "'''Summary:''' {supported} supported, {partial} partially supported, {notSupported} not supported, {unavailable} source unavailable out of {claims}.":
+            "'''סיכום:''' נתמכות – {supported}, נתמכות חלקית – {partial}, לא נתמכות – {notSupported}, המקור אינו זמין – {unavailable}, מתוך {claims}.",
+        '{count} citations': '{count} הערות שוליים',
+        '{count} citation': '{count} הערת שוליים',
+        '{claims} claims ({citations} citations)': '{claims} טענות ({citations} הערות שוליים)',
+        '{claims} claim ({citations} citations)': '{claims} טענה ({citations} הערות שוליים)',
+        'a PublicAI-hosted open-source LLM': 'מודל שפה גדול בקוד פתוח המתארח ב־PublicAI',
+        'a HuggingFace-hosted open-source LLM ({model})':
+            'מודל שפה גדול בקוד פתוח המתארח ב־HuggingFace ({model})',
+        'a Wikimedia Lift Wing-hosted open-source LLM ({model})':
+            'מודל שפה גדול בקוד פתוח המתארח ב־Wikimedia Lift Wing ({model})',
+        'Generated by [[User:Alaexis/AI_Source_Verification|Source Verifier]] using {model} on ~~~~~.':
+            'נוצר על ידי [[:en:User:Alaexis/AI_Source_Verification|Source Verifier]] באמצעות {model}, ~~~~~.',
+        ' Tokens used: {input} input, {output} output.':
+            ' אסימונים שנוצלו: {input} קלט, {output} פלט.',
+        'Citation Verification Report: {title}': 'דוח בדיקת הערות שוליים: {title}',
+        'Provider: {name}': 'ספק: {name}',
+        'Revision: {rev}': 'גרסה: {rev}',
+        'Claim: {text}': 'טענה: {text}',
+        'Sources: {urls}': 'מקורות: {urls}',
+        'Source: {url}': 'מקור: {url}',
+        'Quote: "{text}"': 'ציטוט: "{text}"',
+        'Comments: {text}': 'הערות: {text}',
+        'From the source': 'מתוך המקור',
+        'Note: Combined sources are long, only partially checked.':
+            'הערה: המקורות המשולבים ארוכים ונבדקו באופן חלקי בלבד.',
+        'Note: Source is long, only partially checked.':
+            'הערה: המקור ארוך ונבדק באופן חלקי בלבד.',
+        'Tokens used: {input} input, {output} output':
+            'אסימונים שנוצלו: {input} קלט, {output} פלט',
+        // Sidebar chrome and the state-driven panel
+        'Settings': 'הגדרות',
+        'Done': 'סיום',
+        'Open settings': 'פתיחת ההגדרות',
+        'Upload PDF': 'העלאת PDF',
+        'or paste the text below': 'או הדבקת הטקסט למטה',
+        'Click any citation number in the article to check whether its source actually supports the claim.':
+            'יש ללחוץ על מספר של הערת שוליים כלשהי בערך כדי לבדוק אם המקור שלה אכן תומך בטענה.',
+        'Ready · free, no setup needed': 'מוכן · חינם, ללא צורך בהגדרה',
+        'Ready · using your API key': 'מוכן · נעשה שימוש במפתח ה־API האישי',
+        'Add an API key in settings to start':
+            'כדי להתחיל, יש להוסיף מפתח API בהגדרות',
+        'Checking citations…': 'בדיקת הערות שוליים…',
+        'Model: {model}': 'מודל: {model}',
+        // Verdict framing: the assessment is attributed, and each verdict says
+        // what the editor should do next.
+        'AI assessment': 'הערכת בינה מלאכותית',
+        'Read the source before changing the article — this is a machine reading, not a fact.':
+            'כדאי לקרוא את המקור לפני שינוי הערך — זוהי קריאה ממוחשבת, לא עובדה.',
+        'Spot-check the source yourself — this is a machine reading, not a fact.':
+            'כדאי לבדוק את המקור באופן עצמאי — זוהי קריאה ממוחשבת, לא עובדה.',
+        'The tool could not read this source. Try pasting the text or uploading a PDF.':
+            'הכלי לא הצליח לקרוא את המקור הזה. אפשר לנסות להדביק את הטקסט או להעלות קובץ PDF.',
+        'How accurate is this?': 'עד כמה זה מדויק?',
+        'Measured against 186 human-labelled citations, a "not supported" flag was confirmed by a reviewer roughly two thirds of the time. Treat every verdict as a reason to read the source, not as a conclusion.':
+            'בבדיקה מול 186 הערות שוליים שתויגו בידי אדם, סימון "לא נתמכת" אושר על ידי בודק אנושי בכשני שלישים מהמקרים. יש להתייחס לכל הכרעה כסיבה לקרוא את המקור, ולא כמסקנה.',
+
+        // Status strip
+        'Could not extract claim text': 'לא ניתן היה לחלץ את טקסט הטענה',
+        'Skipped (claim too short to check)': 'דולגה (הטענה קצרה מכדי לבדוק אותה)',
+        'Skipped: the text before this citation ("{claim}") is too short to check as a claim.': 'דולגה: הטקסט שלפני הערת שוליים זו ("{claim}") קצר מכדי לבדוק אותו כטענה.',
+        'The text before this citation is too short to check as a claim.': 'הטקסט שלפני הערת שוליים זו קצר מכדי לבדוק אותו כטענה.',
+        'No URL found in reference. Please paste the source text below.':
+            'לא נמצאה כתובת URL בהערת השוליים. יש להדביק את טקסט המקור למטה.',
+        'Google Books sources cannot be fetched. Please paste the source text below.':
+            'לא ניתן לאחזר מקורות מ־Google Books. יש להדביק את טקסט המקור למטה.',
+        'Fetching source content...': 'אחזור תוכן המקור…',
+        'Could not fetch source{status}{reason}. Please paste the source text below.':
+            'לא ניתן היה לאחזר את המקור{status}{reason}. יש להדביק את טקסט המקור למטה.',
+        'Source fetched. Ready to verify.': 'המקור אוחזר. מוכן לבדיקה.',
+        'Ready to verify claim against source': 'מוכן לבדיקת הטענה מול המקור',
+        'Error: {message}': 'שגיאה: {message}',
+        'Please enter some source text': 'יש להזין טקסט מקור',
+        'Source text loaded (trimmed to {count} characters). Ready to verify.':
+            'טקסט המקור נטען (קוצר ל־{count} תווים). מוכן לבדיקה.',
+        'Source text loaded. Ready to verify.': 'טקסט המקור נטען. מוכן לבדיקה.',
+        'Cancelled': 'בוטל',
+        'Please choose a PDF file.': 'יש לבחור קובץ PDF.',
+        'Reading {name}…': 'קריאת {name}…',
+        'This PDF has no selectable text (it looks scanned). Please paste the relevant passage instead.':
+            'בקובץ PDF זה אין טקסט שניתן לסמן (נראה שהוא סרוק). יש להדביק במקום זאת את הקטע הרלוונטי.',
+        'Loaded text from {name}. Ready to verify.': 'הטקסט נטען מ־{name}. מוכן לבדיקה.',
+        'Could not read that PDF: {message}. Try pasting the text instead.':
+            'לא ניתן היה לקרוא את קובץ ה־PDF: {message}. אפשר לנסות להדביק את הטקסט במקום זאת.',
+        'Switched to {name}': 'בוצע מעבר ל־{name}',
+        'Paste replacement source text below, then click Load Text.':
+            'יש להדביק למטה את טקסט המקור החלופי, ואז ללחוץ על "טעינת הטקסט".',
+        'This provider does not require an API key.': 'ספק זה אינו דורש מפתח API.',
+        'API key set successfully!': 'מפתח ה־API הוגדר בהצלחה!',
+        'This provider does not use a stored API key.': 'ספק זה אינו משתמש במפתח API שמור.',
+        'API key removed successfully!': 'מפתח ה־API הוסר בהצלחה!',
+        'Missing API key (for this provider), claim, or source content':
+            'חסרים מפתח API (לספק זה), טענה או תוכן מקור',
+        'Verifying claim against source...': 'בדיקת הטענה מול המקור…',
+        'Verification complete!': 'הבדיקה הושלמה!',
+
+        // Pre-filled wiki edit summary
+        'source does not support claim (checked with [[User:Alaexis/AI_Source_Verification|Source Verifier]])':
+            'המקור אינו תומך בטענה (נבדק באמצעות [[:en:User:Alaexis/AI_Source_Verification|Source Verifier]])',
+    };
+
     // Registered UI languages, keyed by the MediaWiki language-code prefix that
     // selects them. English is the absence of a table, not an entry here.
     const MESSAGES = {
         fr: FR_MESSAGES,
         es: ES_MESSAGES,
-        ru: RU_MESSAGES
+        ru: RU_MESSAGES,
+        he: HE_MESSAGES
     };
+
+    // UI languages written right to left. The sidebar's `dir` follows the UI
+    // language (see createUI()), so its text, flex rows and logical CSS
+    // properties mirror; which screen edge it docks to is a separate question,
+    // answered by detectDockSide().
+    const RTL_LANGS = new Set(['he']);
 
     // How each localized language is named to the LLM when asking it to write
     // its free-text "comments" in that language. Keys must match MESSAGES.
     const PROMPT_LANGUAGES = {
         fr: 'French (français)',
         es: 'Spanish (español)',
-        ru: 'Russian (русский)'
+        ru: 'Russian (русский)',
+        he: 'Hebrew (עברית)'
     };
 
     // Pick the UI language from the wiki's content language, falling back to the
@@ -3616,6 +3926,21 @@ function useToolforgeSourceFetcher() {
         return null;
     }
 
+    // Which screen edge the sidebar docks to: the page's end side, so it sits
+    // opposite the skin's navigation menus. MediaWiki sets <html dir> from the
+    // interface language and mirrors the whole skin with it, so on an RTL page
+    // (he.wikipedia, or any wiki viewed with an RTL interface language) the
+    // menus are on the right and the panel belongs on the left. Deliberately
+    // not tied to the UI language: an English sidebar on ar.wikipedia still
+    // has to stay out of the mirrored skin's way.
+    function detectDockSide() {
+        try {
+            if (typeof document !== 'undefined' && document.documentElement
+                && String(document.documentElement.dir).toLowerCase() === 'rtl') return 'left';
+        } catch (e) { /* no DOM: default side */ }
+        return 'right';
+    }
+
     class WikipediaSourceVerifier {
         constructor() {
             // UI language: a key of MESSAGES on wikis in that language,
@@ -3624,6 +3949,11 @@ function useToolforgeSourceFetcher() {
             // Raw wiki content-language code (e.g. 'de', 'ja'), used only to
             // steer the LLM's comment language — see detectArticleLangCode().
             this.articleLangCode = detectArticleLangCode();
+            // Text direction of the sidebar (from the UI language) and the
+            // screen edge it docks to (from the page) — see RTL_LANGS and
+            // detectDockSide().
+            this.uiDir = RTL_LANGS.has(this.lang) ? 'rtl' : 'ltr';
+            this.dockSide = detectDockSide();
 
             // The provider table lives in core/models.js (injected above) so
             // the userscript, the CLI, and the standalone web tool all name the
@@ -3746,7 +4076,11 @@ function useToolforgeSourceFetcher() {
         createUI() {
             const sidebar = document.createElement('div');
             sidebar.id = 'source-verifier-sidebar';
-            
+            // Set explicitly rather than inherited: on an RTL wiki the page is
+            // RTL even when the UI fell back to English, and vice versa.
+            sidebar.dir = this.uiDir;
+            sidebar.lang = this.lang;
+
             this.createOOUIButtons();
             
             // Section order is the reading order of a finished check: the verdict
@@ -4215,6 +4549,12 @@ function useToolforgeSourceFetcher() {
         createStyles() {
             const accent = this.getCurrentColor();
             const tokens = this.styleTokens(accent);
+            // The panel's outer edge (docked to the screen) and its inner edge
+            // (facing the article, carrying the border and resize handle).
+            // Everything inside the panel uses logical properties instead, so
+            // it mirrors with the sidebar's own dir attribute.
+            const dock = this.dockSide === 'left' ? 'left' : 'right';
+            const inner = dock === 'left' ? 'right' : 'left';
 
             const style = document.createElement('style');
             style.id = 'source-verifier-styles';
@@ -4232,13 +4572,13 @@ function useToolforgeSourceFetcher() {
                 #source-verifier-sidebar {
                     position: fixed;
                     top: 0;
-                    right: 0;
+                    ${dock}: 0;
                     width: ${this.sidebarWidth};
                     height: 100vh;
                     background: var(--sv-bg);
                     color: var(--sv-ink);
-                    border-left: 2px solid var(--sv-accent-fg);
-                    box-shadow: -2px 0 8px var(--sv-shadow);
+                    border-${inner}: 2px solid var(--sv-accent-fg);
+                    box-shadow: ${dock === 'right' ? '-2px' : '2px'} 0 8px var(--sv-shadow);
                     z-index: 10000;
                     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
                     font-size: 14px;
@@ -4484,6 +4824,18 @@ function useToolforgeSourceFetcher() {
                     max-height: 120px;
                     overflow-y: auto;
                 }
+                /* Source text is in the source's language, not the wiki's: an
+                   English source cited on he.wikipedia has to read left to
+                   right inside a right-to-left panel. plaintext picks each
+                   paragraph's direction from its first strong character. The
+                   claim is left out on purpose — it is in the article's own
+                   language, and a Hebrew claim opening with a Latin name would
+                   be flipped the wrong way by the same heuristic. */
+                #verifier-source-text,
+                #verifier-source-textarea-container textarea,
+                .sv-quote-text {
+                    unicode-bidi: plaintext;
+                }
                 #verifier-source-input-container {
                     margin-top: 10px;
                 }
@@ -4589,8 +4941,10 @@ function useToolforgeSourceFetcher() {
                     margin-bottom: 8px;
                     padding: 8px 10px;
                     background: var(--sv-bg-inset);
-                    border-left: 3px solid var(--sv-accent);
-                    border-radius: 0 3px 3px 0;
+                    border-inline-start: 3px solid var(--sv-accent);
+                    border-radius: 3px;
+                    border-start-start-radius: 0;
+                    border-end-start-radius: 0;
                 }
                 .sv-quote-label {
                     display: block;
@@ -4646,7 +5000,7 @@ function useToolforgeSourceFetcher() {
                 }
                 #verifier-resize-handle {
                     position: absolute;
-                    left: 0;
+                    ${inner}: 0;
                     top: 0;
                     width: 4px;
                     height: 100%;
@@ -4669,8 +5023,8 @@ function useToolforgeSourceFetcher() {
                     text-decoration: underline !important;
                 }
                 body {
-                    margin-right: ${this.isVisible ? this.sidebarWidth : '0'};
-                    transition: margin-right 0.3s ease;
+                    margin-${dock}: ${this.isVisible ? this.sidebarWidth : '0'};
+                    transition: margin-${dock} 0.3s ease;
                 }
                 .verifier-error {
                     color: var(--sv-error-fg);
@@ -4698,7 +5052,7 @@ function useToolforgeSourceFetcher() {
                     padding: 2px 6px;
                 }
                 body.verifier-sidebar-hidden {
-                    margin-right: 0 !important;
+                    margin-${dock}: 0 !important;
                 }
                 body.verifier-sidebar-hidden #source-verifier-sidebar {
                     display: none;
@@ -4840,17 +5194,17 @@ function useToolforgeSourceFetcher() {
                     font-size: 12px;
                     cursor: pointer;
                     background: var(--sv-bg-card);
-                    border-left: 3px solid var(--sv-stripe-neutral);
+                    border-inline-start: 3px solid var(--sv-stripe-neutral);
                 }
                 .verifier-report-card:hover {
                     background: var(--sv-bg-hover);
                 }
-                .verifier-report-card.verdict-supported { border-left-color: var(--sv-seg-supported); }
-                .verifier-report-card.verdict-partial { border-left-color: var(--sv-seg-partial); }
-                .verifier-report-card.verdict-not-supported { border-left-color: var(--sv-seg-not-supported); }
-                .verifier-report-card.verdict-unavailable { border-left-color: var(--sv-seg-unavailable); }
-                .verifier-report-card.verdict-error { border-left-color: var(--sv-seg-error); }
-                .verifier-report-card.verdict-skipped { border-left-color: var(--sv-seg-error); border-left-style: dashed; }
+                .verifier-report-card.verdict-supported { border-inline-start-color: var(--sv-seg-supported); }
+                .verifier-report-card.verdict-partial { border-inline-start-color: var(--sv-seg-partial); }
+                .verifier-report-card.verdict-not-supported { border-inline-start-color: var(--sv-seg-not-supported); }
+                .verifier-report-card.verdict-unavailable { border-inline-start-color: var(--sv-seg-unavailable); }
+                .verifier-report-card.verdict-error { border-inline-start-color: var(--sv-seg-error); }
+                .verifier-report-card.verdict-skipped { border-inline-start-color: var(--sv-seg-error); border-inline-start-style: dashed; }
                 .report-card-header {
                     display: flex;
                     justify-content: space-between;
@@ -4884,7 +5238,7 @@ function useToolforgeSourceFetcher() {
                     font-size: 11px;
                     padding: 1px 6px;
                     border-radius: 3px;
-                    margin-left: 6px;
+                    margin-inline-start: 6px;
                     font-weight: normal;
                     vertical-align: middle;
                 }
@@ -5037,7 +5391,7 @@ function useToolforgeSourceFetcher() {
                 }
                 .verifier-report-group {
                     border: 1px solid var(--sv-border-3);
-                    border-left: 3px solid var(--sv-accent-fg);
+                    border-inline-start: 3px solid var(--sv-accent-fg);
                     border-radius: 4px;
                     background: var(--sv-bg-inset);
                     padding: 6px 8px;
@@ -5109,7 +5463,7 @@ function useToolforgeSourceFetcher() {
                 .verifier-report-group-row {
                     background: var(--sv-bg);
                     border: 1px solid var(--sv-border-2);
-                    border-left: 3px solid var(--sv-stripe-neutral);
+                    border-inline-start: 3px solid var(--sv-stripe-neutral);
                     border-radius: 3px;
                     color: var(--sv-ink);
                     padding: 5px 8px;
@@ -5118,12 +5472,12 @@ function useToolforgeSourceFetcher() {
                 .verifier-report-group-row:hover {
                     background: var(--sv-bg-hover-inset);
                 }
-                .verifier-report-group-row.verdict-supported { border-left-color: var(--sv-seg-supported); }
-                .verifier-report-group-row.verdict-partial { border-left-color: var(--sv-seg-partial); }
-                .verifier-report-group-row.verdict-not-supported { border-left-color: var(--sv-seg-not-supported); }
-                .verifier-report-group-row.verdict-unavailable { border-left-color: var(--sv-seg-unavailable); }
-                .verifier-report-group-row.verdict-error { border-left-color: var(--sv-seg-error); }
-                .verifier-report-group-row.verdict-skipped { border-left-color: var(--sv-seg-error); border-left-style: dashed; }
+                .verifier-report-group-row.verdict-supported { border-inline-start-color: var(--sv-seg-supported); }
+                .verifier-report-group-row.verdict-partial { border-inline-start-color: var(--sv-seg-partial); }
+                .verifier-report-group-row.verdict-not-supported { border-inline-start-color: var(--sv-seg-not-supported); }
+                .verifier-report-group-row.verdict-unavailable { border-inline-start-color: var(--sv-seg-unavailable); }
+                .verifier-report-group-row.verdict-error { border-inline-start-color: var(--sv-seg-error); }
+                .verifier-report-group-row.verdict-skipped { border-inline-start-color: var(--sv-seg-error); border-inline-start-style: dashed; }
                 .verifier-report-group-row .report-card-verdict {
                     background: transparent;
                     color: var(--sv-ink-4);
@@ -5136,7 +5490,7 @@ function useToolforgeSourceFetcher() {
                     color: var(--sv-ink-4);
                     font-size: 10px;
                     padding: 0;
-                    margin-left: 4px;
+                    margin-inline-start: 4px;
                 }
                 .verifier-report-group-row-header {
                     display: flex;
@@ -5160,7 +5514,7 @@ function useToolforgeSourceFetcher() {
                    correction chip 4px right of centre. The widget root only
                    carries .oo-ui-iconElement when an icon was really set. */
                 #source-verifier-sidebar .oo-ui-iconElement .oo-ui-iconElement-icon + .oo-ui-labelElement-label {
-                    margin-left: 4px;
+                    margin-inline-start: 4px;
                 }
                 #verifier-report-actions {
                     display: flex;
@@ -5185,9 +5539,9 @@ function useToolforgeSourceFetcher() {
                 }
                 .claim-highlight {
                     background-color: var(--sv-warn-bg);
-                    border-left: 3px solid var(--sv-accent-fg);
-                    padding-left: 5px;
-                    margin-left: -8px;
+                    border-inline-start: 3px solid var(--sv-accent-fg);
+                    padding-inline-start: 5px;
+                    margin-inline-start: -8px;
                 }
             `;
 
@@ -5886,14 +6240,16 @@ function useToolforgeSourceFetcher() {
             const handleMouseMove = (e) => {
                 if (!isResizing) return;
                 
-                const newWidth = window.innerWidth - e.clientX;
+                // The handle is on the panel's inner edge, so its width is
+                // the pointer's distance from the docked edge.
+                const newWidth = this.dockSide === 'left' ? e.clientX : window.innerWidth - e.clientX;
                 const minWidth = 300;
                 const maxWidth = window.innerWidth * 0.8;
                 
                 if (newWidth >= minWidth && newWidth <= maxWidth) {
                     const widthPx = newWidth + 'px';
                     sidebar.style.width = widthPx;
-                    document.body.style.marginRight = widthPx;
+                    this.setBodyMargin(widthPx);
                     this.sidebarWidth = widthPx;
                     localStorage.setItem('verifier_sidebar_width', widthPx);
                 }
@@ -5911,7 +6267,7 @@ function useToolforgeSourceFetcher() {
             
             document.body.classList.remove('verifier-sidebar-hidden');
             if (verifierTab) verifierTab.style.display = 'none';
-            document.body.style.marginRight = this.sidebarWidth;
+            this.setBodyMargin(this.sidebarWidth);
             
             this.isVisible = true;
             localStorage.setItem('verifier_sidebar_visible', 'true');
@@ -5922,7 +6278,7 @@ function useToolforgeSourceFetcher() {
             
             document.body.classList.add('verifier-sidebar-hidden');
             if (verifierTab) verifierTab.style.display = 'list-item';
-            document.body.style.marginRight = '0';
+            this.setBodyMargin('0');
             
             this.clearHighlights();
             
@@ -5931,11 +6287,14 @@ function useToolforgeSourceFetcher() {
         }
         
         adjustMainContent() {
-            if (this.isVisible) {
-                document.body.style.marginRight = this.sidebarWidth;
-            } else {
-                document.body.style.marginRight = '0';
-            }
+            this.setBodyMargin(this.isVisible ? this.sidebarWidth : '0');
+        }
+
+        // Makes room for the panel on whichever edge it docks to (see
+        // detectDockSide()).
+        setBodyMargin(value) {
+            const prop = this.dockSide === 'left' ? 'marginLeft' : 'marginRight';
+            document.body.style[prop] = value;
         }
         
         attachEventListeners() {
