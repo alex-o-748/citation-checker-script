@@ -2,8 +2,11 @@
 
 import { createServer } from 'node:http';
 import { pathToFileURL } from 'node:url';
-import { MAX_BODY_BYTES, verifyRequest } from './verify.js';
+import { API_PROVIDER, MAX_BODY_BYTES, verifyRequest } from './verify.js';
+import { modelFor } from '../core/models.js';
 import { OPENAPI_DOCUMENT } from './openapi.js';
+import { createMetrics, describeSource } from './metrics.js';
+import { STATUS_PAGE_HTML } from './status-page.js';
 
 const WIKIPEDIA_ORIGIN = /^https:\/\/[a-z0-9-]+\.wikipedia\.org$/i;
 
@@ -20,20 +23,27 @@ const RATE_WINDOW_MS = 60_000;
 export function createRateLimiter({ limit = RATE_LIMIT, windowMs = RATE_WINDOW_MS, now = Date.now } = {}) {
     let count = 0;
     let resetAt = 0;
-    return () => {
+    const state = time => ({
+        limit,
+        remaining: Math.max(0, limit - count),
+        resetSeconds: Math.max(1, Math.ceil((resetAt - time) / 1000)),
+    });
+    const take = () => {
         const time = now();
         if (resetAt <= time) {
             count = 0;
             resetAt = time + windowMs;
         }
         count += 1;
-        return {
-            allowed: count <= limit,
-            limit,
-            remaining: Math.max(0, limit - count),
-            resetSeconds: Math.max(1, Math.ceil((resetAt - time) / 1000)),
-        };
+        return { allowed: count <= limit, ...state(time) };
     };
+    // Read the current window without spending from it, for the status board.
+    take.peek = () => {
+        const time = now();
+        if (resetAt <= time) return { limit, remaining: limit, resetSeconds: Math.ceil(windowMs / 1000), windowSeconds: windowMs / 1000 };
+        return { ...state(time), windowSeconds: windowMs / 1000 };
+    };
+    return take;
 }
 
 function corsHeaders(req) {
@@ -74,7 +84,26 @@ async function readJson(req) {
     }
 }
 
-export function createVerifyServer({ verify = verifyRequest, rateLimit = createRateLimiter() } = {}) {
+function sendHtml(res, html) {
+    res.writeHead(200, {
+        'Content-Type': 'text/html; charset=utf-8',
+        'Content-Length': Buffer.byteLength(html),
+        // The page is self-contained: inline script and style, no third-party
+        // resources (Toolforge forbids them), and data only from this origin.
+        'Content-Security-Policy': "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'",
+        'Cache-Control': 'no-store',
+    });
+    res.end(html);
+}
+
+export function createVerifyServer({
+    verify = verifyRequest,
+    rateLimit = createRateLimiter(),
+    metrics = createMetrics(),
+    now = () => performance.now(),
+} = {}) {
+    const service = { provider: API_PROVIDER, model: modelFor(API_PROVIDER) };
+
     return createServer(async (req, res) => {
         const cors = corsHeaders(req);
         const pathname = new URL(req.url, 'http://localhost').pathname;
@@ -83,10 +112,27 @@ export function createVerifyServer({ verify = verifyRequest, rateLimit = createR
                 name: OPENAPI_DOCUMENT.info.title,
                 documentation: '/openapi.json',
                 verify: '/v1/verify',
+                status: '/status',
+                metrics: '/metrics.json',
             }, cors);
         }
         if (req.method === 'GET' && pathname === '/openapi.json') {
             return sendJson(res, 200, OPENAPI_DOCUMENT, cors);
+        }
+        if (req.method === 'GET' && pathname === '/metrics.json') {
+            const rate = rateLimit.peek?.() ?? null;
+            return sendJson(res, 200, metrics.snapshot({
+                service,
+                rateLimit: rate && {
+                    limit: rate.limit,
+                    remaining: rate.remaining,
+                    reset_seconds: rate.resetSeconds,
+                    window_seconds: rate.windowSeconds,
+                },
+            }), { ...cors, 'Cache-Control': 'no-store' });
+        }
+        if (req.method === 'GET' && pathname === '/status') {
+            return sendHtml(res, STATUS_PAGE_HTML);
         }
         if (req.method === 'OPTIONS' && pathname === '/v1/verify') {
             res.writeHead(204, {
@@ -101,9 +147,16 @@ export function createVerifyServer({ verify = verifyRequest, rateLimit = createR
             return sendJson(res, 404, { error: 'Not found' }, cors);
         }
 
+        const started = now();
+        let source = { source: null, sourceHost: null };
+        const respond = (status, body, headers) => {
+            metrics.record({ status, body, durationMs: now() - started, ...source });
+            return sendJson(res, status, body, headers);
+        };
+
         const mediaType = req.headers['content-type']?.split(';', 1)[0].trim().toLowerCase();
         if (mediaType !== 'application/json') {
-            return sendJson(res, 415, { error: 'Content-Type must be application/json' }, cors);
+            return respond(415, { error: 'Content-Type must be application/json' }, cors);
         }
 
         const allowance = rateLimit();
@@ -113,19 +166,20 @@ export function createVerifyServer({ verify = verifyRequest, rateLimit = createR
             'RateLimit-Reset': String(allowance.resetSeconds),
         };
         if (!allowance.allowed) {
-            return sendJson(res, 429, { error: 'Rate limit exceeded' }, {
+            return respond(429, { error: 'Rate limit exceeded' }, {
                 ...cors, ...rateHeaders, 'Retry-After': String(allowance.resetSeconds),
             });
         }
 
         try {
             const body = await readJson(req);
+            source = describeSource(body);
             const result = await verify(body);
-            return sendJson(res, result.status, result.body, { ...cors, ...rateHeaders });
+            return respond(result.status, result.body, { ...cors, ...rateHeaders });
         } catch (error) {
             const status = error.status || 500;
             const message = status === 500 ? 'Internal server error' : error.message;
-            return sendJson(res, status, { error: message }, { ...cors, ...rateHeaders });
+            return respond(status, { error: message }, { ...cors, ...rateHeaders });
         }
     });
 }
