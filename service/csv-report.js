@@ -60,6 +60,14 @@ const COLUMNS = [
     ['tokens_in', f => f.tokensIn],
     ['tokens_out', f => f.tokensOut],
     ['published', f => (f.published ? 1 : 0)],
+    // Severity pass (core/severity.js). is_blp is empty, not 0, on a wiki
+    // with no confirmed living-people category — "can't tell" is not "no".
+    ['is_blp', f => (f.isBlp === null || f.isBlp === undefined ? null : (f.isBlp ? 1 : 0))],
+    ['section_title', f => f.sectionTitle],
+    ['severity_tier', f => f.severityTier],
+    ['severity_subclaims', f => (f.severitySubclaims ? JSON.stringify(f.severitySubclaims) : null)],
+    ['severity_error', f => f.severityError],
+    ['severity_prompt_version', f => f.severityPromptVersion],
     // Last, not first, despite being the row's identifier — csvPageTitles()
     // below reads the FIRST field of every record as the page title, which is
     // what --resume skips on. Moving check_id to column 1 would silently make

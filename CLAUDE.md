@@ -347,6 +347,28 @@ the sample) comes back as a no.
 Rationale, costs and the alternatives rejected (page views, `page_assessments`,
 a category blacklist): `docs/design-plans/2026-09-16-selecting-for-future-activity.md`.
 
+### Severity ranking of flagged findings (`run-sweep.js --severity`)
+
+A flagged finding can get a second, separate model call that splits its claim
+into subclaims, labels each `supported` / `absent` / `contradicted` (from the
+source only) and `central` or not (using article title, section and paragraph
+from `core/article-context.js`). `core/severity.js`'s `tierFor()` turns the
+labels into `T1` (central contradicted) / `T2` / `T3` (only peripheral detail
+missing) / `discounted` (only absences on a truncated source) / `disagreement`
+(nothing wrong found: likeliest false positives). BLP (`Category:Living
+people`, read from the article HTML) orders findings within a tier.
+
+Three rules to keep if you touch it:
+- The verdict prompt is not changed. The severity prompt has its own
+  hash-pinned `SEVERITY_PROMPT_VERSION`.
+- The model never sees the first-pass verdict, and is never asked whether a
+  claim is "probably true".
+- Truncation discounts absence, never contradiction.
+
+CSV only for now; no ToolsDB columns. Suggested actions are deliberately a
+separate, unbuilt module. Design and next steps:
+`docs/design-plans/2026-09-24-severity-ranking-for-flagged-claims.md`.
+
 ## Development Workflow
 
 - **Tests:** `node --test` via `npm test` from the repo root, runs everything in `tests/**/*.test.js`. New helpers should get a sibling `*.test.js` file. Behavioral validation also goes through the benchmark suite against the human-labeled citation dataset.

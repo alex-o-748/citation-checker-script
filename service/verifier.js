@@ -221,6 +221,30 @@ export async function verifyCitation(claimText, source, {
 }
 
 /**
+ * The combined source text a group's collective check reads, or null when at
+ * most one member source has usable text (the group is skipped). Shared by
+ * verifyGroup() and the severity pass (service/severity-assessor.js), which
+ * must read exactly the text the verdict was reached on.
+ */
+export function assembleGroupText(members) {
+    // Dedupe by cache key so a source cited twice in the group (named refs)
+    // is sent once, with both citation numbers on its label. Each member
+    // already carries its own resolved `source` (processArticle() resolved
+    // it per-citation against a shared cache), so — unlike the userscript,
+    // which looks members up in a live sourceCache — this reads straight off
+    // the member.
+    const entries = groupSourceEntries(members, m => ({
+        key: m.url ? sourceCacheKey(m.url, m.pageNum) : `__nourl_${m.citationNumber}`,
+        url: m.url || null,
+        content: m.source?.content ?? null,
+        error: m.source?.error ?? null,
+        status: m.source?.status ?? null,
+    }));
+    if (shouldSkipCollective(entries)) return null;
+    return assembleGroupSources(entries).text;
+}
+
+/**
  * Verifies one adjacent-citation group's collective (multi-source) claim.
  *
  * `members` are one group's citations, in the shape
@@ -267,27 +291,13 @@ export async function verifyGroup(members, {
         return { skipped: true, groupId };
     }
 
-    // Dedupe by cache key so a source cited twice in the group (named refs)
-    // is sent once, with both citation numbers on its label. Each member
-    // already carries its own resolved `source` (processArticle() resolved
-    // it per-citation against a shared cache), so — unlike the userscript,
-    // which looks members up in a live sourceCache — this reads straight off
-    // the member.
-    const entries = groupSourceEntries(members, m => ({
-        key: m.url ? sourceCacheKey(m.url, m.pageNum) : `__nourl_${m.citationNumber}`,
-        url: m.url || null,
-        content: m.source?.content ?? null,
-        error: m.source?.error ?? null,
-        status: m.source?.status ?? null,
-    }));
-
     // With at most one usable source the collective verdict would just
     // restate the solo one, so skip the model call entirely.
-    if (shouldSkipCollective(entries)) {
+    const assembledText = assembleGroupText(members);
+    if (assembledText === null) {
         return { skipped: true, groupId };
     }
 
-    const { text: assembledText } = assembleGroupSources(entries);
     const systemPrompt = withCommentLanguage(generateGroupSystemPrompt(), { lang: articleLangCode, articleLangCode });
     const userContent = generateGroupUserPrompt(claimText, assembledText);
 

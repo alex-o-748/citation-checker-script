@@ -118,6 +118,18 @@ export function livingPeopleCategoryForWiki(wikiDb) {
     return WIKI_LIVING_PEOPLE_CATEGORIES[wikiDb] ?? null;
 }
 
+// Whether an article is a biography of a living person, from the category
+// names core/article-context.js's articleCategories() reads off its HTML.
+// null, not false, on a wiki with no confirmed category name — for the same
+// reason livingPeopleCategoryForWiki() returns null: "not a BLP" and "we
+// can't tell" must not look the same in a finding.
+export function isBlpByCategories(categories, wikiDb) {
+    const category = livingPeopleCategoryForWiki(wikiDb);
+    if (!category) return null;
+    const wanted = category.replace(/_/g, ' ');
+    return (categories ?? []).includes(wanted);
+}
+
 export function failedVerificationTemplatesForWiki(wikiDb) {
     return WIKI_FAILED_VERIFICATION_TEMPLATES[wikiDb] ?? [CRITERIA['failed-verification'].template];
 }
