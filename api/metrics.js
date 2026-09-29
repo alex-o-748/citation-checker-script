@@ -5,6 +5,11 @@
 // the board says so by showing when the process started. What it never keeps
 // is request content — no claim text, no source text, no full URL, only the
 // source's hostname — because the board is as public as the endpoint.
+//
+// Two things to know when reading the board. Latency counts only requests
+// that reached the pipeline: a 400 or 429 returns in microseconds and would
+// flatter every percentile. And the counters are per process, so if Toolforge
+// ever runs more than one replica, each board shows only its own share.
 
 export const OUTCOMES = Object.freeze({
     OK: 'ok',

@@ -40,13 +40,6 @@ API keys for paid providers are stored in `localStorage` and configured from the
 
 The CLI reuses `core/` to verify a single citation from the terminal — the same verification the userscript performs in-page, minus the UI.
 
-## Verify HTTP API
-
-A per-citation `POST /v1/verify` server is available for deployment and reuses
-the same core verification pipeline. Its contract, limits, copyable `curl`
-example, monitoring board (`GET /status`), and current deployment status are in
-[`docs/verify-api.md`](docs/verify-api.md).
-
 ### Install (from a clone)
 
 ```sh
@@ -97,6 +90,14 @@ Not supported in Phase 1:
 - `https://en.wikipedia.org/w/index.php?title=<Title>` form
 - `?curid=<pageid>` form
 - non-`en` Wikipedias
+
+## Verify HTTP API
+
+`POST /v1/verify` at `https://citation-verifier.toolforge.org` checks one claim
+against one source over HTTP, with no API key, using the same pipeline as the
+userscript and CLI. It is for tools that can't import `core/` directly. Request
+shape, limits, fair use and the status dashboard (`GET /status`):
+[`docs/verify-api.md`](docs/verify-api.md). The server is `api/server.js`.
 
 ## Batch CSV output
 
