@@ -316,8 +316,8 @@ This section is for readers of the benchmark reports.
 - **Dataset:** [`benchmark/dataset.json`](../benchmark/dataset.json) has 189
   claim/source pairs taken from English Wikipedia. Each row has the claim, the
   cited URL, the source text as retrieved, and a human verdict. Rows whose source
-  was cut off at the length limit are flagged (`source_truncated`), and rows whose
-  stored source isn't the cited work are marked `excluded_reason`. The labels come
+  was cut off at the length limit are flagged (`source_truncated`). One row, whose
+  claim and cited URL are unrelated, is left out of scoring (`excluded_reason`). The labels come
   from [`Benchmarking_data_Citations.csv`](../Benchmarking_data_Citations.csv).
   [`benchmark/README.md`](../benchmark/README.md) describes how the dataset was
   built.
