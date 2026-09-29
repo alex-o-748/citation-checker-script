@@ -126,15 +126,22 @@ export function cleanCsvPath(path) {
 }
 
 /**
- * Two independent rules, so neither depends on what the other removed:
+ * Three independent rules, so none depends on what another removed:
  *
  * 1. A finding on a truncated source is kept only if it is SUPPORTED or NOT
  *    SUPPORTED / contradiction — verdicts resting on a passage the model
  *    actually saw, which text past the cutoff cannot undo. Everything else on
  *    a truncated source (omission above all: "not mentioned" may just mean
  *    "past the cutoff") is dropped.
- * 2. Once an adjacent-citation group has a collective finding, its individual
- *    findings are never shown — even when rule 1 dropped the collective
+ * 2. A collective finding is held to the same test when any member's own
+ *    finding is SOURCE UNAVAILABLE: that member was never read, so "not in
+ *    the sources" may just mean "in the one we couldn't see". This is the
+ *    login-page case — shouldSkipCollective() (core/groups.js) counts any
+ *    fetched text as available, so a group whose second source is a login
+ *    wall still gets a collective check, and the model judges it on the
+ *    first source alone.
+ * 3. Once an adjacent-citation group has a collective finding, its individual
+ *    findings are never shown — even when rule 1 or 2 dropped the collective
  *    itself. Falling back to the members there would surface one source's
  *    partial view of a claim several sources back.
  *
@@ -158,13 +165,18 @@ export function cleanCsvText(text) {
         row[indexes.group_id],
     ].join('\u0000');
     const isCollective = row => truthy(row[indexes.is_collective] || '');
-    const survivesTruncation = row => row[indexes.verdict] === 'SUPPORTED'
+    const survivesUnseenText = row => row[indexes.verdict] === 'SUPPORTED'
         || (row[indexes.verdict] === 'NOT SUPPORTED' && row[indexes.reason_type] === 'contradiction');
     const collectiveGroups = new Set(rows
         .filter(row => row[indexes.group_id] && isCollective(row))
         .map(groupKey));
+    const groupsWithUnreadMember = new Set(rows
+        .filter(row => row[indexes.group_id] && !isCollective(row) && row[indexes.verdict] === 'SOURCE UNAVAILABLE')
+        .map(groupKey));
     const cleanRows = rows.filter(row => {
-        if (truthy(row[indexes.source_truncated] || '') && !survivesTruncation(row)) return false;
+        if (truthy(row[indexes.source_truncated] || '') && !survivesUnseenText(row)) return false;
+        if (row[indexes.group_id] && isCollective(row) && groupsWithUnreadMember.has(groupKey(row))
+            && !survivesUnseenText(row)) return false;
         if (row[indexes.group_id] && !isCollective(row) && collectiveGroups.has(groupKey(row))) return false;
         return true;
     });
