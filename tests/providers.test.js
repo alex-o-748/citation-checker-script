@@ -324,6 +324,30 @@ test('callProviderAPI dispatches liftwing to /liftwing', async () => {
   }
 });
 
+test('callProviderAPI dispatches liftwing-safeguard to /liftwing with its model', async () => {
+  // Lift Wing serves this model behind KServe :predict; tf-llm-router
+  // translates it, so the client sends an ordinary chat-completions body.
+  const mock = withMockFetch(async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      choices: [{ message: { content: 'ok' } }],
+      usage: {},
+    }),
+  }));
+  try {
+    await callProviderAPI('liftwing-safeguard', {
+      model: 'llm-gpt-oss-safeguard-20b',
+      systemPrompt: 's',
+      userContent: 'u',
+    });
+    assert.equal(mock.calls[0].url, 'https://llm-router.toolforge.org/liftwing');
+    assert.equal(JSON.parse(mock.calls[0].opts.body).model, 'llm-gpt-oss-safeguard-20b');
+  } finally {
+    mock.restore();
+  }
+});
+
 test('callProviderAPI dispatches huggingface to /hf', async () => {
   const mock = withMockFetch(async () => ({
     ok: true,

@@ -308,6 +308,7 @@ export async function callProviderAPI(name, config) {
         case 'publicai':    return await callPublicAIAPI(config);
         case 'huggingface': return await callHuggingFaceAPI(config);
         case 'liftwing':    return await callLiftwingAPI(config);
+        case 'liftwing-safeguard': return await callLiftwingAPI(config);
         case 'openrouter':  return await callOpenRouterAPI(config);
         case 'claude':      return await callClaudeAPI(config);
         case 'gemini':      return await callGeminiAPI(config);

@@ -15,6 +15,7 @@ export const PROVIDER_MODELS = {
     publicai:    'aisingapore/Qwen-SEA-LION-v4-32B-IT',
     huggingface: 'openai/gpt-oss-20b',
     liftwing:    'llm-qwen36-27b',
+    'liftwing-safeguard': 'llm-gpt-oss-safeguard-20b',
     claude:      'claude-sonnet-4-6',
     gemini:      'gemini-flash-latest',
     openai:      'gpt-4o',
@@ -24,6 +25,7 @@ export const PROVIDER_ENV_VARS = {
     publicai:    null,
     huggingface: null,
     liftwing:    null, // proxied through the Toolforge LLM router; no client-side key
+    'liftwing-safeguard': null, // same router; it translates Lift Wing's :predict API
     claude:      'CLAUDE_API_KEY',
     gemini:      'GEMINI_API_KEY',
     openai:      'OPENAI_API_KEY',

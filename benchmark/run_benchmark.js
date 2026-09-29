@@ -96,6 +96,15 @@ export const PROVIDERS = {
         requiresKey: false,
         type: 'liftwing'
     },
+    // Served behind Lift Wing's KServe :predict endpoint (T439395);
+    // tf-llm-router translates it to chat-completions.
+    'liftwing-gpt-oss-safeguard-20b': {
+        name: 'gpt-oss-safeguard-20b (Lift Wing)',
+        model: 'llm-gpt-oss-safeguard-20b',
+        endpoint: 'https://llm-router.toolforge.org/liftwing',
+        requiresKey: false,
+        type: 'liftwing'
+    },
     // Claude
     'claude-sonnet-4-5': {
         name: 'Claude Sonnet 4.5',

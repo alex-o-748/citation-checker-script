@@ -31,7 +31,7 @@
 //                sidebar reads it per-provider.
 //
 // Note that `requiresKey` and `optionalKey` are not mutually exhaustive: a
-// provider with both false (publicai, liftwing) is proxy-only and never
+// provider with both false (publicai, the liftwing ones) is proxy-only and never
 // accepts a user key.
 
 const PROVIDERS = Object.freeze({
@@ -59,6 +59,17 @@ const PROVIDERS = Object.freeze({
         storageKey: null,
         color: '#6B21A8',
         model: 'llm-qwen36-27b',
+        requiresKey: false,
+    }),
+    'liftwing-safeguard': Object.freeze({
+        name: 'Lift Wing (gpt-oss-safeguard)',
+        // Same route and keyless access as `liftwing`. Lift Wing serves this
+        // model only behind KServe's :predict endpoint (T439395), not an
+        // OpenAI-compatible one; tf-llm-router translates both ways, so to
+        // this client it is an ordinary chat-completions model.
+        storageKey: null,
+        color: '#6B21A8',
+        model: 'llm-gpt-oss-safeguard-20b',
         requiresKey: false,
     }),
     claude: Object.freeze({
@@ -2002,6 +2013,7 @@ async function callProviderAPI(name, config) {
         case 'publicai':    return await callPublicAIAPI(config);
         case 'huggingface': return await callHuggingFaceAPI(config);
         case 'liftwing':    return await callLiftwingAPI(config);
+        case 'liftwing-safeguard': return await callLiftwingAPI(config);
         case 'openrouter':  return await callOpenRouterAPI(config);
         case 'claude':      return await callClaudeAPI(config);
         case 'gemini':      return await callGeminiAPI(config);
@@ -7406,7 +7418,7 @@ function useToolforgeSourceFetcher() {
                 modelDesc = this.t('a PublicAI-hosted open-source LLM');
             } else if (this.currentProvider === 'huggingface') {
                 modelDesc = this.t('a HuggingFace-hosted open-source LLM ({model})', { model: provider.model });
-            } else if (this.currentProvider === 'liftwing') {
+            } else if (this.currentProvider === 'liftwing' || this.currentProvider === 'liftwing-safeguard') {
                 modelDesc = this.t('a Wikimedia Lift Wing-hosted open-source LLM ({model})', { model: provider.model });
             } else {
                 modelDesc = provider.model;
@@ -7711,7 +7723,7 @@ function useToolforgeSourceFetcher() {
             this.updateButtonVisibility();
 
             const startTime = Date.now();
-            const useProxy = this.currentProvider === 'publicai' || this.currentProvider === 'liftwing';
+            const useProxy = this.currentProvider === 'publicai' || this.currentProvider === 'liftwing' || this.currentProvider === 'liftwing-safeguard';
             const delayBetweenCalls = useProxy ? 3000 : 1000;
 
             // Progress counts every LLM step: one per citation, plus one
