@@ -1,220 +1,145 @@
-# Verify API
+# Citation Verifier API
 
-The Verify API checks **one claim against one source**. It is a thin HTTP
-entry point to `core/pipeline.js`; it uses the same source fetch, prompt, model
-call, verdict parser, and quote verification as existing core consumers.
+Checks whether a source supports a claim. Send a claim and a source (a URL, or
+the source's text), and get back a verdict and a quote from the source that
+shows why.
 
-> **Deployment status (2026-09-15): not public yet.** This repository does not
-> contain credentials or deployment access for either candidate production
-> host. The paths below are final, but a public base URL must not be advertised
-> until the maintainer confirms the host and deploys it. Run locally with
-> `npm start` (default: `http://localhost:8080`).
-
-## Check that it works
-
-From a clone of this repository, install dependencies and start the server:
-
-```sh
-npm install
-npm start
+```
+https://citation-verifier.toolforge.org
 ```
 
-Leave that terminal running. In a second terminal, first check the HTTP server
-without spending an inference call:
+It runs the same checks as the
+[Source Verifier user script](https://en.wikipedia.org/wiki/User:Alaexis/AI_Source_Verification),
+on Wikimedia Toolforge. No API key or account is needed.
+
+## Quick start
 
 ```sh
-curl --fail-with-body http://localhost:8080/
-curl --fail-with-body http://localhost:8080/openapi.json
-```
-
-The first command should return an object containing
-`"documentation":"/openapi.json"`; the second should return a document whose
-`openapi` field is `3.1.0` and whose `paths` include `/v1/verify`.
-
-Then make a real verification call. Using `source_content` isolates this check
-from source-fetch failures, although it still calls the configured inference
-provider:
-
-```sh
-curl --fail-with-body --include http://localhost:8080/v1/verify \
-  --header 'Content-Type: application/json' \
-  --data '{
+curl https://citation-verifier.toolforge.org/v1/verify \
+  -H 'Content-Type: application/json' \
+  -d '{
     "claim": "The Eiffel Tower was completed in 1889.",
-    "source_content": "The Eiffel Tower was constructed from 1887 to 1889."
+    "source_url": "https://en.wikipedia.org/wiki/Eiffel_Tower"
   }'
 ```
-
-A working end-to-end call returns HTTP `200` and the result fields shown below.
-The exact verdict, score, comments, and quote can vary because this is a live
-model call. HTTP `502` with `stage: "provider"` means the local HTTP endpoint
-worked but its inference upstream was unavailable; it is not a successful
-end-to-end check.
-
-For a deterministic check that makes no external inference or source-fetch
-requests, run the API test file:
-
-```sh
-node --test tests/verify_api.test.js
-```
-
-It exercises route discovery, OpenAPI publication, request validation, CORS,
-rate limiting, body limits, and the complete HTTP-to-pipeline adapter with an
-injected model response. Run `npm test` to execute the whole repository suite.
-
-## `POST /v1/verify`
-
-The running service publishes its machine-readable OpenAPI 3.1 contract at
-`GET /openapi.json`; `GET /` links to that contract and this operation.
-
-Send `Content-Type: application/json` with:
-
-| Field | Type | Required | Meaning |
-| --- | --- | --- | --- |
-| `claim` | string | yes | Claim to check; maximum 10,000 characters. |
-| `source_url` | string | one source field | Absolute HTTP(S) source URL, fetched through the `tf-source-fetcher` Toolforge tool. |
-| `source_content` | string | one source field | Source text; maximum 50,000 characters. Takes precedence if both fields are present; whitespace-only text counts as absent. |
-| `page` | positive integer | no | Page to extract from a PDF at `source_url`. |
-
-The endpoint intentionally has no provider or model parameter. Every request
-uses the `huggingface` provider (`openai/gpt-oss-20b`, named in
-`core/models.js`), the same model as the userscript and CLI default, reached
-through the `tf-llm-router` Toolforge tool's `/hf` route rather than the
-personal Cloudflare worker. It was chosen over Lift Wing (`liftwing`) on
-2026-09-27: ~1.5 s per text-only check against ~24 s for Lift Wing on either
-route, and 65% exact accuracy against 50% on the benchmark's 181 rows (binary
-accuracy is level, ~72%).
-
-### Copyable example
-
-```sh
-curl --fail-with-body http://localhost:8080/v1/verify \
-  --header 'Content-Type: application/json' \
-  --data '{
-    "claim": "The Eiffel Tower was completed in 1889.",
-    "source_content": "The Eiffel Tower was constructed from 1887 to 1889."
-  }'
-```
-
-Successful response (the exact verdict and prose depend on the model):
 
 ```json
 {
   "verdict": "SUPPORTED",
   "support_score": 95,
-  "comments": "The source directly gives the completion year.",
+  "comments": "The infobox explicitly states the completion date as 31 March 1889, confirming the claim.",
   "reason_type": null,
-  "source_quote": "constructed from 1887 to 1889",
+  "source_quote": "Completed 31 March 1889",
   "quote_status": "exact",
-  "verified_text": "constructed from 1887 to 1889"
+  "verified_text": "Completed 31 March 1889"
 }
 ```
 
-Only `verified_text` is safe to display as evidence. `source_quote` is the
-model's untrusted answer and is retained for parity and diagnostics.
+A check takes about a second when you send the source text, and typically
+10–15 seconds when the service has to fetch a URL. Set your client's timeout
+well above that.
 
-### Errors and limits
+## `POST /v1/verify`
 
-Errors have `{ "error": "..." }`; pipeline failures also include `stage`.
+Send a JSON body with `Content-Type: application/json`.
+
+| Field | Type | Required | Meaning |
+| --- | --- | --- | --- |
+| `claim` | string | yes | The statement to check, up to 10,000 characters. |
+| `source_url` | string | one of these two | An `http` or `https` URL. The service fetches the page (or PDF) itself. |
+| `source_content` | string | one of these two | The source's text, up to 50,000 characters. Used instead of `source_url` if you send both. Useful for paywalled, offline or already-fetched sources. |
+| `page` | integer ≥ 1 | no | For a PDF at `source_url`: the page to read. |
+
+Any other field is rejected, so a typo fails loudly instead of being ignored.
+
+### Response
+
+| Field | Meaning |
+| --- | --- |
+| `verdict` | `SUPPORTED`, `PARTIALLY SUPPORTED`, `NOT SUPPORTED`, or `SOURCE UNAVAILABLE`. |
+| `support_score` | 0–100: how strongly the source supports the claim. |
+| `comments` | A short explanation of the verdict, in English. |
+| `reason_type` | For `NOT SUPPORTED` only: `contradiction` (the source says something incompatible) or `omission` (the source doesn't address the claim). Otherwise `null`. |
+| `verified_text` | **The quote to show.** The part of the model's quote that was actually found in the source, character for character. Empty when nothing could be confirmed. |
+| `source_quote` | The quote exactly as the model gave it. It may be paraphrased or wrong, so don't show it as evidence; use `verified_text`. |
+| `quote_status` | How the quote matched the source: `exact`, `normalized` (matched after ignoring case, quote marks, dashes and spacing), `partial` (only some fragments found), `not-found`, `too-short`, `empty` (no quote given, which is normal for omissions and unavailable sources), or `no-source`. |
+
+The verdict comes from a language model
+([`openai/gpt-oss-20b`](https://huggingface.co/openai/gpt-oss-20b)), so treat
+it as a lead for a human to check, not a ruling. The quote in `verified_text`
+is the part you can rely on: it is always text from the source.
+
+### Errors
+
+Errors return `{ "error": "…" }`. Errors from the checking pipeline also
+include `stage`: `source`, `provider` or `parse`.
 
 | Status | Meaning |
 | --- | --- |
-| `400` | Invalid JSON field or value. |
-| `413` | Request body exceeds 368,192 bytes. Sized so the character limits above are always the ones reached first, in any script, even when every character is sent as a `\uXXXX` escape. |
-| `415` | Request is not `application/json`. |
-| `422` | Source unavailable or empty. |
-| `429` | Service-wide request limit exceeded; honor `Retry-After`. |
-| `502` | Provider failure or unreadable model response. |
+| `400` | Missing or invalid field. |
+| `413` | Request body too large (the character limits above are always reached first). |
+| `415` | Body isn't sent as `application/json`. |
+| `422` | The source couldn't be fetched, or was empty. Includes `source_status`, the HTTP status the source returned, when there was one. Try sending its text as `source_content`. |
+| `429` | The service's request limit is used up. Wait for the number of seconds in `Retry-After`. |
+| `502` | The model call failed or returned something unreadable. Usually temporary. |
 
-The included server permits 30 requests/minute **in total, across all
-callers**, and its `RateLimit-*` headers describe that shared budget. It is not
-per client because on Toolforge it cannot be: the front proxy hides client IP
-addresses from tools and sends no `X-Forwarded-For`
-([T228500](https://phabricator.wikimedia.org/T228500)), so every request
-arrives from the proxy's address. The budget is sized against `tf-llm-router`,
-which the batch sweeps also call: 30/minute is 0.5 calls/s, under a
-quarter of the ~2.2 calls/s peak measured in
-[`design-plans/2026-08-25-verify-concurrency-and-the-fetch-question.md`](design-plans/2026-08-25-verify-concurrency-and-the-fetch-question.md).
-The accepted cost of a global limit is that one heavy caller can use the whole
-budget.
+## Fair use and limits
 
-CORS response headers are emitted only for HTTPS `*.wikipedia.org` origins.
-CORS is not authentication: command-line and server callers can still use the
-public endpoint. URL sources go through `tf-source-fetcher`, so
-the API adds no direct-fetch path or bypass around that service's URL policy.
+This is a free, shared service, with one request budget for **all callers
+together**: currently **30 checks per minute**. Every response includes
+`RateLimit-Limit`, `RateLimit-Remaining` and `RateLimit-Reset` (seconds until
+the budget refills), so a client can pace itself.
 
-## Monitoring: `GET /status` and `GET /metrics.json`
+Please:
 
-The server carries its own monitoring board. `/status` is a single HTML page
-(inline CSS, script and SVG — Toolforge forbids third-party resources) that
-polls `/metrics.json` every 15 seconds and shows:
+- **Space out bulk work.** Checking every citation in an article is fine; do it
+  one request at a time, not all at once.
+- **Honour 429s.** Wait for `Retry-After` before retrying.
+- **Send `source_content` when you already have the text.** It is faster and
+  saves a fetch.
+- **Ask before building on it at scale.** If your tool needs more than the
+  shared budget allows, open an issue (below) and we can talk about it.
 
-* **Health** over the last 15 minutes: `ok`, `degraded` (more than 25% of
-  calls that reached the pipeline ended in a 5xx), or `idle` (none reached it).
-* Request count, share answered, latency p50/p95, and the shared rate budget
-  left in the current window, for the last hour or the last 24 hours.
-* Requests over time stacked by outcome (answered, source unavailable, upstream
-  error, rate limited, rejected), and average latency over time.
-* Verdict mix, which stage failed (`source` / `provider` / `parse`), and
-  whether callers sent a URL or text.
-* The 20 most recent requests.
+The budget may change. Rely on the headers rather than the number above.
 
-`/metrics.json` is the same data for scripts. Neither route spends from the
-verify rate budget or is counted as traffic.
+## Using it from a browser
 
-Things to know when reading it:
+Pages on `https://*.wikipedia.org` can call the API directly: the service sends
+the CORS headers for those origins, and `*.toolforge.org` is on Wikipedia's
+content-security-policy allowlist. From anywhere else, call it from a server or
+the command line.
 
-* **Counters are in-process memory** (`api/metrics.js`). They reset whenever the
-  webservice restarts, and the board shows the uptime so a reset is visible.
-  If Toolforge ever runs more than one replica, each serves only its own counts.
-* **Latency counts only calls that reached the pipeline.** A 400 or 429 returns
-  in microseconds and would otherwise flatter every percentile.
-* **No request content is kept** — no claim, no source text, no URL path or
-  query. The one thing recorded about a source is its hostname, which is what
-  makes a run of 422s from one publisher recognisable. The board is as public
-  as the endpoint, so keep it that way.
+## Service status
 
-## Audit findings and decisions needed
+`GET /status` is a live dashboard: whether the service is healthy, how busy it
+is, how much of the shared budget is left, response times, and recent requests.
+`GET /metrics.json` is the same data for scripts. Neither counts against the
+request budget. Counters start from zero whenever the service restarts, and the
+dashboard shows its uptime.
 
-Corrections to the commission's hypotheses:
+The dashboard keeps no request content: no claims, no source text, no URLs.
+The only thing recorded about a source is its hostname.
 
-* This repository contains clients for the Cloudflare proxy, Toolforge
-  `tf-source-fetcher`, and Toolforge `tf-llm-router`; it does **not** contain
-  those deployed services or an existing HTTP web app to extend.
-* `core/pipeline.js` provides a single-citation five-step pipeline. The
-  userscript does not call that top-level function, though it shares the
-  prompt, provider, parser, and quote modules below it.
-* The source-fetcher and LLM router are separate Toolforge tools. The legacy
-  Cloudflare base remains the default source-fetch/keyless-model route.
-* `ccs verify` is limited to English Wikipedia `/wiki/` URLs. It accepts
-  `?oldid=`, fetches RESTBase HTML, and parses it with JSDOM as believed.
-* The repo has fixtures and unit tests, but no deterministic before/after
-  benchmark for stochastic live LLM output. API tests inject a fixed answer
-  and prove delegation to the unchanged pipeline instead.
+## Machine-readable description
 
-Before deployment, the maintainer must decide:
+`GET /openapi.json` returns an [OpenAPI 3.1](https://spec.openapis.org/oas/v3.1.0)
+description of the endpoint, and `GET /` links to it.
 
-1. **Per-citation or whole-article:** recommend this per-citation route first;
-   whole-article extraction is a separate contract and orchestration surface.
-2. **Migrate the userscript:** recommend no for this change; reconsider after
-   the public route has operational evidence.
-3. **Production host:** Toolforge; the global rate limit and `tf-llm-router`
-   routing above assume it. Recommend a tool of its own rather than `source-verifier`
-   (the batch) or `tf-llm-router`: separate quotas, no ToolsDB credentials
-   behind a public endpoint, and deploys that can't change code under a
-   running sweep.
-4. **Prompt changes:** recommend no. This route imports the existing pipeline
-   and makes none.
+## Questions and problems
 
-## Cost exposure and deliberately unchanged behaviour
+Open an issue at
+[github.com/alex-o-748/citation-checker-script](https://github.com/alex-o-748/citation-checker-script/issues).
 
-Inference goes through `tf-llm-router` and source fetches through
-`tf-source-fetcher`, so neither draws on the personal Cloudflare worker. The
-router's `/hf` route calls HuggingFace with whatever credential the router
-holds; that account, not this service, is where model usage is billed.
-What they do draw on is the two Toolforge tools' capacity, shared with the
-batch sweeps: the global limit caps the API at **43,200 checks/day** in total.
-No billing system is added.
+## Running your own copy
 
-No prompt, verdict vocabulary, parser, truncation rule, citation grouping,
-userscript code, or batch code was changed. No pre-existing verification bug
-was found while adding the adapter.
+The server is `api/server.js` in this repository, and needs Node 18 or later.
+
+```sh
+npm install
+npm start            # listens on $PORT, default 8080
+npm test             # includes tests/verify_api.test.js, which needs no network
+```
+
+The code comments in `api/server.js` and `api/verify.js` explain how it is set
+up: why the request limit is shared rather than per caller, and which model and
+Toolforge services it calls.
