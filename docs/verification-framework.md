@@ -74,15 +74,13 @@ it is not used.
 ### Definition
 
 A **source** is the document a citation points to, as the tool retrieves it.
-The tool reads the citation's reference entry and uses its link. When the entry
-has several links, the order of preference is:
+The tool reads the citation's reference entry and picks a link:
 
-1. An Internet Archive (Wayback Machine) copy. This is the version the citation
-   was archived at, and it is fetched without the archive's toolbar.
-2. The live URL.
-3. A copy on another web archive: archive.today (also at archive.is and
-   archive.ph) or WebCite. These are used only when the citation has nothing
-   else.
+1. If the entry has an Internet Archive (Wayback Machine) link, that copy is
+   used. It is the version the citation was archived at, and it is fetched
+   without the archive's toolbar.
+2. Otherwise the live URL is used. If the live page can't be retrieved, the tool
+   looks for a Wayback Machine snapshot of the same URL and uses that instead.
 
 Links to Wikipedia's own pages, such as ISBN lookups and `Special:BookSources`,
 are never treated as the source. If the citation gives a page number and the
