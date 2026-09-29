@@ -80,7 +80,9 @@ has several links, the order of preference is:
 1. An Internet Archive (Wayback Machine) copy. This is the version the citation
    was archived at, and it is fetched without the archive's toolbar.
 2. The live URL.
-3. Other archive services.
+3. A copy on another web archive: archive.today (also at archive.is and
+   archive.ph) or WebCite. These are used only when the citation has nothing
+   else.
 
 Links to Wikipedia's own pages, such as ISBN lookups and `Special:BookSources`,
 are never treated as the source. If the citation gives a page number and the
