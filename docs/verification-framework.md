@@ -3,8 +3,8 @@
 This page sets out the definitions the Citation Verifier works to: what counts
 as a **claim**, what counts as a **source**, and what each **verdict** means.
 The same definitions apply to the Wikipedia user script, the command-line tool,
-the batch pipeline and the benchmark. The human-labeled benchmark data is judged
-against them too.
+the batch pipeline and the benchmark. The [human-labeled benchmark data](#7-dataset-and-benchmark)
+is judged against them too.
 
 The tool answers one question per citation: **does the cited source, as
 retrieved, support the text the citation is attached to?** It does not ask
@@ -244,6 +244,9 @@ the benchmark.
 
 #### Real benchmark cases
 
+These are rows from the [benchmark dataset](../benchmark/dataset.json), with
+labels as corrected in the [2026-09-07 revision](benchmark-revision-2026-09-07.md).
+
 | Article | Claim (abridged) | Source says | Verdict |
 |---|---|---|---|
 | Immigration to the United States | Fewer than one million immigrants moved to the United States from Europe between 1600 and 1799 | *"Historians estimate that well under a million immigrants—perhaps as few as 400,000—crossed the Atlantic during those two centuries."* | Supported |
@@ -305,3 +308,21 @@ This section is for readers of the benchmark reports.
   editor's question right: *does this citation need attention?*
 - **Skipped** citations (claim too short) and pipeline errors are outcomes, not
   verdicts, and they are never scored.
+
+---
+
+## 7. Dataset and benchmark
+
+- **Dataset:** [`benchmark/dataset.json`](../benchmark/dataset.json) has 189
+  claim/source pairs taken from English Wikipedia. Each row has the claim, the
+  cited URL, the source text as retrieved, and a human verdict. Rows whose source
+  was cut off at the length limit are flagged (`source_truncated`), and rows whose
+  stored source isn't the cited work are marked `excluded_reason`. The labels come
+  from [`Benchmarking_data_Citations.csv`](../Benchmarking_data_Citations.csv).
+  [`benchmark/README.md`](../benchmark/README.md) describes how the dataset was
+  built.
+- **Latest benchmark:** [Benchmark revision, 2026-09-07](benchmark-revision-2026-09-07.md)
+  gives results for eight models on the full dataset and on a strict set of 140
+  rows where the whole source was retrieved. It also covers the six labels
+  corrected in that revision. The row-by-row review behind the corrections is in
+  the [ground-truth audit](benchmark-ground-truth-audit-2026-09-06.md).
