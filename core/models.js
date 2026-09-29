@@ -22,7 +22,7 @@
 //                sidebar reads it per-provider.
 //
 // Note that `requiresKey` and `optionalKey` are not mutually exhaustive: a
-// provider with both false (publicai, liftwing) is proxy-only and never
+// provider with both false (publicai, the liftwing ones) is proxy-only and never
 // accepts a user key.
 
 export const PROVIDERS = Object.freeze({
@@ -50,6 +50,17 @@ export const PROVIDERS = Object.freeze({
         storageKey: null,
         color: '#6B21A8',
         model: 'llm-qwen36-27b',
+        requiresKey: false,
+    }),
+    'liftwing-safeguard': Object.freeze({
+        name: 'Lift Wing (gpt-oss-safeguard)',
+        // Same route and keyless access as `liftwing`. Lift Wing serves this
+        // model only behind KServe's :predict endpoint (T439395), not an
+        // OpenAI-compatible one; tf-llm-router translates both ways, so to
+        // this client it is an ordinary chat-completions model.
+        storageKey: null,
+        color: '#6B21A8',
+        model: 'llm-gpt-oss-safeguard-20b',
         requiresKey: false,
     }),
     claude: Object.freeze({

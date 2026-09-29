@@ -12,6 +12,7 @@
     "benchmark:publicai": "node run_benchmark.js --providers=publicai",
     "benchmark:gemini-3.7-flash": "node run_benchmark.js --providers=gemini-3.7-flash --concurrency=2",
     "benchmark:liftwing": "node run_benchmark.js --providers=liftwing-qwen3.6-27b",
+    "benchmark:liftwing-safeguard": "node run_benchmark.js --providers=liftwing-gpt-oss-safeguard-20b",
     "benchmark:v1": "node run_benchmark.js --version v1",
     "benchmark:v3": "node run_benchmark.js --version v3",
     "benchmark:openrouter-panel": "node run_benchmark.js --providers=openrouter-mistral-small-3.2,openrouter-nemotron-nano-9b-v2,openrouter-granite-4.1-8b,openrouter-gemma-4-26b-a4b,openrouter-qwen-3-32b",
