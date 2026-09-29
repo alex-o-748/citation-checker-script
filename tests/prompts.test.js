@@ -246,8 +246,8 @@ test('withCommentLanguage always exempts source_quote and pins the English verdi
   assert.match(out, /SUPPORTED, PARTIALLY SUPPORTED, NOT SUPPORTED, SOURCE UNAVAILABLE, contradiction, omission/);
 });
 
-test('COMMENT_LANGUAGE_NAMES covers fr, es, and ru', () => {
-  assert.deepEqual(Object.keys(COMMENT_LANGUAGE_NAMES).sort(), ['es', 'fr', 'ru']);
+test('COMMENT_LANGUAGE_NAMES covers fr, es, ru, and he', () => {
+  assert.deepEqual(Object.keys(COMMENT_LANGUAGE_NAMES).sort(), ['es', 'fr', 'he', 'ru']);
 });
 
 // --- Cross-check against main.js's own copy ---
@@ -286,6 +286,8 @@ test('withCommentLanguage matches main.js\'s own localizeSystemPrompt() for ever
     { lang: 'ru', articleLangCode: 'ru' },
     { lang: 'fr', articleLangCode: 'fr' },
     { lang: 'es', articleLangCode: 'es' },
+    { lang: 'he', articleLangCode: 'he' },
+    { lang: undefined, articleLangCode: 'he' },
     { lang: undefined, articleLangCode: 'de' },
     { lang: undefined, articleLangCode: 'ru' }, // batch pipeline's actual shape: no UI lang, just the wiki's
   ];

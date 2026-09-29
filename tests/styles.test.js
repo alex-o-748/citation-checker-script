@@ -10,7 +10,7 @@ const MAIN_JS = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'm
 // can't be imported. Instead we lift the three styling methods out of the
 // source and run them against a stub `document` to capture the stylesheet the
 // userscript would actually inject.
-function generateCss(accent = '#6B21A8') {
+function generateCss(accent = '#6B21A8', dockSide) {
   const src = fs.readFileSync(MAIN_JS, 'utf8');
   const start = src.indexOf('        styleTokens(accent) {');
   const endMarker = '            document.head.appendChild(style);\n        }';
@@ -28,7 +28,7 @@ function generateCss(accent = '#6B21A8') {
 
   const Harness = new Function('document', `
     class Harness {
-      constructor() { this.sidebarWidth = '400px'; this.isVisible = true; }
+      constructor() { this.sidebarWidth = '400px'; this.isVisible = true; this.dockSide = ${JSON.stringify(dockSide)}; }
       getCurrentColor() { return ${JSON.stringify(accent)}; }
 ${methods}
     }
@@ -281,4 +281,42 @@ test('token values stay in sync with the selected provider accent', () => {
   const css = generateCss('#123456');
   assert.ok(css.includes('--sv-accent: #123456;'), 'accent token does not track getCurrentColor()');
   assert.ok(!css.includes('#6B21A8'), 'a stale accent color is baked into the stylesheet');
+});
+
+// The panel docks to the page's end edge: right on an LTR page, left on an RTL
+// one (he.wikipedia). Only the shell knows which; see the next test.
+function rule(css, selector) {
+  const start = css.indexOf(`${selector} {`);
+  assert.ok(start !== -1, `${selector} rule not found`);
+  return css.slice(start, css.indexOf('}', start));
+}
+
+test('the sidebar docks right by default and left on an RTL page', () => {
+  for (const [dockSide, dock, inner] of [[undefined, 'right', 'left'], ['right', 'right', 'left'], ['left', 'left', 'right']]) {
+    const css = generateCss(undefined, dockSide);
+    const shell = rule(css, '#source-verifier-sidebar');
+    assert.match(shell, new RegExp(`\\n\\s*${dock}: 0;`), `${dock}-docked panel must sit on the ${dock} edge`);
+    assert.match(shell, new RegExp(`border-${inner}: 2px`), 'border belongs on the edge facing the article');
+    assert.match(rule(css, '#verifier-resize-handle'), new RegExp(`\\n\\s*${inner}: 0;`), 'resize handle belongs on the inner edge');
+    assert.match(rule(css, 'body'), new RegExp(`margin-${dock}: 400px`), 'the page must make room on the docked edge');
+    assert.match(rule(css, 'body.verifier-sidebar-hidden'), new RegExp(`margin-${dock}: 0 !important`));
+  }
+});
+
+// Inside the panel, direction comes from its dir attribute (rtl for Hebrew),
+// which only logical properties follow. A physical margin-left or border-left
+// comes out on the wrong side in an RTL panel — the stripe on a report card
+// ends up facing away from its text.
+test('inside the panel, horizontal spacing and borders use logical properties', () => {
+  for (const dockSide of ['right', 'left']) {
+    const css = generateCss(undefined, dockSide);
+    const offenders = [];
+    for (const m of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+      const selector = m[1].trim();
+      if (['#source-verifier-sidebar', '#verifier-resize-handle', 'body', 'body.verifier-sidebar-hidden'].includes(selector)) continue;
+      const hit = m[2].match(/(?:^|[\s;])((?:margin|padding|border)-(?:left|right)[a-z-]*|left|right)\s*:/);
+      if (hit) offenders.push(`${selector} → ${hit[1]}`);
+    }
+    assert.deepEqual(offenders, [], `use *-inline-start / *-inline-end instead:\n${offenders.join('\n')}`);
+  }
 });

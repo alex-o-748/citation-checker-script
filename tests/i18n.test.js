@@ -27,10 +27,11 @@ const I18N_BLOCK = SRC.slice(I18N_START, I18N_END);
 const T_METHOD = sliceMethod('t', '        t(en, params) {');
 const LOCALIZE_METHOD = sliceMethod('localizeSystemPrompt', '        localizeSystemPrompt(prompt) {');
 
-// `mw` is a constructor parameter rather than a global, so passing `undefined`
-// exercises detectUiLang()'s non-MediaWiki fallback path faithfully.
-function loadI18n(mwStub) {
-  const build = new Function('mw', `
+// `mw` and `document` are constructor parameters rather than globals, so
+// passing `undefined` exercises the non-MediaWiki / no-DOM fallback paths
+// faithfully.
+function loadI18n(mwStub, documentStub) {
+  const build = new Function('mw', 'document', `
 ${I18N_BLOCK}
     class Harness {
       constructor(lang, articleLangCode) {
@@ -40,16 +41,16 @@ ${I18N_BLOCK}
 ${T_METHOD}
 ${LOCALIZE_METHOD}
     }
-    return { MESSAGES, PROMPT_LANGUAGES, detectUiLang, detectArticleLangCode, Harness };
+    return { MESSAGES, PROMPT_LANGUAGES, RTL_LANGS, detectUiLang, detectArticleLangCode, detectDockSide, Harness };
   `);
-  return build(mwStub);
+  return build(mwStub, documentStub);
 }
 
 function wikiWithLang(contentLanguage, userLanguage) {
   return { config: { get: (k) => (k === 'wgContentLanguage' ? contentLanguage : userLanguage) } };
 }
 
-const { MESSAGES, PROMPT_LANGUAGES, detectArticleLangCode, Harness } = loadI18n(undefined);
+const { MESSAGES, PROMPT_LANGUAGES, RTL_LANGS, Harness } = loadI18n(undefined);
 const LANGS = Object.keys(MESSAGES);
 
 // Placeholders are substituted by t() via a literal `{name}` split, so a
@@ -127,6 +128,48 @@ test('Spanish never addresses the reader in the second person', () => {
     if (hit) offenders.push(`${JSON.stringify(en)} → ${JSON.stringify(es)} (${hit[0]})`);
   }
   assert.deepEqual(offenders, [], `use an infinitive or impersonal "se" instead:\n${offenders.join('\n')}`);
+});
+
+test('Hebrew is a registered, right-to-left UI language', () => {
+  assert.ok(LANGS.includes('he'), 'he missing from MESSAGES');
+  assert.equal(PROMPT_LANGUAGES.he, 'Hebrew (עברית)');
+  assert.ok(RTL_LANGS.has('he'), 'he must be marked right-to-left');
+  for (const lang of ['en', 'fr', 'es', 'ru']) assert.ok(!RTL_LANGS.has(lang), `${lang} is not RTL`);
+  for (const lang of RTL_LANGS) assert.ok(LANGS.includes(lang), `RTL language ${lang} has no MESSAGES table`);
+});
+
+// Hebrew imperatives and second-person forms are gendered (לחץ / לחצי), so
+// he.wikipedia's interface avoids them: verbal nouns for action labels,
+// impersonal "יש ל…" / "אפשר ל…" for prose. Like the Spanish check above,
+// this is a smoke alarm for the unmistakable forms, not a grammar checker —
+// masculine forms that double as an adjective or past tense (שמור "stored",
+// בחר "chose", העלה "raised") are left out.
+// Hebrew letters aren't \w, so \b can't mark word edges; \p{L} lookarounds do.
+const SECOND_PERSON_HE =
+  /(?<!\p{L})(?:אתה|את\s+יכולה|לחץ|לחצי|הקש|הקישי|בחרי|הזן|הזיני|הדבק|הדביקי|נסה|נסי|העלי|שמרי)(?!\p{L})/u;
+
+test('Hebrew never addresses the reader with a gendered second person', () => {
+  const offenders = [];
+  for (const [en, he] of Object.entries(MESSAGES.he)) {
+    const hit = he.match(SECOND_PERSON_HE);
+    if (hit) offenders.push(`${JSON.stringify(en)} → ${JSON.stringify(he)} (${hit[0]})`);
+  }
+  assert.deepEqual(offenders, [], `use a verbal noun or "יש ל…" + infinitive instead:\n${offenders.join('\n')}`);
+});
+
+test('detectUiLang resolves he.wikipedia to Hebrew', () => {
+  assert.equal(loadI18n(wikiWithLang('he', 'en')).detectUiLang(), 'he');
+  assert.equal(loadI18n(wikiWithLang(null, 'he')).detectUiLang(), 'he');
+  assert.equal(loadI18n(wikiWithLang('en', 'he')).detectUiLang(), 'en', 'content language wins');
+});
+
+test('detectDockSide docks to the left on an RTL page and to the right otherwise', () => {
+  const page = (dir) => ({ documentElement: { dir } });
+  assert.equal(loadI18n(undefined, page('rtl')).detectDockSide(), 'left');
+  assert.equal(loadI18n(undefined, page('RTL')).detectDockSide(), 'left');
+  assert.equal(loadI18n(undefined, page('ltr')).detectDockSide(), 'right');
+  assert.equal(loadI18n(undefined, page('')).detectDockSide(), 'right');
+  assert.equal(loadI18n(undefined, undefined).detectDockSide(), 'right', 'no DOM keeps the default side');
 });
 
 test('wiki links in translated strings point at the English wiki', () => {
