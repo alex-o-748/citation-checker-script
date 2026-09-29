@@ -133,6 +133,112 @@ export async function callLiftwingAPI({ model, systemPrompt, userContent, worker
     });
 }
 
+// Lift Wing also serves gpt-oss-safeguard-20b publicly (T439395), but not as a
+// chat-completions route: it is a KServe `:predict` endpoint on the API
+// gateway, called directly from the client (the gateway answers CORS for
+// Wikipedia origins, and needs no key). Two differences from the chat shape:
+//
+//   - The system prompt goes in `developer_prompt`, not a system message.
+//   - The response is `{ reasoning, verdict }`, where each field is the
+//     Python repr of a list of TextContent objects —
+//     `"[TextContent(text='{\"verdict\": ...}')]"` — rather than plain text.
+//     unwrapTextContentRepr() decodes that back to the model's output.
+//
+// The WMF ML team is looking at adding a chat-completions route; if the
+// response ever arrives as plain text, the unwrap passes it through as is.
+export const LIFTWING_PREDICT_BASE = 'https://api.wikimedia.org/service/lw/inference/v1/models';
+
+// Decodes one Python string literal starting at src[start] (the opening
+// quote). Returns { value, end } where end is the index after the closing
+// quote, or null if the literal is unterminated.
+function readPythonStringLiteral(src, start) {
+    const quote = src[start];
+    const simple = { n: '\n', t: '\t', r: '\r', '\\': '\\', "'": "'", '"': '"', a: '\x07', b: '\b', f: '\f', v: '\v', '0': '\0' };
+    let out = '';
+    for (let i = start + 1; i < src.length; i++) {
+        const ch = src[i];
+        if (ch === quote) return { value: out, end: i + 1 };
+        if (ch !== '\\') { out += ch; continue; }
+        const next = src[++i];
+        if (next === 'x' || next === 'u' || next === 'U') {
+            const len = next === 'x' ? 2 : next === 'u' ? 4 : 8;
+            const hex = src.slice(i + 1, i + 1 + len);
+            if (/^[0-9a-fA-F]+$/.test(hex) && hex.length === len) {
+                out += String.fromCodePoint(parseInt(hex, 16));
+                i += len;
+                continue;
+            }
+        }
+        if (next in simple) { out += simple[next]; continue; }
+        // Python keeps an unknown escape verbatim, backslash included.
+        out += '\\' + (next ?? '');
+    }
+    return null;
+}
+
+// `[TextContent(text='...'), TextContent(text="...")]` -> the texts, joined.
+// Anything that isn't in that shape is returned unchanged.
+export function unwrapTextContentRepr(value) {
+    if (typeof value !== 'string') return value == null ? '' : String(value);
+    const trimmed = value.trim();
+    if (/^\[\s*\]$/.test(trimmed)) return ''; // an empty TextContent list
+    if (!trimmed.startsWith('[') || !trimmed.includes('TextContent(')) return value;
+    const parts = [];
+    const marker = /TextContent\(\s*text=(['"])/g;
+    let m;
+    while ((m = marker.exec(trimmed)) !== null) {
+        const lit = readPythonStringLiteral(trimmed, m.index + m[0].length - 1);
+        if (!lit) break;
+        parts.push(lit.value);
+        marker.lastIndex = lit.end;
+    }
+    return parts.length ? parts.join('') : value;
+}
+
+export async function callLiftwingPredictAPI({ model, systemPrompt, userContent, baseUrl = LIFTWING_PREDICT_BASE, maxTokens = 8192, temperature = 0.1 }) {
+    const label = 'Lift Wing';
+    const response = await fetch(`${baseUrl}/${model}:predict`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            messages: [{ role: 'user', content: userContent }],
+            developer_prompt: systemPrompt,
+            max_tokens: maxTokens,
+            temperature,
+        }),
+    });
+
+    if (!response.ok) {
+        const errorText = await response.text();
+        let errorMessage;
+        try {
+            const errorData = JSON.parse(errorText);
+            errorMessage = errorData.error?.message || errorData.detail || errorData.error || errorText;
+            if (typeof errorMessage !== 'string') errorMessage = JSON.stringify(errorMessage);
+        } catch {
+            errorMessage = errorText;
+        }
+        if (response.status === 413) {
+            throw new Error(`${label}: the source is too large to send. Trim the source text, or switch to a provider that calls its API directly (Claude, Gemini, or OpenAI).`);
+        }
+        throw new Error(`${label} API request failed (${response.status}): ${errorMessage}`);
+    }
+
+    const data = await response.json();
+    const text = unwrapTextContentRepr(data?.verdict).trim();
+    if (!text) {
+        // A reasoning model that exhausts max_tokens mid-reasoning comes back
+        // with reasoning and an empty verdict.
+        if (unwrapTextContentRepr(data?.reasoning).trim()) {
+            throw new Error(`${label}: the model ran out of output budget (${maxTokens} tokens) before answering — it spent the whole budget reasoning. Try a shorter source, a simpler claim, or a non-reasoning provider.`);
+        }
+        throw new Error(`Invalid API response format (${label}: no verdict)`);
+    }
+
+    // The :predict response reports no token counts.
+    return { text, usage: { input: 0, output: 0, cost_usd: null } };
+}
+
 // OpenRouter routes OpenAI-compatible requests across many open-weight backends.
 // Per-call USD cost is surfaced on response.usage.cost (no opt-in flag required
 // as of 2026; the older `usage: { include: true }` parameter is deprecated).
@@ -308,6 +414,7 @@ export async function callProviderAPI(name, config) {
         case 'publicai':    return await callPublicAIAPI(config);
         case 'huggingface': return await callHuggingFaceAPI(config);
         case 'liftwing':    return await callLiftwingAPI(config);
+        case 'liftwing_safeguard': return await callLiftwingPredictAPI(config);
         case 'openrouter':  return await callOpenRouterAPI(config);
         case 'claude':      return await callClaudeAPI(config);
         case 'gemini':      return await callGeminiAPI(config);

@@ -37,6 +37,7 @@ import {
     callGeminiAPI,
     callOpenRouterAPI,
     callHuggingFaceAPI,
+    callLiftwingPredictAPI,
 } from '../core/providers.js';
 import { parseVerificationResult } from '../core/parsing.js';
 import { verifyQuote } from '../core/quote.js';
@@ -95,6 +96,13 @@ export const PROVIDERS = {
         endpoint: 'https://llm-router.toolforge.org/liftwing',
         requiresKey: false,
         type: 'liftwing'
+    },
+    // Public KServe :predict route on the API gateway, not tf-llm-router (T439395)
+    'liftwing-gpt-oss-safeguard-20b': {
+        name: 'gpt-oss-safeguard-20b (Lift Wing)',
+        model: 'llm-gpt-oss-safeguard-20b',
+        requiresKey: false,
+        type: 'liftwing_predict'
     },
     // Claude
     'claude-sonnet-4-5': {
@@ -348,6 +356,7 @@ export async function callProvider(provider, systemPrompt, userPrompt) {
                 case 'openrouter':  return callOpenRouter(config, systemPrompt, userPrompt);
                 case 'huggingface': return callHuggingFace(config, systemPrompt, userPrompt);
                 case 'liftwing':    return callLiftWing(config, systemPrompt, userPrompt);
+                case 'liftwing_predict': return callLiftWingPredict(config, systemPrompt, userPrompt);
                 default: throw new Error(`Unknown provider type: ${config.type}`);
             }
         });
@@ -513,6 +522,17 @@ async function callLiftWing(config, systemPrompt, userPrompt) {
         maxTokens: BENCHMARK_MAX_TOKENS,
         temperature: BENCHMARK_TEMPERATURE,
         label: 'Lift Wing',
+    }));
+}
+
+async function callLiftWingPredict(config, systemPrompt, userPrompt) {
+    // Called directly on the public API gateway, no key needed
+    return shapeResult(await callLiftwingPredictAPI({
+        model: config.model,
+        systemPrompt,
+        userContent: userPrompt,
+        maxTokens: BENCHMARK_MAX_TOKENS,
+        temperature: BENCHMARK_TEMPERATURE,
     }));
 }
 

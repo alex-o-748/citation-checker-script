@@ -8,6 +8,8 @@ import {
   callGeminiAPI,
   callOpenRouterAPI,
   callProviderAPI,
+  callLiftwingPredictAPI,
+  unwrapTextContentRepr,
 } from '../core/providers.js';
 
 function withMockFetch(fn) {
@@ -911,6 +913,109 @@ test('callClaudeAPI throws a clear error when no text block is present', async (
         return true;
       }
     );
+  } finally {
+    mock.restore();
+  }
+});
+
+// --- Lift Wing :predict (gpt-oss-safeguard-20b, T439395) ---
+
+// Verbatim response body from the live endpoint (2026-09-29): each field is
+// the Python repr of a list of TextContent objects, and the JSON inside the
+// verdict carries an apostrophe (\') and escaped double quotes (\\").
+const LIVE_PREDICT_BODY = String.raw`{"reasoning":"[TextContent(text='We need to verify. Let\\'s produce JSON.')]","verdict":"[TextContent(text='{\"verdict\":\"supported\",\"source_quote\":\"Paris is the capital and largest city of France. It\\'s \\\\\"nice\\\\\".\"}')]"}`;
+
+test('unwrapTextContentRepr decodes the live :predict verdict field', () => {
+  const body = JSON.parse(LIVE_PREDICT_BODY);
+  const text = unwrapTextContentRepr(body.verdict);
+  assert.deepEqual(JSON.parse(text), {
+    verdict: 'supported',
+    source_quote: 'Paris is the capital and largest city of France. It\'s "nice".',
+  });
+  assert.equal(unwrapTextContentRepr(body.reasoning), 'We need to verify. Let\'s produce JSON.');
+});
+
+test('unwrapTextContentRepr handles double-quoted literals, escapes, and multiple parts', () => {
+  assert.equal(
+    unwrapTextContentRepr(`[TextContent(text="it's\\nfine"), TextContent(text='\\u00e9\\x41\\\\')]`),
+    'it\'s\nfineéA\\',
+  );
+});
+
+test('unwrapTextContentRepr passes plain text through and maps null to empty', () => {
+  assert.equal(unwrapTextContentRepr('{"verdict":"SUPPORTED"}'), '{"verdict":"SUPPORTED"}');
+  assert.equal(unwrapTextContentRepr(null), '');
+  assert.equal(unwrapTextContentRepr('[]'), '', 'an empty TextContent list is no output');
+});
+
+test('callLiftwingPredictAPI posts the KServe shape and unwraps the verdict', async () => {
+  const mock = withMockFetch(async () => ({
+    ok: true,
+    status: 200,
+    json: async () => JSON.parse(LIVE_PREDICT_BODY),
+  }));
+  try {
+    const result = await callLiftwingPredictAPI({
+      model: 'llm-gpt-oss-safeguard-20b', systemPrompt: 'sys', userContent: 'usr',
+    });
+    assert.equal(JSON.parse(result.text).verdict, 'supported');
+    assert.deepEqual(result.usage, { input: 0, output: 0, cost_usd: null });
+    assert.equal(mock.calls[0].url,
+      'https://api.wikimedia.org/service/lw/inference/v1/models/llm-gpt-oss-safeguard-20b:predict');
+    assert.equal(mock.calls[0].opts.headers['Authorization'], undefined);
+    const sent = JSON.parse(mock.calls[0].opts.body);
+    assert.equal(sent.developer_prompt, 'sys');
+    assert.deepEqual(sent.messages, [{ role: 'user', content: 'usr' }]);
+    assert.equal(sent.model, undefined, 'the model is named in the URL, not the body');
+  } finally {
+    mock.restore();
+  }
+});
+
+test('callLiftwingPredictAPI names an exhausted reasoning budget', async () => {
+  const mock = withMockFetch(async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ reasoning: "[TextContent(text='thinking...')]", verdict: '[]' }),
+  }));
+  try {
+    await assert.rejects(
+      callLiftwingPredictAPI({ model: 'm', systemPrompt: 's', userContent: 'u', maxTokens: 100 }),
+      /ran out of output budget \(100 tokens\)/,
+    );
+  } finally {
+    mock.restore();
+  }
+});
+
+test('callLiftwingPredictAPI errors use the retryable "API request failed (status)" shape', async () => {
+  const mock = withMockFetch(async () => ({
+    ok: false,
+    status: 429,
+    text: async () => '{"detail":"rate limited"}',
+  }));
+  try {
+    await assert.rejects(
+      callLiftwingPredictAPI({ model: 'm', systemPrompt: 's', userContent: 'u' }),
+      /^Error: Lift Wing API request failed \(429\): rate limited$/,
+    );
+  } finally {
+    mock.restore();
+  }
+});
+
+test('callProviderAPI dispatches liftwing_safeguard to the :predict route', async () => {
+  const mock = withMockFetch(async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ verdict: "[TextContent(text='ok')]" }),
+  }));
+  try {
+    const result = await callProviderAPI('liftwing_safeguard', {
+      model: 'llm-gpt-oss-safeguard-20b', systemPrompt: 's', userContent: 'u',
+    });
+    assert.equal(result.text, 'ok');
+    assert.ok(mock.calls[0].url.endsWith('/llm-gpt-oss-safeguard-20b:predict'));
   } finally {
     mock.restore();
   }
