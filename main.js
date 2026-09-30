@@ -3602,7 +3602,7 @@ function useToolforgeSourceFetcher() {
         'Cancel': 'ביטול',
         'Paste source text manually': 'הדבקת טקסט המקור ידנית',
         'Replace the fetched source content with text you paste in (e.g., the full article from The Wikipedia Library)':
-            'החלפת תוכן המקור שאוחזר בטקסט מודבק (למשל, המאמר המלא מספריית ויקיפדיה)',
+            'החלפת תוכן המקור שנשלף בטקסט מודבק (למשל, המאמר המלא מספריית ויקיפדיה)',
         'Verify All Citations': 'בדיקת כל הערות השוליים',
         'Stop': 'עצירה',
         'Back to Report': 'חזרה לדוח',
@@ -3650,9 +3650,9 @@ function useToolforgeSourceFetcher() {
         '✓ PDF content extracted{pageInfo}': '✓ תוכן ה־PDF חולץ{pageInfo}',
         ' (page {page} of {total})': ' (עמוד {page} מתוך {total})',
         ' ({pages} pages)': ' ({pages} עמודים)',
-        '✓ Content fetched successfully': '✓ התוכן אוחזר בהצלחה',
+        '✓ Content fetched successfully': '✓ התוכן נשלף בהצלחה',
         'Content will be fetched by AI during verification.':
-            'התוכן יאוחזר על ידי הבינה המלאכותית במהלך הבדיקה.',
+            'התוכן יישלף על ידי הבינה המלאכותית במהלך הבדיקה.',
         '⚠ The source is long and can only be checked partially.':
             '⚠ המקור ארוך וניתן לבדוק אותו באופן חלקי בלבד.',
         'Source URL:': 'כתובת המקור:',
@@ -3683,7 +3683,7 @@ function useToolforgeSourceFetcher() {
 
         // Report progress
         'Checking citation [{num}]': 'בדיקת הערת השוליים [{num}]',
-        'Fetching source for [{num}]': 'אחזור המקור של [{num}]',
+        'Fetching source for [{num}]': 'שליפת המקור של [{num}]',
         'Verifying citation [{num}]': 'ניתוח הערת השוליים [{num}]',
         'Rate limited, retrying in {secs}s...':
             'חריגה ממגבלת הבקשות, ניסיון חוזר בעוד {secs} שניות…',
@@ -3748,8 +3748,8 @@ function useToolforgeSourceFetcher() {
         // Generated result comments
         'No URL found in reference': 'לא נמצאה כתובת URL בהערת השוליים',
         'None of the grouped sources could be retrieved.':
-            'לא ניתן היה לאחזר אף אחד מהמקורות שבקבוצה.',
-        'Could not fetch source content': 'לא ניתן היה לאחזר את תוכן המקור',
+            'לא ניתן היה לשלוף אף אחד מהמקורות שבקבוצה.',
+        'Could not fetch source content': 'לא ניתן היה לשלוף את תוכן המקור',
 
         // Exported reports (wikitext + plain text)
         'Citation verification report': 'דוח בדיקת הערות שוליים',
@@ -3834,11 +3834,11 @@ function useToolforgeSourceFetcher() {
         'No URL found in reference. Please paste the source text below.':
             'לא נמצאה כתובת URL בהערת השוליים. יש להדביק את טקסט המקור למטה.',
         'Google Books sources cannot be fetched. Please paste the source text below.':
-            'לא ניתן לאחזר מקורות מ־Google Books. יש להדביק את טקסט המקור למטה.',
-        'Fetching source content...': 'אחזור תוכן המקור…',
+            'לא ניתן לשלוף מקורות מ־Google Books. יש להדביק את טקסט המקור למטה.',
+        'Fetching source content...': 'שליפת תוכן המקור…',
         'Could not fetch source{status}{reason}. Please paste the source text below.':
-            'לא ניתן היה לאחזר את המקור{status}{reason}. יש להדביק את טקסט המקור למטה.',
-        'Source fetched. Ready to verify.': 'המקור אוחזר. מוכן לבדיקה.',
+            'לא ניתן היה לשלוף את המקור{status}{reason}. יש להדביק את טקסט המקור למטה.',
+        'Source fetched. Ready to verify.': 'המקור נשלף. מוכן לבדיקה.',
         'Ready to verify claim against source': 'מוכן לבדיקת הטענה מול המקור',
         'Error: {message}': 'שגיאה: {message}',
         'Please enter some source text': 'יש להזין טקסט מקור',
