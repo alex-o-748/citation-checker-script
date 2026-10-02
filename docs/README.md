@@ -2,8 +2,9 @@
 
 - [`verify-api.md`](verify-api.md) — per-citation Verify HTTP API contract,
   runnable example, limits, deployment findings, and open decisions.
-- [`onwiki/hewiki-instructions.wikitext`](onwiki/hewiki-instructions.wikitext) — source of the
-  he.wikipedia installation and usage page (Hebrew). Kept here so it can be
+- [`onwiki/hewiki-instructions.wikitext`](onwiki/hewiki-instructions.wikitext),
+  [`onwiki/ruwiki-instructions.wikitext`](onwiki/ruwiki-instructions.wikitext) — source of the
+  he.wikipedia and ru.wikipedia installation and usage pages. Kept here so it can be
   updated alongside the UI strings it names.
 
 Project documentation that doesn't fit at the repo root. Two kinds of file live here:
