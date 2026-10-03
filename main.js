@@ -2073,6 +2073,29 @@ function timeoutMessage(error, timeoutMs, what) {
         : (error?.message || String(error));
 }
 
+// Whether a fetcher response's content stops short of the real document.
+//
+// The fetcher's own `truncated` flag decides whenever the response carries one.
+// tf-source-fetcher always sends it, and it is the only signal that covers
+// every way that service cuts — including a page clamped *before* extraction,
+// whose text can be far below any length threshold.
+//
+// The Cloudflare Worker sends no flag. Its one cut is `.substring(0, 100000)`,
+// so a response landing exactly on that length is the only evidence there is.
+//
+// This replaces `truncated === true || length >= 12000`. The 12,000 was the
+// Worker's old cap; once it rose to 100,000 the rule marked long-but-whole
+// sources as truncated (35 of 143 Worker fetches of the benchmark sources on
+// 2026-10-02), and the batch pipeline discounts or drops findings on a
+// truncated source. benchmark/extract_dataset.js imports this rather than
+// keeping its own copy, so the two cannot drift again.
+const WORKER_CONTENT_CAP = 100000;
+
+function isContentTruncated(data) {
+    if (typeof data?.truncated === 'boolean') return data.truncated;
+    return (data?.content?.length ?? 0) >= WORKER_CONTENT_CAP;
+}
+
 // `onRequest`, when supplied, is called once per outbound HTTP call this
 // function makes — `{ kind: 'source-fetch', url, status, ok, error, latencyMs,
 // bytes }` — regardless of success or failure. It exists for the Internet
@@ -2118,7 +2141,7 @@ async function fetchViaProxy(fetchUrl, pageNum, workerBase, sourceUrl, onRequest
         }
 
         if (data.content && data.content.length > 100) {
-            const isTruncated = data.truncated === true || data.content.length >= 12000;
+            const isTruncated = isContentTruncated(data);
             let meta = `Source URL: ${sourceUrl}`;
             if (data.pdf) {
                 meta += `\nPDF: ${data.totalPages} pages`;

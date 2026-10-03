@@ -34,6 +34,7 @@ import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import { extractClaimText as extractClaimTextFromRef } from '../core/claim.js';
 import { canonicalizeVerdict, toTitleCase } from '../core/verdicts.js';
+import { isContentTruncated } from '../core/worker.js';
 import { writeWithMetadata, todayIso, loadRows } from './io.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -45,30 +46,21 @@ const OUTPUT_JSON = path.join(__dirname, 'dataset.json');
 const OUTPUT_REVIEW_CSV = path.join(__dirname, 'dataset_review.csv');
 const PROXY_URL = 'https://publicai-proxy.alaexis.workers.dev/';
 
-// The proxy caps extracted content server-side. It reports `truncated` when it
-// does, but not reliably, so `core/worker.js` also treats "landed exactly on the
-// cap" as truncated — mirrored here so both paths agree on what counts.
 // A truncated row is one whose stored source_text is a *prefix* of the real
 // document, so a label made against the full page may not be checkable against
 // what we stored. See docs/benchmark-ground-truth-audit-2026-09-06.md.
-const PROXY_CONTENT_CAP = 12000;
-// The direct-fetch fallback below has its own, much larger cap. Two different
-// caps mean "truncated" has two different lengths depending on which fetch path
-// won, which is exactly why this is recorded per row rather than inferred from
+//
+// Proxy responses are judged by core/worker.js's isContentTruncated() — the same
+// rule the userscript and batch pipeline apply, imported rather than mirrored.
+// The direct-fetch fallback below has its own cap. Two different caps mean
+// "truncated" has two different lengths depending on which fetch path won,
+// which is exactly why this is recorded per row rather than inferred from
 // source_text.length by downstream consumers.
 const DIRECT_FETCH_CAP = 50000;
 
-/**
- * Whether a proxy response's content is a prefix of the real document.
- *
- * The proxy sets `truncated` when it cuts, but not reliably — which is why
- * `core/worker.js` also treats "landed on the cap" as truncated. This mirrors
- * that rule deliberately: the two must agree, or the benchmark and the
- * userscript disagree about what the model was shown. `tests/truncation.test.js`
- * pins them together.
- */
+/** Whether a proxy response's content is a prefix of the real document. */
 export function proxyContentTruncated(data) {
-    return data?.truncated === true || (data?.content?.length ?? 0) >= PROXY_CONTENT_CAP;
+    return isContentTruncated(data);
 }
 
 // Parse command line arguments

@@ -140,15 +140,16 @@ Two dataset fields decide which rows a run is scored on. Both exist because a
 row can be *unlabelable* without being *wrong* — see
 `docs/benchmark-ground-truth-audit-2026-09-06.md`.
 
-- **`source_truncated`** — the stored `source_text` stops at a fetch cap (12,000
-  chars from the proxy, 50,000 from the direct-fetch fallback) rather than at the
-  end of the document. 48 of 189 rows. The label was made by a human reading the
+- **`source_truncated`** — the stored `source_text` stops at a fetch cap (the
+  proxy's, which was 12,000 chars when the current dataset was extracted, or
+  50,000 from the direct-fetch fallback) rather than at the end of the document.
+  48 of 189 rows. The label was made by a human reading the
   whole page, so a wrong verdict on such a row may be the tool failing to see the
   evidence rather than the model misjudging it: truncated rows score **46.6%**
   against **60.9%** for whole ones, and falsely report a citation as failing on
   **18.4%** of calls. `extract_dataset.js` records this at fetch time via
-  `proxyContentTruncated()`, which deliberately mirrors `core/worker.js`'s rule —
-  `tests/truncation.test.js` fails if the two drift.
+  `proxyContentTruncated()`, which calls `core/worker.js`'s
+  `isContentTruncated()` — the same rule the userscript and batch pipeline apply.
 - **`excluded_reason`** — the stored source is not the cited source at all (dead
   fetch, bot wall, an archive banner with no article behind it). 11 rows. Set from
   the `Exclude reason` column in `Benchmarking_data_Citations.csv`.
@@ -159,7 +160,7 @@ them, and the count is always printed) and takes
 `--projection` do. An unfiltered run prints the pooled split.
 
 **These rows are flagged, not deleted, and that is deliberate on two counts.**
-The userscript hits the same 12,000-char cap, so truncated rows reproduce a real
+The userscript hit the same 12,000-char cap at the time, so truncated rows reproduce a real
 production failure — deleting them would raise the headline ~4 points while the
 tool got no better, and would remove the only evidence the failure exists. And
 excluding by deleting CSV lines would shift every `row_<csv_line>` id after the
@@ -169,6 +170,25 @@ below; a test pins each id to its CSV line so a future deletion fails loudly.
 The filter **refuses** to run against a dataset carrying no `source_truncated`
 anywhere (the frozen v1/v3 snapshots) rather than reading absent as `false`,
 which would report every row as whole and be confidently wrong.
+
+### What counts as a truncated source (read before touching `isContentTruncated`)
+
+`core/worker.js`'s `isContentTruncated()` is the one rule, shared by the
+userscript, the batch pipeline and `extract_dataset.js`: **the fetcher's own
+`truncated` flag decides whenever the response carries one**, and only a
+flagless response is judged by length — landing exactly on the Cloudflare
+Worker's `.substring(0, 100000)` cap (`WORKER_CONTENT_CAP`).
+
+It used to be `truncated === true || length >= 12000`. The 12,000 was the
+Worker's old cap. Once that rose to 100,000, and tf-source-fetcher started
+returning whole pages, the rule marked long-but-whole sources as truncated (35
+of 143 Worker fetches of the benchmark sources on 2026-10-02). That matters
+beyond the label: the batch pipeline discounts severity and drops some
+findings on a truncated source. tf-source-fetcher always sends the flag, and it
+is the only signal for a page it clamped *before* extraction, which can come
+back well under any length threshold.
+
+If the Worker's cap changes again, change `WORKER_CONTENT_CAP`.
 
 ### The positive class is the failing citation (read before quoting a TPR/FPR)
 
