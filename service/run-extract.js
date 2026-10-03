@@ -26,6 +26,7 @@ import { selectCandidates, CRITERIA } from './article-picker.js';
 import { runBatch, ARTICLE_OUTCOMES } from './claim-extractor.js';
 import { fetchArticleHtml, hostForWiki, langCodeForWiki } from '../core/wikipedia.js';
 import { fetchSourceContent } from '../core/worker.js';
+import { createHostGate, DEFAULT_FETCH_CONCURRENCY } from './host-pool.js';
 
 // Same contract, same query shape (?fetch=&page=), same Google-Books-skip and
 // Wayback-fallback behavior as the reference Cloudflare Worker proxy — see
@@ -40,6 +41,7 @@ function parseCliArgs(argv) {
             wiki:             { type: 'string', default: 'enwiki' },
             max:              { type: 'string', default: '3' },
             'live-source-fetch': { type: 'boolean', default: false },
+            'fetch-concurrency': { type: 'string', default: String(DEFAULT_FETCH_CONCURRENCY) },
             help:             { type: 'boolean', short: 'h', default: false },
         },
         strict: true,
@@ -51,6 +53,7 @@ function parseCliArgs(argv) {
         wiki: values.wiki,
         max: Number(values.max),
         liveSourceFetch: values['live-source-fetch'],
+        fetchConcurrency: Number(values['fetch-concurrency']),
     };
 }
 
@@ -70,6 +73,9 @@ Options:
   --max <n>            Maximum articles to process (default: 3)
   --live-source-fetch  Fetch real sources via tf-source-fetcher instead of the
                         stub. Manual smoke-test use only (see above).
+  --fetch-concurrency <n>
+                       Sources to fetch at once, never two to one host
+                        (default: ${DEFAULT_FETCH_CONCURRENCY}; 1 = serial). Same as run-sweep.js's.
   --help, -h           Show this help and exit.
 `;
 
@@ -93,8 +99,12 @@ async function stubFetchSource() {
     };
 }
 
-async function liveFetchSource(url, pageNum) {
-    return fetchSourceContent(url, pageNum, { workerBase: TOOLFORGE_SOURCE_FETCHER_BASE });
+// One gate per run, as in service/run-sweep.js: no two requests in flight to
+// one host, the Wayback fallback's included.
+function makeLiveFetchSource() {
+    const hostGate = createHostGate();
+    return (url, pageNum) =>
+        fetchSourceContent(url, pageNum, { workerBase: TOOLFORGE_SOURCE_FETCHER_BASE, hostGate });
 }
 
 function describeSource(source) {
@@ -153,6 +163,10 @@ async function main(argv) {
         process.stderr.write(`error: --max must be a positive integer (got: ${opts.max})\n`);
         return 2;
     }
+    if (!Number.isInteger(opts.fetchConcurrency) || opts.fetchConcurrency < 1) {
+        process.stderr.write(`error: --fetch-concurrency must be a positive integer (got: ${opts.fetchConcurrency})\n`);
+        return 2;
+    }
 
     let connection;
     try {
@@ -205,7 +219,8 @@ async function main(argv) {
             parseHtml,
             fetchArticle: params => fetchArticleHtml(params, { host: hostForWiki(opts.wiki) }),
             langCode: langCodeForWiki(opts.wiki),
-            fetchSource: opts.liveSourceFetch ? liveFetchSource : stubFetchSource,
+            fetchSource: opts.liveSourceFetch ? makeLiveFetchSource() : stubFetchSource,
+            fetchConcurrency: opts.fetchConcurrency,
         })) {
             const { citations, withUrl, fetched, failed } = printArticle(result);
             totalCitations += citations;

@@ -4,7 +4,9 @@ import {
     fetchSourceContent,
     logVerification,
     isRetryableProxyResult,
+    isPublisherNetworkFailure,
     DEFAULT_SOURCE_FETCH_TIMEOUT_MS,
+    DEFAULT_WAYBACK_LOOKUP_TIMEOUT_MS,
     DEFAULT_SOURCE_FETCH_RETRY,
 } from '../core/worker.js';
 
@@ -376,7 +378,7 @@ test('fetchSourceContent aborts a hung proxy fetch instead of waiting forever', 
         });
     };
 
-    const result = await fetchSourceContent('https://slow.example/x', null, { timeoutMs: 10 });
+    const result = await fetchSourceContent('https://slow.example/x', null, { timeoutMs: 10, waybackTimeoutMs: 10 });
 
     assert.ok(sawSignal, 'an AbortSignal is passed to fetch');
     assert.equal(result.content, null);
@@ -393,6 +395,7 @@ test('a timeout is reported as a timeout, not as a generic network error', async
     const events = [];
     const result = await fetchSourceContent('https://slow.example/x', null, {
         timeoutMs: 10,
+        waybackTimeoutMs: 10,
         onRequest: e => events.push(e),
     });
 
@@ -584,6 +587,186 @@ test('a JSON-reported transport failure survives a round trip through fetchSourc
         });
         assert.equal(calls, 2, 'retried the fetcher-side failure exactly once');
         assert.ok(result.content.includes('y'.repeat(200)));
+    } finally {
+        global.fetch = originalFetch;
+    }
+});
+
+// --- Connection error codes (2026-10-03) ---
+//
+// tf-source-fetcher reports a publisher it could not reach as JSON
+// `{"error": "fetch failed", "status": null}` — the same two words for a domain
+// that no longer exists and for a connection that blipped. Both were retried
+// four times. It now adds Node's `errorCode`, and the ones that reproduce go
+// straight to the Wayback fallback.
+
+test('a dead domain, a refused connection and a bad certificate are not retried', () => {
+    for (const errorCode of ['ENOTFOUND', 'ECONNREFUSED', 'UND_ERR_CONNECT_TIMEOUT', 'ETIMEDOUT',
+                             'CERT_HAS_EXPIRED', 'DEPTH_ZERO_SELF_SIGNED_CERT',
+                             'ERR_TLS_CERT_ALTNAME_INVALID', 'UNABLE_TO_VERIFY_LEAF_SIGNATURE']) {
+        assert.equal(isPublisherNetworkFailure(errorCode), true, errorCode);
+        assert.equal(
+            isRetryableProxyResult({ content: null, status: 502, error: 'fetch failed', errorCode }), false, errorCode);
+    }
+});
+
+test('a reset or a temporary DNS failure is still retried — it can be our side and clear', () => {
+    for (const errorCode of ['ECONNRESET', 'UND_ERR_SOCKET', 'EAI_AGAIN', 'ENETUNREACH']) {
+        assert.equal(isPublisherNetworkFailure(errorCode), false, errorCode);
+        assert.equal(
+            isRetryableProxyResult({ content: null, status: 502, error: 'fetch failed', errorCode }), true, errorCode);
+    }
+    assert.equal(
+        isRetryableProxyResult({ content: null, status: 502, error: 'terminated', errorCode: 'UND_ERR_SOCKET' }), true);
+});
+
+test('no errorCode (an older fetcher, or the Cloudflare Worker) keeps the old retry rule', () => {
+    assert.equal(isPublisherNetworkFailure(undefined), false);
+    assert.equal(isPublisherNetworkFailure(null), false);
+    assert.equal(isRetryableProxyResult({ content: null, status: 502, error: 'fetch failed' }), true);
+});
+
+test('an unreachable publisher costs one attempt, then the Wayback fallback — and keeps its code', async () => {
+    const proxyCalls = [];
+    const originalFetch = global.fetch;
+    global.fetch = async url => {
+        if (String(url).includes('archive.org/wayback/available')) {
+            return { ok: true, status: 200, json: async () => ({ archived_snapshots: {} }) };
+        }
+        proxyCalls.push(url);
+        return { status: 502, json: async () => ({ content: null, error: 'fetch failed', errorCode: 'ENOTFOUND', status: null }) };
+    };
+    try {
+        const result = await fetchSourceContent('https://gone.example/a', null, {
+            retry: { minBackoffMs: 0, maxBackoffMs: 0, jitterMs: 0 },
+        });
+        assert.equal(proxyCalls.length, 1, 'no retries of a domain that does not exist');
+        assert.equal(result.content, null);
+        assert.equal(result.error, 'fetch failed');
+        assert.equal(result.errorCode, 'ENOTFOUND');
+        assert.equal(result.status, 502);
+    } finally {
+        global.fetch = originalFetch;
+    }
+});
+
+test('a successful or source-reported result carries no errorCode key', async () => {
+    const originalFetch = global.fetch;
+    global.fetch = async () => ({ status: 200, json: async () => ({ error: 'Source returned HTTP 404', status: 404 }) });
+    try {
+        const result = await fetchSourceContent('https://example.com/a', null, { archiveFirst: false, waybackTimeoutMs: 10 });
+        assert.equal('errorCode' in result, false);
+    } finally {
+        global.fetch = originalFetch;
+    }
+});
+
+// --- Wayback availability timeout (2026-10-03) ---
+
+test('the Wayback lookup has its own, shorter timeout than the two-hop source fetch', () => {
+    assert.ok(DEFAULT_WAYBACK_LOOKUP_TIMEOUT_MS < DEFAULT_SOURCE_FETCH_TIMEOUT_MS);
+    assert.ok(DEFAULT_WAYBACK_LOOKUP_TIMEOUT_MS >= 5_000, 'long enough for a slow but working archive.org');
+});
+
+test('a hung Wayback lookup is cut off by waybackTimeoutMs, not by the source timeout', async () => {
+    const originalFetch = global.fetch;
+    global.fetch = (url, options) => {
+        if (String(url).includes('archive.org/wayback/available')) {
+            return new Promise((_resolve, reject) => {
+                options.signal.addEventListener('abort',
+                    () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })));
+            });
+        }
+        return Promise.resolve({ status: 200, json: async () => ({ error: 'Source returned HTTP 404', status: 404 }) });
+    };
+    const events = [];
+    try {
+        const startedAt = Date.now();
+        const result = await fetchSourceContent('https://example.com/a', null, {
+            timeoutMs: 60_000,
+            waybackTimeoutMs: 20,
+            onRequest: e => events.push(e),
+        });
+        assert.ok(Date.now() - startedAt < 5_000, 'did not wait out the 60s source timeout');
+        assert.equal(result.status, 404, 'the live result survives a failed lookup');
+        const lookup = events.find(e => e.kind === 'wayback-availability');
+        assert.match(lookup.error, /timed out after 20ms/);
+    } finally {
+        global.fetch = originalFetch;
+    }
+});
+
+test('a Wayback response whose body stalls is bounded too', async () => {
+    const originalFetch = global.fetch;
+    global.fetch = (url, options) => {
+        if (String(url).includes('archive.org/wayback/available')) {
+            // Headers arrive at once; the body never does.
+            return Promise.resolve({
+                ok: true, status: 200,
+                json: () => new Promise((_resolve, reject) => {
+                    options.signal.addEventListener('abort',
+                        () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })));
+                }),
+            });
+        }
+        return Promise.resolve({ status: 200, json: async () => ({ error: 'Source returned HTTP 404', status: 404 }) });
+    };
+    try {
+        const result = await fetchSourceContent('https://example.com/a', null, { waybackTimeoutMs: 20 });
+        assert.equal(result.status, 404);
+    } finally {
+        global.fetch = originalFetch;
+    }
+});
+
+// --- Per-host gate (2026-10-03) ---
+//
+// The batch pipeline fetches concurrently, one request per host at a time.
+// The gate has to see every request by the host it actually goes to: a dead
+// link's fallback goes to archive.org and web.archive.org, whatever host the
+// citation named.
+
+test('hostGate wraps every request, keyed on the host each one actually goes to', async () => {
+    const originalFetch = global.fetch;
+    global.fetch = async url => {
+        if (String(url).includes('archive.org/wayback/available')) {
+            return { ok: true, status: 200, json: async () => ({
+                archived_snapshots: { closest: { available: true, timestamp: '20200101000000' } },
+            }) };
+        }
+        if (String(url).includes(encodeURIComponent('web.archive.org'))) {
+            return { status: 200, json: async () => ({ content: 'z'.repeat(200), status: 200 }) };
+        }
+        return { status: 200, json: async () => ({ error: 'Source returned HTTP 404', status: 404 }) };
+    };
+    const gated = [];
+    const hostGate = async (host, fn) => { gated.push(host); return fn(); };
+    try {
+        const result = await fetchSourceContent('https://dead.example/a', null, {
+            workerBase: 'https://fetcher.example', hostGate,
+        });
+        assert.ok(result.content);
+        assert.deepEqual(gated, ['dead.example', 'archive.org', 'web.archive.org']);
+    } finally {
+        global.fetch = originalFetch;
+    }
+});
+
+test('hostGate is entered once per retry attempt, not held across the backoff', async () => {
+    let calls = 0;
+    const originalFetch = global.fetch;
+    global.fetch = async () => {
+        calls++;
+        if (calls === 1) return { status: 502, json: async () => { throw new Error('Unexpected token <'); } };
+        return { status: 200, json: async () => ({ content: 'x'.repeat(200), status: 200 }) };
+    };
+    const gated = [];
+    try {
+        await fetchSourceContent('https://example.com/a', null, {
+            retry: { minBackoffMs: 0, maxBackoffMs: 0, jitterMs: 0 },
+            hostGate: async (host, fn) => { gated.push(host); return fn(); },
+        });
+        assert.deepEqual(gated, ['example.com', 'example.com']);
     } finally {
         global.fetch = originalFetch;
     }

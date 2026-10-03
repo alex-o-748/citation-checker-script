@@ -8,6 +8,16 @@
 > done yet is a real, unresolved safety question, not lack of time. Numbers
 > below are from real runs against `tf-llm-router` and `tf-source-fetcher`
 > on 2026-08-24/25, not synthetic benchmarks.
+>
+> **Update (2026-10-03):** fetch concurrency has since landed —
+> `--fetch-concurrency` on `run-sweep.js` / `run-extract.js`, default 4,
+> `service/host-pool.js`. Of the preconditions below: the WMCS question was
+> settled on 2026-09-13; the per-host cap is a hard constraint as step 5
+> asks — never two requests in flight to one host, the Wayback fallback's
+> archive.org / web.archive.org requests included — so each publisher sees no
+> more than the serial loop gave it. No fetch-side probe was built (step 2);
+> the default is kept low for the shared fetcher pod's sake instead. This doc
+> is the dated record of why it waited and still describes it as unbuilt.
 
 ## Why this started
 
