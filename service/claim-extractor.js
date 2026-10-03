@@ -16,6 +16,7 @@ import { collectCitations } from '../core/citations.js';
 import { attachArticleContext, articleCategories } from '../core/article-context.js';
 import { fetchArticleHtml } from '../core/wikipedia.js';
 import { sentencexLastSentence } from './sentences.js';
+import { hostOf, runHostPool } from './host-pool.js';
 
 // Why an article yielded nothing, as a machine-readable code. Same reasoning as
 // the verdict reason codes: prose belongs in a presenter, not in a record that
@@ -54,6 +55,10 @@ export async function processArticle(candidate, {
     // ending the sentence. See service/sentences.js.
     langCode = 'en',
     splitLastSentence = sentencexLastSentence(langCode),
+    // How many sources to fetch at once. 1 is the old serial behavior; the
+    // runners pass --fetch-concurrency. Never more than one per host either
+    // way — see service/host-pool.js.
+    fetchConcurrency = 1,
     signal,
 } = {}) {
     if (typeof parseHtml !== 'function') {
@@ -90,9 +95,22 @@ export async function processArticle(candidate, {
     }
     attachArticleContext(citations, root);
 
+    // Every source this article needs, fetched up front and concurrently
+    // (see service/host-pool.js), then attached below in citation order.
+    const fresh = await fetchSources(citations, fetchSource, sourceCache, {
+        concurrency: fetchConcurrency,
+        signal,
+    });
+
     const results = [];
     for (const citation of citations) {
-        if (signal?.aborted) break;
+        // An abort stops new fetches, so the citations after it have nothing
+        // to attach; report the ones that finished, in order, and stop there —
+        // what the serial loop did.
+        const source = citation.skipReason
+            ? { content: null, status: null, error: null, unavailableReason: null, cached: false }
+            : sourceFor(citation, sourceCache, fresh);
+        if (!source) break;
         results.push({
             citationNumber: citation.citationNumber,
             refName: citation.refName,
@@ -106,11 +124,7 @@ export async function processArticle(candidate, {
             skipReason: citation.skipReason,
             sectionTitle: citation.sectionTitle,
             paragraphText: citation.paragraphText,
-            // A skipped citation never reaches a model, so fetching its
-            // source would spend a third party's bandwidth for nothing.
-            source: citation.skipReason
-                ? { content: null, status: null, error: null, unavailableReason: null, cached: false }
-                : await resolveSource(citation, fetchSource, sourceCache),
+            source,
         });
     }
 
@@ -123,38 +137,73 @@ export function sourceCacheKey(url, pageNum) {
     return pageNum ? `${url}|page=${pageNum}` : url;
 }
 
-async function resolveSource(citation, fetchSource, cache) {
-    if (!citation.url) {
-        return { content: null, status: null, error: null, unavailableReason: 'no_url', cached: false };
+// Fetches every distinct source `citations` need that `cache` doesn't already
+// hold, `concurrency` at a time and never two to one host at once, writing
+// each result into `cache`. Returns the keys fetched by this call, so the
+// first citation to use one can be reported `cached: false` — the same
+// first-use-pays accounting the serial loop had.
+async function fetchSources(citations, fetchSource, cache, { concurrency = 1, signal } = {}) {
+    const jobs = [];
+    const queued = new Set();
+    for (const citation of citations) {
+        // A skipped citation never reaches a model, so fetching its source
+        // would spend a third party's bandwidth for nothing.
+        if (citation.skipReason || !citation.url) continue;
+        const key = sourceCacheKey(citation.url, citation.pageNum);
+        if (cache.has(key) || queued.has(key)) continue;
+        queued.add(key);
+        jobs.push({ key, url: citation.url, pageNum: citation.pageNum });
     }
 
-    const key = sourceCacheKey(citation.url, citation.pageNum);
-    if (cache.has(key)) {
-        return { ...cache.get(key), cached: true };
-    }
+    const fresh = new Set();
+    await runHostPool(jobs, async job => {
+        cache.set(job.key, await fetchOne(job, fetchSource));
+        fresh.add(job.key);
+    }, { concurrency, keyOf: job => hostOf(job.url), signal });
+    return fresh;
+}
 
-    let result;
+async function fetchOne({ url, pageNum }, fetchSource) {
     try {
-        const fetched = await fetchSource(citation.url, citation.pageNum);
-        result = {
+        const fetched = await fetchSource(url, pageNum);
+        return {
             content: fetched?.content ?? null,
             status: fetched?.status ?? null,
-            error: fetched?.error ?? null,
+            error: describeFetchError(fetched),
             unavailableReason: fetched?.content ? null : 'fetch_failed',
         };
     } catch (error) {
         // A throwing fetcher must not take down the article. Recorded as a
         // fetch failure with no status, matching "we never got a response".
-        result = {
+        return {
             content: null,
             status: null,
             error: error?.message || String(error),
             unavailableReason: 'fetch_failed',
         };
     }
+}
 
-    cache.set(key, result);
-    return { ...result, cached: false };
+// The fetcher's message, plus its connection error code when it sent one:
+// "fetch failed" alone covers a dead domain, a refused connection and a reset
+// alike, and the CSV's fetch_error column is where a sweep is diagnosed after
+// the fact. See core/worker.js's isPublisherNetworkFailure.
+function describeFetchError(fetched) {
+    const error = fetched?.error ?? null;
+    if (!error || !fetched?.errorCode) return error;
+    return `${error} (${fetched.errorCode})`;
+}
+
+// The source to attach to one citation, or null if it was never fetched (the
+// run was aborted first).
+function sourceFor(citation, cache, fresh) {
+    if (!citation.url) {
+        return { content: null, status: null, error: null, unavailableReason: 'no_url', cached: false };
+    }
+    const key = sourceCacheKey(citation.url, citation.pageNum);
+    if (!cache.has(key)) return null;
+    const cached = !fresh.delete(key);
+    return { ...cache.get(key), cached };
 }
 
 /**
