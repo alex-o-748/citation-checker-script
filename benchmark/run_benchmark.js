@@ -16,7 +16,9 @@
  * Without it, calls route through the publicai-proxy worker's keyless /hf
  * path, which injects an upstream token on the caller's behalf and shares
  * that proxy's quota. Set HF_TOKEN to call router.huggingface.co directly
- * on your own quota instead.
+ * on your own quota instead. Set HF_WORKER_BASE to send the keyless calls
+ * to a different proxy's /hf path, e.g. the Toolforge LLM router:
+ *   HF_WORKER_BASE=https://llm-router.toolforge.org node run_benchmark.js --providers=hf-gpt-oss-20b
  *
  * Any model hosted on HF Inference Providers can be benchmarked without a
  * predefined PROVIDERS entry by passing it as `hf:<model-id>`, e.g.:
@@ -509,6 +511,7 @@ async function callHuggingFace(config, systemPrompt, userPrompt) {
         userContent: userPrompt,
         maxTokens: BENCHMARK_MAX_TOKENS,
         temperature: BENCHMARK_TEMPERATURE,
+        ...(process.env.HF_WORKER_BASE ? { workerBase: process.env.HF_WORKER_BASE } : {}),
     }));
 }
 

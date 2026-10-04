@@ -1,7 +1,7 @@
 // Truncation and exclusion flags on benchmark rows.
 //
 // Background: 48 of 189 dataset rows store a source cut short at the proxy's
-// 12,000-char cap, and the extractor used to discard that fact — so a label made
+// then 12,000-char cap (the Worker's cap is 100,000 now), and the extractor used to discard that fact — so a label made
 // by a human reading the whole page was scored against a fragment, and nothing
 // in the data said so. These tests pin the two halves of the fix: the extractor
 // recording truncation at fetch time, and the analyzer refusing to guess when
@@ -13,40 +13,49 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { proxyContentTruncated } from '../benchmark/extract_dataset.js';
+import { isContentTruncated, WORKER_CONTENT_CAP } from '../core/worker.js';
 import { excludedRowIds, partitionByTruncation } from '../benchmark/analyze_results.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.join(__dirname, '..');
 
-test('proxyContentTruncated: trusts the proxy flag when it is set', () => {
-    assert.equal(proxyContentTruncated({ truncated: true, content: 'short' }), true);
-    assert.equal(proxyContentTruncated({ truncated: false, content: 'short' }), false);
+test('isContentTruncated: the fetcher\'s own flag decides when it is present', () => {
+    // tf-source-fetcher always sends the flag. A long whole page must not be
+    // second-guessed into "truncated", and a short clamped one must not be
+    // waved through for being short — its parse was cut before extraction.
+    assert.equal(isContentTruncated({ truncated: false, content: 'x'.repeat(WORKER_CONTENT_CAP) }), false);
+    assert.equal(isContentTruncated({ truncated: false, content: 'x'.repeat(60000) }), false);
+    assert.equal(isContentTruncated({ truncated: true, content: 'x'.repeat(19777) }), true);
 });
 
-test('proxyContentTruncated: treats landing on the cap as truncated even unflagged', () => {
-    // The proxy does not always set `truncated`, which is the whole reason
-    // core/worker.js has the length fallback too.
-    assert.equal(proxyContentTruncated({ content: 'x'.repeat(12000) }), true);
-    assert.equal(proxyContentTruncated({ content: 'x'.repeat(11999) }), false);
+test('isContentTruncated: without a flag, only landing on the Worker cap counts', () => {
+    // The Cloudflare Worker sends no flag and cuts at .substring(0, 100000).
+    // The old rule, length >= 12000, marked every long-but-whole Worker source
+    // as truncated once that cap rose from 12,000.
+    assert.equal(isContentTruncated({ content: 'x'.repeat(WORKER_CONTENT_CAP) }), true);
+    assert.equal(isContentTruncated({ content: 'x'.repeat(WORKER_CONTENT_CAP - 1) }), false);
+    assert.equal(isContentTruncated({ content: 'x'.repeat(12000) }), false);
 });
 
-test('proxyContentTruncated: survives a malformed or empty proxy response', () => {
-    assert.equal(proxyContentTruncated(undefined), false);
-    assert.equal(proxyContentTruncated({}), false);
-    assert.equal(proxyContentTruncated({ content: null }), false);
+test('isContentTruncated: survives a malformed or empty response', () => {
+    assert.equal(isContentTruncated(undefined), false);
+    assert.equal(isContentTruncated({}), false);
+    assert.equal(isContentTruncated({ content: null }), false);
+    // A non-boolean flag is not a flag: fall back to the length rule.
+    assert.equal(isContentTruncated({ truncated: 'yes', content: 'short' }), false);
 });
 
-test('proxyContentTruncated: agrees with the rule core/worker.js applies', () => {
-    // The bug this whole change exists to prevent is these two drifting apart.
-    // If worker.js's threshold moves, this fails and names the reason.
-    const workerSrc = fs.readFileSync(path.join(repoRoot, 'core', 'worker.js'), 'utf-8');
-    const match = workerSrc.match(/data\.truncated === true \|\| data\.content\.length >= (\d+)/);
-    assert.ok(match, 'core/worker.js no longer has the truncation check this mirrors');
-    const workerCap = Number(match[1]);
-    assert.equal(proxyContentTruncated({ content: 'x'.repeat(workerCap) }), true,
-        `benchmark cap disagrees with core/worker.js's ${workerCap}`);
-    assert.equal(proxyContentTruncated({ content: 'x'.repeat(workerCap - 1) }), false,
-        `benchmark cap disagrees with core/worker.js's ${workerCap}`);
+test('the benchmark extractor applies the same rule as core/worker.js', () => {
+    // These two used to hold separate copies of the threshold, kept in step by
+    // a test that regex-matched worker.js's source. It is one function now.
+    for (const data of [
+        { content: 'x'.repeat(WORKER_CONTENT_CAP) },
+        { content: 'x'.repeat(12000) },
+        { truncated: true, content: 'short' },
+        { truncated: false, content: 'x'.repeat(WORKER_CONTENT_CAP) },
+    ]) {
+        assert.equal(proxyContentTruncated(data), isContentTruncated(data));
+    }
 });
 
 const rows = (...ids) => ids.map(id => ({ entry_id: id }));
