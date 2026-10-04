@@ -5,11 +5,12 @@ import { createVerifyServer } from '../api/server.js';
 import { createSearchBudget, searchRequest, SEARCH_EXCLUDE_DOMAINS } from '../api/search.js';
 import { MAX_SOURCE_CONTENT_CHARS } from '../api/verify.js';
 
-function fakeTavily(results, { status = 200 } = {}) {
+function fakeTavily(results, { status = 200, emptyFirst = 0 } = {}) {
   const calls = [];
   const doFetch = async (url, init) => {
     calls.push({ url, init, body: JSON.parse(init.body) });
-    return new Response(JSON.stringify({ results }), { status });
+    const answer = calls.length <= emptyFirst ? [] : results;
+    return new Response(JSON.stringify({ results: answer }), { status });
   };
   return { doFetch, calls };
 }
@@ -44,6 +45,23 @@ test('searchRequest uses keyless mode without a key, and callers can only add ex
   assert.ok(calls[0].body.exclude_domains.includes('example.com'));
 });
 
+test('searchRequest retries once when the provider answers with no results', async () => {
+  const hit = [{ url: 'https://example.org/a', title: 'A', content: 'excerpt' }];
+  const flaky = fakeTavily(hit, { emptyFirst: 1 });
+  const retried = await searchRequest({ query: 'q' }, { fetch: flaky.doFetch, apiKey: 'k' });
+  assert.equal(flaky.calls.length, 2);
+  assert.equal(retried.body.results.length, 1);
+
+  const none = fakeTavily(hit, { emptyFirst: 5 });
+  const empty = await searchRequest({ query: 'q' }, { fetch: none.doFetch, apiKey: 'k' });
+  assert.equal(none.calls.length, 2);
+  assert.deepEqual(empty, { status: 200, body: { results: [] } });
+
+  const found = fakeTavily(hit);
+  await searchRequest({ query: 'q' }, { fetch: found.doFetch, apiKey: 'k' });
+  assert.equal(found.calls.length, 1);
+});
+
 test('searchRequest cuts text to what /v1/verify accepts', async () => {
   const { doFetch } = fakeTavily([{ url: 'https://example.org/long', title: 'L', content: 'e', raw_content: 'x'.repeat(MAX_SOURCE_CONTENT_CHARS * 2) }]);
   const result = await searchRequest({ query: 'q' }, { fetch: doFetch, apiKey: 'k' });
@@ -73,7 +91,7 @@ test('searchRequest maps provider failures to 429 and 502', async () => {
 test('the daily search budget stops calls and resets the next UTC day', async () => {
   let time = Date.parse('2026-10-04T23:00:00Z');
   const budget = createSearchBudget({ limit: 2, now: () => time });
-  const { doFetch, calls } = fakeTavily([]);
+  const { doFetch, calls } = fakeTavily([{ url: 'https://example.org/a', title: 'A', content: 'x' }]);
   assert.equal((await searchRequest({ query: 'q' }, { fetch: doFetch, budget })).status, 200);
   assert.equal((await searchRequest({ query: 'q' }, { fetch: doFetch, budget })).status, 200);
   const spent = await searchRequest({ query: 'q' }, { fetch: doFetch, budget });

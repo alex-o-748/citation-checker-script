@@ -31,6 +31,7 @@ export const SEARCH_EXCLUDE_DOMAINS = Object.freeze([
     'everybodywiki.com', 'kiddle.co', 'wiki2.org', 'infogalactic.com', 'justapedia.org',
     'wikizero.com', 'wikibrief.org', 'en-academic.com', 'dictionary.sensagent.com',
     'grokipedia.com', 'bharatpedia.org', 'handwiki.org', 'marefa.org', 'famousfix.com',
+    'miraheze.org',
     'fandom.com', 'wikia.com', 'reddit.com', 'quora.com', 'answers.com', 'medium.com',
     'substack.com', 'facebook.com', 'instagram.com', 'x.com', 'twitter.com', 'tiktok.com',
     'pinterest.com', 'linkedin.com', 'scribd.com', 'deviantart.com', 'ebay.com',
@@ -107,27 +108,31 @@ export async function searchRequest(body, {
     if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
     else headers['X-Tavily-Access-Mode'] = 'keyless';
 
-    let res;
-    try {
-        res = await doFetch(TAVILY_SEARCH_URL, {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({
-                query: body.query.trim(),
-                search_depth: 'basic',
-                max_results: MAX_RESULTS,
-                chunks_per_source: 3,
-                include_raw_content: 'markdown',
-                exclude_domains: exclude,
-            }),
-        });
-    } catch {
-        return { status: 502, body: { error: 'Search provider unreachable' } };
-    }
-    if (res.status === 429) return { status: 429, body: { error: 'Search provider rate limit; try again later' } };
-    const data = await res.json().catch(() => null);
-    if (!res.ok || !data || !Array.isArray(data.results)) {
-        return { status: 502, body: { error: `Search provider failed (${res.status})` } };
+    const request = JSON.stringify({
+        query: body.query.trim(),
+        search_depth: 'basic',
+        max_results: MAX_RESULTS,
+        chunks_per_source: 3,
+        include_raw_content: 'markdown',
+        exclude_domains: exclude,
+    });
+    // Tavily now and then answers a query with no results at all, and the
+    // same query moments later with ten (seen on the live service, October
+    // 2026). One retry on an empty answer costs a credit only when it happens.
+    let data;
+    for (let attempt = 0; attempt < 2; attempt++) {
+        let res;
+        try {
+            res = await doFetch(TAVILY_SEARCH_URL, { method: 'POST', headers, body: request });
+        } catch {
+            return { status: 502, body: { error: 'Search provider unreachable' } };
+        }
+        if (res.status === 429) return { status: 429, body: { error: 'Search provider rate limit; try again later' } };
+        data = await res.json().catch(() => null);
+        if (!res.ok || !data || !Array.isArray(data.results)) {
+            return { status: 502, body: { error: `Search provider failed (${res.status})` } };
+        }
+        if (data.results.length > 0) break;
     }
 
     const results = data.results
