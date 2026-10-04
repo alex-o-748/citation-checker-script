@@ -83,10 +83,42 @@ include `stage`: `source`, `provider` or `parse`.
 | `429` | The service's request limit is used up. Wait for the number of seconds in `Retry-After`. |
 | `502` | The model call failed or returned something unreadable. Usually temporary. |
 
+## `POST /v1/search`
+
+A web search for pages that might source a claim, for tools that cannot call a
+search engine themselves (a Wikipedia user script can reach `*.toolforge.org`,
+but not a commercial search API). Search, then check each result with
+`/v1/verify`: each result's `text` is ready to send as `source_content`.
+
+```sh
+curl https://citation-verifier.toolforge.org/v1/search \
+  -H 'Content-Type: application/json' \
+  -d '{"query": "KCC Malls: KCC started in 1947 as a textile store in Koronadal"}'
+```
+
+| Field | Type | Required | Meaning |
+| --- | --- | --- | --- |
+| `query` | string | yes | Up to 400 characters. The article title followed by the claim works well. |
+| `exclude_domains` | array of strings | no | Up to 50 more domains to leave out. |
+
+The response is `{ "results": [ … ] }`, up to 10, best first, each with `url`,
+`title`, `score` (the search engine's relevance, 0–1) and `text`: the passages
+that match the query, then the page itself, up to 50,000 characters.
+
+Wikipedia, sites that copy it, social media and other user-generated sites are
+always left out. A result is a lead, not a source: whether it states the claim
+is what `/v1/verify` is for, and whether it is reliable is for the editor.
+
+The search is [Tavily](https://tavily.com)'s, paid for by this service, so it
+has its own limits: 20 searches a minute and a daily budget across all callers.
+When either is spent it returns `429`; a daily budget resets at midnight UTC.
+`502` means the search provider failed.
+
 ## Fair use and limits
 
 This is a free, shared service, with one request budget for **all callers
-together**: currently **30 checks per minute**. Every response includes
+together**: currently **30 checks per minute** (searches are counted
+separately; see above). Every response includes
 `RateLimit-Limit`, `RateLimit-Remaining` and `RateLimit-Reset` (seconds until
 the budget refills), so a client can pace itself.
 
@@ -123,7 +155,7 @@ The only thing recorded about a source is its hostname.
 ## Machine-readable description
 
 `GET /openapi.json` returns an [OpenAPI 3.1](https://spec.openapis.org/oas/v3.1.0)
-description of the endpoint, and `GET /` links to it.
+description of both endpoints, and `GET /` links to it.
 
 ## Questions and problems
 
@@ -140,6 +172,11 @@ npm start            # listens on $PORT, default 8080
 npm test             # includes tests/verify_api.test.js, which needs no network
 ```
 
-The code comments in `api/server.js` and `api/verify.js` explain how it is set
+`/v1/search` uses the `TAVILY_API_KEY` environment variable, or Tavily's
+keyless mode (free, rate-limited) when it is unset. `SEARCH_DAILY_LIMIT` caps
+searches per day (default 30; a basic search costs one Tavily credit, and the
+free plan has 1,000 a month).
+
+The code comments in `api/server.js`, `api/verify.js` and `api/search.js` explain how it is set
 up: why the request limit is shared rather than per caller, and which model and
 Toolforge services it calls.
