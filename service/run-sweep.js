@@ -77,6 +77,16 @@ import { isRetryableError } from '../core/retry.js';
 // reason_type on an ERROR row whose model call kept failing transiently.
 export const RETRIES_EXHAUSTED = 'retries_exhausted';
 
+// reason_type on an ERROR row whose model spent its whole output budget
+// reasoning (core/providers.js throws this for finish_reason "length" with no
+// content). The model answered — it was just too verbose on this one claim —
+// so it says nothing about the service being down: it is recorded and the
+// sweep moves on, and it never counts toward --max-consecutive-failures.
+// Real incident, 2026-10-04: one such call halted a ruwiki sweep with gpt-oss
+// after 2 articles.
+export const OUTPUT_BUDGET_EXHAUSTED = 'output_budget_exhausted';
+export const isOutputBudgetError = error => /ran out of output budget/.test(error?.message ?? '');
+
 // Same contract as service/run-extract.js's — see that file's comment.
 const TOOLFORGE_SOURCE_FETCHER_BASE = 'https://source-fetcher.toolforge.org';
 
@@ -594,6 +604,7 @@ export async function runSweep(opts, {
     // UNAVAILABLE short-circuit says nothing about whether the model is up.
     let consecutiveFailures = 0;
     let transientFailures = 0;
+    let budgetFailures = 0;
 
     // Counts a failed model call toward the consecutive-failure breaker, and
     // trips it. Returns false when the error must halt the run on its own
@@ -601,6 +612,7 @@ export async function runSweep(opts, {
     // calls and the severity pass: both hit the same model service, so a run
     // of failures in either means the same thing.
     function countTransientFailure(error) {
+        if (isOutputBudgetError(error)) return true; // recorded, but not a sign the service is down
         if (error instanceof ProviderAuthError || !isRetryableError(error)) return false;
         consecutiveFailures++;
         if (consecutiveFailures >= maxConsecutiveFailures && !halted) {
@@ -617,13 +629,16 @@ export async function runSweep(opts, {
     // transient (an unexpected response shape is a bug, not bad luck).
     function absorbFailure(error, fields) {
         if (!countTransientFailure(error)) return null;
-        transientFailures++;
+        const budget = isOutputBudgetError(error);
+        if (budget) budgetFailures++; else transientFailures++;
         return {
             ...fields,
             verdict: 'ERROR',
             supportScore: null,
-            reasonType: RETRIES_EXHAUSTED,
-            rationale: `Model call failed after retrying: ${error.message}`,
+            reasonType: budget ? OUTPUT_BUDGET_EXHAUSTED : RETRIES_EXHAUSTED,
+            rationale: budget
+                ? `Model ran out of output budget before answering: ${error.message}`
+                : `Model call failed after retrying: ${error.message}`,
             sourceQuote: null,
             quoteStatus: null,
             usage: null,
@@ -758,7 +773,8 @@ export async function runSweep(opts, {
             }, { callModel, retry: { ...retryOptions, onAttemptFailed } });
         } catch (error) {
             if (countTransientFailure(error)) {
-                severity = { tier: null, subclaims: null, error: RETRIES_EXHAUSTED };
+                severity = { tier: null, subclaims: null,
+                    error: isOutputBudgetError(error) ? OUTPUT_BUDGET_EXHAUSTED : RETRIES_EXHAUSTED };
             } else {
                 if (!halted) { halted = true; haltError = error; }
                 severity = { tier: null, subclaims: null, error: 'halted' };
@@ -919,6 +935,13 @@ export async function runSweep(opts, {
         stderr.write(
             `sweep: ${transientFailures} model call(s) still failed after retrying and were recorded as ERROR ` +
             `(reason_type ${RETRIES_EXHAUSTED}); --resume will not retry them.\n`
+        );
+    }
+
+    if (budgetFailures) {
+        stderr.write(
+            `sweep: ${budgetFailures} model call(s) ran out of output budget and were recorded as ERROR ` +
+            `(reason_type ${OUTPUT_BUDGET_EXHAUSTED}); --resume will not retry them.\n`
         );
     }
 
