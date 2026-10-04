@@ -3,6 +3,7 @@ import {
     MAX_CLAIM_CHARS,
     MAX_SOURCE_CONTENT_CHARS,
 } from './verify.js';
+import { MAX_QUERY_CHARS, MAX_RESULTS } from './search.js';
 
 export const OPENAPI_DOCUMENT = Object.freeze({
     openapi: '3.1.0',
@@ -12,6 +13,39 @@ export const OPENAPI_DOCUMENT = Object.freeze({
         description: 'Verify one claim against one cited source using the Source Verifier pipeline.',
     },
     paths: {
+        '/v1/search': {
+            post: {
+                summary: 'Search the web for pages that might source a claim',
+                description: 'One web search (Tavily), excluding Wikipedia, its copies and user-generated sites. '
+                    + 'Each result\'s text is ready to pass to /v1/verify as source_content. A daily budget applies.',
+                requestBody: {
+                    required: true,
+                    content: {
+                        'application/json': {
+                            schema: {
+                                type: 'object',
+                                required: ['query'],
+                                properties: {
+                                    query: { type: 'string', minLength: 1, maxLength: MAX_QUERY_CHARS },
+                                    exclude_domains: { type: 'array', maxItems: 50, items: { type: 'string' } },
+                                },
+                                additionalProperties: false,
+                            },
+                        },
+                    },
+                },
+                responses: {
+                    200: {
+                        description: `Up to ${MAX_RESULTS} results, best first`,
+                        content: { 'application/json': { schema: { $ref: '#/components/schemas/SearchResults' } } },
+                    },
+                    400: { $ref: '#/components/responses/BadRequest' },
+                    415: { description: 'Content-Type is not application/json' },
+                    429: { description: 'Rate limit or daily search budget exceeded' },
+                    502: { description: 'Search provider failure' },
+                },
+            },
+        },
         '/v1/verify': {
             post: {
                 summary: 'Verify one claim against one source',
@@ -65,6 +99,25 @@ export const OPENAPI_DOCUMENT = Object.freeze({
                     source_quote: { type: 'string' },
                     quote_status: { type: 'string' },
                     verified_text: { type: 'string' },
+                },
+            },
+            SearchResults: {
+                type: 'object',
+                required: ['results'],
+                properties: {
+                    results: {
+                        type: 'array',
+                        items: {
+                            type: 'object',
+                            required: ['url', 'title', 'score', 'text'],
+                            properties: {
+                                url: { type: 'string', format: 'uri' },
+                                title: { type: 'string' },
+                                score: { type: ['number', 'null'] },
+                                text: { type: 'string', maxLength: MAX_SOURCE_CONTENT_CHARS },
+                            },
+                        },
+                    },
                 },
             },
             Error: {

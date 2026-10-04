@@ -7,6 +7,7 @@ import { modelFor } from '../core/models.js';
 import { OPENAPI_DOCUMENT } from './openapi.js';
 import { createMetrics, describeSource } from './metrics.js';
 import { STATUS_PAGE_HTML } from './status-page.js';
+import { createSearchBudget, searchRequest } from './search.js';
 
 const WIKIPEDIA_ORIGIN = /^https:\/\/[a-z0-9-]+\.wikipedia\.org$/i;
 
@@ -101,8 +102,35 @@ export function createVerifyServer({
     rateLimit = createRateLimiter(),
     metrics = createMetrics(),
     now = () => performance.now(),
+    search = searchRequest,
+    searchBudget = createSearchBudget(),
+    // Search spends the tool's search credits, not the model budget, so it
+    // has its own per-minute limit alongside the daily budget.
+    searchRateLimit = createRateLimiter({ limit: 20 }),
 } = {}) {
     const service = { provider: API_PROVIDER, model: modelFor(API_PROVIDER) };
+
+    // Kept out of the verify metrics: the status board counts verdicts.
+    async function handleSearch(req, res, cors) {
+        const mediaType = req.headers['content-type']?.split(';', 1)[0].trim().toLowerCase();
+        if (mediaType !== 'application/json') {
+            return sendJson(res, 415, { error: 'Content-Type must be application/json' }, cors);
+        }
+        const allowance = searchRateLimit();
+        if (!allowance.allowed) {
+            return sendJson(res, 429, { error: 'Rate limit exceeded' }, {
+                ...cors, 'Retry-After': String(allowance.resetSeconds),
+            });
+        }
+        try {
+            const body = await readJson(req);
+            const result = await search(body, { budget: searchBudget });
+            return sendJson(res, result.status, result.body, cors);
+        } catch (error) {
+            const status = error.status || 500;
+            return sendJson(res, status, { error: status === 500 ? 'Internal server error' : error.message }, cors);
+        }
+    }
 
     return createServer(async (req, res) => {
         const cors = corsHeaders(req);
@@ -112,6 +140,7 @@ export function createVerifyServer({
                 name: OPENAPI_DOCUMENT.info.title,
                 documentation: '/openapi.json',
                 verify: '/v1/verify',
+                search: '/v1/search',
                 status: '/status',
                 metrics: '/metrics.json',
             }, cors);
@@ -134,7 +163,7 @@ export function createVerifyServer({
         if (req.method === 'GET' && pathname === '/status') {
             return sendHtml(res, STATUS_PAGE_HTML);
         }
-        if (req.method === 'OPTIONS' && pathname === '/v1/verify') {
+        if (req.method === 'OPTIONS' && (pathname === '/v1/verify' || pathname === '/v1/search')) {
             res.writeHead(204, {
                 ...cors,
                 'Access-Control-Allow-Methods': 'POST, OPTIONS',
@@ -142,6 +171,9 @@ export function createVerifyServer({
                 'Access-Control-Max-Age': '86400',
             });
             return res.end();
+        }
+        if (req.method === 'POST' && pathname === '/v1/search') {
+            return handleSearch(req, res, cors);
         }
         if (req.method !== 'POST' || pathname !== '/v1/verify') {
             return sendJson(res, 404, { error: 'Not found' }, cors);
