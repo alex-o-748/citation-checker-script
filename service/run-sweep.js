@@ -95,6 +95,7 @@ export function parseCliArgs(argv) {
             'titles-file':       { type: 'string' },
             provider:            { type: 'string', default: 'liftwing' },
             model:               { type: 'string' },
+            'worker-base':       { type: 'string' },
             'delay-ms':          { type: 'string', default: '1000' },
             concurrency:         { type: 'string', default: '1' },
             'max-consecutive-failures': { type: 'string', default: String(DEFAULT_MAX_CONSECUTIVE_FAILURES) },
@@ -121,6 +122,7 @@ export function parseCliArgs(argv) {
         titlesFile: values['titles-file'],
         provider: values.provider,
         model: values.model || PROVIDER_MODELS[values.provider],
+        workerBase: values['worker-base'],
         delayMs: Number(values['delay-ms']),
         concurrency: Number(values.concurrency),
         maxConsecutiveFailures: Number(values['max-consecutive-failures']),
@@ -162,6 +164,11 @@ Options:
                          --titles-file; every listed title with it.
   --provider <name>     One of: ${Object.keys(PROVIDER_MODELS).join(', ')} (default: liftwing)
   --model <id>          Override the provider's default model
+  --worker-base <url>   Base URL the model call goes through, e.g.
+                         https://llm-router.toolforge.org to send the
+                         huggingface provider via tf-llm-router's /hf route
+                         instead of the default Cloudflare worker. Unset
+                         keeps each provider's own default.
   --delay-ms <n>        Delay after each model call, ms (default: 1000)
   --concurrency <n>     Model calls (verifyCitation/verifyGroup) to run at once
                          (default: 1, i.e. serial — matches every prior version
@@ -513,7 +520,7 @@ export async function runSweep(opts, {
     const fetchSource = fetchSourceFn ?? (opts.liveSourceFetch ? liveFetchSource : stubFetchSource);
 
     const callModel = makeModelCallerFn({
-        provider: opts.provider, apiKey, model: opts.model,
+        provider: opts.provider, apiKey, model: opts.model, workerBase: opts.workerBase,
     });
 
     const findings = [];
