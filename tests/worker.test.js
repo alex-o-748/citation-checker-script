@@ -600,8 +600,8 @@ test('a JSON-reported transport failure survives a round trip through fetchSourc
 // four times. It now adds Node's `errorCode`, and the ones that reproduce go
 // straight to the Wayback fallback.
 
-test('a dead domain, a refused connection and a bad certificate are not retried', () => {
-    for (const errorCode of ['ENOTFOUND', 'ECONNREFUSED', 'UND_ERR_CONNECT_TIMEOUT', 'ETIMEDOUT',
+test('a dead domain, a connect timeout and a bad certificate are not retried', () => {
+    for (const errorCode of ['ENOTFOUND', 'UND_ERR_CONNECT_TIMEOUT', 'ETIMEDOUT',
                              'CERT_HAS_EXPIRED', 'DEPTH_ZERO_SELF_SIGNED_CERT',
                              'ERR_TLS_CERT_ALTNAME_INVALID', 'UNABLE_TO_VERIFY_LEAF_SIGNATURE']) {
         assert.equal(isPublisherNetworkFailure(errorCode), true, errorCode);
@@ -611,7 +611,9 @@ test('a dead domain, a refused connection and a bad certificate are not retried'
 });
 
 test('a reset or a temporary DNS failure is still retried — it can be our side and clear', () => {
-    for (const errorCode of ['ECONNRESET', 'UND_ERR_SOCKET', 'EAI_AGAIN', 'ENETUNREACH']) {
+    // ECONNREFUSED: 54 refusals in one sweep, 14 in the same sweep an hour
+    // later (2026-10-05). Sites refuse for a while; they don't vanish.
+    for (const errorCode of ['ECONNRESET', 'UND_ERR_SOCKET', 'EAI_AGAIN', 'ENETUNREACH', 'ECONNREFUSED']) {
         assert.equal(isPublisherNetworkFailure(errorCode), false, errorCode);
         assert.equal(
             isRetryableProxyResult({ content: null, status: 502, error: 'fetch failed', errorCode }), true, errorCode);

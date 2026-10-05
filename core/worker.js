@@ -214,11 +214,15 @@ const PROXY_TRANSPORT_FAILURE = /^(?:fetch failed|terminated)$|^Source fetch tim
 //
 // tf-source-fetcher now passes Node's code through as `errorCode`, which
 // separates the two. These codes are about the publisher and reproduce on an
-// immediate retry: no DNS record, a refused connection, no answer to the
-// connect at all (consistent with "Request to source timed out" above), and a
-// TLS setup that cannot validate. Left retryable: resets mid-response
-// (ECONNRESET, UND_ERR_SOCKET), temporary DNS failure (EAI_AGAIN) and
-// unreachable networks, any of which can be a problem on our side that clears.
+// immediate retry: no DNS record, no answer to the connect at all (consistent
+// with "Request to source timed out" above), and a TLS setup that cannot
+// validate. Left retryable: resets mid-response (ECONNRESET, UND_ERR_SOCKET),
+// temporary DNS failure (EAI_AGAIN), unreachable networks, and refused
+// connections (ECONNREFUSED). The last was in the skip list at first, and
+// measurement took it out: two sweeps of the same 10 articles, an hour apart
+// (2026-10-05), saw 54 refusals and then 14 — a site that refuses for a while
+// (a firewall reacting to a burst, a server mid-restart) is common, so a
+// refusal is not evidence the source is gone.
 // With no errorCode (an older fetcher, or the Cloudflare Worker), the message
 // rule above applies unchanged.
 //
@@ -226,7 +230,6 @@ const PROXY_TRANSPORT_FAILURE = /^(?:fetch failed|terminated)$|^Source fetch tim
 // lists need not agree — a retry of a cached failure is just a cache hit.
 const PUBLISHER_NETWORK_FAILURE_CODES = new Set([
     'ENOTFOUND',
-    'ECONNREFUSED',
     'UND_ERR_CONNECT_TIMEOUT',
     'ETIMEDOUT',
     'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
