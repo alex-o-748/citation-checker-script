@@ -87,6 +87,17 @@ export const RETRIES_EXHAUSTED = 'retries_exhausted';
 export const OUTPUT_BUDGET_EXHAUSTED = 'output_budget_exhausted';
 export const isOutputBudgetError = error => /ran out of output budget/.test(error?.message ?? '');
 
+// reason_type on an ERROR row whose model finished normally (finish_reason
+// "stop") but returned no text. Same standing as the budget case: the service
+// answered, this one call is unusable, so record it and move on. Matched on
+// the "stop" finish_reason on purpose — a response with no choices at all, or
+// no finish_reason, is a changed response shape (a bug), and still halts.
+// Real incident, 2026-10-05: halted a ruwiki sweep 44 articles into 100.
+export const EMPTY_RESPONSE = 'empty_model_response';
+export const isEmptyResponseError = error => /no content, finish_reason "stop"/.test(error?.message ?? '');
+const isPerCallModelFailure = error => isOutputBudgetError(error) || isEmptyResponseError(error);
+const perCallReasonType = error => isOutputBudgetError(error) ? OUTPUT_BUDGET_EXHAUSTED : EMPTY_RESPONSE;
+
 // Same contract as service/run-extract.js's — see that file's comment.
 const TOOLFORGE_SOURCE_FETCHER_BASE = 'https://source-fetcher.toolforge.org';
 
@@ -604,7 +615,7 @@ export async function runSweep(opts, {
     // UNAVAILABLE short-circuit says nothing about whether the model is up.
     let consecutiveFailures = 0;
     let transientFailures = 0;
-    let budgetFailures = 0;
+    let perCallFailures = 0;
 
     // Counts a failed model call toward the consecutive-failure breaker, and
     // trips it. Returns false when the error must halt the run on its own
@@ -612,7 +623,7 @@ export async function runSweep(opts, {
     // calls and the severity pass: both hit the same model service, so a run
     // of failures in either means the same thing.
     function countTransientFailure(error) {
-        if (isOutputBudgetError(error)) return true; // recorded, but not a sign the service is down
+        if (isPerCallModelFailure(error)) return true; // recorded, but not a sign the service is down
         if (error instanceof ProviderAuthError || !isRetryableError(error)) return false;
         consecutiveFailures++;
         if (consecutiveFailures >= maxConsecutiveFailures && !halted) {
@@ -629,15 +640,15 @@ export async function runSweep(opts, {
     // transient (an unexpected response shape is a bug, not bad luck).
     function absorbFailure(error, fields) {
         if (!countTransientFailure(error)) return null;
-        const budget = isOutputBudgetError(error);
-        if (budget) budgetFailures++; else transientFailures++;
+        const perCall = isPerCallModelFailure(error);
+        if (perCall) perCallFailures++; else transientFailures++;
         return {
             ...fields,
             verdict: 'ERROR',
             supportScore: null,
-            reasonType: budget ? OUTPUT_BUDGET_EXHAUSTED : RETRIES_EXHAUSTED,
-            rationale: budget
-                ? `Model ran out of output budget before answering: ${error.message}`
+            reasonType: perCall ? perCallReasonType(error) : RETRIES_EXHAUSTED,
+            rationale: perCall
+                ? `Model gave no usable answer: ${error.message}`
                 : `Model call failed after retrying: ${error.message}`,
             sourceQuote: null,
             quoteStatus: null,
@@ -774,7 +785,7 @@ export async function runSweep(opts, {
         } catch (error) {
             if (countTransientFailure(error)) {
                 severity = { tier: null, subclaims: null,
-                    error: isOutputBudgetError(error) ? OUTPUT_BUDGET_EXHAUSTED : RETRIES_EXHAUSTED };
+                    error: isPerCallModelFailure(error) ? perCallReasonType(error) : RETRIES_EXHAUSTED };
             } else {
                 if (!halted) { halted = true; haltError = error; }
                 severity = { tier: null, subclaims: null, error: 'halted' };
@@ -938,10 +949,11 @@ export async function runSweep(opts, {
         );
     }
 
-    if (budgetFailures) {
+    if (perCallFailures) {
         stderr.write(
-            `sweep: ${budgetFailures} model call(s) ran out of output budget and were recorded as ERROR ` +
-            `(reason_type ${OUTPUT_BUDGET_EXHAUSTED}); --resume will not retry them.\n`
+            `sweep: ${perCallFailures} model call(s) gave no usable answer (output budget exhausted or empty ` +
+            `response) and were recorded as ERROR (reason_type ${OUTPUT_BUDGET_EXHAUSTED} / ${EMPTY_RESPONSE}); ` +
+            `--resume will not retry them.\n`
         );
     }
 
