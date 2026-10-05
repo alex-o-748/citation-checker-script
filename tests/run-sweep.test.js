@@ -10,6 +10,8 @@ import {
     HELP_TEXT,
     main,
     RETRIES_EXHAUSTED,
+    OUTPUT_BUDGET_EXHAUSTED,
+    EMPTY_RESPONSE,
     DEFAULT_MAX_CONSECUTIVE_FAILURES,
 } from '../service/run-sweep.js';
 import { ProviderAuthError } from '../service/verifier.js';
@@ -508,6 +510,53 @@ test('a transient failure that exhausts its retries becomes an ERROR row and the
     assert.match(error.rationale, /504/);
     assert.doesNotMatch(stderrChunks.join(''), /halting/);
     assert.match(stderrChunks.join(''), /1 model call\(s\) still failed after retrying/);
+});
+
+const BUDGET_ERROR = 'HuggingFace: the model ran out of output budget (16384 tokens) before answering — it spent the whole budget reasoning.';
+
+test('a model that runs out of output budget on one claim yields an ERROR row and the sweep continues', async () => {
+    const written = [];
+    const stderrChunks = [];
+    const code = await runSweep({ ...baseOpts(), maxConsecutiveFailures: 1 }, baseIo({
+        ...noBackoff,
+        fetchArticle: async () => ({ html: articleWithSoloCitations(3), status: 200, error: null }),
+        makeModelCallerFn: () => async (systemPrompt, userContent) => {
+            if (userContent.includes('https://x.example/2')) throw new Error(BUDGET_ERROR);
+            return supportedResponse();
+        },
+        appendFindingFn: async (_path, finding) => { written.push(finding); },
+        stderr: { write: s => stderrChunks.push(s) },
+    }));
+
+    assert.equal(code, 0, 'not a halt, even with --max-consecutive-failures 1');
+    assert.deepEqual(written.map(f => f.verdict).sort(), ['ERROR', 'SUPPORTED', 'SUPPORTED']);
+    assert.equal(written.find(f => f.verdict === 'ERROR').reasonType, OUTPUT_BUDGET_EXHAUSTED);
+    assert.doesNotMatch(stderrChunks.join(''), /halting/);
+    assert.match(stderrChunks.join(''), /1 model call\(s\) gave no usable answer/);
+});
+
+test('an empty model response (finish_reason stop) yields an ERROR row; a response with no finish_reason still halts', async () => {
+    const run = async message => {
+        const written = [];
+        const code = await runSweep({ ...baseOpts(), maxConsecutiveFailures: 1 }, baseIo({
+            ...noBackoff,
+            fetchArticle: async () => ({ html: articleWithSoloCitations(3), status: 200, error: null }),
+            makeModelCallerFn: () => async (systemPrompt, userContent) => {
+                if (userContent.includes('https://x.example/2')) throw new Error(message);
+                return supportedResponse();
+            },
+            appendFindingFn: async (_path, finding) => { written.push(finding); },
+            stderr: { write() {} },
+        }));
+        return { code, written };
+    };
+
+    const empty = await run('Invalid API response format (HuggingFace: no content, finish_reason "stop")');
+    assert.equal(empty.code, 0);
+    assert.equal(empty.written.find(f => f.verdict === 'ERROR').reasonType, EMPTY_RESPONSE);
+
+    const changedShape = await run('Invalid API response format (HuggingFace: no content)');
+    assert.notEqual(changedShape.code, 0, 'a changed response shape is a bug and must still halt');
 });
 
 test('--max-consecutive-failures transient failures in a row halt the sweep at exit code 4', async () => {

@@ -81,6 +81,27 @@ import { isRetryableError } from '../core/retry.js';
 // reason_type on an ERROR row whose model call kept failing transiently.
 export const RETRIES_EXHAUSTED = 'retries_exhausted';
 
+// reason_type on an ERROR row whose model spent its whole output budget
+// reasoning (core/providers.js throws this for finish_reason "length" with no
+// content). The model answered — it was just too verbose on this one claim —
+// so it says nothing about the service being down: it is recorded and the
+// sweep moves on, and it never counts toward --max-consecutive-failures.
+// Real incident, 2026-10-04: one such call halted a ruwiki sweep with gpt-oss
+// after 2 articles.
+export const OUTPUT_BUDGET_EXHAUSTED = 'output_budget_exhausted';
+export const isOutputBudgetError = error => /ran out of output budget/.test(error?.message ?? '');
+
+// reason_type on an ERROR row whose model finished normally (finish_reason
+// "stop") but returned no text. Same standing as the budget case: the service
+// answered, this one call is unusable, so record it and move on. Matched on
+// the "stop" finish_reason on purpose — a response with no choices at all, or
+// no finish_reason, is a changed response shape (a bug), and still halts.
+// Real incident, 2026-10-05: halted a ruwiki sweep 44 articles into 100.
+export const EMPTY_RESPONSE = 'empty_model_response';
+export const isEmptyResponseError = error => /no content, finish_reason "stop"/.test(error?.message ?? '');
+const isPerCallModelFailure = error => isOutputBudgetError(error) || isEmptyResponseError(error);
+const perCallReasonType = error => isOutputBudgetError(error) ? OUTPUT_BUDGET_EXHAUSTED : EMPTY_RESPONSE;
+
 // Same contract as service/run-extract.js's — see that file's comment.
 const TOOLFORGE_SOURCE_FETCHER_BASE = 'https://source-fetcher.toolforge.org';
 
@@ -99,6 +120,7 @@ export function parseCliArgs(argv) {
             'titles-file':       { type: 'string' },
             provider:            { type: 'string', default: 'liftwing' },
             model:               { type: 'string' },
+            'worker-base':       { type: 'string' },
             'delay-ms':          { type: 'string', default: '1000' },
             concurrency:         { type: 'string', default: '1' },
             'fetch-concurrency': { type: 'string', default: String(DEFAULT_FETCH_CONCURRENCY) },
@@ -126,6 +148,7 @@ export function parseCliArgs(argv) {
         titlesFile: values['titles-file'],
         provider: values.provider,
         model: values.model || PROVIDER_MODELS[values.provider],
+        workerBase: values['worker-base'],
         delayMs: Number(values['delay-ms']),
         concurrency: Number(values.concurrency),
         fetchConcurrency: Number(values['fetch-concurrency']),
@@ -168,6 +191,11 @@ Options:
                          --titles-file; every listed title with it.
   --provider <name>     One of: ${Object.keys(PROVIDER_MODELS).join(', ')} (default: liftwing)
   --model <id>          Override the provider's default model
+  --worker-base <url>   Base URL the model call goes through, e.g.
+                         https://llm-router.toolforge.org to send the
+                         huggingface provider via tf-llm-router's /hf route
+                         instead of the default Cloudflare worker. Unset
+                         keeps each provider's own default.
   --delay-ms <n>        Delay after each model call, ms (default: 1000)
   --concurrency <n>     Model calls (verifyCitation/verifyGroup) to run at once
                          (default: 1, i.e. serial — matches every prior version
@@ -538,7 +566,7 @@ export async function runSweep(opts, {
     const fetchSource = fetchSourceFn ?? (opts.liveSourceFetch ? makeLiveFetchSource() : stubFetchSource);
 
     const callModel = makeModelCallerFn({
-        provider: opts.provider, apiKey, model: opts.model,
+        provider: opts.provider, apiKey, model: opts.model, workerBase: opts.workerBase,
     });
 
     const findings = [];
@@ -612,6 +640,7 @@ export async function runSweep(opts, {
     // UNAVAILABLE short-circuit says nothing about whether the model is up.
     let consecutiveFailures = 0;
     let transientFailures = 0;
+    let perCallFailures = 0;
 
     // Counts a failed model call toward the consecutive-failure breaker, and
     // trips it. Returns false when the error must halt the run on its own
@@ -619,6 +648,7 @@ export async function runSweep(opts, {
     // calls and the severity pass: both hit the same model service, so a run
     // of failures in either means the same thing.
     function countTransientFailure(error) {
+        if (isPerCallModelFailure(error)) return true; // recorded, but not a sign the service is down
         if (error instanceof ProviderAuthError || !isRetryableError(error)) return false;
         consecutiveFailures++;
         if (consecutiveFailures >= maxConsecutiveFailures && !halted) {
@@ -635,13 +665,16 @@ export async function runSweep(opts, {
     // transient (an unexpected response shape is a bug, not bad luck).
     function absorbFailure(error, fields) {
         if (!countTransientFailure(error)) return null;
-        transientFailures++;
+        const perCall = isPerCallModelFailure(error);
+        if (perCall) perCallFailures++; else transientFailures++;
         return {
             ...fields,
             verdict: 'ERROR',
             supportScore: null,
-            reasonType: RETRIES_EXHAUSTED,
-            rationale: `Model call failed after retrying: ${error.message}`,
+            reasonType: perCall ? perCallReasonType(error) : RETRIES_EXHAUSTED,
+            rationale: perCall
+                ? `Model gave no usable answer: ${error.message}`
+                : `Model call failed after retrying: ${error.message}`,
             sourceQuote: null,
             quoteStatus: null,
             usage: null,
@@ -778,7 +811,8 @@ export async function runSweep(opts, {
             }, { callModel, retry: { ...retryOptions, onAttemptFailed } });
         } catch (error) {
             if (countTransientFailure(error)) {
-                severity = { tier: null, subclaims: null, error: RETRIES_EXHAUSTED };
+                severity = { tier: null, subclaims: null,
+                    error: isPerCallModelFailure(error) ? perCallReasonType(error) : RETRIES_EXHAUSTED };
             } else {
                 if (!halted) { halted = true; haltError = error; }
                 severity = { tier: null, subclaims: null, error: 'halted' };
@@ -939,6 +973,14 @@ export async function runSweep(opts, {
         stderr.write(
             `sweep: ${transientFailures} model call(s) still failed after retrying and were recorded as ERROR ` +
             `(reason_type ${RETRIES_EXHAUSTED}); --resume will not retry them.\n`
+        );
+    }
+
+    if (perCallFailures) {
+        stderr.write(
+            `sweep: ${perCallFailures} model call(s) gave no usable answer (output budget exhausted or empty ` +
+            `response) and were recorded as ERROR (reason_type ${OUTPUT_BUDGET_EXHAUSTED} / ${EMPTY_RESPONSE}); ` +
+            `--resume will not retry them.\n`
         );
     }
 
