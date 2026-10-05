@@ -939,3 +939,25 @@ test('callClaudeAPI throws a clear error when no text block is present', async (
     mock.restore();
   }
 });
+
+test('callProviderAPI dispatches liftwing-qwen38 to /liftwing with its model', async () => {
+  const mock = withMockFetch(async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      choices: [{ message: { content: 'ok' } }],
+      usage: {},
+    }),
+  }));
+  try {
+    await callProviderAPI('liftwing-qwen38', {
+      model: 'llm-qwen38-27b',
+      systemPrompt: 's',
+      userContent: 'u',
+    });
+    assert.equal(mock.calls[0].url, 'https://llm-router.toolforge.org/liftwing');
+    assert.equal(JSON.parse(mock.calls[0].opts.body).model, 'llm-qwen38-27b');
+  } finally {
+    mock.restore();
+  }
+});

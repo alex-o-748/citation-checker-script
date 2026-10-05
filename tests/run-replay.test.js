@@ -68,6 +68,11 @@ test('parseCliArgs applies --limit, --dry-run, and a provider-specific default m
     assert.equal(opts.model, 'claude-sonnet-4-6');
 });
 
+test('parseCliArgs maps liftwing-qwen38 to llm-qwen38-27b', () => {
+    const opts = parseCliArgs(['node', 'replay.js', '--provider', 'liftwing-qwen38']);
+    assert.equal(opts.model, 'llm-qwen38-27b');
+});
+
 test('parseCliArgs --model overrides the provider default', () => {
     const opts = parseCliArgs(['node', 'replay.js', '--provider', 'claude', '--model', 'claude-opus-5']);
     assert.equal(opts.model, 'claude-opus-5');

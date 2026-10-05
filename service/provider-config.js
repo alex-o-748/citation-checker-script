@@ -16,6 +16,9 @@ export const PROVIDER_MODELS = {
     huggingface: 'openai/gpt-oss-20b',
     liftwing:    'llm-qwen36-27b',
     'liftwing-safeguard': 'llm-gpt-oss-safeguard-20b',
+    // Batch/CLI only for now: deliberately absent from core/models.js, so it
+    // stays out of the userscript's provider dropdown.
+    'liftwing-qwen38':    'llm-qwen38-27b',
     claude:      'claude-sonnet-4-6',
     gemini:      'gemini-flash-latest',
     openai:      'gpt-4o',
@@ -26,6 +29,7 @@ export const PROVIDER_ENV_VARS = {
     huggingface: null,
     liftwing:    null, // proxied through the Toolforge LLM router; no client-side key
     'liftwing-safeguard': null, // same router; it translates Lift Wing's :predict API
+    'liftwing-qwen38':    null, // same router
     claude:      'CLAUDE_API_KEY',
     gemini:      'GEMINI_API_KEY',
     openai:      'OPENAI_API_KEY',
