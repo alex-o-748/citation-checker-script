@@ -36,6 +36,15 @@ const DEFAULT_USER_AGENT =
 // only ever fires on a genuine hang.
 export const DEFAULT_SOURCE_FETCH_TIMEOUT_MS = 60000;
 
+// The Wayback availability lookup is one small JSON call straight to
+// archive.org, not a two-hop page fetch, so it gets its own, shorter bound.
+// It used to share the 60s above, which meant a slow availability API could
+// hold a citation — and, in a serial batch, the whole sweep — for a minute
+// per failed source before even trying the snapshot. Not measured: if
+// timeouts here start costing real snapshots, onRequest's
+// `wayback-availability` records carry the latency to size it from.
+export const DEFAULT_WAYBACK_LOOKUP_TIMEOUT_MS = 10000;
+
 // AbortController is available in every target: browsers (the userscript) and
 // Node 16+ (CLI, benchmark, batch pipeline).
 function withTimeout(timeoutMs) {
@@ -114,7 +123,12 @@ async function fetchViaProxy(fetchUrl, pageNum, workerBase, sourceUrl, onRequest
         if (data.error) {
             console.warn('[CitationVerifier] Proxy error:', data.error);
             report(status, false, data.error);
-            return { content: null, error: data.error, status };
+            // errorCode: why tf-source-fetcher could not reach the publisher
+            // (ENOTFOUND, ECONNREFUSED, ...). Only that fetcher sends it, and
+            // only for a connection-level failure; see isPublisherNetworkFailure.
+            return data.errorCode
+                ? { content: null, error: data.error, status, errorCode: data.errorCode }
+                : { content: null, error: data.error, status };
         }
 
         if (data.content && data.content.length > 100) {
@@ -187,8 +201,50 @@ const RETRYABLE_PROXY_STATUS = new Set([429, 500, 502, 503, 504]);
 // 60s source-fetch timeout is punitive for something that will time out again.
 const PROXY_TRANSPORT_FAILURE = /^(?:fetch failed|terminated)$|^Source fetch timed out/i;
 
+// ...except that "fetch failed" in the fetcher's JSON is never the fetcher's
+// own failure: when it is down, the front proxy answers with an HTML error
+// page, which is the non-JSON `proxyFailure` case below. JSON saying "fetch
+// failed" means the fetcher was up and the *publisher* was unreachable — and
+// Node reports a domain that no longer exists with the same two words as a
+// connection that merely blipped. Link rot is the common case of the former,
+// and each one was retried four times (~7s of backoff) for a failure that
+// reproduces every time. About a fifth of one large sweep's unavailable
+// sources ended as "fetch failed" (reported 2026-10-03), each having paid for
+// all four attempts.
+//
+// tf-source-fetcher now passes Node's code through as `errorCode`, which
+// separates the two. These codes are about the publisher and reproduce on an
+// immediate retry: no DNS record, a refused connection, no answer to the
+// connect at all (consistent with "Request to source timed out" above), and a
+// TLS setup that cannot validate. Left retryable: resets mid-response
+// (ECONNRESET, UND_ERR_SOCKET), temporary DNS failure (EAI_AGAIN) and
+// unreachable networks, any of which can be a problem on our side that clears.
+// With no errorCode (an older fetcher, or the Cloudflare Worker), the message
+// rule above applies unchanged.
+//
+// The fetcher caches a narrower set of these (src/networkError.js); the two
+// lists need not agree — a retry of a cached failure is just a cache hit.
+const PUBLISHER_NETWORK_FAILURE_CODES = new Set([
+    'ENOTFOUND',
+    'ECONNREFUSED',
+    'UND_ERR_CONNECT_TIMEOUT',
+    'ETIMEDOUT',
+    'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
+    'EPROTO',
+]);
+const TLS_FAILURE_CODE = /CERT|^ERR_TLS_|^ERR_SSL_/;
+
+export function isPublisherNetworkFailure(errorCode) {
+    if (typeof errorCode !== 'string' || !errorCode) return false;
+    return PUBLISHER_NETWORK_FAILURE_CODES.has(errorCode) || TLS_FAILURE_CODE.test(errorCode);
+}
+
 export function isRetryableProxyResult(result) {
     if (!result || result.content) return false;
+
+    // The fetcher told us exactly why the publisher was unreachable, and it
+    // will be unreachable again. Goes straight to the Wayback fallback.
+    if (isPublisherNetworkFailure(result.errorCode)) return false;
 
     // The fetcher's own transport failure, however it was reported — in JSON
     // with a 5xx status, or from fetchViaProxy's catch with no status at all.
@@ -214,16 +270,32 @@ export const DEFAULT_SOURCE_FETCH_RETRY = Object.freeze({
     jitterMs: 250,
 });
 
+// Runs `fn` under the caller's per-host gate, if there is one. See
+// fetchSourceContent's `hostGate`.
+function throughHostGate(hostGate, requestUrl, fn) {
+    if (!hostGate) return fn();
+    let host;
+    try {
+        host = new URL(requestUrl).host;
+    } catch (_) {
+        host = requestUrl;
+    }
+    return hostGate(host, fn);
+}
+
 // Translates fetchViaProxy's returned failure into the thrown form withRetry
 // expects, then translates it back. The thrown messages are shaped to match
 // core/retry.js's isRetryableError() — "HTTP <status>" and the exact string
 // "fetch failed" — so the retry decision stays in one place rather than being
 // re-implemented here.
-async function fetchViaProxyWithRetry(fetchUrl, pageNum, workerBase, sourceUrl, onRequest, timeoutMs, retry) {
+async function fetchViaProxyWithRetry(fetchUrl, pageNum, workerBase, sourceUrl, onRequest, timeoutMs, retry, hostGate) {
     let lastResult = null;
     try {
         return await withRetry(async () => {
-            const result = await fetchViaProxy(fetchUrl, pageNum, workerBase, sourceUrl, onRequest, timeoutMs);
+            // Gated per attempt, not around the whole retry loop, so the host's
+            // slot is free for someone else during the backoff sleep.
+            const result = await throughHostGate(hostGate, fetchUrl,
+                () => fetchViaProxy(fetchUrl, pageNum, workerBase, sourceUrl, onRequest, timeoutMs));
             lastResult = result;
             if (isRetryableProxyResult(result)) {
                 throw new Error(typeof result.status === 'number' ? `HTTP ${result.status}` : 'fetch failed');
@@ -238,18 +310,23 @@ async function fetchViaProxyWithRetry(fetchUrl, pageNum, workerBase, sourceUrl, 
     }
 }
 
-async function findWaybackSnapshot(url, onRequest, timeoutMs) {
+async function findWaybackSnapshot(url, onRequest, timeoutMs, hostGate) {
+    const apiUrl = `https://archive.org/wayback/available?url=${encodeURIComponent(url)}`;
+    return throughHostGate(hostGate, apiUrl, () => lookUpWaybackSnapshot(apiUrl, url, onRequest, timeoutMs));
+}
+
+async function lookUpWaybackSnapshot(apiUrl, url, onRequest, timeoutMs) {
     const startedAt = Date.now();
     try {
-        const apiUrl = `https://archive.org/wayback/available?url=${encodeURIComponent(url)}`;
         const { signal, done } = withTimeout(timeoutMs);
         let response;
+        let data;
         try {
             response = await fetch(apiUrl, { headers: { 'User-Agent': DEFAULT_USER_AGENT }, signal });
+            data = await response.json();
         } finally {
             done();
         }
-        const data = await response.json();
         onRequest?.({ kind: 'wayback-availability', url, status: response.status, ok: response.ok, error: null, latencyMs: Date.now() - startedAt, bytes: null });
         const snapshot = data?.archived_snapshots?.closest;
         if (snapshot?.available && snapshot.timestamp) {
@@ -267,14 +344,28 @@ async function findWaybackSnapshot(url, onRequest, timeoutMs) {
 // text on success and null on any failure; `error` is a short human-readable
 // reason when content is null; `status` is the upstream HTTP status code if the
 // proxy reports one (`data.status`), otherwise the proxy's own response status,
-// or null if we never got a response at all.
+// or null if we never got a response at all. A failure tf-source-fetcher
+// could attribute to a connection error also carries `errorCode` (ENOTFOUND,
+// ECONNREFUSED, ...) — see isPublisherNetworkFailure.
 //
 // `archiveFirst` skips the live-publisher fetch entirely and goes straight to
 // the Wayback snapshot lookup — for the Internet Archive load-test runner,
 // which must never send traffic to a third-party publisher (see
 // service/ia-load-test.js). Default behavior (live-first, Wayback as a
 // fallback) is unchanged for the userscript, CLI, and batch pipeline.
-export async function fetchSourceContent(url, pageNum, { workerBase = 'https://publicai-proxy.alaexis.workers.dev', archiveFirst = false, onRequest, timeoutMs = DEFAULT_SOURCE_FETCH_TIMEOUT_MS, retry } = {}) {
+//
+// `waybackTimeoutMs` bounds the archive.org availability lookup separately
+// from `timeoutMs` — see DEFAULT_WAYBACK_LOOKUP_TIMEOUT_MS.
+//
+// `hostGate(host, fn)`, when supplied, wraps every outbound request this makes
+// — the live fetch, each retry, the availability lookup, the snapshot fetch —
+// keyed on the host that request is actually *for*. It exists for the batch
+// pipeline's concurrent fetching (service/host-pool.js), which must never have
+// two requests in flight to one host. Keying on the citation's URL alone is
+// not enough: every dead link's fallback converges on archive.org and
+// web.archive.org. The userscript and CLI fetch one source at a time and pass
+// nothing.
+export async function fetchSourceContent(url, pageNum, { workerBase = 'https://publicai-proxy.alaexis.workers.dev', archiveFirst = false, onRequest, timeoutMs = DEFAULT_SOURCE_FETCH_TIMEOUT_MS, waybackTimeoutMs = DEFAULT_WAYBACK_LOOKUP_TIMEOUT_MS, retry, hostGate } = {}) {
     if (isGoogleBooksUrl(url)) {
         console.log('[CitationVerifier] Skipping Google Books URL:', url);
         return { content: null, error: 'Google Books URL skipped (no fetchable content)', status: null };
@@ -284,28 +375,28 @@ export async function fetchSourceContent(url, pageNum, { workerBase = 'https://p
     if (archiveInfo) {
         const rawUrl = `https://web.archive.org/web/${archiveInfo.timestamp}id_/${archiveInfo.originalUrl}`;
         console.log('[CitationVerifier] Fetching via Wayback raw endpoint');
-        return fetchViaProxyWithRetry(rawUrl, pageNum, workerBase, url, onRequest, timeoutMs, retry);
+        return fetchViaProxyWithRetry(rawUrl, pageNum, workerBase, url, onRequest, timeoutMs, retry, hostGate);
     }
 
     if (archiveFirst) {
-        const waybackUrl = await findWaybackSnapshot(url, onRequest, timeoutMs);
+        const waybackUrl = await findWaybackSnapshot(url, onRequest, waybackTimeoutMs, hostGate);
         if (!waybackUrl) {
             return { content: null, error: 'No Wayback snapshot available for this URL', status: null };
         }
-        return fetchViaProxyWithRetry(waybackUrl, pageNum, workerBase, url, onRequest, timeoutMs, retry);
+        return fetchViaProxyWithRetry(waybackUrl, pageNum, workerBase, url, onRequest, timeoutMs, retry, hostGate);
     }
 
     // Retried before the Wayback fallback on purpose: a 502 from our own proxy
     // says nothing about whether the publisher is reachable, so falling back to
     // an archive snapshot on that basis would substitute a worse source for a
     // live one that was never actually tried.
-    const result = await fetchViaProxyWithRetry(url, pageNum, workerBase, url, onRequest, timeoutMs, retry);
+    const result = await fetchViaProxyWithRetry(url, pageNum, workerBase, url, onRequest, timeoutMs, retry, hostGate);
 
     if (!result.content) {
-        const waybackUrl = await findWaybackSnapshot(url, onRequest, timeoutMs);
+        const waybackUrl = await findWaybackSnapshot(url, onRequest, waybackTimeoutMs, hostGate);
         if (waybackUrl) {
             console.log('[CitationVerifier] Live fetch failed, trying Wayback snapshot');
-            return fetchViaProxyWithRetry(waybackUrl, pageNum, workerBase, url, onRequest, timeoutMs, retry);
+            return fetchViaProxyWithRetry(waybackUrl, pageNum, workerBase, url, onRequest, timeoutMs, retry, hostGate);
         }
     }
 

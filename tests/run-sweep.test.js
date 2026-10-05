@@ -14,6 +14,7 @@ import {
 } from '../service/run-sweep.js';
 import { ProviderAuthError } from '../service/verifier.js';
 import { rowsToCsv } from '../service/csv-report.js';
+import { DEFAULT_FETCH_CONCURRENCY } from '../service/host-pool.js';
 
 test('parseCliArgs defaults match run-replay.js\'s conventions (liftwing, no key needed)', () => {
     const opts = parseCliArgs(['node', 'sweep.js']);
@@ -381,6 +382,45 @@ test('a non-positive-integer --concurrency is rejected before any connection is 
     assert.equal(connected, false);
 });
 
+test('--fetch-concurrency defaults to the shared default and accepts an override', () => {
+    assert.equal(parseCliArgs(['node', 'sweep.js']).fetchConcurrency, DEFAULT_FETCH_CONCURRENCY);
+    assert.equal(parseCliArgs(['node', 'sweep.js', '--fetch-concurrency', '8']).fetchConcurrency, 8);
+});
+
+test('a non-positive-integer --fetch-concurrency is rejected before any connection is made', async () => {
+    for (const fetchConcurrency of [0, 1.5, NaN]) {
+        let connected = false;
+        const code = await runSweep(
+            baseOpts({ fetchConcurrency }),
+            baseIo({ connectReplicas: async () => { connected = true; return fakeReplicaConnection([]); } })
+        );
+        assert.equal(code, 2, String(fetchConcurrency));
+        assert.equal(connected, false);
+    }
+});
+
+test('--fetch-concurrency N fetches up to N sources at once', async () => {
+    const urls = ['a', 'b', 'c', 'd', 'e'].map(h => `https://${h}.example/x`);
+    const html = article(
+        `<p>${urls.map((_, i) => `Sentence ${i + 1}.@@${i + 1}@@`).join(' ')}</p>`,
+        Object.fromEntries(urls.map((u, i) => [i + 1, link(u)]))
+    );
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const code = await runSweep(baseOpts({ fetchConcurrency: 3 }), baseIo({
+        fetchArticle: async () => ({ html, status: 200, error: null }),
+        fetchSourceFn: async url => {
+            inFlight++;
+            maxInFlight = Math.max(maxInFlight, inFlight);
+            await sleep(10);
+            inFlight--;
+            return { content: `text of ${url}`, status: 200, error: null };
+        },
+    }));
+    assert.equal(code, 0);
+    assert.equal(maxInFlight, 3);
+});
+
 test('a Wiki Replicas connection failure is a fatal error', async () => {
     const code = await runSweep(baseOpts(), baseIo({
         connectReplicas: async () => { throw new Error('ECONNREFUSED'); },
@@ -708,7 +748,7 @@ test('the timing summary reports real fetch and verify durations, not zeros', as
     assert.equal(code, 0);
 
     const output = stderrChunks.join('');
-    const timingLine = output.match(/sweep: timing — fetch \(serial, wall-clock\): ([\d.]+)s\. verify: (\d+) call\(s\), ([\d.]+)s/);
+    const timingLine = output.match(/sweep: timing — fetch \(wall-clock, up to \d+ source\(s\) at once\): ([\d.]+)s\. verify: (\d+) call\(s\), ([\d.]+)s/);
     assert.ok(timingLine, `expected a timing summary line, got:\n${output}`);
 
     const [, fetchSec, verifyCalls, verifySec] = timingLine;

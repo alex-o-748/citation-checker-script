@@ -48,11 +48,14 @@
 //   node service/run-sweep.js --max 5 --out findings.csv --store   # also ToolsDB
 //   node service/run-sweep.js --max 50 --concurrency 16 --out findings.csv
 //   node service/run-sweep.js --titles-file articles.txt --live-source-fetch --out findings.csv
+//   node service/run-sweep.js --titles-file articles.txt --live-source-fetch --fetch-concurrency 8
 //   node service/run-sweep.js --help
 //
-// --concurrency controls only the verify stage (model calls); fetching stays
-// serial. See --concurrency's --help text and scripts/probe-concurrency.js
-// for how to (re-)measure the ceiling for whatever backend you're calling.
+// --concurrency controls the verify stage (model calls); --fetch-concurrency
+// controls source fetching, which is never more than one request per host at
+// once whatever it is set to (service/host-pool.js). See --concurrency's
+// --help text and scripts/probe-concurrency.js for how to (re-)measure the
+// ceiling for whatever model backend you're calling.
 
 import { JSDOM } from 'jsdom';
 import { parseArgs } from 'node:util';
@@ -63,6 +66,7 @@ import { selectCandidates, CRITERIA, isBlpByCategories } from './article-picker.
 import { runBatch, ARTICLE_OUTCOMES } from './claim-extractor.js';
 import { fetchArticleHtml, hostForWiki, langCodeForWiki } from '../core/wikipedia.js';
 import { fetchSourceContent } from '../core/worker.js';
+import { createHostGate, DEFAULT_FETCH_CONCURRENCY } from './host-pool.js';
 import { verifyCitation, verifyGroup, makeModelCaller, ProviderAuthError } from './verifier.js';
 import { assembleFinding, assembleGroupFinding } from './finding-builder.js';
 import { assessSeverity, needsSeverity, assembleGroupText } from './severity-assessor.js';
@@ -97,6 +101,7 @@ export function parseCliArgs(argv) {
             model:               { type: 'string' },
             'delay-ms':          { type: 'string', default: '1000' },
             concurrency:         { type: 'string', default: '1' },
+            'fetch-concurrency': { type: 'string', default: String(DEFAULT_FETCH_CONCURRENCY) },
             'max-consecutive-failures': { type: 'string', default: String(DEFAULT_MAX_CONSECUTIVE_FAILURES) },
             'live-source-fetch': { type: 'boolean', default: false },
             store:               { type: 'boolean', default: false },
@@ -123,6 +128,7 @@ export function parseCliArgs(argv) {
         model: values.model || PROVIDER_MODELS[values.provider],
         delayMs: Number(values['delay-ms']),
         concurrency: Number(values.concurrency),
+        fetchConcurrency: Number(values['fetch-concurrency']),
         maxConsecutiveFailures: Number(values['max-consecutive-failures']),
         liveSourceFetch: values['live-source-fetch'],
         store: values.store,
@@ -174,6 +180,15 @@ Options:
                          you're calling and worth re-measuring
                          (scripts/probe-concurrency.js) before trusting a
                          number this comment will go stale on.
+  --fetch-concurrency <n>
+                        Sources to fetch at once (default: ${DEFAULT_FETCH_CONCURRENCY}). Never more than
+                         one request in flight per host, whatever this is set
+                         to — including the archive.org fallback every dead
+                         link converges on — so publishers see no more than a
+                         serial fetch gave them; this sets how many different
+                         hosts are in flight. 1 restores the old serial fetch.
+                         Every request lands on the one tf-source-fetcher
+                         pod: raise it while watching that pod's /metrics.
   --max-consecutive-failures <n>
                         Halt once this many model calls in a row have failed
                          even after retrying (default: ${DEFAULT_MAX_CONSECUTIVE_FAILURES}). A single such
@@ -249,8 +264,13 @@ export async function stubFetchSource() {
     };
 }
 
-function liveFetchSource(url, pageNum) {
-    return fetchSourceContent(url, pageNum, { workerBase: TOOLFORGE_SOURCE_FETCHER_BASE });
+// One gate per run, shared by every fetch in it: it is what keeps two
+// concurrent citations whose fallbacks both land on web.archive.org from
+// reaching it at once. See service/host-pool.js.
+function makeLiveFetchSource() {
+    const hostGate = createHostGate();
+    return (url, pageNum) =>
+        fetchSourceContent(url, pageNum, { workerBase: TOOLFORGE_SOURCE_FETCHER_BASE, hostGate });
 }
 
 function sleep(ms) {
@@ -322,6 +342,11 @@ export async function runSweep(opts, {
     }
     if (!Number.isInteger(opts.concurrency) || opts.concurrency < 1) {
         stderr.write(`sweep: --concurrency must be a positive integer (got: ${opts.concurrency})\n`);
+        return 2;
+    }
+    const fetchConcurrency = opts.fetchConcurrency ?? DEFAULT_FETCH_CONCURRENCY;
+    if (!Number.isInteger(fetchConcurrency) || fetchConcurrency < 1) {
+        stderr.write(`sweep: --fetch-concurrency must be a positive integer (got: ${opts.fetchConcurrency})\n`);
         return 2;
     }
     const maxConsecutiveFailures = opts.maxConsecutiveFailures ?? DEFAULT_MAX_CONSECUTIVE_FAILURES;
@@ -510,7 +535,7 @@ export async function runSweep(opts, {
     if (opts.liveSourceFetch) {
         stderr.write(`sweep: fetching real sources via ${TOOLFORGE_SOURCE_FETCHER_BASE}.\n`);
     }
-    const fetchSource = fetchSourceFn ?? (opts.liveSourceFetch ? liveFetchSource : stubFetchSource);
+    const fetchSource = fetchSourceFn ?? (opts.liveSourceFetch ? makeLiveFetchSource() : stubFetchSource);
 
     const callModel = makeModelCallerFn({
         provider: opts.provider, apiKey, model: opts.model,
@@ -558,8 +583,8 @@ export async function runSweep(opts, {
     console.log = () => {};
 
     // Producer/pool split: a single producer coroutine drives runBatch()
-    // (fetch stays serial — out of scope here, see scripts/probe-concurrency.js
-    // for the model-call-only concurrency this measures) and yields one task
+    // (which fetches each article's sources fetchConcurrency at a time, one
+    // per host — a separate pool from this one) and yields one task
     // per solo citation or per group; opts.concurrency worker coroutines pull
     // from that *same* async generator concurrently. Multiple concurrent
     // `for await` consumers over one shared async generator is a real,
@@ -629,7 +654,7 @@ export async function runSweep(opts, {
     // DO overlap with worker time, since fetch(article N+1) and verify
     // (article N's citations) run concurrently by design, so fetchMs isn't
     // simply subtractable from the run's total wall-clock; it's a real lower
-    // bound on how much serial fetch cost this run paid, comparable directly
+    // bound on how much wall-clock fetch time this run paid, comparable directly
     // against the total). `verifyMs`/`verifyCalls` are summed across
     // opts.concurrency workers running in parallel — a sum of durations, not
     // wall-clock — so `verifyMs / verifyCalls` is a genuine average per-call
@@ -683,7 +708,9 @@ export async function runSweep(opts, {
         // article's worth of fetching slip through after halting before it
         // took effect. Driving runBatch's iterator by hand puts the check
         // before each fetch instead of after.
-        const articles = runBatch(candidates, { parseHtml, fetchArticle: fetchArticleFn, fetchSource, langCode: articleLangCode });
+        const articles = runBatch(candidates, {
+            parseHtml, fetchArticle: fetchArticleFn, fetchSource, langCode: articleLangCode, fetchConcurrency,
+        });
         while (true) {
             if (halted) return;
             const fetchStartedAt = Date.now();
@@ -893,7 +920,7 @@ export async function runSweep(opts, {
     );
     if (!cleanError) stderr.write(`sweep: wrote clean CSV to ${cleanOut}.\n`);
     stderr.write(
-        `sweep: timing — fetch (serial, wall-clock): ${(timing.fetchMs / 1000).toFixed(3)}s. ` +
+        `sweep: timing — fetch (wall-clock, up to ${fetchConcurrency} source(s) at once): ${(timing.fetchMs / 1000).toFixed(3)}s. ` +
         `verify: ${timing.verifyCalls} call(s), ${(timing.verifyMs / 1000).toFixed(3)}s summed across ` +
         `${opts.concurrency} concurrent worker(s) (~${timing.verifyCalls ? (timing.verifyMs / timing.verifyCalls).toFixed(0) : 0}ms/call avg, ` +
         `min ${timing.verifyCalls ? timing.verifyMinMs : 0}ms, max ${timing.verifyMaxMs}ms; ` +

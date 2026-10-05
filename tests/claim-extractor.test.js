@@ -165,6 +165,122 @@ test('the same source is fetched once per article and reported as cached', async
     assert.equal(result.citations[1].source.content, 'text of https://example.com/same');
 });
 
+// --- Concurrent fetching (2026-10-03) ---
+//
+// Fetching was fully serial: 238 articles took 6.7h in stage 3 alone. The
+// sources of one article are fetched fetchConcurrency at a time now, never two
+// to one host, and must come back attached to the right citation in order.
+
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+function articleCiting(urls) {
+    const ids = urls.map((_, i) => i + 1);
+    return article(
+        `<p>${ids.map(id => `Claim number ${id} about the bridge.@@${id}@@`).join(' ')}</p>`,
+        Object.fromEntries(ids.map(id => [id, link(urls[id - 1])]))
+    );
+}
+
+function inFlightProbe(ms = 10) {
+    const byHost = new Map();
+    let total = 0;
+    const probe = { maxTotal: 0, maxPerHost: 0, calls: [] };
+    probe.fetchSource = async url => {
+        const host = new URL(url).host;
+        probe.calls.push(url);
+        total++;
+        byHost.set(host, (byHost.get(host) ?? 0) + 1);
+        probe.maxTotal = Math.max(probe.maxTotal, total);
+        probe.maxPerHost = Math.max(probe.maxPerHost, byHost.get(host));
+        await sleep(ms);
+        byHost.set(host, byHost.get(host) - 1);
+        total--;
+        return fetchSourceOk(url);
+    };
+    return probe;
+}
+
+test('fetchConcurrency fetches that many sources at once', async () => {
+    const urls = ['a', 'b', 'c', 'd', 'e', 'f'].map(h => `https://${h}.example/x`);
+    const probe = inFlightProbe();
+    const result = await processArticle(candidate, {
+        parseHtml,
+        fetchArticle: async () => ({ html: articleCiting(urls), status: 200, error: null }),
+        fetchSource: probe.fetchSource,
+        fetchConcurrency: 3,
+    });
+    assert.equal(probe.maxTotal, 3);
+    assert.equal(result.citations.length, 6);
+});
+
+test('the default is still one fetch at a time', async () => {
+    const urls = ['a', 'b', 'c'].map(h => `https://${h}.example/x`);
+    const probe = inFlightProbe();
+    await processArticle(candidate, {
+        parseHtml,
+        fetchArticle: async () => ({ html: articleCiting(urls), status: 200, error: null }),
+        fetchSource: probe.fetchSource,
+    });
+    assert.equal(probe.maxTotal, 1);
+});
+
+test('concurrent fetching never has two requests in flight to one publisher', async () => {
+    const urls = [
+        'https://news.example/1', 'https://news.example/2', 'https://news.example/3',
+        'https://other.example/1', 'https://news.example/4', 'https://third.example/1',
+    ];
+    const probe = inFlightProbe();
+    await processArticle(candidate, {
+        parseHtml,
+        fetchArticle: async () => ({ html: articleCiting(urls), status: 200, error: null }),
+        fetchSource: probe.fetchSource,
+        fetchConcurrency: 8,
+    });
+    assert.equal(probe.maxPerHost, 1);
+    assert.equal(probe.calls.length, urls.length);
+});
+
+test('sources finishing out of order are still attached to the right citation', async () => {
+    const urls = ['https://slow.example/x', 'https://fast.example/x', 'https://mid.example/x'];
+    const delay = { 'slow.example': 40, 'fast.example': 1, 'mid.example': 15 };
+    const result = await processArticle(candidate, {
+        parseHtml,
+        fetchArticle: async () => ({ html: articleCiting(urls), status: 200, error: null }),
+        fetchSource: async url => {
+            await sleep(delay[new URL(url).host]);
+            return fetchSourceOk(url);
+        },
+        fetchConcurrency: 3,
+    });
+    assert.deepEqual(result.citations.map(c => c.citationNumber), ['1', '2', '3']);
+    assert.deepEqual(result.citations.map(c => c.source.content), urls.map(u => `text of ${u}`));
+});
+
+test('a source cited twice is fetched once even when fetching concurrently', async () => {
+    const urls = ['https://same.example/x', 'https://other.example/y', 'https://same.example/x'];
+    const probe = inFlightProbe();
+    const result = await processArticle(candidate, {
+        parseHtml,
+        fetchArticle: async () => ({ html: articleCiting(urls), status: 200, error: null }),
+        fetchSource: probe.fetchSource,
+        fetchConcurrency: 4,
+    });
+    assert.equal(probe.calls.length, 2);
+    assert.deepEqual(result.citations.map(c => c.source.cached), [false, false, true]);
+});
+
+test('a fetch error code reaches fetch_error, so a dead domain reads differently from a blip', async () => {
+    const result = await processArticle(candidate, {
+        parseHtml,
+        fetchArticle: fetchArticleOk,
+        fetchSource: async url => (url.endsWith('/a')
+            ? { content: null, status: 502, error: 'fetch failed', errorCode: 'ENOTFOUND' }
+            : { content: null, status: 403, error: 'Source returned HTTP 403' }),
+    });
+    assert.equal(result.citations[0].source.error, 'fetch failed (ENOTFOUND)');
+    assert.equal(result.citations[1].source.error, 'Source returned HTTP 403', 'no code, message unchanged');
+});
+
 test('sourceCacheKey separates pages of the same PDF', () => {
     assert.equal(sourceCacheKey('https://e.com/a.pdf', null), 'https://e.com/a.pdf');
     assert.notEqual(
