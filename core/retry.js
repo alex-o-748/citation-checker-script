@@ -49,7 +49,15 @@ const RETRYABLE_NETWORK = /timeout|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|sock
 // "unrecognized error halts the batch" rule discarded the remaining 87
 // articles. That rule is right for an exhausted 429 or a spent budget, and
 // exactly wrong for one citation's fat PDF.
-const SOURCE_TOO_LARGE = /maximum context length|VLLMValidationError|too large to send/i;
+//
+//   - `longer than the maximum model length` — the same context-window
+//     failure in a different vLLM's wording ("The decoder prompt (length
+//     16646) is longer than the maximum model length of 16384"), as served
+//     for llm-gpt-oss-safeguard-20b behind Lift Wing's :predict route. Missing
+//     here, it was retried as an ordinary 500 and counted toward
+//     --max-consecutive-failures: a 2026-10-07 ruwiki sweep spent ~2.75h in
+//     retry backoff and halted at article 204 of 300 on a run of long sources.
+const SOURCE_TOO_LARGE = /maximum context length|VLLMValidationError|too large to send|longer than the maximum model length/i;
 
 export function isSourceTooLargeError(error) {
     return SOURCE_TOO_LARGE.test(error?.message ?? '');

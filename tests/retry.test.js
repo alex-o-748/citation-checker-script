@@ -347,6 +347,16 @@ test('withRetry: does NOT retry a context-length-exceeded failure', async () => 
 // matched no pattern, so service/run-sweep.js treated it as an unrecognized
 // error and halted the batch. Real incident 2026-09-09: a 100-article sweep
 // stopped at article 13 and discarded the other 87.
+test('isSourceTooLargeError: recognizes the decoder-prompt wording gpt-oss-safeguard returns via Lift Wing :predict', () => {
+    const err = new Error(
+        'Lift Wing API request failed (500): {"error":"Error during inference: The decoder prompt (length 16646) '
+        + 'is longer than the maximum model length of 16384. Make sure that `max_model_len` is no smaller than '
+        + 'the number of text tokens."}'
+    );
+    assert.equal(isSourceTooLargeError(err), true);
+    assert.equal(isRetryableError(err), false);
+});
+
 test('isSourceTooLargeError: recognizes the proxy 413 payload cap, not just the context window', () => {
     assert.equal(isSourceTooLargeError(new Error(
         'Lift Wing: the source is too large to send. Trim the source text, or switch to a '
