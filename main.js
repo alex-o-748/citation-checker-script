@@ -2419,7 +2419,19 @@ async function fetchSourceContent(url, pageNum, { workerBase = 'https://publicai
     if (archiveInfo) {
         const rawUrl = `https://web.archive.org/web/${archiveInfo.timestamp}id_/${archiveInfo.originalUrl}`;
         console.log('[CitationVerifier] Fetching via Wayback raw endpoint');
-        return fetchViaProxyWithRetry(rawUrl, pageNum, workerBase, url, onRequest, timeoutMs, retry, hostGate);
+        const archived = await fetchViaProxyWithRetry(rawUrl, pageNum, workerBase, url, onRequest, timeoutMs, retry, hostGate);
+        // A citation's "Archived" link is preferred (extractHttpUrl), but the
+        // snapshot can fail while the live page is fine — archive.org
+        // rate-limits the proxy with a 429, which the user saw as a perfectly
+        // reachable openDemocracy source demanding a paste (2026-10-08). The
+        // live-URL path already falls back to Wayback; this is the reverse.
+        // archiveFirst callers must never reach the publisher, so not for them.
+        if (archived.content || archiveFirst) return archived;
+        console.log('[CitationVerifier] Archive fetch failed, trying the original URL');
+        const live = await fetchViaProxyWithRetry(archiveInfo.originalUrl, pageNum, workerBase, archiveInfo.originalUrl, onRequest, timeoutMs, retry, hostGate);
+        // Both failed: report the archive's error, since that is the URL the
+        // citation pointed at.
+        return live.content ? live : archived;
     }
 
     if (archiveFirst) {
@@ -6093,8 +6105,9 @@ function useToolforgeSourceFetcher() {
                 }
 
                 if (this.isGoogleBooksUrl(refUrl)) {
-                    this.showSourceTextInput();
-                    this.updateStatus(this.t('Google Books sources cannot be fetched. Please paste the source text below.'));
+                    const message = this.t('Google Books sources cannot be fetched. Please paste the source text below.');
+                    this.showSourceTextInput(false, message);
+                    this.updateStatus(message);
                     return;
                 }
 
@@ -6111,10 +6124,14 @@ function useToolforgeSourceFetcher() {
                 }
 
                 if (!fetchResult.content) {
-                    this.showSourceTextInput();
-                    const status = fetchResult.status != null ? ` (HTTP ${fetchResult.status})` : '';
+                    // A 2xx here is the proxy's own status, not the source's
+                    // (the Worker's error JSON carries none), so showing it
+                    // read as "HTTP 200: Source returned 429".
+                    const status = fetchResult.status >= 400 ? ` (HTTP ${fetchResult.status})` : '';
                     const reason = fetchResult.error ? `: ${fetchResult.error}` : '';
-                    this.updateStatus(this.t('Could not fetch source{status}{reason}. Please paste the source text below.', { status, reason }), true);
+                    const message = this.t('Could not fetch source{status}{reason}. Please paste the source text below.', { status, reason });
+                    this.showSourceTextInput(false, message);
+                    this.updateStatus(message, true);
                     return;
                 }
 
@@ -6163,11 +6180,14 @@ function useToolforgeSourceFetcher() {
             }
         }
         
-        showSourceTextInput(forOverride = false) {
+        // `message` says why a paste is needed. It defaults to "No URL found",
+        // which is only true when the reference has no link at all — a failed
+        // fetch or a Google Books link passes its own reason.
+        showSourceTextInput(forOverride = false, message = this.t('No URL found. Please paste the source text below:')) {
             this.sourceInputForOverride = forOverride;
             document.getElementById('verifier-source-input-container').style.display = 'block';
             if (!forOverride) {
-                document.getElementById('verifier-source-text').textContent = this.t('No URL found. Please paste the source text below:');
+                document.getElementById('verifier-source-text').textContent = message;
             }
             this.sourceTextInput.setValue('');
             this.hideOverrideButton();

@@ -378,7 +378,19 @@ export async function fetchSourceContent(url, pageNum, { workerBase = 'https://p
     if (archiveInfo) {
         const rawUrl = `https://web.archive.org/web/${archiveInfo.timestamp}id_/${archiveInfo.originalUrl}`;
         console.log('[CitationVerifier] Fetching via Wayback raw endpoint');
-        return fetchViaProxyWithRetry(rawUrl, pageNum, workerBase, url, onRequest, timeoutMs, retry, hostGate);
+        const archived = await fetchViaProxyWithRetry(rawUrl, pageNum, workerBase, url, onRequest, timeoutMs, retry, hostGate);
+        // A citation's "Archived" link is preferred (extractHttpUrl), but the
+        // snapshot can fail while the live page is fine — archive.org
+        // rate-limits the proxy with a 429, which the user saw as a perfectly
+        // reachable openDemocracy source demanding a paste (2026-10-08). The
+        // live-URL path already falls back to Wayback; this is the reverse.
+        // archiveFirst callers must never reach the publisher, so not for them.
+        if (archived.content || archiveFirst) return archived;
+        console.log('[CitationVerifier] Archive fetch failed, trying the original URL');
+        const live = await fetchViaProxyWithRetry(archiveInfo.originalUrl, pageNum, workerBase, archiveInfo.originalUrl, onRequest, timeoutMs, retry, hostGate);
+        // Both failed: report the archive's error, since that is the URL the
+        // citation pointed at.
+        return live.content ? live : archived;
     }
 
     if (archiveFirst) {
