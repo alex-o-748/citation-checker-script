@@ -1,6 +1,8 @@
 # Ranking flagged claims by severity
 
 > **Status (2026-09-24):** In progress. Severity pass built behind `run-sweep.js --severity`: `core/severity.js`, `core/article-context.js`, `service/severity-assessor.js`. Not yet validated against human labels (step 5 below).
+>
+> **Renamed 2026-10-08:** the feature is now called **egregiousness**, the term already used with Isaac and volunteers. `--severity` is `--egregiousness`, the `severity_*` CSV columns are `egregiousness_*`, `core/severity.js` is `core/egregiousness.js`, and `service/severity-assessor.js` is `service/egregiousness-assessor.js`. The prompt and tiers are unchanged. The body below keeps the original name as a dated record.
 
 ## The problem
 

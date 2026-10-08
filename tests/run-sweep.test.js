@@ -988,15 +988,15 @@ test('--wiki enwiki (the default) leaves the system prompt unlocalized', async (
     assert.doesNotMatch(capturedSystemPrompt, /LANGUAGE:/);
 });
 
-// --- severity pass (--severity) ---
+// --- egregiousness pass (--egregiousness) ---
 
-// Answers the verdict prompt with NOT SUPPORTED and the severity prompt with
+// Answers the verdict prompt with NOT SUPPORTED and the egregiousness prompt with
 // one contradicted central subclaim, telling them apart by system prompt.
-function severityModel(calls) {
+function egregiousnessModel(calls) {
     return () => async (systemPrompt, userContent) => {
-        const isSeverity = systemPrompt.includes('decide which citation problems to fix first');
-        calls.push({ isSeverity, userContent });
-        const body = isSeverity
+        const isEgregiousness = systemPrompt.includes('decide which citation problems to fix first');
+        calls.push({ isEgregiousness, userContent });
+        const body = isEgregiousness
             ? { subclaims: [{ text: 'opened in 1998', status: 'contradicted', central: true }] }
             : { support_score: 10, verdict: 'NOT SUPPORTED', reason_type: 'contradiction', source_quote: '', comments: 'no' };
         return { text: JSON.stringify(body), usage: { input: 1, output: 1 } };
@@ -1008,18 +1008,18 @@ const blpArticleHtml = okArticleHtml.replace(
     '<link rel="mw:PageProp/Category" href="./Category:Living_people"></body>'
 ).replace('<p>', '<h2>History</h2><p>');
 
-test('parseCliArgs: --severity is off by default', () => {
-    assert.equal(parseCliArgs(['node', 'sweep.js']).severity, false);
-    assert.equal(parseCliArgs(['node', 'sweep.js', '--severity']).severity, true);
+test('parseCliArgs: --egregiousness is off by default', () => {
+    assert.equal(parseCliArgs(['node', 'sweep.js']).egregiousness, false);
+    assert.equal(parseCliArgs(['node', 'sweep.js', '--egregiousness']).egregiousness, true);
 });
 
-test('--severity ranks every flagged finding, solo and collective, with context and BLP', async () => {
+test('--egregiousness ranks every flagged finding, solo and collective, with context and BLP', async () => {
     const calls = [];
     const written = [];
     const stderrChunks = [];
-    const code = await runSweep(baseOpts({ severity: true }), baseIo({
+    const code = await runSweep(baseOpts({ egregiousness: true }), baseIo({
         fetchArticle: async () => ({ html: blpArticleHtml, status: 200, error: null }),
-        makeModelCallerFn: severityModel(calls),
+        makeModelCallerFn: egregiousnessModel(calls),
         appendFindingFn: async (_path, finding) => { written.push(finding); },
         stderr: { write: s => stderrChunks.push(s) },
     }));
@@ -1027,38 +1027,38 @@ test('--severity ranks every flagged finding, solo and collective, with context 
     assert.equal(code, 0);
     assert.equal(written.length, 4);
     for (const f of written) {
-        assert.equal(f.severityTier, 'T1');
+        assert.equal(f.egregiousnessTier, 'T1');
         assert.equal(f.isBlp, true);
         assert.equal(f.sectionTitle, 'History');
-        assert.equal(f.severityPromptVersion, 's1');
+        assert.equal(f.egregiousnessPromptVersion, 's1');
     }
-    const severityCalls = calls.filter(c => c.isSeverity);
-    assert.equal(severityCalls.length, 4, 'one per flagged finding');
-    assert.match(severityCalls[0].userContent, /^Article: Test Article$/m);
-    assert.match(severityCalls[0].userContent, /^Paragraph \(context only, not evidence\): The bridge opened in 1998\./m);
-    const collectiveCall = severityCalls.find(c => c.userContent.includes('b.example') && c.userContent.includes('c.example'));
+    const egregiousnessCalls = calls.filter(c => c.isEgregiousness);
+    assert.equal(egregiousnessCalls.length, 4, 'one per flagged finding');
+    assert.match(egregiousnessCalls[0].userContent, /^Article: Test Article$/m);
+    assert.match(egregiousnessCalls[0].userContent, /^Paragraph \(context only, not evidence\): The bridge opened in 1998\./m);
+    const collectiveCall = egregiousnessCalls.find(c => c.userContent.includes('b.example') && c.userContent.includes('c.example'));
     assert.ok(collectiveCall, 'the collective pass reads the assembled group text');
-    assert.match(stderrChunks.join(''), /severity tiers: \{"T1":4\}/);
+    assert.match(stderrChunks.join(''), /egregiousness tiers: \{"T1":4\}/);
 
     const csv = rowsToCsv(written);
     assert.match(csv.split('\n')[1], /,1,History,T1,/);
 });
 
-test('without --severity no extra call is made and the columns stay empty', async () => {
+test('without --egregiousness no extra call is made and the columns stay empty', async () => {
     const calls = [];
     const written = [];
     await runSweep(baseOpts(), baseIo({
-        makeModelCallerFn: severityModel(calls),
+        makeModelCallerFn: egregiousnessModel(calls),
         appendFindingFn: async (_path, finding) => { written.push(finding); },
     }));
-    assert.equal(calls.filter(c => c.isSeverity).length, 0);
-    assert.ok(written.every(f => f.severityTier === null));
+    assert.equal(calls.filter(c => c.isEgregiousness).length, 0);
+    assert.ok(written.every(f => f.egregiousnessTier === null));
     assert.ok(written.every(f => f.isBlp === false), 'enwiki article with no Living people category');
 });
 
-test('--severity skips unflagged findings', async () => {
+test('--egregiousness skips unflagged findings', async () => {
     const calls = [];
-    await runSweep(baseOpts({ severity: true }), baseIo({
+    await runSweep(baseOpts({ egregiousness: true }), baseIo({
         makeModelCallerFn: () => async (systemPrompt) => {
             calls.push(systemPrompt.includes('decide which citation problems to fix first'));
             return { text: JSON.stringify({ support_score: 90, verdict: 'SUPPORTED', source_quote: '', comments: 'ok' }), usage: {} };
@@ -1067,9 +1067,9 @@ test('--severity skips unflagged findings', async () => {
     assert.equal(calls.filter(Boolean).length, 0);
 });
 
-test('an auth error in the severity pass halts the run but keeps the already-paid verdict', async () => {
+test('an auth error in the egregiousness pass halts the run but keeps the already-paid verdict', async () => {
     const written = [];
-    const code = await runSweep(baseOpts({ severity: true }), baseIo({
+    const code = await runSweep(baseOpts({ egregiousness: true }), baseIo({
         makeModelCallerFn: () => async (systemPrompt) => {
             if (systemPrompt.includes('decide which citation problems to fix first')) {
                 throw new Error('API request failed (402): wallet empty');
@@ -1081,13 +1081,13 @@ test('an auth error in the severity pass halts the run but keeps the already-pai
     assert.equal(code, 3);
     assert.equal(written.length, 1);
     assert.equal(written[0].verdict, 'NOT SUPPORTED');
-    assert.equal(written[0].severityError, 'halted');
+    assert.equal(written[0].egregiousnessError, 'halted');
 });
 
-test('a transient failure in the severity pass leaves the finding unranked and the sweep running', async () => {
+test('a transient failure in the egregiousness pass leaves the finding unranked and the sweep running', async () => {
     const written = [];
     const stderrChunks = [];
-    const code = await runSweep(baseOpts({ severity: true }), baseIo({
+    const code = await runSweep(baseOpts({ egregiousness: true }), baseIo({
         ...noBackoff,
         fetchArticle: async () => ({ html: articleWithSoloCitations(2), status: 200, error: null }),
         makeModelCallerFn: () => async (systemPrompt, userContent) => {
@@ -1104,15 +1104,15 @@ test('a transient failure in the severity pass leaves the finding unranked and t
     assert.equal(code, 0);
     const byNumber = Object.fromEntries(written.map(f => [f.citationNumber, f]));
     assert.equal(byNumber['1'].verdict, 'NOT SUPPORTED', 'the verdict is kept');
-    assert.equal(byNumber['1'].severityTier, null);
-    assert.equal(byNumber['1'].severityError, RETRIES_EXHAUSTED);
-    assert.equal(byNumber['2'].severityTier, 'T2');
+    assert.equal(byNumber['1'].egregiousnessTier, null);
+    assert.equal(byNumber['1'].egregiousnessError, RETRIES_EXHAUSTED);
+    assert.equal(byNumber['2'].egregiousnessTier, 'T2');
     assert.doesNotMatch(stderrChunks.join(''), /halting/);
 });
 
-test('a failing severity pass alone cannot trip the breaker: the verdict call before it succeeded', async () => {
+test('a failing egregiousness pass alone cannot trip the breaker: the verdict call before it succeeded', async () => {
     const written = [];
-    const code = await runSweep(baseOpts({ severity: true, maxConsecutiveFailures: 2 }), baseIo({
+    const code = await runSweep(baseOpts({ egregiousness: true, maxConsecutiveFailures: 2 }), baseIo({
         ...noBackoff,
         fetchArticle: async () => ({ html: articleWithSoloCitations(4), status: 200, error: null }),
         makeModelCallerFn: () => async (systemPrompt) => {
@@ -1122,10 +1122,10 @@ test('a failing severity pass alone cannot trip the breaker: the verdict call be
         appendFindingFn: async (_path, finding) => { written.push(finding); },
     }));
 
-    // Verdict succeeds (reset), severity fails (1); verdict succeeds (reset),
-    // severity fails (1). The breaker never reaches 2, which is the right
+    // Verdict succeeds (reset), egregiousness fails (1); verdict succeeds (reset),
+    // egregiousness fails (1). The breaker never reaches 2, which is the right
     // reading: the model is answering, just not this one prompt.
     assert.equal(code, 0);
     assert.equal(written.length, 4);
-    assert.ok(written.every(f => f.severityError === RETRIES_EXHAUSTED));
+    assert.ok(written.every(f => f.egregiousnessError === RETRIES_EXHAUSTED));
 });

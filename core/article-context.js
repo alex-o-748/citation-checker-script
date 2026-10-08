@@ -1,7 +1,7 @@
 // Where in the article a citation sits: its section heading, the paragraph
 // around it, and the article's categories.
 //
-// Consumed by the severity pass (core/severity.js), which needs this context to
+// Consumed by the egregiousness pass (core/egregiousness.js), which needs this context to
 // judge whether the unsupported part of a claim is central — the batch pipeline
 // cuts claims down to one sentence, and a sentence alone doesn't show what it
 // is doing in the article. See

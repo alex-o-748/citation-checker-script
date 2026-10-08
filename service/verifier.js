@@ -223,7 +223,7 @@ export async function verifyCitation(claimText, source, {
 /**
  * The combined source text a group's collective check reads, or null when at
  * most one member source has usable text (the group is skipped). Shared by
- * verifyGroup() and the severity pass (service/severity-assessor.js), which
+ * verifyGroup() and the egregiousness pass (service/egregiousness-assessor.js), which
  * must read exactly the text the verdict was reached on.
  */
 export function assembleGroupText(members) {

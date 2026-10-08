@@ -69,7 +69,7 @@ import { fetchSourceContent } from '../core/worker.js';
 import { createHostGate, DEFAULT_FETCH_CONCURRENCY } from './host-pool.js';
 import { verifyCitation, verifyGroup, makeModelCaller, ProviderAuthError } from './verifier.js';
 import { assembleFinding, assembleGroupFinding } from './finding-builder.js';
-import { assessSeverity, needsSeverity, assembleGroupText } from './severity-assessor.js';
+import { assessEgregiousness, needsEgregiousness, assembleGroupText } from './egregiousness-assessor.js';
 import { upsertFinding } from './findings-store.js';
 import { openToolsDbConnection } from './toolsdb.js';
 import { resolveTitleInfo } from './wikipedia-pageids.js';
@@ -128,7 +128,7 @@ export function parseCliArgs(argv) {
             'live-source-fetch': { type: 'boolean', default: false },
             store:               { type: 'boolean', default: false },
             resume:              { type: 'boolean', default: false },
-            severity:            { type: 'boolean', default: false },
+            egregiousness:            { type: 'boolean', default: false },
             out:                 { type: 'string', default: 'findings.csv' },
             help:                { type: 'boolean', short: 'h', default: false },
         },
@@ -156,7 +156,7 @@ export function parseCliArgs(argv) {
         liveSourceFetch: values['live-source-fetch'],
         store: values.store,
         resume: values.resume,
-        severity: values.severity,
+        egregiousness: values.egregiousness,
         out: values.out,
     };
 }
@@ -243,12 +243,12 @@ Options:
                          articles per interruption rather than duplicating
                          them — check the CSV's per-article row counts against
                          the article if completeness matters.
-  --severity            Run the severity pass on every flagged finding: one
-                         extra model call per NOT SUPPORTED / PARTIALLY
-                         SUPPORTED row, filling severity_tier and
-                         severity_subclaims (see core/severity.js). Off by
-                         default because it adds model calls in proportion to
-                         the flag rate.
+  --egregiousness       Run the egregiousness pass on every flagged finding:
+                         one extra model call per NOT SUPPORTED / PARTIALLY
+                         SUPPORTED row, filling egregiousness_tier and
+                         egregiousness_subclaims (see core/egregiousness.js).
+                         Off by default because it adds model calls in
+                         proportion to the flag rate.
   --out <path>          CSV output path (default: findings.csv)
                         A cleaned copy is also written beside it as
                         <name>-clean.csv.
@@ -584,8 +584,8 @@ export async function runSweep(opts, {
         verified: 0, flagged: 0, published: 0,
         groupsChecked: 0, groupsSkipped: 0, groupsFlagged: 0,
     };
-    // Severity pass tallies, by tier ('T1'...'disagreement', or 'error').
-    const severityCounts = {};
+    // Egregiousness pass tallies, by tier ('T1'...'disagreement', or 'error').
+    const egregiousnessCounts = {};
     const verdictCounts = {};
 
     const recordVerdict = verdict => {
@@ -645,7 +645,7 @@ export async function runSweep(opts, {
     // Counts a failed model call toward the consecutive-failure breaker, and
     // trips it. Returns false when the error must halt the run on its own
     // (auth/billing, or not recognizably transient). Shared by the verdict
-    // calls and the severity pass: both hit the same model service, so a run
+    // calls and the egregiousness pass: both hit the same model service, so a run
     // of failures in either means the same thing.
     function countTransientFailure(error) {
         if (isPerCallModelFailure(error)) return true; // recorded, but not a sign the service is down
@@ -791,19 +791,19 @@ export async function runSweep(opts, {
         }
     }
 
-    // The severity pass for one flagged finding, or null when it doesn't
+    // The egregiousness pass for one flagged finding, or null when it doesn't
     // apply. Never throws: the verdict it ranks is already paid for and is
     // recorded either way, so a failure here only leaves the finding
     // unranked. Same failure policy as the verdict call — a transient failure
-    // that outlasted its retries is recorded (severity_error
+    // that outlasted its retries is recorded (egregiousness_error
     // retries_exhausted) and counts toward --max-consecutive-failures; an
     // auth/billing or non-transient error halts the run after this finding.
     async function rankFinding({ claimText, sourceInfo, sourceTruncated, verification, wikiCandidate, context }) {
-        if (!opts.severity || !needsSeverity(verification)) return null;
+        if (!opts.egregiousness || !needsEgregiousness(verification)) return null;
         const { onAttemptFailed, finish } = trackRetries();
-        let severity;
+        let egregiousness;
         try {
-            severity = await assessSeverity({
+            egregiousness = await assessEgregiousness({
                 claimText, sourceInfo, sourceTruncated, verification,
                 articleTitle: wikiCandidate.title,
                 sectionTitle: context?.sectionTitle ?? null,
@@ -811,22 +811,22 @@ export async function runSweep(opts, {
             }, { callModel, retry: { ...retryOptions, onAttemptFailed } });
         } catch (error) {
             if (countTransientFailure(error)) {
-                severity = { tier: null, subclaims: null,
+                egregiousness = { tier: null, subclaims: null,
                     error: isPerCallModelFailure(error) ? perCallReasonType(error) : RETRIES_EXHAUSTED };
             } else {
                 if (!halted) { halted = true; haltError = error; }
-                severity = { tier: null, subclaims: null, error: 'halted' };
+                egregiousness = { tier: null, subclaims: null, error: 'halted' };
             }
         } finally {
             finish();
         }
-        const key = severity.tier ?? 'error';
-        severityCounts[key] = (severityCounts[key] || 0) + 1;
-        if (severity.usage) {
+        const key = egregiousness.tier ?? 'error';
+        egregiousnessCounts[key] = (egregiousnessCounts[key] || 0) + 1;
+        if (egregiousness.usage) {
             consecutiveFailures = 0;
             await sleep(opts.delayMs);
         }
-        return severity;
+        return egregiousness;
     }
 
     async function worker(tasks) {
@@ -857,7 +857,7 @@ export async function runSweep(opts, {
                 if (recordVerdict(verification.verdict)) funnel.flagged++;
 
                 const content = task.citation.source?.content ?? null;
-                const severity = await rankFinding({
+                const egregiousness = await rankFinding({
                     claimText: task.citation.claimText,
                     sourceInfo: content,
                     sourceTruncated: Boolean(content?.includes('\nTruncated: true')),
@@ -867,7 +867,7 @@ export async function runSweep(opts, {
                 await record(assembleFinding({
                     candidate: task.wikiCandidate, citation: task.citation, verification,
                     provider: opts.provider, model: opts.model, promptVersion: PROMPT_VERSION,
-                    severity,
+                    egregiousness,
                 }));
             } else {
                 let verification;
@@ -897,7 +897,7 @@ export async function runSweep(opts, {
                 }
                 if (recordVerdict(verification.verdict)) funnel.groupsFlagged++;
 
-                const severity = await rankFinding({
+                const egregiousness = await rankFinding({
                     claimText: task.members[0].claimText,
                     // The same assembled text verifyGroup() judged.
                     sourceInfo: assembleGroupText(task.members),
@@ -908,7 +908,7 @@ export async function runSweep(opts, {
                 await record(assembleGroupFinding({
                     candidate: task.wikiCandidate, members: task.members, verification,
                     provider: opts.provider, model: opts.model, promptVersion: PROMPT_VERSION,
-                    severity,
+                    egregiousness,
                 }));
             }
         }
@@ -948,7 +948,7 @@ export async function runSweep(opts, {
         `sweep: adjacent-citation groups: ${funnel.groupsChecked} checked, ${funnel.groupsSkipped} skipped ` +
         `(<=1 usable source), ${funnel.groupsFlagged} flagged.\n` +
         `sweep: verdicts: ${JSON.stringify(verdictCounts)}\n` +
-        (opts.severity ? `sweep: severity tiers: ${JSON.stringify(severityCounts)}\n` : '') +
+        (opts.egregiousness ? `sweep: egregiousness tiers: ${JSON.stringify(egregiousnessCounts)}\n` : '') +
         `sweep: wrote ${findings.length} finding(s) to ${opts.out}${toolsDbQuery ? ' and ToolsDB' : ''}` +
         `${resumeSkipped ? ` (${resumeSkipped} article(s) skipped as already done)` : ''}.\n`
     );

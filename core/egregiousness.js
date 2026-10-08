@@ -1,4 +1,4 @@
-// Severity pass: for a claim the verifier already flagged, how much does the
+// Egregiousness pass: for a claim the verifier already flagged, how much does the
 // failure matter?
 //
 // A second, separate model call — the verdict prompt in core/prompts.js is
@@ -6,7 +6,7 @@
 // into subclaims and labels each one: what the source does with it
 // (supported / absent / contradicted), and whether it is central to the
 // sentence. tierFor() turns that, plus whether the source was truncated, into
-// a tier. The model is never asked for a number or for a severity directly:
+// a tier. The model is never asked for a number or for an egregiousness rating directly:
 // categories calibrate far better than scores, and a tier computed from
 // observable labels can be explained to a volunteer ("a central fact is
 // contradicted") where a model's 0.73 cannot.
@@ -19,8 +19,11 @@
 import { extractSourceText } from './prompts.js';
 
 // Bump whenever the prompt text changes, same contract as PROMPT_VERSION:
-// tests/severity.test.js pins a hash of the prompt against it.
-export const SEVERITY_PROMPT_VERSION = 's1';
+// tests/egregiousness.test.js pins a hash of the prompt against it. The "s"
+// is from when this was called severity; the value was kept through the
+// rename because the prompt didn't change, and CSVs from before and after
+// the rename were produced by the same prompt.
+export const EGREGIOUSNESS_PROMPT_VERSION = 's1';
 
 export const SUBCLAIM_STATUSES = Object.freeze({
     SUPPORTED: 'supported',
@@ -30,7 +33,7 @@ export const SUBCLAIM_STATUSES = Object.freeze({
 const STATUS_VALUES = new Set(Object.values(SUBCLAIM_STATUSES));
 
 // Most urgent first. Strings rather than 1/2/3 so a CSV cell reads on its own.
-export const SEVERITY_TIERS = Object.freeze({
+export const EGREGIOUSNESS_TIERS = Object.freeze({
     // A central subclaim is contradicted by the source.
     CENTRAL_CONTRADICTED: 'T1',
     // A central subclaim is absent from a source read in full, or a
@@ -45,15 +48,15 @@ export const SEVERITY_TIERS = Object.freeze({
     // first pass's flag. The likeliest false positives.
     DISAGREEMENT: 'disagreement',
 });
-export const SEVERITY_TIER_ORDER = Object.freeze([
-    SEVERITY_TIERS.CENTRAL_CONTRADICTED,
-    SEVERITY_TIERS.CENTRAL_ABSENT,
-    SEVERITY_TIERS.PERIPHERAL_ABSENT,
-    SEVERITY_TIERS.DISCOUNTED,
-    SEVERITY_TIERS.DISAGREEMENT,
+export const EGREGIOUSNESS_TIER_ORDER = Object.freeze([
+    EGREGIOUSNESS_TIERS.CENTRAL_CONTRADICTED,
+    EGREGIOUSNESS_TIERS.CENTRAL_ABSENT,
+    EGREGIOUSNESS_TIERS.PERIPHERAL_ABSENT,
+    EGREGIOUSNESS_TIERS.DISCOUNTED,
+    EGREGIOUSNESS_TIERS.DISAGREEMENT,
 ]);
 
-export function generateSeveritySystemPrompt() {
+export function generateEgregiousnessSystemPrompt() {
     return `You help Wikipedia volunteers decide which citation problems to fix first. You are given a claim from a Wikipedia article, the text of the source cited for it, and where the claim sits in the article.
 
 Split the claim into subclaims, then label each one.
@@ -98,7 +101,7 @@ Source says it opened in August 2002 and names Holt as its designer, with no men
  * tends to find a failure to agree with it, and then the "disagreement" tier
  * — the second pass finding nothing wrong — stops meaning anything.
  */
-export function generateSeverityUserPrompt({ claimText, sourceInfo, articleTitle, sectionTitle, paragraphText }) {
+export function generateEgregiousnessUserPrompt({ claimText, sourceInfo, articleTitle, sectionTitle, paragraphText }) {
     const lines = [];
     if (articleTitle) lines.push(`Article: ${articleTitle}`);
     lines.push(`Section: ${sectionTitle || '(lead section)'}`);
@@ -119,7 +122,7 @@ function extractJson(text) {
 }
 
 /**
- * Parses the severity response. Returns { ok: true, subclaims } or
+ * Parses the egregiousness response. Returns { ok: true, subclaims } or
  * { ok: false, error }.
  *
  * Strict about status (an unknown status can't be tiered, and guessing one
@@ -127,7 +130,7 @@ function extractJson(text) {
  * a subclaim with no usable `central` is treated as central, which can only
  * rank a finding higher, never bury it.
  */
-export function parseSeverityResult(text) {
+export function parseEgregiousnessResult(text) {
     let parsed;
     try {
         parsed = JSON.parse(extractJson(text));
@@ -159,20 +162,20 @@ export function parseSeverityResult(text) {
  * rows falsely report failure on 18.4% of benchmark calls
  * (docs/benchmark-ground-truth-audit-2026-09-06.md).
  *
- * BLP is not a tier input; it orders findings within a tier (compareSeverity).
+ * BLP is not a tier input; it orders findings within a tier (compareEgregiousness).
  */
 export function tierFor({ subclaims, sourceTruncated = false }) {
     const failing = subclaims.filter(s => s.status !== SUBCLAIM_STATUSES.SUPPORTED);
-    if (failing.length === 0) return SEVERITY_TIERS.DISAGREEMENT;
+    if (failing.length === 0) return EGREGIOUSNESS_TIERS.DISAGREEMENT;
 
     const has = (status, central) => failing.some(s => s.status === status && s.central === central);
     const { CONTRADICTED, ABSENT } = SUBCLAIM_STATUSES;
 
-    if (has(CONTRADICTED, true)) return SEVERITY_TIERS.CENTRAL_CONTRADICTED;
-    if (has(CONTRADICTED, false)) return SEVERITY_TIERS.CENTRAL_ABSENT;
-    if (sourceTruncated) return SEVERITY_TIERS.DISCOUNTED;
-    if (has(ABSENT, true)) return SEVERITY_TIERS.CENTRAL_ABSENT;
-    return SEVERITY_TIERS.PERIPHERAL_ABSENT;
+    if (has(CONTRADICTED, true)) return EGREGIOUSNESS_TIERS.CENTRAL_CONTRADICTED;
+    if (has(CONTRADICTED, false)) return EGREGIOUSNESS_TIERS.CENTRAL_ABSENT;
+    if (sourceTruncated) return EGREGIOUSNESS_TIERS.DISCOUNTED;
+    if (has(ABSENT, true)) return EGREGIOUSNESS_TIERS.CENTRAL_ABSENT;
+    return EGREGIOUSNESS_TIERS.PERIPHERAL_ABSENT;
 }
 
 /**
@@ -180,10 +183,10 @@ export function tierFor({ subclaims, sourceTruncated = false }) {
  * support score first. Findings with no tier (not flagged, or the pass
  * failed) sort last.
  */
-export function compareSeverity(a, b) {
+export function compareEgregiousness(a, b) {
     const rank = f => {
-        const i = SEVERITY_TIER_ORDER.indexOf(f.severityTier);
-        return i === -1 ? SEVERITY_TIER_ORDER.length : i;
+        const i = EGREGIOUSNESS_TIER_ORDER.indexOf(f.egregiousnessTier);
+        return i === -1 ? EGREGIOUSNESS_TIER_ORDER.length : i;
     };
     return (rank(a) - rank(b))
         || ((b.isBlp === true) - (a.isBlp === true))

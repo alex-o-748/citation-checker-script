@@ -1,7 +1,7 @@
-// The severity pass, as a batch-pipeline stage between verify
+// The egregiousness pass, as a batch-pipeline stage between verify
 // (service/verifier.js) and assembly (service/finding-builder.js): for a
 // finding the verifier flagged, one extra model call that labels the claim's
-// subclaims, and core/severity.js's tierFor() on the result.
+// subclaims, and core/egregiousness.js's tierFor() on the result.
 //
 // Same error contract as verifyCitation(): an auth/billing error throws
 // ProviderAuthError so the runner halts; anything specific to this one
@@ -9,18 +9,18 @@
 // { tier: null, error } and the finding is still recorded, untiered.
 
 import {
-    generateSeveritySystemPrompt, generateSeverityUserPrompt,
-    parseSeverityResult, tierFor, SEVERITY_TIERS, SEVERITY_PROMPT_VERSION,
-} from '../core/severity.js';
+    generateEgregiousnessSystemPrompt, generateEgregiousnessUserPrompt,
+    parseEgregiousnessResult, tierFor, EGREGIOUSNESS_TIERS, EGREGIOUSNESS_PROMPT_VERSION,
+} from '../core/egregiousness.js';
 import { withRetry, isSourceTooLargeError } from '../core/retry.js';
 import { ProviderAuthError, isAuthOrBillingError, assembleGroupText } from './verifier.js';
 
-export const SEVERITY_VERDICTS = new Set(['NOT SUPPORTED', 'PARTIALLY SUPPORTED']);
+export const EGREGIOUSNESS_VERDICTS = new Set(['NOT SUPPORTED', 'PARTIALLY SUPPORTED']);
 
-// Whether a verified finding gets a severity pass at all. Only flags are
+// Whether a verified finding gets an egregiousness pass at all. Only flags are
 // ranked; a SUPPORTED or SOURCE UNAVAILABLE row has nothing to rank.
-export function needsSeverity(verification) {
-    return Boolean(verification) && SEVERITY_VERDICTS.has(verification.verdict);
+export function needsEgregiousness(verification) {
+    return Boolean(verification) && EGREGIOUSNESS_VERDICTS.has(verification.verdict);
 }
 
 /**
@@ -41,12 +41,12 @@ export function needsSeverity(verification) {
  * set only when the model was actually asked, so a finding records which
  * prompt produced its labels and not a version for a call that never ran.
  */
-export async function assessSeverity({
+export async function assessEgregiousness({
     claimText, sourceInfo, sourceTruncated = false, verification,
     articleTitle, sectionTitle, paragraphText,
 }, { callModel, retry = {}, signal } = {}) {
     if (typeof callModel !== 'function') {
-        throw new TypeError('assessSeverity requires a callModel(systemPrompt, userContent) function');
+        throw new TypeError('assessEgregiousness requires a callModel(systemPrompt, userContent) function');
     }
 
     // No model call for a pure omission on a truncated source: every subclaim
@@ -55,14 +55,14 @@ export async function assessSeverity({
     // second pass could in principle turn up a contradiction the first missed,
     // but paying a call per truncated omission for that is poor value.
     if (sourceTruncated && verification?.verdict === 'NOT SUPPORTED' && verification?.reasonType === 'omission') {
-        return { tier: SEVERITY_TIERS.DISCOUNTED, subclaims: null, error: null, usage: null };
+        return { tier: EGREGIOUSNESS_TIERS.DISCOUNTED, subclaims: null, error: null, usage: null };
     }
     if (!sourceInfo) {
         return { tier: null, subclaims: null, error: 'no_source', usage: null };
     }
 
-    const systemPrompt = generateSeveritySystemPrompt();
-    const userContent = generateSeverityUserPrompt({ claimText, sourceInfo, articleTitle, sectionTitle, paragraphText });
+    const systemPrompt = generateEgregiousnessSystemPrompt();
+    const userContent = generateEgregiousnessUserPrompt({ claimText, sourceInfo, articleTitle, sectionTitle, paragraphText });
 
     const retryOptions = { ...retry };
     if (signal && !retryOptions.shouldAbort) {
@@ -83,8 +83,8 @@ export async function assessSeverity({
         throw error;
     }
 
-    const parsed = parseSeverityResult(response.text);
-    const asked = { usage: response.usage ?? null, promptVersion: SEVERITY_PROMPT_VERSION };
+    const parsed = parseEgregiousnessResult(response.text);
+    const asked = { usage: response.usage ?? null, promptVersion: EGREGIOUSNESS_PROMPT_VERSION };
     if (!parsed.ok) {
         return { tier: null, subclaims: null, error: parsed.error, ...asked };
     }
@@ -96,6 +96,6 @@ export async function assessSeverity({
     };
 }
 
-// The source text a group's severity pass reads: the same assembled text
+// The source text a group's egregiousness pass reads: the same assembled text
 // verifyGroup() judged, so the two passes see identical evidence.
 export { assembleGroupText };

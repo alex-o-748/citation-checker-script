@@ -183,7 +183,7 @@ It used to be `truncated === true || length >= 12000`. The 12,000 was the
 Worker's old cap. Once that rose to 100,000, and tf-source-fetcher started
 returning whole pages, the rule marked long-but-whole sources as truncated (35
 of 143 Worker fetches of the benchmark sources on 2026-10-02). That matters
-beyond the label: the batch pipeline discounts severity and drops some
+beyond the label: the batch pipeline's egregiousness ranking discounts it, and drops some
 findings on a truncated source. tf-source-fetcher always sends the flag, and it
 is the only signal for a page it clamped *before* extraction, which can come
 back well under any length threshold.
@@ -367,23 +367,29 @@ the sample) comes back as a no.
 Rationale, costs and the alternatives rejected (page views, `page_assessments`,
 a category blacklist): `docs/design-plans/2026-09-16-selecting-for-future-activity.md`.
 
-### Severity ranking of flagged findings (`run-sweep.js --severity`)
+### Egregiousness ranking of flagged findings (`run-sweep.js --egregiousness`)
 
 A flagged finding can get a second, separate model call that splits its claim
 into subclaims, labels each `supported` / `absent` / `contradicted` (from the
 source only) and `central` or not (using article title, section and paragraph
-from `core/article-context.js`). `core/severity.js`'s `tierFor()` turns the
+from `core/article-context.js`). `core/egregiousness.js`'s `tierFor()` turns the
 labels into `T1` (central contradicted) / `T2` / `T3` (only peripheral detail
 missing) / `discounted` (only absences on a truncated source) / `disagreement`
 (nothing wrong found: likeliest false positives). BLP (`Category:Living
 people`, read from the article HTML) orders findings within a tier.
 
 Three rules to keep if you touch it:
-- The verdict prompt is not changed. The severity prompt has its own
-  hash-pinned `SEVERITY_PROMPT_VERSION`.
+- The verdict prompt is not changed. The egregiousness prompt has its own
+  hash-pinned `EGREGIOUSNESS_PROMPT_VERSION`.
 - The model never sees the first-pass verdict, and is never asked whether a
   claim is "probably true".
 - Truncation discounts absence, never contradiction.
+
+Called *severity* until 2026-10-08 (`--severity`, `severity_*` columns) and
+renamed to egregiousness, the term already in use with Isaac and volunteers,
+so a shared CSV doesn't need translating. The prompt was untouched by the
+rename, so `EGREGIOUSNESS_PROMPT_VERSION` is still `s1`. The design doc kept
+its original filename.
 
 CSV only for now; no ToolsDB columns. Suggested actions are deliberately a
 separate, unbuilt module. Design and next steps:

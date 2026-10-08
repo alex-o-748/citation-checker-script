@@ -87,7 +87,7 @@ export async function processArticle(candidate, {
     // root — see core/citations.js.
     const root = parseHtml(html);
     const citations = collectCitations(root, { claimScope, splitLastSentence });
-    // Categories ride on the article record, not each citation: the severity
+    // Categories ride on the article record, not each citation: the egregiousness
     // pass reads Category:Living people off them (see core/article-context.js).
     const categories = articleCategories(root);
     if (citations.length === 0) {
