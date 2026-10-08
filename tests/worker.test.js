@@ -773,3 +773,39 @@ test('hostGate is entered once per retry attempt, not held across the backoff', 
         global.fetch = originalFetch;
     }
 });
+
+// --- classifyFetchError: the post-run checks' view of fetch_error ---
+
+test('classifyFetchError sorts the messages a batch CSV actually carries by whose failure it was', async () => {
+    const { classifyFetchError, isOurFetchFailure, STUB_FETCH_ERROR, FETCH_ERROR_KINDS: K } = await import('../core/worker.js');
+    const cases = [
+        [STUB_FETCH_ERROR, K.STUB, false],
+        ['Proxy returned non-JSON response (HTTP 502)', K.FETCHER_DOWN, true],
+        ['Source fetch timed out after 60000ms', K.FETCHER_TIMEOUT, true],
+        ['Source returned HTTP 403', K.PUBLISHER_HTTP, false],
+        ['Request to source timed out', K.PUBLISHER_TIMEOUT, false],
+        ['fetch failed', K.PUBLISHER_NETWORK, false],
+        ['fetch failed (ENOTFOUND)', K.PUBLISHER_NETWORK, false],
+        ['terminated', K.PUBLISHER_NETWORK, false],
+        ['Source content was empty or too short to verify', K.EMPTY_CONTENT, false],
+        ['Blocked by robots.txt', K.OTHER, false],
+    ];
+    for (const [message, kind, ours] of cases) {
+        assert.equal(classifyFetchError(message), kind, message);
+        assert.equal(isOurFetchFailure(classifyFetchError(message)), ours, message);
+    }
+    assert.equal(classifyFetchError(''), null);
+    assert.equal(classifyFetchError(null), null);
+});
+
+test('classifyFetchError recognises the messages fetchSourceContent really produces', async () => {
+    const { classifyFetchError, fetchSourceContent, FETCH_ERROR_KINDS: K } = await import('../core/worker.js');
+    const realFetch = globalThis.fetch;
+    try {
+        globalThis.fetch = async () => new Response('<html>502 Bad Gateway</html>', { status: 502 });
+        const down = await fetchSourceContent('https://example.com/a', null, { retry: { attempts: 1, sleepFn: async () => {} } });
+        assert.equal(classifyFetchError(down.error), K.FETCHER_DOWN, down.error);
+    } finally {
+        globalThis.fetch = realFetch;
+    }
+});

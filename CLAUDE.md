@@ -273,6 +273,16 @@ Runnable entry points, each a thin wiring layer over the components above:
 | `service/run-extract.js` | Stages 1-3, prints a citations/URLs/fetched/failed funnel | Wiki Replicas, Wikipedia REST, source fetcher (opt-in) |
 | `service/run-replay.js` | Stages 4-5 over `benchmark/dataset.json`'s stored claim/source pairs instead of live fetching — the integration test for verify+store with zero third-party requests | Model API only (+ Wikipedia REST to resolve page IDs) |
 | `service/run-sweep.js` | **All six stages**, writing a CSV by default and (with `--store`) also upserting into ToolsDB | Wiki Replicas, Wikipedia REST, model API, source fetcher (opt-in) |
+| `service/run-checks.js` | Post-run checks over a findings CSV (`run-sweep.js` also runs them at the end of every sweep; see below) | None |
+
+### Post-run checks (`service/sweep-checks.js`, read before adding a halt-or-record decision)
+
+A sweep now records most failures as rows instead of halting (`retries_exhausted`, `output_budget_exhausted`, `empty_model_response`, `source_too_large`, every dead link), so a degraded run finishes looking normal. The post-run checks are the counterpart: `runSweep()` streams the finished CSV through `createSweepChecker()` and writes `<out>-checks.md`, `-checks.json` and `-review.csv`; a run that finished but failed a check exits **5**. Each check is a past incident written down once — the vanished "Timeline of the 2026 Iran war" (coverage), the source-fetcher crash loop (fetch failures *by cause*, and outage windows across many hosts in row order), TemplateStyles CSS in a ruwiki claim, Cyrillic never sentence-split, English rationales on ruwiki, the 12,000-char truncation rule, US Open draw pages.
+
+- **Row checks vs run checks.** A row check judges one row on its own; its hits are *suspect rows* (up to `SUSPECT_CAP` random examples kept for the review CSV, the full count reported). "Suspect" deliberately isn't "flagged", which everywhere else in `service/` means a NOT SUPPORTED / PARTIALLY SUPPORTED verdict. A run check (fetch failure rate, ERROR share, coverage) only means something as a total.
+- **Streams, never loads.** `service/csv-stream.js` is the parser; memory is bounded by distinct articles/hosts/rationales, not rows. Don't route it through `parseCsv()`.
+- **Vocabularies are imported, not copied.** Fetch errors are bucketed by `core/worker.js`'s `classifyFetchError()`, beside the code that writes those messages, so rewording one breaks `tests/worker.test.js` instead of silently moving counts between "our fetcher" and "the publisher".
+- **`THRESHOLDS` are first guesses**, each set to catch the incident named beside it. Recalibrate by running `service/run-checks.js` over past sweeps' CSVs, not by loosening a test.
 
 ### Article selection picks for FUTURE activity, not past activity (read before touching `service/pilot-selection.js`)
 

@@ -2303,6 +2303,49 @@ function isRetryableProxyResult(result) {
     return typeof result.status === 'number' && RETRYABLE_PROXY_STATUS.has(result.status);
 }
 
+// What a batch run's stage-3 stub returns for every citation (service/
+// run-sweep.js, service/run-extract.js). Named here so the post-run checks can
+// recognise a run that never fetched anything.
+const STUB_FETCH_ERROR = 'source fetching not wired up — pass --live-source-fetch to fetch via tf-source-fetcher';
+
+// Sorts a fetch error message — the fetch_error column of a batch CSV — by
+// whose failure it was. Lives beside the code that writes these messages so
+// that rewording one breaks a test (tests/worker.test.js) instead of silently
+// moving post-run counts between buckets (service/sweep-checks.js).
+//
+// Ours: the fetcher never answered in its own protocol (the front-proxy error
+// page a crash-looping pod produces), or never answered in time. Everything
+// else is the fetcher reporting what a publisher did — see the comments above
+// PROXY_TRANSPORT_FAILURE for why JSON "fetch failed" is the publisher's.
+const FETCH_ERROR_KINDS = Object.freeze({
+    STUB: 'stub',
+    FETCHER_DOWN: 'fetcher_down',
+    FETCHER_TIMEOUT: 'fetcher_timeout',
+    PUBLISHER_HTTP: 'publisher_http',
+    PUBLISHER_NETWORK: 'publisher_network',
+    PUBLISHER_TIMEOUT: 'publisher_timeout',
+    EMPTY_CONTENT: 'empty_content',
+    OTHER: 'other',
+});
+const OUR_FETCH_ERROR_KINDS = new Set([FETCH_ERROR_KINDS.FETCHER_DOWN, FETCH_ERROR_KINDS.FETCHER_TIMEOUT]);
+
+function classifyFetchError(message) {
+    const text = (message ?? '').trim();
+    if (!text) return null;
+    if (text === STUB_FETCH_ERROR) return FETCH_ERROR_KINDS.STUB;
+    if (/^Proxy returned non-JSON response/.test(text)) return FETCH_ERROR_KINDS.FETCHER_DOWN;
+    if (/^Source fetch timed out/.test(text)) return FETCH_ERROR_KINDS.FETCHER_TIMEOUT;
+    if (/^Source returned HTTP \d+/.test(text)) return FETCH_ERROR_KINDS.PUBLISHER_HTTP;
+    if (/^Request to source timed out/i.test(text)) return FETCH_ERROR_KINDS.PUBLISHER_TIMEOUT;
+    if (/^(?:fetch failed|terminated)\b/i.test(text)) return FETCH_ERROR_KINDS.PUBLISHER_NETWORK;
+    if (/^Source content was empty or too short/.test(text)) return FETCH_ERROR_KINDS.EMPTY_CONTENT;
+    return FETCH_ERROR_KINDS.OTHER;
+}
+
+function isOurFetchFailure(kind) {
+    return OUR_FETCH_ERROR_KINDS.has(kind);
+}
+
 // Fewer attempts and a tighter backoff than the model-call path: a sweep makes
 // one of these per citation and mature articles carry hundreds, so the 5-try /
 // 30s-cap defaults in core/retry.js would add hours. 1s + 2s + 4s spans a pod
