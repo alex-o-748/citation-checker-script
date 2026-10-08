@@ -61,6 +61,15 @@ const PROVIDERS = Object.freeze({
         model: 'llm-qwen36-27b',
         requiresKey: false,
     }),
+    'liftwing-qwen38': Object.freeze({
+        name: 'Lift Wing (Qwen3.8)',
+        // Same route and keyless access as `liftwing`; Qwen3.8-27B (FP8,
+        // 32k context) served the same OpenAI-compatible way as Qwen3.6.
+        storageKey: null,
+        color: '#6B21A8',
+        model: 'llm-qwen38-27b',
+        requiresKey: false,
+    }),
     'liftwing-safeguard': Object.freeze({
         name: 'Lift Wing (gpt-oss-safeguard)',
         // Same route and keyless access as `liftwing`. Lift Wing serves this
@@ -978,7 +987,15 @@ const RETRYABLE_NETWORK = /timeout|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|sock
 // "unrecognized error halts the batch" rule discarded the remaining 87
 // articles. That rule is right for an exhausted 429 or a spent budget, and
 // exactly wrong for one citation's fat PDF.
-const SOURCE_TOO_LARGE = /maximum context length|VLLMValidationError|too large to send/i;
+//
+//   - `longer than the maximum model length` — the same context-window
+//     failure in a different vLLM's wording ("The decoder prompt (length
+//     16646) is longer than the maximum model length of 16384"), as served
+//     for llm-gpt-oss-safeguard-20b behind Lift Wing's :predict route. Missing
+//     here, it was retried as an ordinary 500 and counted toward
+//     --max-consecutive-failures: a 2026-10-07 ruwiki sweep spent ~2.75h in
+//     retry backoff and halted at article 204 of 300 on a run of long sources.
+const SOURCE_TOO_LARGE = /maximum context length|VLLMValidationError|too large to send|longer than the maximum model length/i;
 
 function isSourceTooLargeError(error) {
     return SOURCE_TOO_LARGE.test(error?.message ?? '');
@@ -2013,6 +2030,7 @@ async function callProviderAPI(name, config) {
         case 'publicai':    return await callPublicAIAPI(config);
         case 'huggingface': return await callHuggingFaceAPI(config);
         case 'liftwing':    return await callLiftwingAPI(config);
+        case 'liftwing-qwen38': return await callLiftwingAPI(config);
         case 'liftwing-safeguard': return await callLiftwingAPI(config);
         case 'openrouter':  return await callOpenRouterAPI(config);
         case 'claude':      return await callClaudeAPI(config);
@@ -7535,7 +7553,7 @@ function useToolforgeSourceFetcher() {
                 modelDesc = this.t('a PublicAI-hosted open-source LLM');
             } else if (this.currentProvider === 'huggingface') {
                 modelDesc = this.t('a HuggingFace-hosted open-source LLM ({model})', { model: provider.model });
-            } else if (this.currentProvider === 'liftwing' || this.currentProvider === 'liftwing-safeguard') {
+            } else if (this.currentProvider.startsWith('liftwing')) {
                 modelDesc = this.t('a Wikimedia Lift Wing-hosted open-source LLM ({model})', { model: provider.model });
             } else {
                 modelDesc = provider.model;
@@ -7840,7 +7858,7 @@ function useToolforgeSourceFetcher() {
             this.updateButtonVisibility();
 
             const startTime = Date.now();
-            const useProxy = this.currentProvider === 'publicai' || this.currentProvider === 'liftwing' || this.currentProvider === 'liftwing-safeguard';
+            const useProxy = this.currentProvider === 'publicai' || this.currentProvider.startsWith('liftwing');
             const delayBetweenCalls = useProxy ? 3000 : 1000;
 
             // Progress counts every LLM step: one per citation, plus one
