@@ -20,6 +20,7 @@ You click a reference, the tool reads the cited source and tells you whether the
 
 <!--T:5-->
 The script started on the English Wikipedia and has since run more than 70,000 checks, over 10,000 of them on eleven other language editions, from Italian and Vietnamese to Hungarian and Swedish.
+These counts include repeated checks of the same citation and experimental runs while the tool was being tested, so they overstate how many distinct citations have been checked.
 It works on any Wikipedia, and its interface is translated into several languages.
 </translate>
 
