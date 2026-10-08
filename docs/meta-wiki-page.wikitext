@@ -19,7 +19,7 @@
 You click a reference, the tool reads the cited source and tells you whether the claim is '''supported''', '''partially supported''', '''not supported''', or whether the '''source is unavailable''', with a short explanation and, where possible, a quotation from the source.
 
 <!--T:5-->
-The script started on the English Wikipedia and has since been used on a dozen language editions, from Vietnamese and German to Latin and Sesotho.
+The script started on the English Wikipedia and has since run more than 70,000 checks, over 10,000 of them on a dozen other language editions, from Italian and Vietnamese to Hungarian and Swedish.
 It works on any Wikipedia, and its interface is translated into several languages.
 </translate>
 
@@ -57,7 +57,7 @@ Quotations from sources are always shown in the source's own language, exactly a
 On right-to-left wikis (Hebrew, Arabic, Persian, …) the sidebar opens on the left so it does not cover the navigation menus.
 
 <!--T:17-->
-'''Would you like the tool in your language?''' The interface has about 200 short messages. Vietnamese, German and Italian are the most-used languages that do not have a translation yet.
+'''Would you like the tool in your language?''' The interface has about 200 short messages. Italian, Vietnamese and German are the most-used languages that do not have a translation yet.
 Leave a note on the [[<tvar name="talk">Talk:AI Source Verifier</tvar>|talk page]] and we will send you the list, or open an issue on [<tvar name="gh">https://github.com/alex-o-748/citation-checker-script/issues</tvar> GitHub].
 </translate>
 
@@ -164,27 +164,27 @@ This helps other communities find people to ask, and helps us know where transla
 |-
 | [[:en:|English Wikipedia]] || [[:en:User:Alaexis/AI Source Verification]] || [[User:Alaexis|Alaexis]]
 |-
+| [[:it:|Wikipedia in italiano]] || ||
+|-
 | [[:vi:|Wikipedia tiếng Việt]] || ||
 |-
 | [[:fr:|Wikipédia en français]] || ||
 |-
-| [[:de:|Deutschsprachige Wikipedia]] || ||
-|-
-| [[:it:|Wikipedia in italiano]] || ||
-|-
 | [[:ru:|Русская Википедия]] || ||
-|-
-| [[:es:|Wikipedia en español]] || ||
 |-
 | [[:he:|ויקיפדיה העברית]] || ||
 |-
-| [[:la:|Vicipaedia (Latina)]] || ||
+| [[:de:|Deutschsprachige Wikipedia]] || ||
+|-
+| [[:es:|Wikipedia en español]] || ||
 |-
 | [[:hu:|Magyar Wikipédia]] || ||
 |-
-| [[:st:|Wikipedia Sesotho]] || ||
-|-
 | [[:sv:|Svenskspråkiga Wikipedia]] || ||
+|-
+| [[:la:|Vicipaedia (Latina)]] || ||
+|-
+| [[:st:|Wikipedia Sesotho]] || ||
 |}
 
 == <translate><!--T:44--> Recent changes</translate> ==
