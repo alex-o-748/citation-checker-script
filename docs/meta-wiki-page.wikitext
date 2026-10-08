@@ -19,7 +19,7 @@
 You click a reference, the tool reads the cited source and tells you whether the claim is '''supported''', '''partially supported''', '''not supported''', or whether the '''source is unavailable''', with a short explanation and, where possible, a quotation from the source.
 
 <!--T:5-->
-The script started on the English Wikipedia and has since run more than 70,000 checks, over 10,000 of them on a dozen other language editions, from Italian and Vietnamese to Hungarian and Swedish.
+The script started on the English Wikipedia and has since run more than 70,000 checks, over 10,000 of them on eleven other language editions, from Italian and Vietnamese to Hungarian and Swedish.
 It works on any Wikipedia, and its interface is translated into several languages.
 </translate>
 
