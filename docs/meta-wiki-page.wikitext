@@ -1,0 +1,201 @@
+<languages/>
+{{Infobox user script
+| name = AI Source Verifier
+| logo = Sv logo.svg
+| screenshot = Source Verifier - Verify All - Sep 26.png
+| screenshotsize = 300px
+| desc = <translate><!--T:1--> Uses AI to check whether sources support the claims they are cited for</translate>
+| author = [[User:Alaexis|Alaexis]], [[:en:User:Polygnotus|Polygnotus]], [[:en:User:LuisVilla|LuisVilla]]
+| status = <translate><!--T:2--> Active, experimental</translate>
+| updated = <translate><!--T:3--> Continuously (see the [[<tvar name="changelog">:en:User:Alaexis/AI Source Verification#Change Log</tvar>|changelog]])</translate>
+| skins = Vector 2022, Vector legacy, Monobook, Timeless, Minerva
+| source = [[:en:User:Alaexis/AI Source Verification.js]]
+| github = alex-o-748/citation-checker-script
+}}
+
+<translate>
+<!--T:4-->
+'''AI Source Verifier''' is a user script that uses large language models to check whether a citation in a Wikipedia article actually supports the claim it is attached to.
+You click a reference, the tool reads the cited source and tells you whether the claim is '''supported''', '''partially supported''', '''not supported''', or whether the '''source is unavailable''', with a short explanation and, where possible, a quotation from the source.
+
+<!--T:5-->
+The script started on the English Wikipedia and is now used by editors on many language editions.
+It works on any Wikipedia, and its interface is translated into several languages.
+</translate>
+
+== <translate><!--T:6--> Languages</translate> ==
+<translate>
+<!--T:7-->
+There are two separate questions: what language the '''sidebar''' is in, and what language the '''explanations''' are written in.
+</translate>
+
+{| class="wikitable"
+! <translate><!--T:8--> Language</translate>
+! <translate><!--T:9--> Sidebar interface</translate>
+! <translate><!--T:10--> Explanations from the AI</translate>
+|-
+| English || ✓ || ✓
+|-
+| français || ✓ || ✓
+|-
+| español || ✓ || ✓
+|-
+| русский || ✓ || ✓
+|-
+| עברית || ✓ <translate><!--T:11--> (right-to-left)</translate> || ✓
+|-
+| <translate><!--T:12--> Any other language</translate> || <translate><!--T:13--> English</translate> || <translate><!--T:14--> ✓ (in the language of the wiki)</translate>
+|}
+
+<translate>
+<!--T:15-->
+The interface language follows the language of the wiki you are on, not your account preferences: on the French Wikipedia the sidebar is in French.
+On a wiki whose language has no translation yet, the sidebar stays in English, but the AI still writes its explanations in the language of the article.
+Quotations from sources are always shown in the source's own language, exactly as they appear there.
+
+<!--T:16-->
+On right-to-left wikis (Hebrew, Arabic, Persian, …) the sidebar opens on the left so it does not cover the navigation menus.
+
+<!--T:17-->
+'''Would you like the tool in your language?''' The interface has about 200 short messages.
+Leave a note on the [[<tvar name="talk">Talk:AI Source Verifier</tvar>|talk page]] and we will send you the list, or open an issue on [<tvar name="gh">https://github.com/alex-o-748/citation-checker-script/issues</tvar> GitHub].
+</translate>
+
+== <translate><!--T:18--> Installation</translate> ==
+<translate>
+<!--T:19-->
+The script is hosted on the English Wikipedia and can be loaded from any wiki.
+</translate>
+
+=== <translate><!--T:20--> On all wikis at once (recommended)</translate> ===
+<translate>
+<!--T:21-->
+Add the following line to your [[<tvar name="global">Special:MyPage/global.js</tvar>|global.js]] here on Meta.
+It will then load on every Wikimedia wiki where you are logged in.
+</translate>
+<syntaxhighlight lang="javascript">
+mw.loader.load('https://en.wikipedia.org/w/index.php?title=User:Alaexis/AI_Source_Verification.js&action=raw&ctype=text/javascript');
+</syntaxhighlight>
+
+=== <translate><!--T:22--> On a single wiki</translate> ===
+<translate>
+<!--T:23-->
+Add the same line to <code><tvar name="commonjs">Special:MyPage/common.js</tvar></code> on the wiki where you want to use it.
+On the English Wikipedia you can also use the "Install" button on the [[<tvar name="enpage">:en:User:Alaexis/AI Source Verification</tvar>|English Wikipedia page]].
+</translate>
+
+== <translate><!--T:24--> Usage</translate> ==
+<translate>
+<!--T:25-->
+* Open an article and click the '''Verify''' tab next to Article / Talk. On Vector legacy and Minerva, it is in the '''More''' menu.
+* With the sidebar open, click any inline citation (for example <tvar name="sup"><sup>[1]</sup></tvar>).
+* Optionally choose an AI provider from the drop-down.
+* Click '''Verify'''. The tool fetches the source and returns a verdict with an explanation.
+* '''Verify all citations''' checks every reference in the article and produces a report that you can copy to the article's talk page.
+* If a source is offline or paywalled, you can paste its text or upload a PDF in the sidebar.
+* Under each result you can say whether the verdict was right. This helps us measure and improve the tool.
+
+<!--T:26-->
+The tool works on articles, user pages and drafts.
+In '''Settings''' you can choose whether the "claim" for a citation is only the sentence before it, or all the text back to the previous citation (default).
+</translate>
+
+== <translate><!--T:27--> AI providers</translate> ==
+<translate>
+<!--T:28-->
+'''Free, no API key needed:''' open-weights models hosted on Wikimedia's own infrastructure ([<tvar name="liftwing">https://wikitech.wikimedia.org/wiki/Machine_Learning/LiftWing/Large_Language_Models</tvar> LiftWing]) and on the Wikimedia account at HuggingFace (the default), and by [<tvar name="publicai">https://publicai.co</tvar> PublicAI].
+
+<!--T:29-->
+'''Commercial, with your own API key:''' Claude, ChatGPT, Gemini.
+These are noticeably more accurate.
+Your key is stored only in your own browser (localStorage) and can be removed at any time.
+</translate>
+
+== <translate><!--T:30--> How accurate is it?</translate> ==
+<translate>
+<!--T:31-->
+Only a small share of citations fail to support their claims: roughly 1 in 20 to 1 in 50, based on human reviews on the English Wikipedia.
+The tool catches nearly all of them, but it also flags about 25–30% of good citations.
+Because good citations are so much more common, '''most citations the tool flags will turn out to be fine'''.
+Always read the source yourself before acting on a verdict.
+[<tvar name="bench">https://github.com/alex-o-748/citation-checker-script/blob/main/docs/full-provider-benchmark-2026-08-23.md</tvar> Benchmark details].
+
+<!--T:32-->
+These figures were measured on English Wikipedia articles.
+We do not yet have a labelled benchmark for other languages, so accuracy elsewhere may be different.
+If you have checked a batch of results on your wiki, we would very much like to hear what you found.
+</translate>
+
+=== <translate><!--T:33--> Limitations</translate> ===
+<translate>
+<!--T:34-->
+* '''Online sources only.''' For paywalled, offline or book sources you can paste the text or upload a PDF.
+* '''False positives.''' Many good citations are flagged, because of model errors or because the source could not be read properly (paywalls, video, JavaScript-heavy pages, very long documents).
+* '''Accuracy varies by model.''' Commercial models do significantly better than the free ones.
+* '''Limited PDF support''' for sources fetched from the web; scanned PDFs without a text layer cannot be read.
+</translate>
+
+=== <translate><!--T:35--> Out of scope</translate> ===
+<translate>
+<!--T:36-->
+* '''Reliability''' of sources: the tool only checks whether a source supports the claim, not whether the source is any good.
+* '''Copyright violations''': the tool does not check whether article text copies or closely paraphrases a source.
+</translate>
+
+== <translate><!--T:37--> Feedback and help</translate> ==
+<translate>
+<!--T:38-->
+* Questions and comments in any language are welcome on the [[<tvar name="talk">Talk:AI Source Verifier</tvar>|talk page]].
+* Comments made from inside the tool go to the [[<tvar name="entalk">:en:User talk:Alaexis/AI Source Verification</tvar>|English Wikipedia talk page]]; you can write there in your own language too.
+* Bug reports and feature requests: [<tvar name="issues">https://github.com/alex-o-748/citation-checker-script/issues</tvar> GitHub issue tracker].
+</translate>
+
+== <translate><!--T:39--> Using it on your wiki</translate> ==
+<translate>
+<!--T:40-->
+If editors on your wiki use the tool, feel free to add your wiki below and link a local discussion or help page.
+This helps other communities find people to ask, and helps us know where translations and testing are most needed.
+</translate>
+
+{| class="wikitable sortable"
+! <translate><!--T:41--> Wiki</translate>
+! <translate><!--T:42--> Local page or discussion</translate>
+! <translate><!--T:43--> Contact</translate>
+|-
+| [[:en:|English Wikipedia]] || [[:en:User:Alaexis/AI Source Verification]] || [[User:Alaexis|Alaexis]]
+|-
+| [[:fr:|Wikipédia en français]] || ||
+|-
+| [[:es:|Wikipedia en español]] || ||
+|-
+| [[:ru:|Русская Википедия]] || ||
+|-
+| [[:he:|ויקיפדיה העברית]] || ||
+|}
+
+== <translate><!--T:44--> Recent changes</translate> ==
+<translate>
+<!--T:45-->
+The full changelog is on the [[<tvar name="changelog">:en:User:Alaexis/AI Source Verification#Change Log</tvar>|English Wikipedia page]]. Highlights:
+
+<!--T:46-->
+* '''September 2026''' – Hebrew interface and right-to-left support; choice of claim scope (sentence or paragraph) in Settings.
+* '''August 2026''' – French, Spanish and Russian interfaces; explanations written in the wiki's language on every wiki; quotations from the source shown alongside verdicts; feedback moved on-wiki; redesigned sidebar.
+* '''July 2026''' – Wikimedia LiftWing models added; PDF upload for offline sources; adjacent citations checked together.
+* '''June 2026''' – "Not supported" split into ''omission'' and ''contradiction''; more reliable Internet Archive fetching.
+</translate>
+
+== <translate><!--T:47--> Credits</translate> ==
+<translate>
+<!--T:48-->
+Based on [[<tvar name="poly">:en:User:Polygnotus/Scripts/AI_Source_Verification</tvar>|Polygnotus's AI Source Verification script]].
+Thanks to [[<tvar name="luis">:en:User:LuisVilla</tvar>|LuisVilla]] for many improvements, to the translators, and to the editors on many wikis who have tested it and reported problems.
+
+<!--T:49-->
+Free inference is provided by Wikimedia's LiftWing infrastructure, Wikimedia's HuggingFace account and [<tvar name="publicai">https://publicai.co</tvar> PublicAI].
+Sources are fetched through a proxy ([<tvar name="proxy">https://github.com/alex-o-748/public-ai-proxy</tvar> code]).
+</translate>
+
+[[Category:Scripts{{#translation:}}]]
+[[Category:Tools{{#translation:}}]]
+[[Category:Artificial intelligence{{#translation:}}]]
