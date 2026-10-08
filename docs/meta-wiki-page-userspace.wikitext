@@ -37,7 +37,7 @@ There are two separate questions: what language the '''sidebar''' is in, and wha
 |-
 | עברית || ✓ (right-to-left) || ✓
 |-
-| Any other language || English || Usually in the language of the article, but not guaranteed (see below)
+| Any other language || English || Requested, not guaranteed (see below)
 |}
 
 The interface language follows the language of the wiki you are on, not your account preferences: on the French Wikipedia the sidebar is in French.

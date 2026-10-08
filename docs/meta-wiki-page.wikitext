@@ -45,7 +45,7 @@ There are two separate questions: what language the '''sidebar''' is in, and wha
 |-
 | עברית || ✓ <translate><!--T:11--> (right-to-left)</translate> || ✓
 |-
-| <translate><!--T:12--> Any other language</translate> || <translate><!--T:13--> English</translate> || <translate><!--T:14--> Usually in the language of the article, but not guaranteed (see below)</translate>
+| <translate><!--T:12--> Any other language</translate> || <translate><!--T:13--> English</translate> || <translate><!--T:14--> Requested, not guaranteed (see below)</translate>
 |}
 
 <translate>
