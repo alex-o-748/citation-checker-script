@@ -52,6 +52,15 @@ export const PROVIDERS = Object.freeze({
         model: 'llm-qwen36-27b',
         requiresKey: false,
     }),
+    'liftwing-qwen38': Object.freeze({
+        name: 'Lift Wing (Qwen3.8)',
+        // Same route and keyless access as `liftwing`; Qwen3.8-27B (FP8,
+        // 32k context) served the same OpenAI-compatible way as Qwen3.6.
+        storageKey: null,
+        color: '#6B21A8',
+        model: 'llm-qwen38-27b',
+        requiresKey: false,
+    }),
     'liftwing-safeguard': Object.freeze({
         name: 'Lift Wing (gpt-oss-safeguard)',
         // Same route and keyless access as `liftwing`. Lift Wing serves this

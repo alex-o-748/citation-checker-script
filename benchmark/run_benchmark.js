@@ -98,6 +98,13 @@ export const PROVIDERS = {
         requiresKey: false,
         type: 'liftwing'
     },
+    'liftwing-qwen3.8-27b': {
+        name: 'Qwen3.8-27B (Lift Wing)',
+        model: 'llm-qwen38-27b',
+        endpoint: 'https://llm-router.toolforge.org/liftwing',
+        requiresKey: false,
+        type: 'liftwing'
+    },
     // Served behind Lift Wing's KServe :predict endpoint (T439395);
     // tf-llm-router translates it to chat-completions.
     'liftwing-gpt-oss-safeguard-20b': {

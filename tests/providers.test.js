@@ -324,6 +324,28 @@ test('callProviderAPI dispatches liftwing to /liftwing', async () => {
   }
 });
 
+test('callProviderAPI dispatches liftwing-qwen38 to /liftwing with its model', async () => {
+  const mock = withMockFetch(async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      choices: [{ message: { content: 'ok' } }],
+      usage: {},
+    }),
+  }));
+  try {
+    await callProviderAPI('liftwing-qwen38', {
+      model: 'llm-qwen38-27b',
+      systemPrompt: 's',
+      userContent: 'u',
+    });
+    assert.equal(mock.calls[0].url, 'https://llm-router.toolforge.org/liftwing');
+    assert.equal(JSON.parse(mock.calls[0].opts.body).model, 'llm-qwen38-27b');
+  } finally {
+    mock.restore();
+  }
+});
+
 test('callProviderAPI dispatches liftwing-safeguard to /liftwing with its model', async () => {
   // Lift Wing serves this model behind KServe :predict; tf-llm-router
   // translates it, so the client sends an ordinary chat-completions body.
