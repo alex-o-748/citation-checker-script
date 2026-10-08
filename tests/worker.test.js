@@ -148,6 +148,59 @@ test('fetchSourceContent converts archive.org URLs to raw id_ endpoint', async (
   }
 });
 
+test('fetchSourceContent falls back to the original URL when an archive snapshot fails', async () => {
+  // archive.org rate-limits the proxy; the live page is fine.
+  const mock = mockFetch(async (url) => {
+    if (url.includes(encodeURIComponent('web.archive.org'))) {
+      return { ok: true, status: 200, json: async () => ({ error: 'Source returned 429' }) };
+    }
+    assert.ok(url.includes(encodeURIComponent('https://example.com/page')), `unexpected fetch: ${url}`);
+    return { ok: true, status: 200, json: async () => ({ content: 'b'.repeat(500), truncated: false }) };
+  });
+  try {
+    const result = await fetchSourceContent(
+      'https://web.archive.org/web/20250515/https://example.com/page', null);
+    assert.equal(mock.calls.length, 2);
+    assert.ok(result.content.includes('b'.repeat(500)));
+    assert.ok(result.content.startsWith('Source URL: https://example.com/page\n'),
+      'metadata should name the URL the content actually came from');
+  } finally {
+    mock.restore();
+  }
+});
+
+test('fetchSourceContent reports the archive error when the original URL fails too', async () => {
+  const mock = mockFetch(async (url) => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ error: url.includes(encodeURIComponent('web.archive.org')) ? 'Source returned 429' : 'Source returned HTTP 403' }),
+  }));
+  try {
+    const result = await fetchSourceContent(
+      'https://web.archive.org/web/20250515/https://example.com/page', null);
+    assert.equal(mock.calls.length, 2);
+    assert.equal(result.content, null);
+    assert.equal(result.error, 'Source returned 429');
+  } finally {
+    mock.restore();
+  }
+});
+
+test('fetchSourceContent with archiveFirst never falls back from an archive URL to the publisher', async () => {
+  const mock = mockFetch(async (url) => {
+    assert.ok(url.includes(encodeURIComponent('web.archive.org')), `should only contact archive.org, got: ${url}`);
+    return { ok: true, status: 200, json: async () => ({ error: 'Source returned 429' }) };
+  });
+  try {
+    const result = await fetchSourceContent(
+      'https://web.archive.org/web/20250515/https://example.com/page', null, { archiveFirst: true });
+    assert.equal(mock.calls.length, 1);
+    assert.equal(result.content, null);
+  } finally {
+    mock.restore();
+  }
+});
+
 test('fetchSourceContent tries Wayback fallback when live fetch fails', async () => {
   let callCount = 0;
   const mock = mockFetch(async (url) => {
