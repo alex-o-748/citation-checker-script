@@ -37,11 +37,11 @@ There are two separate questions: what language the '''sidebar''' is in, and wha
 |-
 | עברית || ✓ (right-to-left) || ✓
 |-
-| Any other language || English || ✓ (in the language of the wiki)
+| Any other language || English || Usually in the language of the article, but not guaranteed (see below)
 |}
 
 The interface language follows the language of the wiki you are on, not your account preferences: on the French Wikipedia the sidebar is in French.
-On a wiki whose language has no translation yet, the sidebar stays in English, but the AI still writes its explanations in the language of the article.
+On a wiki whose language has no translation yet, the sidebar stays in English, and the AI is asked to write its explanations in the language of the claim rather than in English. Because it is not told which language that is, it may still answer in English, especially when the cited source is in English.
 Quotations from sources are always shown in the source's own language, exactly as they appear there.
 
 On right-to-left wikis (Hebrew, Arabic, Persian, …) the sidebar opens on the left so it does not cover the navigation menus.
