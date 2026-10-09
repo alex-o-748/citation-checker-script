@@ -2025,6 +2025,23 @@ async function callOpenAIAPI({ apiKey, model, systemPrompt, userContent, maxToke
     };
 }
 
+// Output budget for a collective (multi-source) group check, per provider.
+// A group call carries several sources and asks for a rationale that names
+// each one, so it needs more room than a single-source check — above all on
+// models that think before answering (gemini-flash-latest spends its thinking
+// out of maxOutputTokens). Providers absent here keep their function default:
+// the OpenAI-compatible ones already default to 16384, and the Lift Wing
+// router clamps anything over 4096.
+const GROUP_MAX_TOKENS = Object.freeze({
+    claude: 6000,
+    gemini: 8192,
+    openai: 4000,
+});
+
+function groupMaxTokens(name) {
+    return GROUP_MAX_TOKENS[name];
+}
+
 async function callProviderAPI(name, config) {
     switch (name) {
         case 'publicai':    return await callPublicAIAPI(config);
@@ -7707,7 +7724,7 @@ function useToolforgeSourceFetcher() {
         // routing, but the group system prompt and a pre-assembled multi-source
         // user message. `assembledText` comes from assembleGroupSources().
         async callProviderAPIGroup(claim, assembledText) {
-            return callProviderAPI(this.currentProvider, { apiKey: this.getCurrentApiKey(), model: this.providers[this.currentProvider].model, systemPrompt: this.localizeSystemPrompt(generateGroupSystemPrompt()), userContent: generateGroupUserPrompt(claim, assembledText), ...this.llmRouterConfigOverrides() });
+            return callProviderAPI(this.currentProvider, { apiKey: this.getCurrentApiKey(), model: this.providers[this.currentProvider].model, systemPrompt: this.localizeSystemPrompt(generateGroupSystemPrompt()), userContent: generateGroupUserPrompt(claim, assembledText), maxTokens: groupMaxTokens(this.currentProvider), ...this.llmRouterConfigOverrides() });
         }
 
         // Runs the single collective verification for one adjacent-citation

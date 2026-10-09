@@ -20,7 +20,7 @@ import {
     generateGroupSystemPrompt, generateGroupUserPrompt, assembleGroupSources,
     withCommentLanguage,
 } from '../core/prompts.js';
-import { callProviderAPI } from '../core/providers.js';
+import { callProviderAPI, groupMaxTokens } from '../core/providers.js';
 import { parseVerificationResult } from '../core/parsing.js';
 import { canonicalizeVerdict, SKIPPED_VERDICT } from '../core/verdicts.js';
 import { isClaimTooShort, CLAIM_TOO_SHORT } from '../core/claim.js';
@@ -67,11 +67,15 @@ export function isAuthOrBillingError(error) {
 // pass it in.
 export function makeModelCaller({ provider, apiKey, model, workerBase }) {
     if (!provider) throw new TypeError('makeModelCaller requires a provider name');
-    return (systemPrompt, userContent) => callProviderAPI(provider, {
+    // `kind: 'group'` raises the output budget for a collective check
+    // (core/providers.js's groupMaxTokens()); anything else keeps the
+    // provider's default.
+    return (systemPrompt, userContent, { kind } = {}) => callProviderAPI(provider, {
         apiKey,
         model,
         systemPrompt,
         userContent,
+        ...(kind === 'group' ? { maxTokens: groupMaxTokens(provider) } : {}),
         ...(workerBase ? { workerBase } : {}),
     });
 }
@@ -308,7 +312,7 @@ export async function verifyGroup(members, {
 
     let response;
     try {
-        response = await withRetry(() => callModel(systemPrompt, userContent), retryOptions);
+        response = await withRetry(() => callModel(systemPrompt, userContent, { kind: 'group' }), retryOptions);
     } catch (error) {
         if (isAuthOrBillingError(error)) {
             const status = Number((error.message || '').match(/\((\d{3})\)/)?.[1]) || null;
