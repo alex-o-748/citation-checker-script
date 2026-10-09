@@ -234,10 +234,8 @@ Respond in JSON format:
   "verdict": "<verdict>",
   "reason_type": "<only for NOT SUPPORTED: 'contradiction' or 'omission'>",
   "source_quote": "<the passage from one of the sources, copied word for word>",
-  "comments": "<explain the verdict in 1-3 sentences: which part of the claim each relevant source supports or contradicts, naming sources by a short name (its publication, or bare domain — never the full URL)>"
+  "comments": "<note which source, by a short name (its publication, or bare domain — never the full URL), supports or contradicts which part of the claim>"
 }
-
-The "comments" field must explain the verdict, not just list the sources. Say what each relevant source establishes, and for PARTIALLY SUPPORTED or NOT SUPPORTED say which part of the claim none of the sources back. A bare list of source names is not an explanation.
 
 For NOT SUPPORTED verdicts, include a "reason_type" field: use "contradiction" when a source explicitly states something incompatible with the claim, or "omission" when the sources simply do not mention or address the claim. If both apply, use "contradiction". Do not include reason_type for other verdicts.
 
