@@ -65,7 +65,7 @@ import { openReplicaConnection, makeQueryFn } from './replicas.js';
 import { selectCandidates, CRITERIA, isBlpByCategories } from './article-picker.js';
 import { runBatch, ARTICLE_OUTCOMES } from './claim-extractor.js';
 import { fetchArticleHtml, hostForWiki, langCodeForWiki } from '../core/wikipedia.js';
-import { fetchSourceContent } from '../core/worker.js';
+import { fetchSourceContent, STUB_FETCH_ERROR } from '../core/worker.js';
 import { createHostGate, DEFAULT_FETCH_CONCURRENCY } from './host-pool.js';
 import { verifyCitation, verifyGroup, makeModelCaller, ProviderAuthError } from './verifier.js';
 import { assembleFinding, assembleGroupFinding } from './finding-builder.js';
@@ -77,6 +77,7 @@ import { csvHeaderLine, appendFinding, csvPageTitles, cleanCsvPath, writeCleanCs
 import { PROMPT_VERSION } from '../core/prompts.js';
 import { PROVIDER_MODELS, PROVIDER_ENV_VARS } from './provider-config.js';
 import { isRetryableError } from '../core/retry.js';
+import { runChecksOnFile, summaryLines } from './run-checks.js';
 
 // reason_type on an ERROR row whose model call kept failing transiently.
 export const RETRIES_EXHAUSTED = 'retries_exhausted';
@@ -129,6 +130,7 @@ export function parseCliArgs(argv) {
             store:               { type: 'boolean', default: false },
             resume:              { type: 'boolean', default: false },
             severity:            { type: 'boolean', default: false },
+            'skip-checks':       { type: 'boolean', default: false },
             out:                 { type: 'string', default: 'findings.csv' },
             help:                { type: 'boolean', short: 'h', default: false },
         },
@@ -157,6 +159,7 @@ export function parseCliArgs(argv) {
         store: values.store,
         resume: values.resume,
         severity: values.severity,
+        skipChecks: values['skip-checks'],
         out: values.out,
     };
 }
@@ -252,6 +255,10 @@ Options:
   --out <path>          CSV output path (default: findings.csv)
                         A cleaned copy is also written beside it as
                         <name>-clean.csv.
+  --skip-checks         Don't run the post-run checks. By default, once the
+                         CSV is written, service/run-checks.js's checks run
+                         over it and write <name>-checks.md, -checks.json and
+                         -review.csv beside it (see service/sweep-checks.js).
   --help, -h            Show this help and exit.
 
 A model call that still fails with a transient error (429, 5xx, timeout,
@@ -267,6 +274,11 @@ The run halts instead:
     unexpected response shape), immediately, exit code 4.
 Either way the CSV (and, with --store, ToolsDB) still gets every finding
 computed before the halt; nothing already written is rolled back.
+
+A run that finishes but fails a post-run check (a fetch outage, missing
+articles, too many ERROR rows, ...) exits 5, so a Toolforge job submitted
+with --emails onfailure emails you about it. The CSV is complete either way;
+5 means "read <name>-checks.md before using it".
 `;
 
 // Parses --titles-file's contents: one article title per line, blank lines
@@ -288,7 +300,7 @@ export async function stubFetchSource() {
     return {
         content: null,
         status: null,
-        error: 'source fetching not wired up — pass --live-source-fetch to fetch via tf-source-fetcher',
+        error: STUB_FETCH_ERROR,
     };
 }
 
@@ -359,6 +371,7 @@ export async function runSweep(opts, {
     // Merged into every call's core/retry.js options; tests pass a no-op
     // sleepFn so exhausting retries doesn't cost real backoff time.
     retryOptions = {},
+    runChecksFn = runChecksOnFile,
 } = {}) {
     // opts.max is left undefined by parseCliArgs when --titles-file is given
     // and --max wasn't — the titles-file branch below resolves that to "every
@@ -510,6 +523,25 @@ export async function runSweep(opts, {
     // the two would need a completion marker per article, which is a sidecar
     // by another name — deliberately not built until an undercount of that
     // size actually matters to someone.
+    // Every title the run was asked for, including ones --resume skips: the
+    // post-run coverage check asks which of these produced no rows at all.
+    const plannedTitles = candidates.map(candidate => candidate.title);
+
+    // Runs the post-run checks over the finished CSV. Never throws and never
+    // touches the CSV: a checker problem costs the report, not the findings.
+    // Returns true when a check failed.
+    async function runPostRunChecks() {
+        if (opts.skipChecks) return false;
+        try {
+            const { result, paths } = await runChecksFn(opts.out, { titles: plannedTitles, wiki: opts.wiki });
+            stderr.write(summaryLines(result, paths).map(line => `sweep: ${line}`).join('\n') + '\n');
+            return result.status === 'fail';
+        } catch (error) {
+            stderr.write(`sweep: post-run checks could not run: ${error.message}\n`);
+            return false;
+        }
+    }
+
     let resumeSkipped = 0;
     let existingCsv = null;
     if (opts.resume) {
@@ -534,7 +566,7 @@ export async function runSweep(opts, {
             try {
                 await writeCleanCsvFn(opts.out, cleanOut);
                 stderr.write(`sweep: wrote clean CSV to ${cleanOut}\n`);
-                return 0;
+                return (await runPostRunChecks()) ? 5 : 0;
             } catch (error) {
                 stderr.write(`sweep: could not write clean CSV: ${error.message}\n`);
                 return 1;
@@ -984,7 +1016,8 @@ export async function runSweep(opts, {
         );
     }
 
-    return haltCode ?? (cleanError ? 1 : 0);
+    const checksFailed = await runPostRunChecks();
+    return haltCode ?? (cleanError ? 1 : (checksFailed ? 5 : 0));
 }
 
 // Reports why the run halted. The worker halts on ProviderAuthError, on any

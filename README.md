@@ -122,6 +122,29 @@ node service/clean-csv.js previous-findings.csv
 node service/clean-csv.js previous-findings.csv --out ready-to-share.csv
 ```
 
+### Post-run checks
+
+When the CSV is written, the runner also checks it for signs that the run went
+wrong and writes three small files beside it:
+
+| File | Holds |
+|---|---|
+| `findings-checks.md` | One line per check, PASS / WARN / FAIL: missing articles, fetch failures caused by our own fetcher, outage windows, ERROR rows, truncated sources, markup in claims, over-long claims, table-like articles, rationales in the wrong language, answers that break the prompt's format, mixed models or prompt versions |
+| `findings-checks.json` | The same, plus metrics (rows per article, verdicts, fetch failures by cause) for comparing runs |
+| `findings-review.csv` | The rows worth reading: up to 20 examples of each kind of *suspect row* (a row a check picked out on its own, e.g. CSS in the claim) plus 15 random rows of each verdict, with a `review_reason` column |
+
+A run that finishes but fails a check exits with code 5, so a Toolforge job
+submitted with `--emails onfailure` emails you about it. `--skip-checks` turns
+the checks off. To check an existing CSV, including one from a killed run:
+
+```sh
+node service/run-checks.js previous-findings.csv --titles-file articles.txt
+# writes previous-findings-checks.md, -checks.json and -review.csv
+```
+
+The file is streamed, so its size doesn't matter (an 80,000-row, 133 MB CSV
+takes about 8 seconds and under 200 MB of memory).
+
 ## Repository Layout
 
 ```

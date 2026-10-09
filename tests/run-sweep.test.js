@@ -149,6 +149,8 @@ const baseIo = (overrides = {}) => ({
     startCsvFn: async () => {},
     readCsvFn: async () => { throw new Error('ENOENT'); },
     writeCleanCsvFn: async () => {},
+    // The post-run checks read --out back from disk; faked so no test does.
+    runChecksFn: async () => ({ result: { status: 'pass', checks: [] }, paths: { md: 'x-checks.md', review: 'x-review.csv' } }),
     // --titles-file resolves each title to a page id + current revision
     // before fetching; faked here so no test reaches the Action API.
     resolveTitleInfoFn: async titles => new Map(
@@ -1128,4 +1130,69 @@ test('a failing severity pass alone cannot trip the breaker: the verdict call be
     assert.equal(code, 0);
     assert.equal(written.length, 4);
     assert.ok(written.every(f => f.severityError === RETRIES_EXHAUSTED));
+});
+
+// --- Post-run checks ---
+
+const checksOutcome = status => ({
+    result: { status, checks: [{ id: 'x', level: status, title: 'Something', summary: 'went ' + status }] },
+    paths: { md: 'findings-checks.md', review: 'findings-review.csv' },
+});
+
+test('the post-run checks run over --out with every planned title, and their summary reaches the log', async () => {
+    let seen;
+    const log = [];
+    const code = await runSweep(baseOpts({ resume: true, titlesFile: 'articles.txt', max: undefined }), baseIo({
+        readTitlesFile: async () => 'Done Article\nPending Article\n',
+        readCsvFn: async () => rowsToCsv([{ pageTitle: 'Done Article', citationNumber: '1' }]),
+        runChecksFn: async (path, options) => { seen = { path, ...options }; return checksOutcome('warn'); },
+        stderr: { write: s => log.push(s) },
+    }));
+    assert.equal(code, 0, 'a warning does not change the exit code');
+    assert.equal(seen.path, 'findings.csv');
+    assert.deepEqual(seen.titles, ['Done Article', 'Pending Article'], 'titles --resume skipped are still expected in the CSV');
+    assert.equal(seen.wiki, 'enwiki');
+    assert.match(log.join(''), /sweep: checks: WARN\nsweep:   WARN  Something: went warn/);
+});
+
+test('a run that finishes but fails a post-run check exits 5', async () => {
+    const code = await runSweep(baseOpts(), baseIo({ runChecksFn: async () => checksOutcome('fail') }));
+    assert.equal(code, 5);
+});
+
+test('--resume with nothing left still runs the checks', async () => {
+    let ran = false;
+    const code = await runSweep(baseOpts({ resume: true, titlesFile: 'articles.txt', max: undefined }), baseIo({
+        readTitlesFile: async () => 'Done Article\n',
+        readCsvFn: async () => rowsToCsv([{ pageTitle: 'Done Article', citationNumber: '1' }]),
+        runChecksFn: async () => { ran = true; return checksOutcome('fail'); },
+    }));
+    assert.equal(ran, true);
+    assert.equal(code, 5);
+});
+
+test('a halt keeps its own exit code even when the checks fail', async () => {
+    const code = await runSweep(baseOpts(), baseIo({
+        makeModelCallerFn: () => async () => { throw new Error('API request failed (401): bad key'); },
+        runChecksFn: async () => checksOutcome('fail'),
+    }));
+    assert.equal(code, 3);
+});
+
+test('a checker that throws costs the report, not the run', async () => {
+    const log = [];
+    const code = await runSweep(baseOpts(), baseIo({
+        runChecksFn: async () => { throw new Error('disk full'); },
+        stderr: { write: s => log.push(s) },
+    }));
+    assert.equal(code, 0);
+    assert.match(log.join(''), /post-run checks could not run: disk full/);
+});
+
+test('--skip-checks skips them', async () => {
+    let ran = false;
+    const opts = { ...baseOpts(), skipChecks: parseCliArgs(['node', 'sweep.js', '--skip-checks']).skipChecks };
+    await runSweep(opts, baseIo({ runChecksFn: async () => { ran = true; return checksOutcome('pass'); } }));
+    assert.equal(ran, false);
+    assert.equal(parseCliArgs(['node', 'sweep.js']).skipChecks, false);
 });

@@ -25,7 +25,7 @@ import { openReplicaConnection, makeQueryFn } from './replicas.js';
 import { selectCandidates, CRITERIA } from './article-picker.js';
 import { runBatch, ARTICLE_OUTCOMES } from './claim-extractor.js';
 import { fetchArticleHtml, hostForWiki, langCodeForWiki } from '../core/wikipedia.js';
-import { fetchSourceContent } from '../core/worker.js';
+import { fetchSourceContent, STUB_FETCH_ERROR } from '../core/worker.js';
 import { createHostGate, DEFAULT_FETCH_CONCURRENCY } from './host-pool.js';
 
 // Same contract, same query shape (?fetch=&page=), same Google-Books-skip and
@@ -95,7 +95,7 @@ async function stubFetchSource() {
     return {
         content: null,
         status: null,
-        error: 'source fetching not wired up — pass --live-source-fetch to fetch via tf-source-fetcher',
+        error: STUB_FETCH_ERROR,
     };
 }
 
