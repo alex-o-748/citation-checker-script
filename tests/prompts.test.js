@@ -300,3 +300,8 @@ test('withCommentLanguage matches main.js\'s own localizeSystemPrompt() for ever
       `withCommentLanguage() and main.js's localizeSystemPrompt() have drifted apart`);
   }
 });
+
+test('generateGroupSystemPrompt requires comments to explain the verdict, not list sources', () => {
+  const out = generateGroupSystemPrompt();
+  assert.match(out, /must explain the verdict, not just list the sources/);
+});

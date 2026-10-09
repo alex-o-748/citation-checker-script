@@ -364,8 +364,10 @@ Respond in JSON format:
   "verdict": "<verdict>",
   "reason_type": "<only for NOT SUPPORTED: 'contradiction' or 'omission'>",
   "source_quote": "<the passage from one of the sources, copied word for word>",
-  "comments": "<note which source, by a short name (its publication, or bare domain — never the full URL), supports or contradicts which part of the claim>"
+  "comments": "<explain the verdict in 1-3 sentences: which part of the claim each relevant source supports or contradicts, naming sources by a short name (its publication, or bare domain — never the full URL)>"
 }
+
+The "comments" field must explain the verdict, not just list the sources. Say what each relevant source establishes, and for PARTIALLY SUPPORTED or NOT SUPPORTED say which part of the claim none of the sources back. A bare list of source names is not an explanation.
 
 For NOT SUPPORTED verdicts, include a "reason_type" field: use "contradiction" when a source explicitly states something incompatible with the claim, or "omission" when the sources simply do not mention or address the claim. If both apply, use "contradiction". Do not include reason_type for other verdicts.
 
@@ -2023,6 +2025,23 @@ async function callOpenAIAPI({ apiKey, model, systemPrompt, userContent, maxToke
             cost_usd: null
         }
     };
+}
+
+// Output budget for a collective (multi-source) group check, per provider.
+// A group call carries several sources and asks for a rationale that names
+// each one, so it needs more room than a single-source check — above all on
+// models that think before answering (gemini-flash-latest spends its thinking
+// out of maxOutputTokens). Providers absent here keep their function default:
+// the OpenAI-compatible ones already default to 16384, and the Lift Wing
+// router clamps anything over 4096.
+const GROUP_MAX_TOKENS = Object.freeze({
+    claude: 6000,
+    gemini: 8192,
+    openai: 4000,
+});
+
+function groupMaxTokens(name) {
+    return GROUP_MAX_TOKENS[name];
 }
 
 async function callProviderAPI(name, config) {
@@ -7664,7 +7683,7 @@ function useToolforgeSourceFetcher() {
         // routing, but the group system prompt and a pre-assembled multi-source
         // user message. `assembledText` comes from assembleGroupSources().
         async callProviderAPIGroup(claim, assembledText) {
-            return callProviderAPI(this.currentProvider, { apiKey: this.getCurrentApiKey(), model: this.providers[this.currentProvider].model, systemPrompt: this.localizeSystemPrompt(generateGroupSystemPrompt()), userContent: generateGroupUserPrompt(claim, assembledText), ...this.llmRouterConfigOverrides() });
+            return callProviderAPI(this.currentProvider, { apiKey: this.getCurrentApiKey(), model: this.providers[this.currentProvider].model, systemPrompt: this.localizeSystemPrompt(generateGroupSystemPrompt()), userContent: generateGroupUserPrompt(claim, assembledText), maxTokens: groupMaxTokens(this.currentProvider), ...this.llmRouterConfigOverrides() });
         }
 
         // Runs the single collective verification for one adjacent-citation

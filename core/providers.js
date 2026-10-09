@@ -303,6 +303,23 @@ export async function callOpenAIAPI({ apiKey, model, systemPrompt, userContent, 
     };
 }
 
+// Output budget for a collective (multi-source) group check, per provider.
+// A group call carries several sources and asks for a rationale that names
+// each one, so it needs more room than a single-source check — above all on
+// models that think before answering (gemini-flash-latest spends its thinking
+// out of maxOutputTokens). Providers absent here keep their function default:
+// the OpenAI-compatible ones already default to 16384, and the Lift Wing
+// router clamps anything over 4096.
+export const GROUP_MAX_TOKENS = Object.freeze({
+    claude: 6000,
+    gemini: 8192,
+    openai: 4000,
+});
+
+export function groupMaxTokens(name) {
+    return GROUP_MAX_TOKENS[name];
+}
+
 export async function callProviderAPI(name, config) {
     switch (name) {
         case 'publicai':    return await callPublicAIAPI(config);

@@ -86,3 +86,11 @@ test('main.js reads the table instead of redeclaring the models', () => {
     );
   }
 });
+
+test('GROUP_MAX_TOKENS only names known providers', async () => {
+  const { GROUP_MAX_TOKENS } = await import('../core/providers.js');
+  const { PROVIDERS } = await import('../core/models.js');
+  for (const name of Object.keys(GROUP_MAX_TOKENS)) {
+    assert.ok(PROVIDERS[name], `GROUP_MAX_TOKENS names unknown provider "${name}"`);
+  }
+});

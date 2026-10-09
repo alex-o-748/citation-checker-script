@@ -417,3 +417,18 @@ test('a group whose shared claim is too short is skipped without calling the mod
     assert.deepEqual(result, { skipped: true, groupId: 'g1' });
     assert.equal(called, false);
 });
+
+test('verifyGroup asks callModel for the larger group output budget', async () => {
+    let opts;
+    const members = [
+        member('5', { groupIndex: 0, url: 'https://a.example', content: withContent('A'.repeat(200)) }),
+        member('6', { groupIndex: 1, url: 'https://b.example', content: withContent('B'.repeat(200)) }),
+    ];
+    await verifyGroup(members, {
+        callModel: async (_system, _user, o) => {
+            opts = o;
+            return { text: '{"verdict":"SUPPORTED","support_score":90,"comments":"ok","source_quote":""}', usage: {} };
+        },
+    });
+    assert.deepEqual(opts, { kind: 'group' });
+});
