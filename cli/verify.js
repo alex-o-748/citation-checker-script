@@ -71,10 +71,14 @@ function parseVerifyArgs(args) {
         throw new UsageError('usage: ccs verify <wikipedia-url> <citation-number> [--provider <name>] [--no-log]');
     }
 
-    const citationNumber = Number(citationStr);
-    if (!Number.isInteger(citationNumber) || citationNumber < 1) {
-        throw new UsageError(`citation number must be a positive integer (got: ${citationStr})`);
+    // "10.1" names a sub-reference (<ref name="X" details="p. 5" />), whose
+    // inline marker reads [10.1]. Kept as the string typed: Number("10.10")
+    // would collapse it into 10.1, a different footnote.
+    const match = /^(\d+)(\.\d+)?$/.exec(citationStr);
+    if (!match || Number(match[1]) < 1) {
+        throw new UsageError(`citation number must be a positive integer, or N.M for a sub-reference (got: ${citationStr})`);
     }
+    const citationNumber = match[2] ? citationStr : Number(citationStr);
 
     const provider = values.provider;
     if (!KNOWN_PROVIDERS.includes(provider)) {
@@ -187,7 +191,8 @@ Arguments:
   <wikipedia-url>    An https://en.wikipedia.org/wiki/<Title> URL.
                      Optional ?oldid=<rev> query param pins a revision.
   <citation-number>  The [N] bracketed reference number as it appears
-                     in the rendered article (positive integer).
+                     in the rendered article (positive integer), or
+                     N.M for a sub-reference, e.g. 10.1.
 
 Options:
   --provider <name>  LLM provider to use. One of:
