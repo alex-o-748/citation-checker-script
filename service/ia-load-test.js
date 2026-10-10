@@ -22,7 +22,7 @@
 //
 // Usage:
 //   # once, wherever Wiki Replicas is reachable (a Toolforge bastion):
-//   node service/select-articles.js --criterion failed-verification --max 300 > candidates.json
+//   node service/run-pick.js --criterion failed-verification --max 300 > candidates.json
 //
 //   # run a local fetch sidecar (see alex-o-748/tf-source-fetcher) with its
 //   # own cache and per-host politeness effectively disabled — this runner
@@ -93,7 +93,7 @@ logs one NDJSON record per outbound HTTP request. Never contacts a publisher.
 
 Options:
   --candidates <file>     JSON array of { pageId, title, revisionId } (from
-                           service/select-articles.js). Required.
+                           service/run-pick.js). Required.
   --sidecar <url>         Base URL of a running tf-source-fetcher instance
                            (default: http://127.0.0.1:8080)
   --out <file>            NDJSON request log (default: ia-load-test.ndjson).
