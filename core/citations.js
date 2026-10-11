@@ -10,7 +10,7 @@
 // itself is the root.
 
 import { extractClaimText, getCitationGroup, isClaimTooShort, MIN_CLAIM_LENGTH, CLAIM_TOO_SHORT } from './claim.js';
-import { extractReferenceUrl, extractPageNumber } from './urls.js';
+import { extractReferenceUrl, extractPageNumber, subreferenceParent } from './urls.js';
 
 // Defined in core/claim.js; re-exported here because this is where callers
 // have always imported it from.
@@ -55,6 +55,18 @@ export function refNameFromNoteId(refId) {
     return match ? match[1] : null;
 }
 
+// A sub-reference (<ref name="X" details="p. 5" />, see core/urls.js's
+// subreferenceParent) renders its own footnote with a plain `cite_note-<n>`
+// id, so the name lives only on the main reference's <li> — which Parsoid
+// gives a `cite_note-X-<n>` id and the legacy parser, when nothing cites the
+// main ref directly, no id at all. Null in that last case.
+function refNameForFootnote(refId, doc) {
+    const own = refNameFromNoteId(refId);
+    if (own) return own;
+    const mainRef = subreferenceParent(doc && doc.getElementById(refId));
+    return mainRef ? refNameFromNoteId(mainRef.id) : null;
+}
+
 export function collectCitations(root, { minClaimLength = MIN_CLAIM_LENGTH, claimScope = 'paragraph', splitLastSentence } = {}) {
     if (!root) return [];
     // Document and DocumentFragment both answer getElementById directly and
@@ -75,7 +87,7 @@ export function collectCitations(root, { minClaimLength = MIN_CLAIM_LENGTH, clai
         citations.push({
             refElement,
             refId,
-            refName: refNameFromNoteId(refId),
+            refName: refNameForFootnote(refId, doc),
             citationNumber: refElement.textContent.replace(/[\[\]]/g, '').trim(),
             claimText,
             url: extractReferenceUrl(refElement, doc),
