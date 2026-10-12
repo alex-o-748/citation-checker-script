@@ -1,6 +1,6 @@
 # Giving the verifier the claim's context
 
-> **Status (2026-10-12):** In progress. Step 1 (the experiment) is built: `formatClaimContext()` in `core/prompts.js`, `benchmark/claim_context.js`, `benchmark/context_probes.js`, `run_benchmark.js --context`. First results below. Steps 2–4 are not started.
+> **Status (2026-10-12):** In progress. Step 1 (the experiment) is built and has had a first run on gpt-oss-20b: **no gain, a small shift toward false flags, and a weak leakage signal**, so the `c1` context block is not wired into any front end. See Results. Steps 2–4 are on hold pending the follow-ups listed there.
 
 ## The problem
 
@@ -169,7 +169,88 @@ ordinary context, so only the planted sentence differs.
 
 ## Results
 
-_To be filled in from the first run._
+### First run: gpt-oss-20b, 2026-10-12
+
+One model (`hf-gpt-oss-20b`, keyless HF path), `CONTEXT_PROMPT_VERSION` `c1`,
+full context (`title,section,preceding,citation` on WiCE; `title,preceding` on
+`dataset.json`, which has no section or citation title). The model samples,
+so the no-context WiCE run was **repeated** to measure how much two identical
+runs disagree. Every difference below should be read against that.
+
+Raw results: `benchmark/results_wice_noctx.json`, `results_wice_noctx_rerun.json`,
+`results_wice_ctx.json`, `results_wice_probes.json`, `results_ctx_baseline.json`,
+`results_ctx.json`.
+
+**WiCE, 701 rows valid in all three runs:**
+
+| Run | Exact | Supported-vs-rest | FPR (flags on Supported rows) | TPR |
+|---|---|---|---|---|
+| No context | 56.8% | 83.6% | 27.1% (61/225) | 88.7% |
+| No context, repeated | 55.8% | 85.3% | 23.6% (53/225) | 89.5% |
+| **Context** | **53.5%** | **83.2%** | **31.1% (70/225)** | 89.9% |
+
+- **Noise is large.** Two identical runs agree on only 80.3% of verdicts, and
+  FPR moves 3.5 points between them. Context brings agreement down to 75.3%:
+  it changes verdicts, but not in a useful direction.
+- **Context leans toward flagging.** Of the 219 rows the first no-context run
+  called Supported, the repeat flagged 9.6% and the context run 16.9%. That is
+  the one difference clearly bigger than noise, and it is in the costly
+  direction. The rationales behind those flips never mention the context.
+  They are ordinary borderline strictness ("does not explicitly state that he
+  was covering front lines"). So this is not visible scope creep. More likely
+  the longer prompt, or the rule's "verify only the claim, using only the source
+  text", makes the model stricter in general.
+- **No gain where context should help most.** On the 203 WiCE claims that open
+  with a pronoun or bare referent, or carry relative time ("a week later",
+  "that evening"), Supported-vs-rest is 83.7% / 86.6% (the two no-context
+  runs) against 82.8% with context. There are real individual wins: *"He was
+  recalled by the Wizards a week later"* and *"Eleven days later, he…"* became
+  checkable once the earlier date was in view, and *"It was her New York stage
+  debut"* went from SOURCE UNAVAILABLE to a correct SUPPORTED. They don't add
+  up to anything measurable. A likely reason: the model already assumes the
+  referent is whoever the source is about, which is nearly always right, so a
+  missing referent rarely costs it a verdict. Its errors are elsewhere.
+- **`dataset.json`**: exact 62.9% → 60.0% (175 rows). On the 54 rows that got
+  preceding text, 59.3% → 64.8%; on the 121 that got only the title, 64.5% →
+  57.9%. A title alone shouldn't move accuracy by 6.6 points, so these
+  splits are noise at this size, in both directions.
+
+**Probes** (`node context_probes.js analyze`):
+
+| Probe | Flipped | Background rate for the same flip |
+|---|---|---|
+| leak: claim planted in context | **5/56 (8.9%)** flag → SUPPORTED | 1.9% between the two no-context runs, 3.1% no-context → context |
+| creep: unrelated claim planted | 0/36 (0%) SUPPORTED → flag | — |
+
+Scope creep in the strict sense, verifying a planted sentence, doesn't happen.
+The leak rate is several times the background, though from 5 rows. The five
+rationales don't cite the context either: each is a borderline detail that
+the model now waves through (*"a month before election day"* accepted for
+*"three weeks before"*). This is the dangerous direction, and the rule
+evidently doesn't fully prevent it.
+
+### What this means
+
+`c1` should not ship. Context as built here costs false flags and shows some
+leakage, for no measurable gain on this model. That doesn't settle the
+question. It narrows what to try next:
+
+1. **A stronger model.** Referent resolution and following a "context is not
+   evidence" rule are both things a 20B model may do badly. Run the same three
+   WiCE runs and the probes on Sonnet before changing the prompt, since a
+   prompt tuned to gpt-oss-20b's quirks may not transfer.
+2. **Less context.** Ablate `--context title` and `--context title,section`
+   against `preceding`. If the strictness shift comes from the preceding text,
+   a title-only (and later, link-targets-only) block may keep the individual
+   wins without it.
+3. **Bigger probes.** `--per-type 150`, run twice, to tell whether the 8.9% is
+   real.
+4. **The question this run can't answer.** The case for context is sentence
+   scope, and the current benchmark can't test it. Only 11 of its 80 Supported
+   rows change at all when narrowed to the last sentence, and only 55 of 182
+   rows have recoverable preceding text. Answering it needs step 2's DOM-based
+   re-extraction (`claim_container` as stored loses the claim's exact position
+   and the paragraph before).
 
 ## Alternatives considered
 
