@@ -417,6 +417,16 @@ separate, unbuilt module. Design and next steps:
 - Claim extraction uses "between citations" logic by design (not full sentences) for precision
 - `extractClaimText(refElement, { scope })` (`core/claim.js`) supports two claim scopes. `scope: 'paragraph'` (the default, used by `main.js` and the CLI/benchmark) is the full "between citations" span, which can include multiple sentences when the previous citation is more than one sentence back. `scope: 'sentence'` narrows that span to only its final sentence (via `lastSentence()`) — `core/citations.js`'s `collectCitations(root, { claimScope })` threads this through, and `service/claim-extractor.js`'s `processArticle()` defaults `claimScope` to `'sentence'` for the batch pipeline. This matters because in an unattended batch run, a multi-sentence claim where only the first sentence lacks support reads as a false NOT SUPPORTED on the whole span — there's no editor present to notice that only part of the claim is a "citation needed" case, not an "unsupported" one. The interactive userscript defaults to paragraph scope, where a human reads the full claim and isn't misled by that ambiguity — but it also exposes a "Claim scope" setting (Settings panel, persisted to `localStorage` as `verifier_claim_scope`) letting an editor switch to sentence scope for both single-citation checks and "Verify All Citations", for the same false-positive reason batch mode defaults to it.
 
+### Claim context: read-only, never evidence (read before passing context to a prompt)
+
+`generateUserPrompt(claim, sourceInfo, context)` takes an optional article context (title, section, text before the claim, cited source title), rendered by `formatClaimContext()` ahead of the claim. Three rules:
+
+- **No context means exactly the v2 prompt.** Null, `{}` or all-blank fields produce the byte-identical v2 user message (pinned by `tests/claim_context.test.js`), so `PROMPT_VERSION` keeps describing every existing finding. The block has its own hash-pinned `CONTEXT_PROMPT_VERSION`; the system prompt is untouched.
+- **Context is for resolving what the claim refers to, not evidence and not something to verify.** `CLAIM_CONTEXT_RULE` says both. Treating context as evidence is *leakage* (a false SUPPORTED that hides a real failure); verifying it is *scope creep* (a false flag). They can cancel in an accuracy number, so `benchmark/context_probes.js` measures each separately.
+- **One context per results file.** `run_benchmark.js --context` records its fields in the file's metadata and refuses to write into a file run with a different context.
+
+Nothing in the userscript or batch pipeline passes context yet: this is the experiment stage of `docs/design-plans/2026-10-12-claim-context.md`.
+
 ### Sentence splitting differs between the batch and the userscript (read before touching `lastSentence`)
 
 Sentence scope narrows a claim to its last sentence, and "where does a sentence start" is decided differently per front end, on purpose:

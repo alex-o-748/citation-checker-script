@@ -5,6 +5,13 @@
  * Runs the enriched dataset through multiple LLM providers and records results.
  *
  * Usage: node run_benchmark.js [--providers claude,openai,gemini] [--limit N] [--resume] [--version v1|v2|v3|all] [--concurrency N]
+ *                              [--context none|title,section,preceding,citation]
+ *
+ * --context gives the model article context alongside the claim (see
+ * claim_context.js and docs/design-plans/2026-10-12-claim-context.md). Default
+ * none, which sends exactly the prompt the userscript sends today. A results
+ * file records the context it was run with, and the runner refuses to mix two
+ * contexts in one file: write a context run to its own --results.
  *
  * Environment variables for API keys:
  *   ANTHROPIC_API_KEY - Claude API key
@@ -32,7 +39,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
-import { generateSystemPrompt as coreGenerateSystemPrompt, generateUserPrompt, extractSourceText } from '../core/prompts.js';
+import { generateSystemPrompt as coreGenerateSystemPrompt, generateUserPrompt, extractSourceText, CONTEXT_PROMPT_VERSION } from '../core/prompts.js';
 import {
     callOpenAICompatibleChat,
     callClaudeAPI,
@@ -45,6 +52,7 @@ import { verifyQuote } from '../core/quote.js';
 import { canonicalizeVerdict, toTitleCase } from '../core/verdicts.js';
 import { withRetry } from '../core/retry.js';
 import { loadRows, loadMetadata, todayIso } from './io.js';
+import { parseContextFields, contextForEntry, presentContextFields } from './claim_context.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -302,6 +310,9 @@ const versionIndex = args.indexOf('--version');
 // VERSION_FILTER: 'all' | 'v1' | 'v2' | ... — restricts which dataset entries
 // to benchmark, so the original 76-row v1 analysis can be reproduced on demand.
 const VERSION_FILTER = versionIndex !== -1 ? args[versionIndex + 1] : 'all';
+const contextArg = args.find(a => a.startsWith('--context='));
+const contextIndex = args.indexOf('--context');
+const CONTEXT_MODE = contextArg ? contextArg.split('=')[1] : (contextIndex !== -1 ? args[contextIndex + 1] : 'none');
 const concurrencyArg = args.find(a => a.startsWith('--concurrency='));
 const concurrencyIndex = args.indexOf('--concurrency');
 const CONCURRENCY = (() => {
@@ -601,6 +612,32 @@ export function loadInitialResults(resultsPath, selectedProviders, resume) {
 }
 
 /**
+ * The label a results file records for its context: 'none', or the fields in
+ * canonical order joined by commas.
+ */
+export function contextLabelFor(fields) {
+    return fields && fields.length > 0 ? fields.join(',') : 'none';
+}
+
+/**
+ * An error message when `resultsPath` already holds rows run with a different
+ * context than `contextLabel`, else null. A file from before --context existed
+ * records none and counts as 'none'.
+ *
+ * Without this, a context run pointed at results.json would replace the
+ * selected providers' baseline rows and leave a file whose rows came from two
+ * different prompts, with nothing in it saying so.
+ */
+export function checkContextCompatible(resultsPath, contextLabel) {
+    if (!fs.existsSync(resultsPath)) return null;
+    if (loadRows(resultsPath).length === 0) return null;
+    const existing = loadMetadata(resultsPath).context || 'none';
+    if (existing === contextLabel) return null;
+    return `${path.basename(resultsPath)} holds rows run with --context ${existing}, and this run uses --context ${contextLabel}. ` +
+        'Write this run to its own file with --results <file>.';
+}
+
+/**
  * Run `worker` over `items` with at most `concurrency` in flight at once.
  */
 export async function runPool(items, concurrency, worker) {
@@ -688,6 +725,25 @@ async function main() {
         console.log(`Limited to ${LIMIT} entries`);
     }
 
+    // Fail on a typo'd field before spending any calls.
+    let contextFields;
+    try {
+        contextFields = parseContextFields(CONTEXT_MODE);
+    } catch (err) {
+        console.error(err.message);
+        process.exit(1);
+    }
+    const contextLabel = contextLabelFor(contextFields);
+    if (contextFields.length > 0) {
+        const withContext = entries.filter(e => contextForEntry(e, contextFields)).length;
+        console.log(`Context: ${contextLabel} (prompt ${CONTEXT_PROMPT_VERSION}); ${withContext}/${entries.length} entries get a non-empty context`);
+    }
+    const contextConflict = checkContextCompatible(RESULTS_PATH, contextLabel);
+    if (contextConflict) {
+        console.error(contextConflict);
+        process.exit(1);
+    }
+
     // Check available providers
     const availableProviders = selectedProviders.filter(p => {
         const config = PROVIDERS[p];
@@ -732,7 +788,9 @@ async function main() {
         prompt_date: process.env.BENCHMARK_PROMPT_DATE || todayIso(),
         prompt_source: process.env.BENCHMARK_PROMPT_OVERRIDE_FILE || 'core/prompts.js',
         dataset_extracted_at: datasetMetadata.extracted_at || null,
-        dataset_version_filter: VERSION_FILTER
+        dataset_version_filter: VERSION_FILTER,
+        context: contextLabel,
+        context_prompt_version: contextFields.length > 0 ? CONTEXT_PROMPT_VERSION : null
     };
 
     // Build the task list, skipping anything already completed (resume).
@@ -779,7 +837,8 @@ async function main() {
     await Promise.all(
         [...tasksByHost.entries()].map(([host, hostTasks]) =>
             runPool(hostTasks, CONCURRENCY, async ({ entry, provider }) => {
-                const userPrompt = generateUserPrompt(entry.claim_text, entry.source_text);
+                const context = contextForEntry(entry, contextFields);
+                const userPrompt = generateUserPrompt(entry.claim_text, entry.source_text, context);
 
                 const result = await callProvider(provider, systemPrompt, userPrompt);
                 const quoteCheck = verifyQuote(extractSourceText(entry.source_text), result.source_quote);
@@ -799,6 +858,11 @@ async function main() {
                     source_quote: result.source_quote ?? '',
                     quote_status: quoteCheck.status,
                     quote_verified: quoteCheck.verified,
+                    // Which context fields this row's prompt actually carried
+                    // (a row can lack one the run asked for), so an analysis
+                    // can split rows that got preceding text from rows that
+                    // didn't. Empty on a run without --context.
+                    context_fields: presentContextFields(context),
                     latency_ms: result.latency,
                     error: result.error,
                     correct: scoreResult(result, entry.ground_truth),

@@ -15,3 +15,6 @@ context-*.html
 # those are findings worth keeping.
 benchmark/.wice-cache/
 benchmark/dataset_wice.json
+
+# Context probes are rebuilt from dataset_wice.json by `node context_probes.js build`.
+benchmark/dataset_wice_probes.json

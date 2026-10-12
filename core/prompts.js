@@ -190,16 +190,68 @@ export function extractSourceText(sourceInfo) {
     return sourceInfo;
 }
 
+// Identifies the wording of the article-context block formatClaimContext()
+// emits. Separate from PROMPT_VERSION because the system prompt is untouched:
+// a check run without context sends exactly the v2 prompt, and only a check
+// run with context depends on this. tests/prompts.test.js pins a hash of the
+// block, so a wording change without a bump fails the suite. See
+// docs/design-plans/2026-10-12-claim-context.md.
+export const CONTEXT_PROMPT_VERSION = 'c1';
+
+// Context is read-only: it says what the claim refers to, never whether it is
+// true. Two ways this goes wrong, in opposite directions: the model counts
+// the surrounding text as evidence (a false SUPPORTED that hides a real
+// failure: the dangerous one), or it verifies the surrounding text too (a
+// false flag). The rule names both. tests/prompts.test.js pins the wording.
+export const CLAIM_CONTEXT_RULE = 'This context is only for working out what the claim refers to: who "he" or "the company" is, which day "that evening" means, which event "the battle" is. It is not evidence and not part of the claim: the surrounding article text has its own citations. Do not check the context against the source, and do not count anything the context says as support for the claim. Verify only the claim below, using only the source text.';
+
+/**
+ * Renders the article context for a claim as a block placed before it in the
+ * user message, or '' when there is none to give.
+ *
+ * Every field is optional; an absent or blank one is left out rather than
+ * printed empty, so "no section" never reads as "the section has no name".
+ *
+ * @param {object|null} context
+ * @param {string} [context.articleTitle]
+ * @param {string} [context.sectionTitle] - heading path, e.g. "Career > Music"
+ * @param {string} [context.precedingText] - article text just before the claim
+ * @param {string} [context.citationTitle] - title of the cited work, as the
+ *   article's citation (or the fetched page) gives it
+ * @returns {string}
+ */
+export function formatClaimContext(context) {
+    if (!context) return '';
+    const clean = v => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim() : '');
+    const lines = [];
+    const title = clean(context.articleTitle);
+    const section = clean(context.sectionTitle);
+    const cited = clean(context.citationTitle);
+    const preceding = clean(context.precedingText);
+    if (title) lines.push(`Article: ${title}`);
+    if (section) lines.push(`Section: ${section}`);
+    if (cited) lines.push(`Cited source title: ${cited}`);
+    if (preceding) lines.push(`Text just before the claim: "${preceding}"`);
+    if (lines.length === 0) return '';
+    return `Context from the Wikipedia article (for interpreting the claim only):
+${lines.join('\n')}
+
+${CLAIM_CONTEXT_RULE}`;
+}
+
 /**
  * Parses source info and generates the user message
  * @param {string} claim - The claim to verify
  * @param {string} sourceInfo - The source information
+ * @param {object|null} [context] - article context, see formatClaimContext().
+ *   Omitted, null or empty, the message is byte-identical to the v2 prompt.
  * @returns {string} The user message content
  */
-export function generateUserPrompt(claim, sourceInfo) {
+export function generateUserPrompt(claim, sourceInfo, context = null) {
     const sourceText = extractSourceText(sourceInfo);
+    const contextBlock = formatClaimContext(context);
 
-    return `Claim: "${claim}"
+    return `${contextBlock ? `${contextBlock}\n\n` : ''}Claim: "${claim}"
 
 Source text:
 ${sourceText}`;
