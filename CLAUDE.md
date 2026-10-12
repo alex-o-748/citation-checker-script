@@ -425,7 +425,7 @@ separate, unbuilt module. Design and next steps:
 - **Context is for resolving what the claim refers to, not evidence and not something to verify.** `CLAIM_CONTEXT_RULE` says both. Treating context as evidence is *leakage* (a false SUPPORTED that hides a real failure); verifying it is *scope creep* (a false flag). They can cancel in an accuracy number, so `benchmark/context_probes.js` measures each separately.
 - **One context per results file.** `run_benchmark.js --context` records its fields in the file's metadata and refuses to write into a file run with a different context.
 
-Nothing in the userscript or batch pipeline passes context yet, deliberately: the first run (gpt-oss-20b on WiCE, 2026-10-12) showed no gain, more false flags on Supported rows, and a weak leakage signal. Read the results in `docs/design-plans/2026-10-12-claim-context.md` before wiring it in.
+Nothing in the userscript or batch pipeline passes context yet, deliberately. On WiCE (2026-10-12) it gave no net gain on either model tried, and shifted the verdict balance in opposite directions: gpt-oss-20b got stricter, GLM-5.2 more lenient. It also raised an unsettled rubric question, whether context may supply the anchor of a relative date ("a week later"). Read the results in `docs/design-plans/2026-10-12-claim-context.md` before wiring it in.
 
 ### Sentence splitting differs between the batch and the userscript (read before touching `lastSentence`)
 

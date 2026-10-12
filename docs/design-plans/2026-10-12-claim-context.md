@@ -1,6 +1,6 @@
 # Giving the verifier the claim's context
 
-> **Status (2026-10-12):** In progress. Step 1 (the experiment) is built and has had a first run on gpt-oss-20b: **no gain, a small shift toward false flags, and a weak leakage signal**, so the `c1` context block is not wired into any front end. See Results. Steps 2–4 are on hold pending the follow-ups listed there.
+> **Status (2026-10-12):** In progress. Step 1 (the experiment) is built and has run on two models. **gpt-oss-20b**: no gain, more false flags, a weak leakage signal. **GLM-5.2**: no net gain either, but the opposite shift: fewer false flags, about as many missed failures. It also showed the referent fixes context is meant for, and a policy question about relative dates that has to be settled before context can ship. The `c1` block is not wired into any front end. See Results.
 
 ## The problem
 
@@ -229,23 +229,108 @@ the model now waves through (*"a month before election day"* accepted for
 *"three weeks before"*). This is the dangerous direction, and the rule
 evidently doesn't fully prevent it.
 
+### Second run: GLM-5.2, 2026-10-12
+
+Same setup on `hf-glm-5.2` (`zai-org/GLM-5.2`, keyless HF path), again with
+the no-context run repeated. Raw results: `benchmark/results_wice_noctx_glm.json`,
+`results_wice_noctx_rerun_glm.json`, `results_wice_ctx_glm.json`,
+`results_wice_probes_glm.json`.
+
+**WiCE, all 706 rows:**
+
+| Run | Exact | Supported-vs-rest | FPR | TPR | SUPPORTED verdicts |
+|---|---|---|---|---|---|
+| No context | 67.4% | 82.9% | 21.2% (48/226) | 84.8% (407/480) | 251 |
+| No context, repeated | 67.4% | 82.6% | 19.9% (45/226) | 83.8% (402/480) | 259 |
+| **Context** | **68.8%** | **82.2%** | **17.3% (39/226)** | **81.9% (393/480)** | **274** |
+
+- **Much less noise than gpt-oss-20b.** Identical runs agree on 90.2% of
+  verdicts (gpt-oss-20b: 80.3%), so smaller effects are visible.
+- **Context makes GLM more lenient, the opposite of gpt-oss-20b.** It says
+  SUPPORTED more often. That cuts false flags by 3–4 points and costs about
+  as much detection: of 400 failing citations that the first no-context run
+  flagged, context passes 5.0%, against 2.8% for the repeat. The extra passes
+  concentrate on WiCE's `mixed` rows, where at least one subclaim is
+  unsupported: 66/71 SUPPORTED without context, 81 with. Net
+  Supported-vs-rest is flat. It is a trade, not a gain, and on the side this
+  doc calls dangerous.
+- **No gain on the context-dependent subset** (the 203 pronoun / relative-time
+  claims): Supported-vs-rest 85.7% / 84.7% without, 82.8% with.
+- **Probes:** leak 2/47 (4.3%), creep 1/44 (2.3%). Neither stands out from the
+  background flip rates above. Planting the claim word for word doesn't leak
+  more than ordinary context does: GLM's extra leniency comes from somewhere
+  else.
+
+**The rationales show three different mechanisms**, which a single accuracy
+number blurs together. These are the 15 rows that both no-context runs
+flagged and the context run passed, all with failing ground truth:
+
+1. **The referent fix this design is for.** *"In May 2018, he was named in
+   Tite's final 23-man squad…"*, on the article **Gabriel Jesus**. Both
+   no-context runs checked the claim against **Neymar**, the first player the
+   BBC squad article names. With context, the model checked the right person.
+   No accuracy table shows this: the verdict was PARTIALLY SUPPORTED either
+   way, for a different reason each time.
+2. **Relative time resolved through the context.** *"He was recalled by the
+   Wizards a week later."* Without context, the model can't check "a week
+   later". With it, the model takes the assignment date (April 4) from the
+   preceding sentence and the recall date (April 11) from the source, and
+   says SUPPORTED. *"Eleven days later…"* and *"The following day…"* go the
+   same way. Under `CLAIM_CONTEXT_RULE` this is leakage: a fact from the
+   context used as evidence. Editorially it is arguably right: the anchor
+   date belongs to the previous sentence and *its* citation, and this
+   citation supplies the half that belongs to it. WiCE labels these
+   partially supported. **This is a policy question to settle before context
+   ships** (see below).
+3. **Plain leniency.** "Academy coach" accepted for the source's "academy
+   manager" as "a minor terminology difference"; a paraphrase accepted that
+   both no-context runs rejected. These rationales don't use the context at
+   all. A longer, more explanatory prompt seems to make GLM more charitable,
+   much as it made gpt-oss-20b stricter.
+
+### The relative-date question
+
+When a claim's time is relative to the sentence before it ("a week later",
+"the following day", "that evening"), what should this citation have to show?
+
+- **(a) Only its own half.** The source gives the absolute date of this
+  event, the previous sentence's citation gives the anchor, and together the
+  article is sourced. Context may be used for the arithmetic. Matches how
+  editors read citations. Needs the rule changed to allow it, and the probes
+  changed so they don't count it as leakage.
+- **(b) The whole claim.** The source must itself support "a week later"
+  (either by saying so or by giving both dates). The current rule. Stricter,
+  matches WiCE, and keeps the clean line "context is never evidence". But the
+  model will then flag correct citations for a gap no editor would fix.
+
+This doc leans to (a), narrowly: context may supply the *anchor* of a relative
+time expression, never any other fact. That is a narrower exception than it
+sounds, and easier to probe for. But it's a rubric decision, and it changes
+what counts as correct on the benchmark, so it isn't made here.
+
 ### What this means
 
-`c1` should not ship. Context as built here costs false flags and shows some
-leakage, for no measurable gain on this model. That doesn't settle the
-question. It narrows what to try next:
+`c1` should not ship. On neither model does it improve accuracy, and on each
+it shifts the verdict balance, in opposite directions: stricter on
+gpt-oss-20b, more lenient on GLM-5.2. A prompt change whose direction depends
+on the model can't be tuned on one model and deployed on several. GLM does
+show the benefit that motivated this, wrong-referent checks fixed, but
+WiCE's labels can't score it. What to try next:
 
-1. **A stronger model.** Referent resolution and following a "context is not
-   evidence" rule are both things a 20B model may do badly. Run the same three
-   WiCE runs and the probes on Sonnet before changing the prompt, since a
-   prompt tuned to gpt-oss-20b's quirks may not transfer.
+1. **Settle the relative-date question** above. Until then, half of what
+   context visibly does on GLM can't be scored as right or wrong.
 2. **Less context.** Ablate `--context title` and `--context title,section`
-   against `preceding`. If the strictness shift comes from the preceding text,
-   a title-only (and later, link-targets-only) block may keep the individual
-   wins without it.
-3. **Bigger probes.** `--per-type 150`, run twice, to tell whether the 8.9% is
-   real.
-4. **The question this run can't answer.** The case for context is sentence
+   against `preceding`. Title and section carry the referent fix (the Gabriel
+   Jesus case needs only the article title) without the date arithmetic or
+   the paragraph-length prompt that seems to move strictness. This is now
+   the most promising variant.
+3. **A shorter rule.** Both models' shifts look like reactions to the rule's
+   length and tone rather than its content. One sentence ("Context only
+   identifies what the claim refers to; judge the claim against the source
+   alone") may move strictness less.
+4. **Bigger probes.** `--per-type 150`, run twice, to tell whether
+   gpt-oss-20b's 8.9% is real. GLM's 4.3% is within its background.
+5. **The question these runs can't answer.** The case for context is sentence
    scope, and the current benchmark can't test it. Only 11 of its 80 Supported
    rows change at all when narrowed to the last sentence, and only 55 of 182
    rows have recoverable preceding text. Answering it needs step 2's DOM-based
