@@ -47,6 +47,8 @@ import { parseArgs } from 'node:util';
 import { readFile as fsReadFile, writeFile as fsWriteFile } from 'node:fs/promises';
 
 import { openReplicaConnection, makeQueryFn } from './replicas.js';
+import { openToolsDbConnection } from './toolsdb.js';
+import { selectCheckedPageIds } from './findings-store.js';
 import { parseTitlesFile } from './run-sweep.js';
 import {
     selectTopEdited,
@@ -104,6 +106,7 @@ export function parseCliArgs(argv) {
             'flagged-share':     { type: 'string', default: String(DEFAULT_FLAGGED_QUOTA_SHARE) },
             'blp-share':         { type: 'string', default: String(DEFAULT_BLP_QUOTA_SHARE) },
             'exclude-titles-file': { type: 'string', multiple: true },
+            'no-exclude-checked': { type: 'boolean', default: false },
             'scan-all':          { type: 'boolean', default: false },
             out:                 { type: 'string', default: 'pilot-100.txt' },
             'json-out':          { type: 'string' },
@@ -130,6 +133,7 @@ export function parseCliArgs(argv) {
         flaggedShare: Number(values['flagged-share']),
         blpShare: Number(values['blp-share']),
         excludeTitlesFiles: values['exclude-titles-file'] ?? [],
+        excludeChecked: !values['no-exclude-checked'],
         scanAll: values['scan-all'],
         out: values.out,
         jsonOut: values['json-out'],
@@ -187,13 +191,20 @@ Options:
                              episode lists and medal tables are worthless to
                              verify: the claim behind a bracket citation is a
                              score line, not an assertion.
+  --no-exclude-checked      Don't skip articles that already have findings in
+                             ToolsDB. By default the pick reads which articles
+                             of --wiki earlier sweeps stored (run-sweep.js stores
+                             every finding unless --no-store) and leaves them
+                             out, so no batch re-checks an article. Fails if
+                             ToolsDB can't be read; this flag is the way round.
   --exclude-titles-file <path>
-                             Skip any base-pool article whose title appears in
-                             this file (same one-title-per-line format
-                             --titles-file uses elsewhere) — a prior batch's
-                             titles file, so the next batch covers new ground
-                             instead of re-picking articles already checked.
-                             Repeatable: pass it once per prior batch, e.g.
+                             Also skip any base-pool article whose title appears
+                             in this file (same one-title-per-line format
+                             --titles-file uses elsewhere). Only needed for a
+                             batch that never reached ToolsDB (run before storing
+                             was the default, or with --no-store) and was never
+                             imported with service/run-import-findings.js.
+                             Repeatable: pass it once per such batch, e.g.
                                --exclude-titles-file service/article-lists/pilot-100.txt \\
                                --exclude-titles-file service/article-lists/pilot-100-batch2.txt
   --flagged-share <f>       Share of the pilot reserved for articles carrying
@@ -300,6 +311,7 @@ export async function runPickPilot(opts, {
     parseHtml = html => JSDOM.fragment(html),
     writeFile = fsWriteFile,
     readExcludeTitlesFile = path => fsReadFile(path, 'utf8'),
+    connectToolsDb = openToolsDbConnection,
     now = () => new Date(),
 } = {}) {
     if (!validate(opts, stderr)) return 2;
@@ -342,19 +354,48 @@ export async function runPickPilot(opts, {
             return 1;
         }
 
-        const topEdited = excludeTitles
-            ? topEditedAll.filter(c => !excludeTitles.has(c.title))
-            : topEditedAll;
+        // Articles an earlier sweep already checked, from ToolsDB, where
+        // run-sweep.js stores every finding by default. Replaces passing one
+        // --exclude-titles-file per earlier batch; that flag still works, for
+        // batches run before storing was the default (or with --no-store).
+        // Fatal when it can't be read: silently re-picking checked articles
+        // is the failure this exists to prevent.
+        let checkedPageIds = null;
+        if (opts.excludeChecked) {
+            let toolsDb;
+            try {
+                toolsDb = await connectToolsDb();
+                checkedPageIds = await selectCheckedPageIds(makeQueryFn(toolsDb), opts.wiki);
+            } catch (error) {
+                stderr.write(
+                    `pick-pilot: could not read already-checked articles from ToolsDB: ${error.message} `
+                    + '(pass --no-exclude-checked to pick without that filter)\n'
+                );
+                return 1;
+            } finally {
+                if (toolsDb) await toolsDb.end();
+            }
+        }
+
+        const topEdited = topEditedAll.filter(c =>
+            !(excludeTitles && excludeTitles.has(c.title)) && !(checkedPageIds && checkedPageIds.has(Number(c.pageId))));
+        if (checkedPageIds) {
+            const dropped = topEditedAll.filter(c => checkedPageIds.has(Number(c.pageId))).length;
+            stderr.write(
+                `pick-pilot: dropped ${dropped} of ${topEditedAll.length} base-pool article(s) already checked `
+                + `(${checkedPageIds.size} ${opts.wiki} article(s) in ToolsDB)\n`
+            );
+        }
         if (excludeTitles) {
             stderr.write(
-                `pick-pilot: --exclude-titles-file dropped ${topEditedAll.length - topEdited.length} of `
+                `pick-pilot: --exclude-titles-file dropped ${topEditedAll.filter(c => excludeTitles.has(c.title)).length} of `
                 + `${topEditedAll.length} base-pool article(s) already in `
                 + `${opts.excludeTitlesFiles.join(', ')} (${excludeTitles.size} title(s))\n`
             );
-            if (topEdited.length === 0) {
-                stderr.write('pick-pilot: nothing left to select after --exclude-titles-file\n');
-                return 1;
-            }
+        }
+        if (topEdited.length === 0) {
+            stderr.write('pick-pilot: nothing left to select after excluding already-checked articles\n');
+            return 1;
         }
 
         const pageIds = topEdited.map(c => c.pageId);

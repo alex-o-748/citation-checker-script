@@ -30,8 +30,13 @@ test('parseCliArgs defaults match run-replay.js\'s conventions (liftwing, no key
     assert.equal(opts.delayMs, 1000);
     assert.equal(opts.concurrency, 1);
     assert.equal(opts.liveSourceFetch, false);
-    assert.equal(opts.store, false);
+    assert.equal(opts.store, true, 'every finding goes to ToolsDB unless --no-store');
     assert.equal(opts.out, 'findings.csv');
+});
+
+test('parseCliArgs: --no-store turns the store off; a leftover --store is harmless', () => {
+    assert.equal(parseCliArgs(['node', 'sweep.js', '--no-store']).store, false);
+    assert.equal(parseCliArgs(['node', 'sweep.js', '--store']).store, true);
 });
 
 test('parseCliArgs applies overrides', () => {
@@ -243,6 +248,26 @@ test('a group with only one usable source is skipped and contributes no collecti
     assert.equal(code, 0);
     assert.equal(written.filter(f => f.isCollective).length, 0);
     assert.equal(written.length, 3, 'still one per-source finding each for citations 1, 2, 3');
+});
+
+test('a failed ToolsDB write is counted, not fatal: the CSV still gets every row', async () => {
+    let csvRows = 0;
+    const stderrChunks = [];
+    const code = await runSweep(baseOpts({ store: true }), baseIo({
+        connectToolsDb: async () => ({
+            execute: async () => { throw new Error("Data too long for column 'reason_type'"); },
+            end: async () => {},
+        }),
+        appendFindingFn: async () => { csvRows++; },
+        stderr: { write: s => stderrChunks.push(s) },
+    }));
+    const out = stderrChunks.join('');
+
+    assert.equal(code, 0);
+    assert.equal(csvRows, 4);
+    assert.match(out, /ToolsDB write failed \(continuing; the CSV has the row\): Data too long/);
+    assert.equal(out.match(/ToolsDB write failed/g).length, 1, 'the first failure is shown once, not per row');
+    assert.match(out, /4 ToolsDB write\(s\) failed; backfill them with node service\/run-import-findings\.js findings\.csv --wiki enwiki/);
 });
 
 test('--store upserts every finding into ToolsDB and closes the connection', async () => {

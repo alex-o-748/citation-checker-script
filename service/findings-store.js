@@ -94,7 +94,11 @@ export function buildUpsertQuery(finding) {
         finding.rationale,
         finding.sourceQuote,
         finding.quoteStatus,
-        finding.provider,
+        // '' rather than NULL for "no model ran": provider is part of
+        // uniq_finding, and a NULL there never matches an existing row, so
+        // re-storing a SOURCE UNAVAILABLE row would duplicate it (see
+        // service/migrations/004-store-by-default.sql).
+        finding.provider ?? '',
         finding.model,
         finding.promptVersion,
         finding.fetchStatus,
@@ -117,4 +121,16 @@ export function buildUpsertQuery(finding) {
 export async function upsertFinding(query, finding) {
     const { sql, params } = buildUpsertQuery(finding);
     return await query(sql, params);
+}
+/**
+ * Page ids on `wiki` that already have at least one stored finding — what
+ * service/run-pick-pilot.js leaves out of a new batch, so a batch never
+ * re-checks an article an earlier one covered.
+ *
+ * Page ids, not titles: an article renamed between batches is the same page,
+ * and the table's titles are whatever form the titles file used.
+ */
+export async function selectCheckedPageIds(query, wiki) {
+    const rows = await query('SELECT DISTINCT page_id FROM citation_findings WHERE wiki = ?', [wiki]);
+    return new Set(rows.map(row => Number(row.page_id)));
 }
