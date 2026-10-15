@@ -25,6 +25,8 @@ test('parseCliArgs applies documented defaults', () => {
     assert.equal(opts.scanAll, false);
     assert.equal(opts.out, 'pilot-100.txt');
     assert.equal(opts.jsonOut, undefined);
+    assert.equal(opts.excludeChecked, true, 'already-checked articles are skipped unless --no-exclude-checked');
+    assert.equal(parseCliArgs(['node', 'pick-pilot.js', '--no-exclude-checked']).excludeChecked, false);
 });
 
 test('parseCliArgs applies overrides', () => {
@@ -58,7 +60,7 @@ test('HELP_TEXT documents every flag and the Toolforge-job memory caveat', () =>
         '--history-days', '--history-bucket-days', '--min-active-buckets',
         '--max-idle-days', '--allow-event-titles', '--base-pool',
         '--shortlist-size', '--max', '--offline-ratio-max', '--table-ratio-max',
-        '--flagged-share', '--blp-share', '--scan-all',
+        '--flagged-share', '--blp-share', '--scan-all', '--no-exclude-checked',
         '--out', '--json-out']) {
         assert.ok(HELP_TEXT.includes(flag), `HELP_TEXT missing ${flag}`);
     }
@@ -428,6 +430,41 @@ test('--wiki reaches the REST host when fetchArticle is not injected (the hostFo
         global.fetch = originalFetch;
     }
     assert.match(seenUrl, /^https:\/\/ru\.wikipedia\.org\//);
+});
+
+// --- already-checked articles (ToolsDB): a new batch must cover new ground ---
+
+test('articles with stored findings are left out of the batch, by page id', async () => {
+    let written;
+    let queried;
+    let ended = false;
+    const code = await runPickPilot(baseOpts({ excludeChecked: true }), baseIo({
+        connectToolsDb: async () => ({
+            execute: async (sql, params) => { queried = { sql, params }; return [[{ page_id: 2 }]]; },
+            end: async () => { ended = true; },
+        }),
+        writeFile: async (path, content) => { written = content; },
+    }));
+
+    assert.equal(code, 0);
+    assert.deepEqual(queried.params, ['enwiki']);
+    assert.equal(ended, true, 'the ToolsDB connection is closed once read');
+    const titles = written.split('\n').filter(l => l && !l.startsWith('#'));
+    assert.ok(!titles.includes('Perennial Page'), 'page 2 already has findings');
+    assert.deepEqual(titles, ['Disputed Claim', 'A Living Person']);
+});
+
+test('an unreadable ToolsDB stops the pick instead of silently re-picking checked articles', async () => {
+    const stderrChunks = [];
+    let wrote = false;
+    const code = await runPickPilot(baseOpts({ excludeChecked: true }), baseIo({
+        connectToolsDb: async () => { throw new Error('connect ETIMEDOUT'); },
+        writeFile: async () => { wrote = true; },
+        stderr: { write: s => stderrChunks.push(s) },
+    }));
+    assert.equal(code, 1);
+    assert.equal(wrote, false);
+    assert.match(stderrChunks.join(''), /ETIMEDOUT.*--no-exclude-checked/);
 });
 
 // --- --exclude-titles-file: a second batch must cover new ground ---

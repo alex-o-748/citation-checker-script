@@ -36,16 +36,19 @@
 // Code session's own proxy, for one, may not allow-list those hosts; check
 // before assuming a run just hung).
 //
-// The CSV is the default deliverable; a ToolsDB write is opt-in (--store),
-// inverting service/run-replay.js's default. Its bastion is unreachable from
-// almost everywhere, so gating the shareable artifact on bastion access
-// would make it unnecessarily hard to produce the thing someone actually
-// asked for.
+// Every finding goes to the CSV and to ToolsDB. The store used to be opt-in
+// (--store), on the grounds that ToolsDB is unreachable from almost
+// everywhere; but sweeps run as Toolforge jobs, and none of the 2026-10
+// ruwiki batches ever wrote to it, so the table that should say which
+// articles were already checked (run-pick-pilot.js reads it) said nothing.
+// Outside Toolforge, pass --no-store. The CSV stays the record: a failed
+// write is counted and reported, never fatal, and service/run-import-findings.js
+// can backfill ToolsDB from the CSV afterwards.
 //
 // Usage:
 //   node service/run-sweep.js --max 5 --out findings.csv
 //   node service/run-sweep.js --max 50 --live-source-fetch --out findings.csv
-//   node service/run-sweep.js --max 5 --out findings.csv --store   # also ToolsDB
+//   node service/run-sweep.js --max 5 --out findings.csv --no-store   # CSV only, e.g. off Toolforge
 //   node service/run-sweep.js --max 50 --concurrency 16 --out findings.csv
 //   node service/run-sweep.js --titles-file articles.txt --live-source-fetch --out findings.csv
 //   node service/run-sweep.js --titles-file articles.txt --live-source-fetch --fetch-concurrency 8
@@ -127,7 +130,11 @@ export function parseCliArgs(argv) {
             'fetch-concurrency': { type: 'string', default: String(DEFAULT_FETCH_CONCURRENCY) },
             'max-consecutive-failures': { type: 'string', default: String(DEFAULT_MAX_CONSECUTIVE_FAILURES) },
             'live-source-fetch': { type: 'boolean', default: false },
+            // Default on. --store is still accepted (a no-op) so older
+            // command lines keep working; node 18's parseArgs has no
+            // built-in --no-<flag>, hence the explicit option.
             store:               { type: 'boolean', default: false },
+            'no-store':          { type: 'boolean', default: false },
             resume:              { type: 'boolean', default: false },
             severity:            { type: 'boolean', default: false },
             'skip-checks':       { type: 'boolean', default: false },
@@ -156,7 +163,7 @@ export function parseCliArgs(argv) {
         fetchConcurrency: Number(values['fetch-concurrency']),
         maxConsecutiveFailures: Number(values['max-consecutive-failures']),
         liveSourceFetch: values['live-source-fetch'],
-        store: values.store,
+        store: !values['no-store'],
         resume: values.resume,
         severity: values.severity,
         skipChecks: values['skip-checks'],
@@ -233,8 +240,12 @@ Options:
                          bandwidth. Requires a host with open egress to the
                          wiki's REST API and to tf-source-fetcher, which not
                          every environment has.
-  --store               Also upsert every finding into ToolsDB. Requires a
-                         Toolforge bastion; the CSV is written either way.
+  --no-store            Don't upsert findings into ToolsDB. Storing is the
+                         default, and needs ToolsDB, i.e. a Toolforge job or
+                         bastion; pass this anywhere else. The CSV is written
+                         either way, and a failed write to ToolsDB is counted
+                         and reported, never fatal (backfill it with
+                         service/run-import-findings.js).
   --resume              Continue into an existing --out CSV instead of starting
                          a new one: every article already present in it is
                          skipped and new findings are appended. For picking a
@@ -272,7 +283,7 @@ The run halts instead:
   - after --max-consecutive-failures transient failures in a row, exit code 4;
   - on any error that isn't transient (not a 429/5xx/network failure, e.g. an
     unexpected response shape), immediately, exit code 4.
-Either way the CSV (and, with --store, ToolsDB) still gets every finding
+Either way the CSV (and, unless --no-store, ToolsDB) still gets every finding
 computed before the halt; nothing already written is rolled back.
 
 A run that finishes but fails a post-run check (a fetch outage, missing
@@ -601,7 +612,7 @@ export async function runSweep(opts, {
             toolsDbConnection = await connectToolsDb(readFile ? { readFile } : {});
             toolsDbQuery = makeQueryFn(toolsDbConnection);
         } catch (error) {
-            stderr.write(`sweep: could not connect to ToolsDB: ${error.message}\n`);
+            stderr.write(`sweep: could not connect to ToolsDB: ${error.message} (pass --no-store to write the CSV only)\n`);
             return 1;
         }
     }
@@ -620,6 +631,7 @@ export async function runSweep(opts, {
     });
 
     const findings = [];
+    const storeStats = { written: 0, failed: 0 };
     // citationsSeen -> withUrl -> fetched -> verified -> flagged -> published
     // is deliberately citation-denominated and monotonic (each stage's count
     // can only be <= the one before it), matching the parent design doc's §7
@@ -651,7 +663,19 @@ export async function runSweep(opts, {
         findings.push(finding);
         if (finding.published) funnel.published++;
         await appendFindingFn(opts.out, finding);
-        if (toolsDbQuery) await upsertFinding(toolsDbQuery, finding);
+        if (!toolsDbQuery) return;
+        try {
+            await upsertFinding(toolsDbQuery, finding);
+            storeStats.written++;
+        } catch (error) {
+            // The row is already in the CSV, which is the record; a lost
+            // write is backfilled from it. Halting a day-long sweep over a
+            // database hiccup would cost far more than the row.
+            storeStats.failed++;
+            if (storeStats.failed === 1) {
+                stderr.write(`sweep: ToolsDB write failed (continuing; the CSV has the row): ${error.message}\n`);
+            }
+        }
     };
 
     // core/urls.js logs one console.log per citation it examines — fine for
@@ -999,8 +1023,13 @@ export async function runSweep(opts, {
         `(<=1 usable source), ${funnel.groupsFlagged} flagged.\n` +
         `sweep: verdicts: ${JSON.stringify(verdictCounts)}\n` +
         (opts.severity ? `sweep: severity tiers: ${JSON.stringify(severityCounts)}\n` : '') +
-        `sweep: wrote ${findings.length} finding(s) to ${opts.out}${toolsDbQuery ? ' and ToolsDB' : ''}` +
-        `${resumeSkipped ? ` (${resumeSkipped} article(s) skipped as already done)` : ''}.\n`
+        `sweep: wrote ${findings.length} finding(s) to ${opts.out}` +
+        `${toolsDbQuery ? ` and ${storeStats.written} to ToolsDB` : ''}` +
+        `${resumeSkipped ? ` (${resumeSkipped} article(s) skipped as already done)` : ''}.\n` +
+        (storeStats.failed
+            ? `sweep: ${storeStats.failed} ToolsDB write(s) failed; backfill them with `
+              + `node service/run-import-findings.js ${opts.out} --wiki ${opts.wiki}\n`
+            : '')
     );
     if (!cleanError) stderr.write(`sweep: wrote clean CSV to ${cleanOut}.\n`);
     stderr.write(

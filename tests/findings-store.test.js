@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { buildUpsertQuery, upsertFinding } from '../service/findings-store.js';
+import { buildUpsertQuery, upsertFinding, selectCheckedPageIds } from '../service/findings-store.js';
 import { claimHash, sourceUrlHash } from '../core/anchor.js';
 
 test('buildUpsertQuery binds all values and computes hashes internally', () => {
@@ -159,6 +159,10 @@ test('buildUpsertQuery handles no-URL findings with empty-string hash', () => {
     assert.equal(params[17], null);
     assert.equal(params[18], null);
 
+    // provider (index 19) is '' not NULL: it is part of uniq_finding, and a
+    // NULL there would make every re-store insert a duplicate (migration 004).
+    assert.equal(params[19], '');
+
     // model (index 20) stays null; promptVersion (index 21) is still set
     assert.equal(params[20], null);
     assert.equal(params[21], 'v1.0');
@@ -223,4 +227,16 @@ test('upsertFinding calls query with the constructed SQL and parameters', async 
 
     // Check that we have the right number of parameters
     assert.equal(call.params.length, 28);
+});
+
+test('selectCheckedPageIds returns the page ids already stored for a wiki', async () => {
+    const calls = [];
+    const query = async (sql, params) => {
+        calls.push({ sql, params });
+        return [{ page_id: 12 }, { page_id: '34' }];
+    };
+    const ids = await selectCheckedPageIds(query, 'ruwiki');
+    assert.deepEqual([...ids], [12, 34]);
+    assert.deepEqual(calls[0].params, ['ruwiki']);
+    assert.match(calls[0].sql, /SELECT DISTINCT page_id FROM citation_findings WHERE wiki = \?/);
 });

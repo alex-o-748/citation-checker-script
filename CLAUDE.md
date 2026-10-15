@@ -272,8 +272,17 @@ Runnable entry points, each a thin wiring layer over the components above:
 | `service/run-pick-pilot.js` | Stage 1 + a citation-extraction pass, writing a `--titles-file` for `run-sweep.js` — the batch mix (see **Article selection** below) | Wiki Replicas, Wikipedia REST |
 | `service/run-extract.js` | Stages 1-3, prints a citations/URLs/fetched/failed funnel | Wiki Replicas, Wikipedia REST, source fetcher (opt-in) |
 | `service/run-replay.js` | Stages 4-5 over `benchmark/dataset.json`'s stored claim/source pairs instead of live fetching — the integration test for verify+store with zero third-party requests | Model API only (+ Wikipedia REST to resolve page IDs) |
-| `service/run-sweep.js` | **All six stages**, writing a CSV by default and (with `--store`) also upserting into ToolsDB | Wiki Replicas, Wikipedia REST, model API, source fetcher (opt-in) |
+| `service/run-sweep.js` | **All six stages**, writing a CSV and upserting every finding into ToolsDB (`--no-store` for CSV only) | Wiki Replicas, Wikipedia REST, model API, ToolsDB, source fetcher (opt-in) |
 | `service/run-checks.js` | Post-run checks over a findings CSV (`run-sweep.js` also runs them at the end of every sweep; see below) | None |
+| `service/run-import-findings.js` | Upserts findings CSVs into ToolsDB: backfills batches run before storing was the default, or after failed writes. Idempotent | ToolsDB |
+
+### ToolsDB is the record of what has been checked (read before adding a per-batch exclude list)
+
+Since 2026-10 `run-sweep.js` stores every finding in ToolsDB by default, and `run-pick-pilot.js` leaves out every article that already has a stored finding for its `--wiki` (by page id, `selectCheckedPageIds()` in `service/findings-store.js`). That replaces passing one `--exclude-titles-file` per earlier batch, which had grown to five flags by the fifth ruwiki batch. Escape hatches: `--no-store` on the sweep (off Toolforge), `--no-exclude-checked` on the pick.
+
+- **The CSV is still the record; the store follows it.** A failed ToolsDB write is counted and reported, never fatal to the sweep, and the summary prints the `run-import-findings.js` command that backfills it. Halting a day-long batch over a database hiccup costs more than the row.
+- **The pick fails if it can't read ToolsDB**, rather than continuing without the filter: silently re-picking checked articles is the failure the filter exists to prevent.
+- **Apply `service/migrations/004-store-by-default.sql` before the first store.** It widens `reason_type` (the pipeline writes 23-byte reasons into a 16-byte column) and `group_id` (Cyrillic ref names), and makes `provider` `NOT NULL DEFAULT ''`: it is part of the unique key, and MariaDB never matches NULLs there, so every re-store of a no-model row (SOURCE UNAVAILABLE, SKIPPED) used to insert a duplicate. `buildUpsertQuery()` writes `''` for "no model ran" to match.
 
 ### Post-run checks (`service/sweep-checks.js`, read before adding a halt-or-record decision)
 
