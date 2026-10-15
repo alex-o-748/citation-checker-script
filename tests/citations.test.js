@@ -298,6 +298,23 @@ test('returns an empty array for a root with no citations, and for no root', () 
     assert.deepEqual(collectCitations(undefined), []);
 });
 
+test('separate claims get distinct group ids even when their markers share one HTML id', () => {
+    // Old-style {{ref}} footnotes (ruwiki's «Балтиец (вагон метро)» tables)
+    // render every marker for one note with the same id="ref_1".
+    const marker = '<sup id="ref_1" class="reference"><a href="#endnote_1">a</a></sup>';
+    const doc = new JSDOM(
+        `<!DOCTYPE html><body><div id="mw-content-text">` +
+        `<p>The first car series was built in Leningrad.${marker}</p>` +
+        `<p>The second car series was built in Mytishchi.${marker}</p>` +
+        `<ol class="references"><li id="endnote_1">Factory records.</li></ol></div></body>`
+    ).window.document;
+
+    const citations = collectCitations(doc.getElementById('mw-content-text'));
+    assert.equal(citations.length, 2);
+    assert.equal(citations[0].groupId, 'ref_1');
+    assert.equal(citations[1].groupId, 'ref_1~2');
+});
+
 test('attachGroupMetadata is idempotent', () => {
     const doc = buildDoc(
         '<p>The treaty was signed in Paris in 1990.@@1@@@@2@@</p>',

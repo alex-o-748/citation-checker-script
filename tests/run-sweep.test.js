@@ -5,6 +5,7 @@ import {
     parseCliArgs,
     parseTitlesFile,
     splitCitations,
+    firstPerFootnote,
     runSweep,
     stubFetchSource,
     HELP_TEXT,
@@ -77,6 +78,16 @@ test('splitCitations separates solo citations from adjacent groups, sorted by gr
     assert.deepEqual(solos.map(c => c.citationNumber), ['1', '4']);
     assert.equal(groups.length, 1);
     assert.deepEqual(groups[0].map(c => c.citationNumber), ['2', '3'], 'sorted by groupIndex, not input order');
+});
+
+test('firstPerFootnote keeps one member per footnote ("[231][231]" is one source)', () => {
+    const members = [
+        { citationNumber: '231', refId: 'cite_note-a-231', groupIndex: 0 },
+        { citationNumber: '50', refId: 'cite_note-b-50', groupIndex: 1 },
+        { citationNumber: '231', refId: 'cite_note-a-231', groupIndex: 2 },
+        { citationNumber: '7', refId: null, groupIndex: 3 },
+    ];
+    assert.deepEqual(firstPerFootnote(members).map(m => m.groupIndex), [0, 1, 3]);
 });
 
 test('splitCitations handles an article with no groups at all', () => {
@@ -186,6 +197,30 @@ test('a full sweep writes one finding per solo citation plus one per completed g
     const collective = written.findings.find(f => f.isCollective);
     assert.equal(collective.citationNumber, '2, 3');
     assert.equal(collective.sourceUrl, 'https://b.example/x\nhttps://c.example/x');
+});
+
+test('the same named ref cited twice in a row is checked once, not written as two identical rows', async () => {
+    // Kadyrov #231 in the 2026-10 ruwiki batch: "…выступил[231][231]".
+    const marker = n => `<sup id="cite_ref-a_231-${n}" class="reference"><a href="./Test#cite_note-a-231">[231]</a></sup>`;
+    const html = `<!DOCTYPE html><body><p>The judge's family was threatened in public statements.${marker(0)}${marker(1)}</p>` +
+        `<ol class="references"><li id="cite_note-a-231">${link('https://a.example/x')}</li></ol></body>`;
+    let written;
+    let modelCalls = 0;
+    const code = await runSweep(baseOpts(), baseIo({
+        fetchArticle: async () => ({ html, status: 200, error: null }),
+        makeModelCallerFn: () => async () => {
+            modelCalls++;
+            return {
+                text: JSON.stringify({ support_score: 90, verdict: 'SUPPORTED', source_quote: '', comments: 'ok' }),
+                usage: { input: 10, output: 5 },
+            };
+        },
+        appendFindingFn: async (_path, finding) => { (written ??= []).push(finding); },
+    }));
+
+    assert.equal(code, 0);
+    assert.equal(written.length, 1, 'one per-source row; the collective is skipped, both markers being one source');
+    assert.equal(modelCalls, 1);
 });
 
 test('the funnel counts citations, not verification calls, so it stays monotonic', async () => {

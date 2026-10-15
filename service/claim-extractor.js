@@ -113,6 +113,9 @@ export async function processArticle(candidate, {
         if (!source) break;
         results.push({
             citationNumber: citation.citationNumber,
+            // The footnote's id, shared by every reuse of a named ref —
+            // run-sweep.js's firstPerFootnote() keys on it.
+            refId: citation.refId,
             refName: citation.refName,
             claimText: citation.claimText,
             url: citation.url,

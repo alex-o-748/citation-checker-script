@@ -1653,6 +1653,13 @@ function attachGroupMetadata(citations) {
     }
 
     const visited = new Set();
+    // Group ids handed out so far. A wrapper's id is normally unique per
+    // occurrence (cite_ref-X-Y), but old-style footnote templates ({{ref}} /
+    // {{note}} on ruwiki) render every marker for one note with the same
+    // id="ref_1", so separate claims would share a group id. Seen on
+    // «Балтиец (вагон метро)» in the 2026-10 ruwiki batch: eight table-cell
+    // claims under one id.
+    const usedGroupIds = new Set();
     for (const citation of citations) {
         if (visited.has(citation)) continue;
 
@@ -1668,7 +1675,10 @@ function attachGroupMetadata(citations) {
         // source — e.g. "[3][4]" and a separate "[3][5]" later in the article —
         // don't collide on the data-group-id used by the report renderer.
         const firstWrapper = groupCitations[0].refElement.closest('.reference');
-        const groupId = (firstWrapper && firstWrapper.id) || groupCitations[0].refId;
+        const baseGroupId = (firstWrapper && firstWrapper.id) || groupCitations[0].refId;
+        let groupId = baseGroupId;
+        for (let n = 2; usedGroupIds.has(groupId); n++) groupId = `${baseGroupId}~${n}`;
+        usedGroupIds.add(groupId);
         const groupCitationNumbers = groupCitations.map(c => c.citationNumber);
 
         groupCitations.forEach((c, idx) => {
