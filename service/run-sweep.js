@@ -337,6 +337,24 @@ export function splitCitations(citations) {
     return { solos, groups };
 }
 
+// One member per footnote, for a group's per-source checks. Wikitext that
+// cites the same named ref twice in a row ("…выступил[231][231]") renders two
+// markers for one footnote; both share the group's claim and the same source,
+// so checking each would be the same model call twice and two identical CSV
+// rows (25 such rows in the 2026-10 ruwiki batch of 500). The collective call
+// already collapses them (core/groups.js's groupSourceEntries()); this is the
+// per-source side of the same rule. Keyed on refId, the footnote's own id,
+// which every reuse of a named ref shares.
+export function firstPerFootnote(members) {
+    const seen = new Set();
+    return members.filter(member => {
+        if (!member.refId) return true;
+        if (seen.has(member.refId)) return false;
+        seen.add(member.refId);
+        return true;
+    });
+}
+
 // A "flag" is any verdict that would surface as a suggestion — matches the
 // parent design doc's §1 "any-flag" definition (NOT SUPPORTED or PARTIALLY
 // SUPPORTED). Kept as its own predicate so the funnel and any future
@@ -811,7 +829,7 @@ export async function runSweep(opts, {
             };
             const { solos, groups } = splitCitations(article.citations);
 
-            for (const citation of [...solos, ...groups.flat()]) {
+            for (const citation of [...solos, ...groups.flatMap(firstPerFootnote)]) {
                 funnel.citationsSeen++;
                 if (citation.url) funnel.citationsWithUrl++;
                 if (citation.source?.content) funnel.citationsFetched++;

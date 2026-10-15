@@ -56,9 +56,19 @@ export const THRESHOLDS = Object.freeze({
     burstWindow: 100,
     burstFailShare: 0.8,
     burstMinHosts: 20,
-    // ERROR rows (any reason_type), as a share of all rows.
-    errorWarn: 0.01,
+    // ERROR rows as a share of all rows, *excluding* source_too_large — that
+    // one is the model's context window, a fixed property of the model rather
+    // than a sign the run degraded, and it gets its own check below. Calibrated
+    // on the 2026-10 ruwiki sweeps on llm-gpt-oss-safeguard-20b: a healthy
+    // 500-article run had 2.2% (output_budget_exhausted, a steady ~2% trait of
+    // that model); the run degraded by retried context errors had 4.8%. The
+    // first-guess 1% warned on every healthy run of that model.
+    errorWarn: 0.03,
     errorFail: 0.05,
+    // source_too_large rows as a share of fetched sources: coverage lost to the
+    // model's context window. ~8% on a 16k-token model over ruwiki (the same
+    // 500-article run), which is reported but expected; warn only past this.
+    sourceTooLargeWarn: 0.15,
     // Fetched sources marked truncated. The old >= 12,000-char rule marked 35
     // of 143 whole pages (24%); the clean CSV drops most findings on a
     // truncated source, so a high rate costs real findings.
@@ -106,6 +116,9 @@ const SCORE_BANDS = {
 };
 const REASON_TYPES = new Set(['contradiction', 'omission']);
 const KNOWN_VERDICTS = new Set([...VERDICT_LIST, 'ERROR', SKIPPED_VERDICT]);
+// reason_type service/verifier.js writes when a source exceeds the model's
+// context window (or the proxy's request-size cap).
+const SOURCE_TOO_LARGE_REASON = 'source_too_large';
 
 // Markup that should never survive into claim text. Each was seen, or is the
 // obvious sibling of one seen (TemplateStyles CSS in Moscow Metro's ref [145]).
@@ -600,11 +613,19 @@ export function createSweepChecker({
             `${truncated} of ${fetched} fetched citations (${pct(truncated, fetched)}) are marked truncated`);
 
         // --- Model ---
-        const errors = verdicts.ERROR || 0;
+        // source_too_large is judged on its own below, so it neither fails nor
+        // pads this check; the other reasons are what a degraded run shows.
+        const tooLarge = errorReasons[SOURCE_TOO_LARGE_REASON] || 0;
+        const errors = (verdicts.ERROR || 0) - tooLarge;
         const errorShare = share(errors, rows);
-        const errorSummary = Object.entries(errorReasons).sort((a, b) => b[1] - a[1]).map(([k, n]) => `${k} ${n}`).join(', ');
+        const errorSummary = Object.entries(errorReasons).filter(([k]) => k !== SOURCE_TOO_LARGE_REASON)
+            .sort((a, b) => b[1] - a[1]).map(([k, n]) => `${k} ${n}`).join(', ');
         add('errors', errorShare > thresholds.errorFail ? LEVELS.FAIL : errorShare > thresholds.errorWarn ? LEVELS.WARN : LEVELS.PASS,
-            'ERROR rows', `${errors} (${pct(errors, rows)})${errorSummary ? ` — ${errorSummary}` : ''}`);
+            'ERROR rows', `${errors} (${pct(errors, rows)})${errorSummary ? ` — ${errorSummary}` : ''}`
+                + (tooLarge ? `; not counting ${tooLarge} source_too_large (see Context window)` : ''));
+        const tooLargeShare = share(tooLarge, fetched);
+        add('source_too_large', tooLargeShare > thresholds.sourceTooLargeWarn ? LEVELS.WARN : LEVELS.INFO,
+            'Context window', `${tooLarge} of ${fetched} fetched sources (${pct(tooLarge, fetched)}) too long for the model to check`);
         add('unknown_verdict', unknownVerdicts ? LEVELS.FAIL : LEVELS.PASS, 'Verdict vocabulary',
             unknownVerdicts ? `${unknownVerdicts} row(s) with a verdict outside the known set` : 'every verdict is a known one');
         const formatShare = share(formatRows, modelRows);

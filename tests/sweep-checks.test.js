@@ -104,6 +104,31 @@ test('ERROR rows are counted by reason_type and fail above 5%', () => {
     assert.deepEqual(result.metrics.errorReasons, { retries_exhausted: 5, output_budget_exhausted: 5 });
 });
 
+test('source_too_large is reported as the context window, not counted as a failing ERROR share', () => {
+    // The 2026-10 ruwiki shape: ~8% of sources too long for a 16k-token model,
+    // ~2% output_budget_exhausted. Used to FAIL at 10.7% ERROR rows.
+    const tooLarge = many(8, () => finding({
+        verdict: 'ERROR', reasonType: 'source_too_large', provider: null, model: null, tokensIn: null, supportScore: null,
+    }));
+    const budget = many(2, () => finding({
+        verdict: 'ERROR', reasonType: 'output_budget_exhausted', provider: null, model: null, tokensIn: null, supportScore: null,
+    }));
+    const result = check([...many(90, () => finding()), ...tooLarge, ...budget]);
+    assert.equal(levelOf(result, 'errors'), LEVELS.PASS);
+    assert.match(result.checks.find(c => c.id === 'errors').summary, /not counting 8 source_too_large/);
+    assert.equal(levelOf(result, 'source_too_large'), LEVELS.INFO);
+    assert.match(result.checks.find(c => c.id === 'source_too_large').summary, /^8 of 100 fetched sources/);
+});
+
+test('source_too_large warns once it passes its own threshold', () => {
+    const tooLarge = many(20, () => finding({
+        verdict: 'ERROR', reasonType: 'source_too_large', provider: null, model: null, tokensIn: null, supportScore: null,
+    }));
+    const result = check([...many(80, () => finding()), ...tooLarge]);
+    assert.equal(levelOf(result, 'source_too_large'), LEVELS.WARN);
+    assert.equal(levelOf(result, 'errors'), LEVELS.PASS);
+});
+
 test('a high share of truncated sources warns (the old 12,000-char rule marked 24%)', () => {
     const result = check([...many(70, () => finding()), ...many(30, () => finding({ sourceTruncated: true }))]);
     assert.equal(levelOf(result, 'truncation'), LEVELS.WARN);
