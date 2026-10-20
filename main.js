@@ -6588,9 +6588,12 @@ function useToolforgeSourceFetcher() {
             document.body.classList.remove('verifier-sidebar-hidden');
             if (verifierTab) verifierTab.style.display = 'none';
             this.setBodyMargin(this.sidebarWidth);
-            
+
             this.isVisible = true;
             localStorage.setItem('verifier_sidebar_visible', 'true');
+            // Other docked panels (CNfirmed) share this edge and would cover
+            // or be covered by this one; ask them to close.
+            document.dispatchEvent(new CustomEvent('wiki-side-panel-open', { detail: { panel: 'source-verifier' } }));
         }
         
         hideSidebar() {
@@ -6620,6 +6623,14 @@ function useToolforgeSourceFetcher() {
         attachEventListeners() {
             this.buttons.close.on('click', () => {
                 this.hideSidebar();
+            });
+
+            // Another docked panel opened on top of ours. Close, so the
+            // Verify tab comes back instead of hiding behind that panel.
+            document.addEventListener('wiki-side-panel-open', (e) => {
+                if (e.detail && e.detail.panel !== 'source-verifier' && this.isVisible) {
+                    this.hideSidebar();
+                }
             });
 
             // The gear toggles, so a second click backs out the way a user expects.
