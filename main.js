@@ -5324,9 +5324,6 @@ function useToolforgeSourceFetcher() {
                     background: var(--sv-accent-fg);
                     opacity: 0.5;
                 }
-                #ca-verifier, #t-verifier {
-                    display: none;
-                }
                 #ca-verifier a, #t-verifier a {
                     color: var(--sv-accent-fg) !important;
                     text-decoration: none !important;
@@ -5368,10 +5365,6 @@ function useToolforgeSourceFetcher() {
                 }
                 body.verifier-sidebar-hidden #source-verifier-sidebar {
                     display: none;
-                }
-                body.verifier-sidebar-hidden #ca-verifier,
-                body.verifier-sidebar-hidden #t-verifier {
-                    display: list-item !important;
                 }
                 /* Wikipedia's #mw-teleport-target wraps OOUI dialogs and has
                    z-index: 450, which creates a stacking context that caps
@@ -6157,9 +6150,13 @@ function useToolforgeSourceFetcher() {
                     );
                     
                     if (verifierLink) {
+                        // The tab stays visible while the sidebar is open: a
+                        // click closes it, or raises it if another tool's
+                        // panel is covering it.
                         verifierLink.addEventListener('click', (e) => {
                             e.preventDefault();
-                            this.showSidebar();
+                            if (this.isVisible && !this.coveringElement()) this.hideSidebar();
+                            else this.showSidebar();
                         });
                         this.showFirstRunNotification();
                     }
@@ -6583,21 +6580,16 @@ function useToolforgeSourceFetcher() {
         }
         
         showSidebar() {
-            const verifierTab = document.getElementById('ca-verifier') || document.getElementById('t-verifier');
-            
             document.body.classList.remove('verifier-sidebar-hidden');
-            if (verifierTab) verifierTab.style.display = 'none';
             this.setBodyMargin(this.sidebarWidth);
-            
+
             this.isVisible = true;
             localStorage.setItem('verifier_sidebar_visible', 'true');
+            this.bringToFront();
         }
         
         hideSidebar() {
-            const verifierTab = document.getElementById('ca-verifier') || document.getElementById('t-verifier');
-            
             document.body.classList.add('verifier-sidebar-hidden');
-            if (verifierTab) verifierTab.style.display = 'list-item';
             this.setBodyMargin('0');
             
             this.clearHighlights();
@@ -6606,6 +6598,30 @@ function useToolforgeSourceFetcher() {
             localStorage.setItem('verifier_sidebar_visible', 'false');
         }
         
+        // The outermost element covering the middle of the open sidebar, or
+        // null when the sidebar is on top. Another tool's panel docked to the
+        // same edge is the usual culprit.
+        coveringElement() {
+            const sidebar = document.getElementById('source-verifier-sidebar');
+            if (!sidebar || !this.isVisible) return null;
+            const r = sidebar.getBoundingClientRect();
+            let el = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+            if (!el || sidebar.contains(el)) return null;
+            while (el.parentElement && el.parentElement !== document.body) el = el.parentElement;
+            return el;
+        }
+
+        // Lift the sidebar above whatever covers it, keeping OOUI dialogs
+        // (#mw-teleport-target) above the sidebar.
+        bringToFront() {
+            const cover = this.coveringElement();
+            if (!cover) return;
+            const z = Math.max((parseInt(getComputedStyle(cover).zIndex, 10) || 0) + 1, 10000);
+            document.getElementById('source-verifier-sidebar').style.zIndex = z;
+            const teleport = document.getElementById('mw-teleport-target');
+            if (teleport) teleport.style.setProperty('z-index', String(Math.max(z + 1, 10002)), 'important');
+        }
+
         adjustMainContent() {
             this.setBodyMargin(this.isVisible ? this.sidebarWidth : '0');
         }
@@ -6621,6 +6637,11 @@ function useToolforgeSourceFetcher() {
             this.buttons.close.on('click', () => {
                 this.hideSidebar();
             });
+
+            // Other tools dock panels to this edge too (CNfirmed, say);
+            // using ours puts it back on top.
+            const sidebar = document.getElementById('source-verifier-sidebar');
+            if (sidebar) sidebar.addEventListener('mousedown', () => this.bringToFront());
 
             // The gear toggles, so a second click backs out the way a user expects.
             this.buttons.settings.on('click', () => {
