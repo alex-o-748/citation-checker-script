@@ -56,15 +56,9 @@ const PROVIDERS = Object.freeze({
         name: 'Lift Wing',
         // No key needed: every request goes through the tf-llm-router
         // Toolforge app, which reaches Lift Wing from Wikimedia infrastructure.
-        storageKey: null,
-        color: '#6B21A8',
-        model: 'llm-qwen36-27b',
-        requiresKey: false,
-    }),
-    'liftwing-qwen38': Object.freeze({
-        name: 'Lift Wing (Qwen3.8)',
-        // Same route and keyless access as `liftwing`; Qwen3.8-27B (FP8,
-        // 32k context) served the same OpenAI-compatible way as Qwen3.6.
+        // Qwen3.8-27B (FP8, 32k context). Replaced llm-qwen36-27b on
+        // 2026-10-21 at WMF ML's request so 3.6 can be retired; quality tied
+        // on the benchmark (docs/liftwing-qwen36-vs-qwen38-2026-10-21.md).
         storageKey: null,
         color: '#6B21A8',
         model: 'llm-qwen38-27b',
@@ -2139,7 +2133,6 @@ async function callProviderAPI(name, config) {
         case 'publicai':    return await callPublicAIAPI(config);
         case 'huggingface': return await callHuggingFaceAPI(config);
         case 'liftwing':    return await callLiftwingAPI(config);
-        case 'liftwing-qwen38': return await callLiftwingAPI(config);
         case 'liftwing-safeguard': return await callLiftwingAPI(config);
         case 'openrouter':  return await callOpenRouterAPI(config);
         case 'claude':      return await callClaudeAPI(config);
@@ -4278,6 +4271,12 @@ function useToolforgeSourceFetcher() {
             if (storedProvider === 'apertus' || storedProvider === 'publicai') {
                 storedProvider = DEFAULT_PROVIDER;
                 localStorage.setItem('source_verifier_provider', DEFAULT_PROVIDER);
+            }
+            // 'liftwing-qwen38' was folded into 'liftwing' when it moved to
+            // Qwen3.8, so keep that selection on the same model.
+            if (storedProvider === 'liftwing-qwen38') {
+                storedProvider = 'liftwing';
+                localStorage.setItem('source_verifier_provider', storedProvider);
             }
             this.currentProvider = storedProvider || DEFAULT_PROVIDER;
             // 'paragraph' (default) is the full "between citations" span, which
