@@ -47,15 +47,9 @@ export const PROVIDERS = Object.freeze({
         name: 'Lift Wing',
         // No key needed: every request goes through the tf-llm-router
         // Toolforge app, which reaches Lift Wing from Wikimedia infrastructure.
-        storageKey: null,
-        color: '#6B21A8',
-        model: 'llm-qwen36-27b',
-        requiresKey: false,
-    }),
-    'liftwing-qwen38': Object.freeze({
-        name: 'Lift Wing (Qwen3.8)',
-        // Same route and keyless access as `liftwing`; Qwen3.8-27B (FP8,
-        // 32k context) served the same OpenAI-compatible way as Qwen3.6.
+        // Qwen3.8-27B (FP8, 32k context). Replaced llm-qwen36-27b on
+        // 2026-10-21 at WMF ML's request so 3.6 can be retired; quality tied
+        // on the benchmark (docs/liftwing-qwen36-vs-qwen38-2026-10-21.md).
         storageKey: null,
         color: '#6B21A8',
         model: 'llm-qwen38-27b',

@@ -112,7 +112,8 @@ export const PROVIDERS = {
         model: 'llm-gpt-oss-safeguard-20b',
         endpoint: 'https://llm-router.toolforge.org/liftwing',
         requiresKey: false,
-        type: 'liftwing'
+        type: 'liftwing',
+        kservePredict: true
     },
     // Claude
     'claude-sonnet-4-5': {
@@ -523,9 +524,17 @@ async function callHuggingFace(config, systemPrompt, userPrompt) {
 }
 
 async function callLiftWing(config, systemPrompt, userPrompt) {
-    // Lift Wing is proxied through the CORS worker, no key needed
+    // Lift Wing is proxied through tf-llm-router, no key needed. Set
+    // LIFTWING_GATEWAY=1 to call the public API gateway directly instead
+    // (anonymous rate limits apply) — for when Toolforge is unreachable.
+    if (process.env.LIFTWING_GATEWAY && config.kservePredict) {
+        return shapeResult(await callLiftWingPredict(config, systemPrompt, userPrompt));
+    }
+    const url = process.env.LIFTWING_GATEWAY
+        ? `https://api.wikimedia.org/service/lw/inference/v1/models/${config.model}/openai/v1/chat/completions`
+        : config.endpoint;
     return shapeResult(await callOpenAICompatibleChat({
-        url: config.endpoint,
+        url,
         model: config.model,
         systemPrompt,
         userContent: userPrompt,
@@ -533,6 +542,46 @@ async function callLiftWing(config, systemPrompt, userPrompt) {
         temperature: BENCHMARK_TEMPERATURE,
         label: 'Lift Wing',
     }));
+}
+
+// The gateway serves :predict models raw: the body is
+// {"reasoning": "...", "verdict": "..."}, each field the Python repr of a
+// list of TextContent objects, e.g. "[TextContent(text='{\"verdict\": ...}')]".
+// tf-llm-router unwraps this server-side; with LIFTWING_GATEWAY we do it here.
+// No token usage is returned.
+async function callLiftWingPredict(config, systemPrompt, userPrompt) {
+    const response = await fetch(`https://api.wikimedia.org/service/lw/inference/v1/models/${config.model}:predict`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            model: config.model,
+            messages: [
+                { role: 'system', content: systemPrompt },
+                { role: 'user', content: userPrompt },
+            ],
+            max_tokens: BENCHMARK_MAX_TOKENS,
+            temperature: BENCHMARK_TEMPERATURE,
+        }),
+    });
+    if (!response.ok) {
+        throw new Error(`Lift Wing API request failed (${response.status}): ${await response.text()}`);
+    }
+    const data = await response.json();
+    return { text: unwrapTextContent(data.verdict), usage: null };
+}
+
+export function unwrapTextContent(repr) {
+    if (typeof repr !== 'string') return '';
+    const parts = [...repr.matchAll(/TextContent\(text=(?:'((?:[^'\\]|\\.)*)'|"((?:[^"\\]|\\.)*)")\)/g)];
+    if (!parts.length) return repr;
+    return parts.map(m => decodePythonEscapes(m[1] ?? m[2])).join('');
+}
+
+function decodePythonEscapes(s) {
+    return s.replace(/\\(x[0-9a-fA-F]{2}|u[0-9a-fA-F]{4}|U[0-9a-fA-F]{8}|.)/g, (_, e) => {
+        if (/^[xuU]/.test(e) && e.length > 1) return String.fromCodePoint(parseInt(e.slice(1), 16));
+        return { n: '\n', t: '\t', r: '\r', '0': '\0' }[e] ?? e;
+    });
 }
 
 // Title-case the canonical verdict for the benchmark's results.json schema,

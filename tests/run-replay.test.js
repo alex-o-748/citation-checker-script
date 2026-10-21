@@ -47,7 +47,7 @@ test('toCitation marks a row with no stored source_text as unavailable, not fetc
 test('parseCliArgs defaults to liftwing — the Toolforge migration provider — with no key requirement and a 1000ms delay', () => {
     const opts = parseCliArgs(['node', 'replay.js']);
     assert.equal(opts.provider, 'liftwing');
-    assert.equal(opts.model, 'llm-qwen36-27b');
+    assert.equal(opts.model, 'llm-qwen38-27b');
     assert.equal(opts.delayMs, 1000);
     assert.equal(opts.dryRun, false);
     assert.equal(opts.limit, Infinity);
@@ -55,7 +55,7 @@ test('parseCliArgs defaults to liftwing — the Toolforge migration provider —
 
 test('liftwing requires no API key, matching main.js\'s requiresKey: false', async () => {
     const code = await runReplay(
-        { provider: 'liftwing', dataset: 'unused', wiki: 'enwiki', limit: 1, delayMs: 0, dryRun: true, model: 'llm-qwen36-27b' },
+        { provider: 'liftwing', dataset: 'unused', wiki: 'enwiki', limit: 1, delayMs: 0, dryRun: true, model: 'llm-qwen38-27b' },
         { env: {}, readFile: fakeDataset([okRow]), resolvePageIdsFn: okPageIds, makeModelCallerFn: okModelCaller, stdout: { write() {} }, stderr: { write() {} } }
     );
     assert.equal(code, 0, 'no CLAUDE_API_KEY-style env var should be demanded for liftwing');

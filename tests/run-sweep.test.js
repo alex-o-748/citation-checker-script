@@ -26,7 +26,7 @@ test('parseCliArgs defaults match run-replay.js\'s conventions (liftwing, no key
     assert.equal(opts.max, undefined, 'unset — runSweep resolves this to 5 in the Wiki-Replicas branch');
     assert.equal(opts.titlesFile, undefined);
     assert.equal(opts.provider, 'liftwing');
-    assert.equal(opts.model, 'llm-qwen36-27b');
+    assert.equal(opts.model, 'llm-qwen38-27b');
     assert.equal(opts.delayMs, 1000);
     assert.equal(opts.concurrency, 1);
     assert.equal(opts.liveSourceFetch, false);
