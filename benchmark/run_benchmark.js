@@ -523,9 +523,14 @@ async function callHuggingFace(config, systemPrompt, userPrompt) {
 }
 
 async function callLiftWing(config, systemPrompt, userPrompt) {
-    // Lift Wing is proxied through the CORS worker, no key needed
+    // Lift Wing is proxied through tf-llm-router, no key needed. Set
+    // LIFTWING_GATEWAY=1 to call the public API gateway directly instead
+    // (anonymous rate limits apply) — for when Toolforge is unreachable.
+    const url = process.env.LIFTWING_GATEWAY
+        ? `https://api.wikimedia.org/service/lw/inference/v1/models/${config.model}/openai/v1/chat/completions`
+        : config.endpoint;
     return shapeResult(await callOpenAICompatibleChat({
-        url: config.endpoint,
+        url,
         model: config.model,
         systemPrompt,
         userContent: userPrompt,
