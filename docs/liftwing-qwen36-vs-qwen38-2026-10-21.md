@@ -5,6 +5,8 @@ older model can be retired. This run checks whether that costs anything.
 
 **Short answer: 3.8 is not strictly better, but nothing measured is a reason to
 stay on 3.6.** Verdict quality is a tie within noise; 3.8 is ~10% slower.
+gpt-oss-safeguard-20b, measured the same day (last section), beats both on
+exact accuracy and ties them on Supported-vs-rest.
 
 ## Setup
 
@@ -62,3 +64,38 @@ By source completeness:
 3.8 was faster on only 56 of 181 rows (sign test z ≈ −5), so the slowdown is
 consistent, not a few outliers. It may reflect how each model is provisioned on
 Lift Wing today rather than the model itself.
+
+## Also measured: gpt-oss-safeguard-20b
+
+The third Lift Wing model (`liftwing-safeguard`), run the same day on the same
+181 rows (`benchmark/results_liftwing_safeguard_2026-10-21.json`). It ran on its
+own rather than interleaved, and through the gateway's `:predict` endpoint, which
+`LIFTWING_GATEWAY=1` now unwraps the way tf-llm-router does. The gateway returns
+no token counts for it.
+
+| | Qwen3.8 | safeguard-20b | hf-gpt-oss-20b ¹ |
+|---|---|---|---|
+| Exact accuracy | 47.5% | **66.9%** | 65.2% |
+| Supported-vs-rest | 81.8% | 79.6% | 80.7% |
+| TPR (failing citations caught) | 87.1% | 94.1% | 96.0% |
+| FPR (good citations flagged) | 25.0% | 38.8% | 38.8% |
+| Wrong "Source unavailable" | 44 | 5 | 3 |
+| Offered quotes found in source | 99.1% | 80.8% | 92.7% |
+| Median / p90 latency | 6.0 s / 9.6 s | 5.5 s / 12.8 s | 1.3 s / 8.6 s |
+
+¹ The userscript's default provider, from `results.json` (2026-08-23 run, an
+earlier prompt, a different route), so treat its column as indicative.
+
+- **Exact accuracy: safeguard is clearly better than Qwen3.8**: +19.3pp, 95% CI
+  [+11.0, +27.6], McNemar p < 0.001 (52 rows only safeguard got right, 17 only
+  Qwen3.8). Almost all of it comes from two things: it nearly never says "Source
+  unavailable" when the source is there (5 vs 44), and it uses
+  `Partially supported` (30 of 54 right vs 7).
+- **Supported-vs-rest is a tie** (−2.2pp, p = 0.54). Safeguard catches more
+  failing citations but flags 39% of good ones against Qwen3.8's 25%. For a
+  tool whose output an editor acts on, that false-alarm rate is the cost.
+- **Against hf-gpt-oss-20b it is a tie on everything measured** (exact +1.7pp,
+  p = 0.70; identical FPR). It is the same base model, so this is expected.
+- **Quotes:** 23 of its offered quotes were not found in the source. Spot checks
+  show real sentences from different places joined without an ellipsis, so the
+  panel's quote check hides them (as designed) rather than showing them.

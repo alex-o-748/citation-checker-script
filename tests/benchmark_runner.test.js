@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { runPool, makeSaver, hostForProvider, shapeResult, scoreResult, loadInitialResults } from '../benchmark/run_benchmark.js';
+import { runPool, makeSaver, hostForProvider, shapeResult, scoreResult, loadInitialResults, unwrapTextContent } from '../benchmark/run_benchmark.js';
 
 // ---- runPool ----------------------------------------------------------------
 
@@ -330,4 +330,19 @@ test('loadInitialResults: a mixed-provider file survives a run for just one of t
     } finally {
         fs.rmSync(file, { force: true });
     }
+});
+
+test('unwrapTextContent decodes the gateway\'s Python TextContent repr', () => {
+    // Single-quoted repr, as the gateway sends a JSON verdict
+    assert.equal(
+        unwrapTextContent(`[TextContent(text='{"verdict": "SUPPORTED", "comments": "a\\nb"}')]`),
+        '{"verdict": "SUPPORTED", "comments": "a\nb"}'
+    );
+    // Python switches to double quotes when the text holds an apostrophe
+    assert.equal(unwrapTextContent(`[TextContent(text="it's fine")]`), "it's fine");
+    assert.equal(unwrapTextContent(`[TextContent(text='it\\'s \\\\ \\xe9')]`), "it's \\ é");
+    // Several parts are joined; anything that isn't a repr passes through
+    assert.equal(unwrapTextContent(`[TextContent(text='a'), TextContent(text='b')]`), 'ab');
+    assert.equal(unwrapTextContent('plain'), 'plain');
+    assert.equal(unwrapTextContent(undefined), '');
 });
