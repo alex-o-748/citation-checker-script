@@ -53,7 +53,7 @@ const PROVIDERS = Object.freeze({
         optionalKey: true,
     }),
     liftwing: Object.freeze({
-        name: 'Lift Wing',
+        name: 'Lift Wing (Qwen3.8)',
         // No key needed: every request goes through the tf-llm-router
         // Toolforge app, which reaches Lift Wing from Wikimedia infrastructure.
         // Qwen3.8-27B (FP8, 32k context). Replaced llm-qwen36-27b on
