@@ -8,9 +8,9 @@
 // docs/design-plans/2026-09-24-severity-ranking-for-flagged-claims.md.
 //
 // Deliberately separate from core/citations.js rather than more fields on
-// collectCitations(): citations.js is inlined into main.js, and the userscript
-// has no use for any of this yet. Nothing here is Node-specific, so it can
-// move into the sync list if the userscript ever wants it.
+// collectCitations(): most callers never need it, and it costs a pass over the
+// whole document. Inlined into main.js too (scripts/sync-main.js), where only
+// the opt-in severity ranking calls it.
 
 // Paragraphs are context for the model, not evidence, and a few hundred tokens
 // is plenty to see what a sentence is doing. A list item or table cell can be
@@ -41,11 +41,13 @@ function headingText(heading) {
 // links, and the same non-prose core/claim.js skips in claim text —
 // TemplateStyles <style> blocks (ru.wikipedia's {{Когда?}} puts one mid-
 // sentence) and .noprint inline maintenance templates ([citation needed]).
-const NON_PROSE_SELECTOR = '.reference, .mw-ref, .mw-editsection, style, script, link, .noprint, .ts-fix-template';
+// Not named NON_PROSE_SELECTOR like core/claim.js's narrower list: both files
+// are inlined into one scope in main.js.
+const PARAGRAPH_NOISE_SELECTOR = '.reference, .mw-ref, .mw-editsection, style, script, link, .noprint, .ts-fix-template';
 
 function paragraphText(block, maxChars) {
     const clone = block.cloneNode(true);
-    for (const el of clone.querySelectorAll(NON_PROSE_SELECTOR)) el.remove();
+    for (const el of clone.querySelectorAll(PARAGRAPH_NOISE_SELECTOR)) el.remove();
     const text = cleanText(clone.textContent);
     if (!text) return null;
     return text.length > maxChars ? `${text.slice(0, maxChars).trimEnd()}…` : text;

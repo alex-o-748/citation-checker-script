@@ -1,6 +1,8 @@
 # Ranking flagged claims by severity
 
 > **Status (2026-09-24):** In progress. Severity pass built behind `run-sweep.js --severity`: `core/severity.js`, `core/article-context.js`, `service/severity-assessor.js`. Not yet validated against human labels (step 5 below).
+>
+> **2026-10-22:** Also in the userscript, behind an off-by-default setting. See "In the userscript" below.
 
 ## The problem
 
@@ -159,7 +161,46 @@ always recorded; a failed severity pass only leaves the finding unranked:
     decision with the editor.
 - **Traditional ML** (NLI models, a learned ranker). Mostly redoes what the LLM
   already does, and there aren't enough labels to fit anything.
-- **The userscript.** Nothing here reaches `main.js`.
+- ~~**The userscript.**~~ Added 2026-10-22; see below.
+
+## In the userscript (2026-10-22)
+
+The "Rank problems by severity" setting, off by default: it adds a model call
+per flagged citation. The pass itself is shared, not re-implemented:
+`runSeverityPass()` in `core/severity.js` is the sequence (no-call shortcuts,
+call, parse, tier), and `core/severity.js` and `core/article-context.js` are
+now inlined into `main.js`. The batch's `assessSeverity()` keeps only its
+error policy (halt on a spent key); the userscript's turns any failure into an
+"unranked" badge.
+
+**Severity changes the order of the report, never what it shows.** The
+question was whether to filter or reorder. Reordering, because:
+
+- The tiers are unvalidated (step 1 below). A filter would hide a flag on the
+  strength of an unvalidated label; a sort only moves it down a list the editor
+  still sees in full. A wrong T3 costs a scroll, not a missed problem.
+- One article is a short list. The batch needs ranking to spread volunteer
+  attention across thousands of findings; an editor in one article reads all of
+  them anyway. What helps more is knowing *what* failed, so each card lists its
+  contradicted and missing subclaims.
+- Article order is how an editor works through a page section by section, and
+  the verdict filters already cut the list down by verdict.
+
+So: every flagged card gets a badge naming the finding, document order stays
+the default, and "Most serious first" is a sort toggle in the report summary
+(remembered per browser). T2 is split into two labels by its subclaims,
+"Detail contradicted" and "Key fact not in source", since it covers both.
+
+**Ranking runs after every verdict is in**, as a second phase of Verify All,
+so verdicts arrive as fast as without it and cards never reorder while being
+read; the sort applies once, at the end. Only report units are ranked: a group
+with a combined verdict is ranked on that, not on its per-source rows.
+
+Not yet: tiers in the wikitext/plain-text exports (nothing unvalidated goes on
+a talk page) or in the worker log. Logging the tier with the check id is the
+cheapest route to step 1, since editors' Yes/No ratings would then label tiers
+for free, but it needs the Worker (`alex-o-748/public-ai-proxy`) to accept the
+new fields first.
 
 ## Next steps
 
