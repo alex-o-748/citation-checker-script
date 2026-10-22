@@ -167,6 +167,10 @@ const baseIo = (overrides = {}) => ({
     writeCleanCsvFn: async () => {},
     // The post-run checks read --out back from disk; faked so no test does.
     runChecksFn: async () => ({ result: { status: 'pass', checks: [] }, paths: { md: 'x-checks.md', review: 'x-review.csv' } }),
+    // The run record's -run.json; faked so no test writes one into the cwd.
+    readRunJsonFn: async () => { throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' }); },
+    writeRunJsonFn: async () => {},
+    codeVersionFn: async () => 'c0ffee0000000000000000000000000000000000',
     // --titles-file resolves each title to a page id + current revision
     // before fetching; faked here so no test reaches the Action API.
     resolveTitleInfoFn: async titles => new Map(
@@ -277,7 +281,8 @@ test('--store upserts every finding into ToolsDB and closes the connection', asy
     }));
 
     assert.equal(code, 0);
-    assert.equal(conn.calls.length, 4, 'one upsert per finding, same count as the CSV');
+    const upserts = conn.calls.filter(c => /INSERT INTO citation_findings/.test(c.sql));
+    assert.equal(upserts.length, 4, 'one upsert per finding, same count as the CSV');
     assert.equal(conn.ended, true);
 });
 
@@ -1255,4 +1260,185 @@ test('--skip-checks skips them', async () => {
     await runSweep(opts, baseIo({ runChecksFn: async () => { ran = true; return checksOutcome('pass'); } }));
     assert.equal(ran, false);
     assert.equal(parseCliArgs(['node', 'sweep.js']).skipChecks, false);
+});
+
+// --- The run record (service/sweep-runs.js) ---
+
+test('parseCliArgs accepts --run-id and --series', () => {
+    const opts = parseCliArgs(['node', 'sweep.js', '--run-id', 'ruwiki-x', '--series', 'ruwiki-weekly']);
+    assert.equal(opts.runId, 'ruwiki-x');
+    assert.equal(opts.series, 'ruwiki-weekly');
+    const defaults = parseCliArgs(['node', 'sweep.js']);
+    assert.equal(defaults.runId, undefined);
+    assert.equal(defaults.series, undefined);
+});
+
+test('every finding carries the run id, in the CSV row as well as the finding', async () => {
+    const written = [];
+    const code = await runSweep(baseOpts({ runId: 'enwiki-20261027T031700Z-3f9a' }), baseIo({
+        appendFindingFn: async (_path, finding) => { written.push(finding); },
+    }));
+    assert.equal(code, 0);
+    assert.equal(written.length, 4);
+    assert.ok(written.every(f => f.runId === 'enwiki-20261027T031700Z-3f9a'));
+    const csv = rowsToCsv(written);
+    const [header, first] = csv.split('\n');
+    assert.equal(first.split(',')[header.split(',').indexOf('run_id')], 'enwiki-20261027T031700Z-3f9a');
+});
+
+test('without --run-id a run gets a fresh id naming its wiki', async () => {
+    const written = [];
+    await runSweep(baseOpts({ wiki: 'ruwiki' }), baseIo({
+        appendFindingFn: async (_path, finding) => { written.push(finding); },
+    }));
+    assert.match(written[0].runId, /^ruwiki-\d{8}T\d{6}Z-[0-9a-f]{4}$/);
+});
+
+test('the run record is written at the start (running) and the end, with the checks\' whole-CSV counts', async () => {
+    const records = [];
+    const checks = {
+        status: 'warn',
+        checks: [{ id: 'errors', level: 'warn', title: 'ERROR rows', summary: '3%' }],
+        metrics: {
+            rows: 4, articles: 1, modelRows: 4,
+            verdicts: { SUPPORTED: 3, 'NOT SUPPORTED': 1 },
+            citationsWithUrl: 3, fetched: 3, fetchFailed: 0, ourFetchFailed: 0, truncated: 0,
+            tokenTotals: { in: 40, out: 20 },
+        },
+    };
+    const code = await runSweep(baseOpts({ runId: 'enwiki-r1', series: 'enwiki-weekly' }), baseIo({
+        writeRunJsonFn: async (path, text) => { records.push({ path, record: JSON.parse(text) }); },
+        runChecksFn: async () => ({ result: checks, paths: { md: 'x-checks.md', review: 'x-review.csv' } }),
+    }));
+
+    assert.equal(code, 0);
+    assert.equal(records.length, 2);
+    assert.ok(records.every(r => r.path === 'findings-run.json'));
+    const [start, end] = records.map(r => r.record);
+    assert.equal(start.status, 'running');
+    assert.equal(start.finished_at, null);
+    assert.equal(start.rows_total, null, 'nothing counted yet reads as unknown, not zero');
+    assert.equal(end.status, 'ok');
+    assert.equal(end.exit_code, 0);
+    assert.equal(end.started_at, start.started_at);
+    assert.ok(end.finished_at);
+    assert.equal(end.series, 'enwiki-weekly');
+    assert.equal(end.provider, 'liftwing');
+    assert.equal(end.model, 'llm-qwen36-27b');
+    assert.equal(end.code_version, 'c0ffee0000000000000000000000000000000000');
+    assert.equal(end.selection, 'criterion:failed-verification');
+    assert.equal(end.articles_planned, 1);
+    assert.equal(end.rows_total, 4);
+    assert.equal(end.supported, 3);
+    assert.equal(end.not_supported, 1);
+    assert.equal(end.partially_supported, 0);
+    assert.equal(end.tokens_in, 40);
+    assert.equal(end.checks_status, 'warn');
+    assert.equal(end.checks_flagged, 'warn:errors');
+    assert.equal(end.details.process.funnel.citationsSeen, 3, 'the per-process funnel rides in details');
+    assert.equal(end.details.process.findingsWritten, 4);
+});
+
+test('a storing run records itself in sweep_runs at the start and the end', async () => {
+    const conn = fakeToolsDbConnection();
+    let connects = 0;
+    const code = await runSweep(baseOpts({ store: true, runId: 'enwiki-r2' }), baseIo({
+        connectToolsDb: async () => { connects++; return conn; },
+    }));
+    assert.equal(code, 0);
+    const runWrites = conn.calls.filter(c => /INSERT INTO sweep_runs/.test(c.sql));
+    assert.equal(runWrites.length, 2);
+    assert.equal(runWrites[0].params[0], 'enwiki-r2');
+    assert.equal(runWrites[0].params[3], 'running');
+    assert.equal(runWrites[1].params[3], 'ok');
+    assert.equal(connects, 2, 'the finish uses a connection of its own; the sweep\'s may have idled out');
+    const findingWrites = conn.calls.filter(c => /INSERT INTO citation_findings/.test(c.sql));
+    assert.ok(findingWrites.every(c => c.params.at(-1) === 'enwiki-r2'));
+});
+
+test('a storing run refuses to start without migration 006, before any model call', async () => {
+    let modelCalls = 0;
+    const log = [];
+    const code = await runSweep(baseOpts({ store: true }), baseIo({
+        connectToolsDb: async () => ({
+            execute: async sql => {
+                if (/SELECT run_id FROM citation_findings/.test(sql)) {
+                    throw Object.assign(new Error("Unknown column 'run_id' in 'field list'"), { code: 'ER_BAD_FIELD_ERROR' });
+                }
+                return [[]];
+            },
+            end: async () => {},
+        }),
+        makeModelCallerFn: () => async () => { modelCalls++; return { text: '{}', usage: {} }; },
+        stderr: { write: s => log.push(s) },
+    }));
+    assert.equal(code, 1);
+    assert.equal(modelCalls, 0);
+    assert.match(log.join(''), /apply service\/migrations\/006-sweep-runs\.sql first, or pass --no-store/);
+});
+
+test('a halted run is recorded as halted with its exit code', async () => {
+    const records = [];
+    const code = await runSweep(baseOpts(), baseIo({
+        makeModelCallerFn: () => async () => { throw new Error('API request failed (401): bad key'); },
+        writeRunJsonFn: async (_path, text) => { records.push(JSON.parse(text)); },
+    }));
+    assert.equal(code, 3);
+    const end = records.at(-1);
+    assert.equal(end.status, 'halted');
+    assert.equal(end.exit_code, 3);
+    assert.match(end.details.process.halt, /401/);
+});
+
+test('a failed run-record write to ToolsDB is reported, never fatal', async () => {
+    const log = [];
+    let connects = 0;
+    const code = await runSweep(baseOpts({ store: true }), baseIo({
+        connectToolsDb: async () => {
+            connects++;
+            return {
+                execute: async sql => {
+                    if (/INSERT INTO sweep_runs/.test(sql)) throw new Error('Lost connection');
+                    return [{ affectedRows: 1 }];
+                },
+                end: async () => {},
+            };
+        },
+        stderr: { write: s => log.push(s) },
+    }));
+    assert.equal(code, 0);
+    assert.match(log.join(''), /could not record run .* in ToolsDB \(continuing\): Lost connection/);
+    assert.match(log.join(''), /could not record run .* in ToolsDB: Lost connection \(the record is in findings-run\.json/);
+});
+
+test('--resume keeps the run id and start time from the existing -run.json', async () => {
+    const written = [];
+    const records = [];
+    const code = await runSweep(baseOpts({ resume: true, titlesFile: 'articles.txt', max: undefined }), baseIo({
+        readTitlesFile: async () => 'Done Article\nPending Article\n',
+        readCsvFn: async () => rowsToCsv([{ pageTitle: 'Done Article', citationNumber: '1' }]),
+        readRunJsonFn: async path => {
+            assert.equal(path, 'findings-run.json');
+            return JSON.stringify({ run_id: 'enwiki-first', started_at: '2026-10-20T03:17:00.000Z' });
+        },
+        writeRunJsonFn: async (_path, text) => { records.push(JSON.parse(text)); },
+        appendFindingFn: async (_path, finding) => { written.push(finding); },
+    }));
+    assert.equal(code, 0);
+    assert.ok(written.length > 0);
+    assert.ok(written.every(f => f.runId === 'enwiki-first'));
+    assert.equal(records.at(-1).run_id, 'enwiki-first');
+    assert.equal(records.at(-1).started_at, '2026-10-20T03:17:00.000Z');
+});
+
+test('--resume refuses a CSV whose columns differ from this version\'s, rather than misalign it', async () => {
+    let modelCalls = 0;
+    const oldHeader = 'page_title,page_id,check_id\n';
+    const code = await runSweep(baseOpts({ resume: true, titlesFile: 'articles.txt', max: undefined }), baseIo({
+        readTitlesFile: async () => 'Done Article\nPending Article\n',
+        readCsvFn: async () => `${oldHeader}Done Article,1,abc\n`,
+        makeModelCallerFn: () => async () => { modelCalls++; return { text: '{}', usage: {} }; },
+    }));
+    assert.equal(code, 2);
+    assert.equal(modelCalls, 0);
 });

@@ -46,10 +46,10 @@ test('buildUpsertQuery binds all values and computes hashes internally', () => {
     const placeholderCount = (sql.match(/\?/g) || []).length;
     assert.equal(placeholderCount, params.length);
 
-    // Check that we have 28 parameters (matching the schema, including
+    // Check that we have 29 parameters (matching the schema, including
     // source_quote / quote_status added in service/migrations/
-    // 002-add-quote-columns.sql)
-    assert.equal(params.length, 28);
+    // 002-add-quote-columns.sql and run_id added in 006-sweep-runs.sql)
+    assert.equal(params.length, 29);
 
     // Check that hashes are computed correctly
     const expectedClaimHash = claimHash(finding.claimText);
@@ -226,7 +226,7 @@ test('upsertFinding calls query with the constructed SQL and parameters', async 
     assert.match(call.sql, /ON DUPLICATE KEY UPDATE/);
 
     // Check that we have the right number of parameters
-    assert.equal(call.params.length, 28);
+    assert.equal(call.params.length, 29);
 });
 
 test('selectCheckedPageIds returns the page ids already stored for a wiki', async () => {
@@ -239,4 +239,18 @@ test('selectCheckedPageIds returns the page ids already stored for a wiki', asyn
     assert.deepEqual([...ids], [12, 34]);
     assert.deepEqual(calls[0].params, ['ruwiki']);
     assert.match(calls[0].sql, /SELECT DISTINCT page_id FROM citation_findings WHERE wiki = \?/);
+});
+
+test('buildUpsertQuery writes run_id last, and a re-store takes the latest run\'s id', () => {
+    const finding = {
+        wiki: 'ruwiki', pageId: 1, pageTitle: 'Статья', revisionId: 2, claimText: 'Утверждение',
+        sourceUrl: 'https://example.com', verdict: 'SUPPORTED', promptVersion: 'v1',
+        runId: 'ruwiki-20261027T031700Z-3f9a',
+    };
+    const { sql, params } = buildUpsertQuery(finding);
+    assert.match(sql, /expires_at, published, run_id\n\s*\) VALUES/);
+    assert.match(sql, /run_id = VALUES\(run_id\)/);
+    assert.equal(params[28], 'ruwiki-20261027T031700Z-3f9a');
+    assert.equal(buildUpsertQuery({ ...finding, runId: undefined }).params[28], null,
+        'a finding from before run ids (an old CSV import) stores NULL');
 });

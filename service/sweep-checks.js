@@ -334,6 +334,9 @@ export function createSweepChecker({
     let severityMissing = 0;
     let severitySeen = false;
     const tokensIn = [];
+    // Totals as well as the percentiles: the run record (service/sweep-runs.js)
+    // compares model usage across runs, which needs a sum.
+    const tokenTotals = { in: 0, out: 0 };
     const claimLengths = new Map(); // bucket of 20 chars -> count
 
     // Burst detection state, over citations with a URL in row order.
@@ -465,6 +468,8 @@ export function createSweepChecker({
             if (row.model) models.add(row.model);
             if (row.prompt_version) promptVersions.add(row.prompt_version);
             if (row.tokens_in !== '' && row.tokens_in !== undefined) tokensIn.push(Number(row.tokens_in));
+            tokenTotals.in += Number(row.tokens_in) || 0;
+            tokenTotals.out += Number(row.tokens_out) || 0;
             if (row.quote_status) bump(quoteStatuses, row.quote_status);
 
             if (VERDICT_LIST.includes(verdict)) {
@@ -707,6 +712,7 @@ export function createSweepChecker({
                     quoteStatuses,
                     severityTiers,
                     tokensIn: { p50: at(0.5), p95: at(0.95), max: sortedTokens.at(-1) ?? null },
+                    tokenTotals,
                     hostsWhereModelSaidUnavailable: unavailableHosts,
                     // Kept for comparing a later run of the same list against this one.
                     rowsPerArticle: Object.fromEntries([...perArticle.entries()].map(([t, a]) => [t, a.rows])),

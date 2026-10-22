@@ -1,0 +1,27 @@
+# Toolforge job definitions for scheduled sweeps. Read docs/scheduled-sweeps.md
+# before loading one.
+#
+# Load a job by name, never the whole file: `toolforge jobs load` can replace
+# jobs that aren't in it.
+#
+#   toolforge jobs dump -f jobs-backup.yaml     # what is defined now
+#   toolforge jobs load citation-checker-script/service/jobs.yaml --job ruwiki-weekly
+#
+# Jobs start in the tool's home directory, so `command` is a path from there
+# to an executable file, and --out-dir (default: sweeps) is ~/sweeps.
+#
+# The provider is pinned here, not left to run-sweep.js's default, so that a
+# change to that default cannot swap the model in the middle of a series.
+# liftwing-safeguard is what the 2026-10 ruwiki batches ran on, and what the
+# post-run checks' ERROR thresholds were calibrated on.
+#
+# timeout (seconds) stops a run that hangs; the lock it leaves is taken over
+# after --lock-stale-hours (default 24), which must stay above it.
+---
+- name: ruwiki-weekly
+  command: ./citation-checker-script/service/run-scheduled.js --wiki ruwiki --provider liftwing-safeguard --series ruwiki-weekly --max 25 --concurrency 4
+  image: node18
+  schedule: "17 3 * * 1"
+  mem: 2Gi
+  timeout: 43200
+  emails: onfailure

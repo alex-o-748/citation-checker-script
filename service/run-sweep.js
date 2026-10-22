@@ -81,6 +81,10 @@ import { PROMPT_VERSION } from '../core/prompts.js';
 import { PROVIDER_MODELS, PROVIDER_ENV_VARS } from './provider-config.js';
 import { isRetryableError } from '../core/retry.js';
 import { runChecksOnFile, summaryLines } from './run-checks.js';
+import {
+    RUN_STATUSES, newRunId, statusForExitCode, runJsonPath, codeVersion,
+    buildRunRecord, upsertRun, missingRunSchema,
+} from './sweep-runs.js';
 
 // reason_type on an ERROR row whose model call kept failing transiently.
 export const RETRIES_EXHAUSTED = 'retries_exhausted';
@@ -138,6 +142,8 @@ export function parseCliArgs(argv) {
             resume:              { type: 'boolean', default: false },
             severity:            { type: 'boolean', default: false },
             'skip-checks':       { type: 'boolean', default: false },
+            'run-id':            { type: 'string' },
+            series:              { type: 'string' },
             out:                 { type: 'string', default: 'findings.csv' },
             help:                { type: 'boolean', short: 'h', default: false },
         },
@@ -167,6 +173,8 @@ export function parseCliArgs(argv) {
         resume: values.resume,
         severity: values.severity,
         skipChecks: values['skip-checks'],
+        runId: values['run-id'],
+        series: values.series,
         out: values.out,
     };
 }
@@ -265,7 +273,16 @@ Options:
                          the flag rate.
   --out <path>          CSV output path (default: findings.csv)
                         A cleaned copy is also written beside it as
-                        <name>-clean.csv.
+                        <name>-clean.csv, and the run's record as
+                        <name>-run.json (see "The run record" below).
+  --run-id <id>         Id for this run, stamped on every row (run_id) and
+                         used as the key of its record. Default: a new one,
+                         e.g. ruwiki-20261027T031700Z-3f9a; with --resume, the
+                         id in the existing <name>-run.json, so a resumed run
+                         stays one run.
+  --series <name>       Name of the scheduled series this run belongs to, e.g.
+                         ruwiki-weekly, so service/run-trends.js compares it
+                         only with its own series. Unset for a one-off run.
   --skip-checks         Don't run the post-run checks. By default, once the
                          CSV is written, service/run-checks.js's checks run
                          over it and write <name>-checks.md, -checks.json and
@@ -290,6 +307,14 @@ A run that finishes but fails a post-run check (a fetch outage, missing
 articles, too many ERROR rows, ...) exits 5, so a Toolforge job submitted
 with --emails onfailure emails you about it. The CSV is complete either way;
 5 means "read <name>-checks.md before using it".
+
+The run record: every run writes <name>-run.json beside the CSV (at the start,
+status "running", and again at the end) and, unless --no-store, the same
+record to ToolsDB's sweep_runs table. It holds the run's verdict, fetch and
+token counts (from the post-run checks, so over the whole CSV), its status and
+exit code, model, prompt and code version. A storing run refuses to start
+until service/migrations/006-sweep-runs.sql has been applied, rather than
+failing every write. service/run-trends.js compares runs.
 `;
 
 // Parses --titles-file's contents: one article title per line, blank lines
@@ -401,6 +426,10 @@ export async function runSweep(opts, {
     // sleepFn so exhausting retries doesn't cost real backoff time.
     retryOptions = {},
     runChecksFn = runChecksOnFile,
+    readRunJsonFn = path => fsReadFile(path, 'utf8'),
+    writeRunJsonFn = (path, text) => fsWriteFile(path, text, 'utf8'),
+    codeVersionFn = codeVersion,
+    now = () => new Date(),
 } = {}) {
     // opts.max is left undefined by parseCliArgs when --titles-file is given
     // and --max wasn't — the titles-file branch below resolves that to "every
@@ -558,16 +587,82 @@ export async function runSweep(opts, {
 
     // Runs the post-run checks over the finished CSV. Never throws and never
     // touches the CSV: a checker problem costs the report, not the findings.
-    // Returns true when a check failed.
+    // Returns the checks' result (its metrics feed the run record), or null
+    // when they were skipped or could not run.
     async function runPostRunChecks() {
-        if (opts.skipChecks) return false;
+        if (opts.skipChecks) return null;
         try {
             const { result, paths } = await runChecksFn(opts.out, { titles: plannedTitles, wiki: opts.wiki });
             stderr.write(summaryLines(result, paths).map(line => `sweep: ${line}`).join('\n') + '\n');
-            return result.status === 'fail';
+            return result;
         } catch (error) {
             stderr.write(`sweep: post-run checks could not run: ${error.message}\n`);
-            return false;
+            return null;
+        }
+    }
+    const checksExitCode = checks => (checks?.status === 'fail' ? 5 : 0);
+
+    // The run's identity and record (service/sweep-runs.js). A --resume
+    // reuses the id in the existing -run.json, so a run killed and picked back
+    // up is still one run.
+    let previousRun = null;
+    if (opts.resume) {
+        try {
+            previousRun = JSON.parse(await readRunJsonFn(runJsonPath(opts.out)));
+        } catch {
+            previousRun = null; // no record yet, or unreadable: start a new one
+        }
+    }
+    const runId = opts.runId ?? previousRun?.run_id ?? newRunId(opts.wiki, { now: now() });
+    const runBase = {
+        runId,
+        series: opts.series ?? null,
+        wiki: opts.wiki,
+        startedAt: previousRun?.run_id === runId && previousRun.started_at ? new Date(previousRun.started_at) : now(),
+        provider: opts.provider,
+        model: opts.model,
+        promptVersion: PROMPT_VERSION,
+        codeVersion: await codeVersionFn(),
+        selection: opts.titlesFile ? `titles-file:${opts.titlesFile}` : `criterion:${opts.criterion}`,
+        outPath: opts.out,
+        articlesPlanned: plannedTitles.length,
+    };
+    stderr.write(`sweep: run ${runId}\n`);
+
+    async function writeRunJson(record) {
+        try {
+            await writeRunJsonFn(runJsonPath(opts.out), JSON.stringify(record, null, 2) + '\n');
+        } catch (error) {
+            stderr.write(`sweep: could not write ${runJsonPath(opts.out)}: ${error.message}\n`);
+        }
+    }
+
+    // Writes the finished record to the -run.json and, when storing, to
+    // ToolsDB on a connection of its own: the sweep's connection is closed by
+    // the time the checks have run, and may have idled out long before. Like a
+    // finding's write, a failed one is reported and never fatal — the
+    // -run.json has it, and run-import-findings.js loads it.
+    async function finishRun(exitCode, checks, processStats) {
+        const record = buildRunRecord({
+            ...runBase, status: statusForExitCode(exitCode), exitCode, finishedAt: now(), checks, processStats,
+        });
+        await writeRunJson(record);
+        if (!opts.store) {
+            stderr.write(`sweep: run ${runId} recorded in ${runJsonPath(opts.out)}.\n`);
+            return;
+        }
+        let connection = null;
+        try {
+            connection = await connectToolsDb(readFile ? { readFile } : {});
+            await upsertRun(makeQueryFn(connection), record);
+            stderr.write(`sweep: run ${runId} recorded in ${runJsonPath(opts.out)} and ToolsDB.\n`);
+        } catch (error) {
+            stderr.write(
+                `sweep: could not record run ${runId} in ToolsDB: ${error.message} ` +
+                `(the record is in ${runJsonPath(opts.out)}; run-import-findings.js loads it)\n`
+            );
+        } finally {
+            if (connection) await connection.end().catch(() => {});
         }
     }
 
@@ -581,6 +676,19 @@ export async function runSweep(opts, {
         }
     }
     if (existingCsv) {
+        // Rows are appended in the current column order, so an existing file
+        // with a different header (written before a column was added, e.g.
+        // run_id) would end up with misaligned records. Refuse rather than
+        // corrupt it.
+        const existingHeader = existingCsv.slice(0, existingCsv.search(/\r?\n|$/));
+        if (existingHeader !== csvHeaderLine().trimEnd()) {
+            stderr.write(
+                `sweep: --resume: ${opts.out} has different columns from the ones this version writes ` +
+                `(an older run?), so appending would misalign its rows. Finish it with the version that ` +
+                `started it, or start a new --out.\n`
+            );
+            return 2;
+        }
         const done = csvPageTitles(existingCsv);
         const before = candidates.length;
         candidates = candidates.filter(candidate => !done.has(candidate.title));
@@ -595,11 +703,14 @@ export async function runSweep(opts, {
             try {
                 await writeCleanCsvFn(opts.out, cleanOut);
                 stderr.write(`sweep: wrote clean CSV to ${cleanOut}\n`);
-                return (await runPostRunChecks()) ? 5 : 0;
             } catch (error) {
                 stderr.write(`sweep: could not write clean CSV: ${error.message}\n`);
+                await finishRun(1, null, { resumeSkipped });
                 return 1;
             }
+            const checks = await runPostRunChecks();
+            await finishRun(checksExitCode(checks), checks, { resumeSkipped });
+            return checksExitCode(checks);
         }
     } else {
         await startCsvFn(opts.out, csvHeaderLine());
@@ -614,6 +725,24 @@ export async function runSweep(opts, {
         } catch (error) {
             stderr.write(`sweep: could not connect to ToolsDB: ${error.message} (pass --no-store to write the CSV only)\n`);
             return 1;
+        }
+        const missing = await missingRunSchema(toolsDbQuery);
+        if (missing) {
+            stderr.write(`sweep: ${missing}\n`);
+            await toolsDbConnection.end();
+            return 1;
+        }
+    }
+
+    // Recorded as 'running' before any work, so a run killed outright (a job
+    // timeout, an OOM) still leaves a row — one that never finished.
+    const startRecord = buildRunRecord({ ...runBase, status: RUN_STATUSES.RUNNING });
+    await writeRunJson(startRecord);
+    if (toolsDbQuery) {
+        try {
+            await upsertRun(toolsDbQuery, startRecord);
+        } catch (error) {
+            stderr.write(`sweep: could not record run ${runId} in ToolsDB (continuing): ${error.message}\n`);
         }
     }
 
@@ -659,7 +788,8 @@ export async function runSweep(opts, {
     // publication threshold doesn't exist yet — see service/finding-builder.js).
     // Counted here anyway so the funnel prints a real 0 rather than omitting
     // the column, which is the whole point of measuring the funnel now.
-    const record = async finding => {
+    const record = async computed => {
+        const finding = { ...computed, runId };
         findings.push(finding);
         if (finding.published) funnel.published++;
         await appendFindingFn(opts.out, finding);
@@ -1063,8 +1193,22 @@ export async function runSweep(opts, {
         );
     }
 
-    const checksFailed = await runPostRunChecks();
-    return haltCode ?? (cleanError ? 1 : (checksFailed ? 5 : 0));
+    const checks = await runPostRunChecks();
+    const exitCode = haltCode ?? (cleanError ? 1 : checksExitCode(checks));
+    await finishRun(exitCode, checks, {
+        funnel,
+        verdicts: verdictCounts,
+        severityTiers: opts.severity ? severityCounts : null,
+        findingsWritten: findings.length,
+        store: opts.store ? storeStats : null,
+        timing: { ...timing, verifyMinMs: timing.verifyCalls ? timing.verifyMinMs : null },
+        retries: retryStats,
+        transientFailures,
+        perCallFailures,
+        resumeSkipped,
+        halt: haltError ? haltError.message : null,
+    });
+    return exitCode;
 }
 
 // Reports why the run halted. The worker halts on ProviderAuthError, on any

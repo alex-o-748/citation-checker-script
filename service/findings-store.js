@@ -43,8 +43,8 @@ export function buildUpsertQuery(finding) {
             source_quote, quote_status,
             provider, model, prompt_version,
             fetch_status, source_truncated, tokens_in, tokens_out,
-            expires_at, published
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            expires_at, published, run_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON DUPLICATE KEY UPDATE
             page_title = VALUES(page_title),
             revision_id = VALUES(revision_id),
@@ -68,7 +68,8 @@ export function buildUpsertQuery(finding) {
             tokens_in = VALUES(tokens_in),
             tokens_out = VALUES(tokens_out),
             expires_at = VALUES(expires_at),
-            published = VALUES(published)
+            published = VALUES(published),
+            run_id = VALUES(run_id)
     `.trim().replace(/\n {8}/g, '\n');
 
     const params = [
@@ -107,6 +108,10 @@ export function buildUpsertQuery(finding) {
         finding.tokensOut,
         finding.expiresAt,
         finding.published ? 1 : 0,
+        // service/migrations/006-sweep-runs.sql. Last, so the positions of
+        // the columns before it are unchanged. On a re-store the row takes
+        // the latest run's id: it says which run last computed the finding.
+        finding.runId ?? null,
     ];
 
     return { sql, params };

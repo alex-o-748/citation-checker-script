@@ -274,7 +274,9 @@ Runnable entry points, each a thin wiring layer over the components above:
 | `service/run-replay.js` | Stages 4-5 over `benchmark/dataset.json`'s stored claim/source pairs instead of live fetching — the integration test for verify+store with zero third-party requests | Model API only (+ Wikipedia REST to resolve page IDs) |
 | `service/run-sweep.js` | **All six stages**, writing a CSV and upserting every finding into ToolsDB (`--no-store` for CSV only) | Wiki Replicas, Wikipedia REST, model API, ToolsDB, source fetcher (opt-in) |
 | `service/run-checks.js` | Post-run checks over a findings CSV (`run-sweep.js` also runs them at the end of every sweep; see below) | None |
-| `service/run-import-findings.js` | Upserts findings CSVs into ToolsDB: backfills batches run before storing was the default, or after failed writes. Idempotent | ToolsDB |
+| `service/run-import-findings.js` | Upserts findings CSVs into ToolsDB: backfills batches run before storing was the default, or after failed writes. Idempotent. Loads each CSV's `-run.json` into `sweep_runs` too | ToolsDB |
+| `service/run-scheduled.js` | **The scheduled sweep** (`service/jobs.yaml`): lock → pick → sweep (live fetch) → trends, one directory per run under `~/sweeps/<wiki>/<run-id>/`. See `docs/scheduled-sweeps.md` | Everything `run-pick-pilot.js` and `run-sweep.js` reach |
+| `service/run-trends.js` | Runs of a wiki/series side by side from their run records, latest vs. the median of comparable earlier runs | ToolsDB (or none, with `--from-dir`) |
 
 ### ToolsDB is the record of what has been checked (read before adding a per-batch exclude list)
 
@@ -282,7 +284,15 @@ Since 2026-10 `run-sweep.js` stores every finding in ToolsDB by default, and `ru
 
 - **The CSV is still the record; the store follows it.** A failed ToolsDB write is counted and reported, never fatal to the sweep, and the summary prints the `run-import-findings.js` command that backfills it. Halting a day-long batch over a database hiccup costs more than the row.
 - **The pick fails if it can't read ToolsDB**, rather than continuing without the filter: silently re-picking checked articles is the failure the filter exists to prevent.
-- **Apply migrations 003, 004 and 005 (`service/migrations/`) before the first store.** 003 (citation_number INT → text) had never been applied to the live table when storing became the default; the first backfill lost ~10% of rows to `Incorrect integer value: 'a'` / `'2, 3'` until it was. 005 makes it TEXT, since a collective row joins every member's number and overflowed 64 characters. 004 widens `reason_type` (the pipeline writes 23-byte reasons into a 16-byte column) and `group_id` (Cyrillic ref names), and makes `provider` `NOT NULL DEFAULT ''`: it is part of the unique key, and MariaDB never matches NULLs there, so every re-store of a no-model row (SOURCE UNAVAILABLE, SKIPPED) used to insert a duplicate. `buildUpsertQuery()` writes `''` for "no model ran" to match.
+- **Apply migrations 003, 004, 005 and 006 (`service/migrations/`) before the first store.** A storing sweep (and `run-import-findings.js`) checks for 006's `run_id` columns up front and refuses to start without them, rather than failing every write. 003 (citation_number INT → text) had never been applied to the live table when storing became the default; the first backfill lost ~10% of rows to `Incorrect integer value: 'a'` / `'2, 3'` until it was. 005 makes it TEXT, since a collective row joins every member's number and overflowed 64 characters. 004 widens `reason_type` (the pipeline writes 23-byte reasons into a 16-byte column) and `group_id` (Cyrillic ref names), and makes `provider` `NOT NULL DEFAULT ''`: it is part of the unique key, and MariaDB never matches NULLs there, so every re-store of a no-model row (SOURCE UNAVAILABLE, SKIPPED) used to insert a duplicate. `buildUpsertQuery()` writes `''` for "no model ran" to match.
+
+### Every run has a record (`service/sweep-runs.js`, read before adding a per-run number)
+
+Every sweep has a run id (`ruwiki-20261027T031700Z-3f9a`), stamped on each finding (`run_id`, in the CSV and ToolsDB), and a record: `<out>-run.json` beside the CSV and, when storing, a `sweep_runs` row (migration 006). It is written as `running` at the start and filled in at the end, so a killed run shows as a row that never finished. `--resume` reuses the id from the `-run.json`, so a resumed run stays one run.
+
+- **Whole-CSV counts come from the post-run checks' metrics**, not the process's counters: those stream the entire file, so a resumed run is counted once. Per-process numbers (funnel, timing, retries, ToolsDB write failures) go in the `details` JSON. A count that wasn't measured is `NULL`, never 0.
+- **`service/run-trends.js` compares only like with like**: the baseline is earlier `ok` runs on the same model and prompt version, so a model switch restarts the comparison rather than reading as drift. Its 10-point drift threshold is a first guess, and it reports without failing.
+- The scheduled job (`service/run-scheduled.js`, `service/jobs.yaml`, `docs/scheduled-sweeps.md`) adds a per-wiki lock, because Toolforge documents no guard against overlapping cron runs, and two would pick the same articles.
 
 ### Post-run checks (`service/sweep-checks.js`, read before adding a halt-or-record decision)
 

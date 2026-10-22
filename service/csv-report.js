@@ -68,6 +68,9 @@ const COLUMNS = [
     ['severity_subclaims', f => (f.severitySubclaims ? JSON.stringify(f.severitySubclaims) : null)],
     ['severity_error', f => f.severityError],
     ['severity_prompt_version', f => f.severityPromptVersion],
+    // Which sweep wrote the row (service/sweep-runs.js); joins it to the run's
+    // record in ToolsDB's sweep_runs and to its -run.json.
+    ['run_id', f => f.runId],
     // Last, not first, despite being the row's identifier — csvPageTitles()
     // below reads the FIRST field of every record as the page title, which is
     // what --resume skips on. Moving check_id to column 1 would silently make

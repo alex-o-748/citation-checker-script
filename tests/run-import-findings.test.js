@@ -12,6 +12,8 @@ function csvRows(findings) {
 }
 
 const FETCHED_AT = new Date('2026-10-14T12:00:00Z');
+// A CSV from before run records has no -run.json beside it.
+const noRunRecord = async () => { throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' }); };
 
 const verified = {
     wiki: 'ruwiki', pageId: 42, pageTitle: 'Африка', revisionId: 155504239,
@@ -63,11 +65,15 @@ test('runImport upserts every row and reports the counts', async () => {
     const code = await runImport({ wiki: 'ruwiki', files: ['b4.csv'], dryRun: false }, {
         stderr: { write: s => out.push(s) },
         connectToolsDb: async () => ({
-            execute: async (sql, params) => { executed.push(params); return [{ affectedRows: 1 }]; },
+            execute: async (sql, params) => {
+                if (/INSERT INTO citation_findings/.test(sql)) executed.push(params);
+                return [{ affectedRows: 1 }];
+            },
             end: async () => { ended = true; },
         }),
         streamRows: async (_file, { onRow }) => rows.forEach((r, i) => onRow(r, i + 1)),
         stat: async () => ({ mtime: FETCHED_AT }),
+        readFile: noRunRecord,
     });
     assert.equal(code, 0);
     assert.equal(executed.length, 2);
@@ -83,6 +89,7 @@ test('--dry-run converts and counts without connecting to ToolsDB', async () => 
         connectToolsDb: async () => { connected = true; },
         streamRows: async (_file, { onRow }) => csvRows([verified]).forEach((r, i) => onRow(r, i + 1)),
         stat: async () => ({ mtime: FETCHED_AT }),
+        readFile: noRunRecord,
     });
     assert.equal(code, 0);
     assert.equal(connected, false);
@@ -96,6 +103,7 @@ test('a failed upsert is counted and makes the import exit non-zero', async () =
         connectToolsDb: async () => ({ execute: async () => { throw new Error('Data too long'); }, end: async () => {} }),
         streamRows: async (_file, { onRow }) => csvRows([verified]).forEach((r, i) => onRow(r, i + 1)),
         stat: async () => ({ mtime: FETCHED_AT }),
+        readFile: noRunRecord,
     });
     assert.equal(code, 1);
     assert.match(out.join(''), /1 failed \(first: Data too long\)/);
@@ -105,4 +113,61 @@ test('--wiki is required, since the CSV does not record it', async () => {
     const code = await runImport({ files: ['b4.csv'], dryRun: true }, { stderr: { write() {} } });
     assert.equal(code, 2);
     assert.deepEqual(parseCliArgs(['node', 'x', 'a.csv', 'b.csv', '--wiki', 'ruwiki']).files, ['a.csv', 'b.csv']);
+});
+
+test('a row\'s run_id comes back from the CSV; an old CSV without the column gives null', () => {
+    const [row] = csvRows([{ ...verified, runId: 'ruwiki-20261027T031700Z-3f9a' }]);
+    assert.equal(findingFromCsvRow(row, { wiki: 'ruwiki', fetchedAt: FETCHED_AT }).runId, 'ruwiki-20261027T031700Z-3f9a');
+    const { run_id: _dropped, ...oldRow } = row;
+    assert.equal(findingFromCsvRow(oldRow, { wiki: 'ruwiki', fetchedAt: FETCHED_AT }).runId, null);
+});
+
+test('the CSV\'s -run.json is loaded into sweep_runs alongside its rows', async () => {
+    const runWrites = [];
+    const out = [];
+    const record = { run_id: 'ruwiki-r1', wiki: 'ruwiki', status: 'ok', started_at: '2026-10-27T03:17:00.000Z', details: null };
+    const code = await runImport({ wiki: 'ruwiki', files: ['sweeps/r1/findings.csv'], dryRun: false }, {
+        stderr: { write: s => out.push(s) },
+        connectToolsDb: async () => ({
+            execute: async (sql, params) => {
+                if (/INSERT INTO sweep_runs/.test(sql)) runWrites.push(params);
+                return [{ affectedRows: 1 }];
+            },
+            end: async () => {},
+        }),
+        streamRows: async (_file, { onRow }) => csvRows([verified]).forEach((r, i) => onRow(r, i + 1)),
+        stat: async () => ({ mtime: FETCHED_AT }),
+        readFile: async path => {
+            assert.equal(path, 'sweeps/r1/findings-run.json');
+            return JSON.stringify(record);
+        },
+    });
+    assert.equal(code, 0);
+    assert.equal(runWrites.length, 1);
+    assert.equal(runWrites[0][0], 'ruwiki-r1');
+    assert.match(out.join(''), /run ruwiki-r1 recorded/);
+});
+
+test('an import against a table without migration 006 stops before writing anything', async () => {
+    const writes = [];
+    const out = [];
+    const code = await runImport({ wiki: 'ruwiki', files: ['b4.csv'], dryRun: false }, {
+        stderr: { write: s => out.push(s) },
+        connectToolsDb: async () => ({
+            execute: async (sql, params) => {
+                if (/SELECT run_id/.test(sql)) {
+                    throw Object.assign(new Error("Unknown column 'run_id'"), { code: 'ER_BAD_FIELD_ERROR' });
+                }
+                writes.push(params);
+                return [{ affectedRows: 1 }];
+            },
+            end: async () => {},
+        }),
+        streamRows: async (_file, { onRow }) => csvRows([verified]).forEach((r, i) => onRow(r, i + 1)),
+        stat: async () => ({ mtime: FETCHED_AT }),
+        readFile: noRunRecord,
+    });
+    assert.equal(code, 1);
+    assert.equal(writes.length, 0);
+    assert.match(out.join(''), /apply service\/migrations\/006-sweep-runs\.sql first\n/);
 });

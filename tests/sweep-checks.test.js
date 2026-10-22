@@ -268,3 +268,8 @@ test('an empty CSV fails', () => {
 test('THRESHOLDS is frozen, so a test cannot quietly loosen it for the next one', () => {
     assert.ok(Object.isFrozen(THRESHOLDS));
 });
+
+test('metrics total the tokens of model rows, for comparing runs (service/sweep-runs.js)', () => {
+    const result = check([finding(), finding({ tokensIn: 300, tokensOut: 20 }), unavailable('HTTP 404')]);
+    assert.deepEqual(result.metrics.tokenTotals, { in: 1500, out: 100 });
+});

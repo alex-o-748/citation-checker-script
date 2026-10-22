@@ -19,13 +19,17 @@
 // modification time, i.e. when the sweep last wrote to it — off by up to the
 // length of the run, which is close enough for an expiry 30 days out.
 //
+// A CSV's run record (<name>-run.json, service/sweep-runs.js) is loaded with
+// it when present, so a run made with --no-store, or whose own record write
+// failed, still reaches sweep_runs. CSVs from before run records have none.
+//
 // Usage (in a Toolforge job or bastion shell; ToolsDB isn't reachable elsewhere):
 //   node service/run-import-findings.js ru-batch4-findings.csv --wiki ruwiki
 //   node service/run-import-findings.js ru-batch3-findings.csv ru-batch4-findings.csv --wiki ruwiki
 //   node service/run-import-findings.js ru-batch4-findings.csv --wiki ruwiki --dry-run
 
 import { parseArgs } from 'node:util';
-import { stat as fsStat } from 'node:fs/promises';
+import { readFile as fsReadFile, stat as fsStat } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
 import { streamCsvRows } from './csv-stream.js';
@@ -33,12 +37,14 @@ import { upsertFinding } from './findings-store.js';
 import { openToolsDbConnection } from './toolsdb.js';
 import { makeQueryFn } from './replicas.js';
 import { FINDING_TTL_DAYS } from './finding-builder.js';
+import { runJsonPath, upsertRun, missingRunSchema } from './sweep-runs.js';
 
 export const HELP_TEXT = `usage: node service/run-import-findings.js <findings.csv>... --wiki <db> [options]
 
 Upserts every row of one or more run-sweep.js findings CSVs into ToolsDB's
-citation_findings table. Safe to re-run: existing rows are updated, not
-duplicated (after migration 004).
+citation_findings table, and each CSV's <name>-run.json (when there is one)
+into sweep_runs. Safe to re-run: existing rows are updated, not duplicated
+(after migration 004). Needs migration 006 (service/migrations/).
 
 Options:
   --wiki <db>     Wiki database name the CSVs were swept on, e.g. ruwiki. Required.
@@ -88,6 +94,8 @@ export function findingFromCsvRow(row, { wiki, fetchedAt, ttlDays = FINDING_TTL_
         tokensOut: numberOrNull(row.tokens_out),
         expiresAt: hasContent ? new Date(fetchedAt.getTime() + ttlDays * 24 * 60 * 60 * 1000) : null,
         published: row.published === '1',
+        // Absent from CSVs written before migration 006; null then.
+        runId: textOrNull(row.run_id),
     };
 }
 
@@ -96,6 +104,7 @@ export async function runImport(opts, {
     connectToolsDb = openToolsDbConnection,
     streamRows = streamCsvRows,
     stat = fsStat,
+    readFile = fsReadFile,
 } = {}) {
     if (!opts.wiki) {
         stderr.write('import: --wiki is required (the CSV does not record which wiki it came from)\n');
@@ -115,6 +124,34 @@ export async function runImport(opts, {
         } catch (error) {
             stderr.write(`import: could not connect to ToolsDB: ${error.message}\n`);
             return 1;
+        }
+        const missing = await missingRunSchema(query);
+        if (missing) {
+            stderr.write(`import: ${missing.replace(', or pass --no-store', '')}\n`);
+            await connection.end();
+            return 1;
+        }
+    }
+
+    // Returns false only when a record exists and could not be written.
+    async function importRunRecord(file) {
+        let record;
+        try {
+            record = JSON.parse(await readFile(runJsonPath(file), 'utf8'));
+        } catch {
+            return true; // no run record beside this CSV: older than run records
+        }
+        if (!query) {
+            stderr.write(`import: ${file}: run ${record.run_id} would be recorded\n`);
+            return true;
+        }
+        try {
+            await upsertRun(query, record);
+            stderr.write(`import: ${file}: run ${record.run_id} recorded\n`);
+            return true;
+        } catch (error) {
+            stderr.write(`import: ${file}: could not record run ${record.run_id}: ${error.message}\n`);
+            return false;
         }
     }
 
@@ -154,6 +191,7 @@ export async function runImport(opts, {
                 + '\n'
             );
             if (counts.failed) failed = true;
+            if (!(await importRunRecord(file))) failed = true;
         }
     } finally {
         if (connection) await connection.end();
