@@ -209,6 +209,13 @@ check was skipped in the userscript, and every member's own row in the batch.
 The userscript words the badge apart from truncation: "Unclear: not every
 cited source was read". The CSV tier is `discounted` either way.
 
+Deliberately **not** discounted: the single-citation view, which checks only
+the clicked citation and never fetches the rest of its group. The editor
+clicked one citation and knows that is all they are checking, so siblings left
+unfetched there are not "unread" in this sense (decided 2026-10-23). The same
+goes for a batch member's own row whose siblings were read fine: only a source
+that could not be fetched at all discounts.
+
 Not yet: tiers in the wikitext/plain-text exports (nothing unvalidated goes on
 a talk page) or in the worker log. Logging the tier with the check id is the
 cheapest route to step 1, since editors' Yes/No ratings would then label tiers
