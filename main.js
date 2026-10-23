@@ -9204,6 +9204,21 @@ function useToolforgeSourceFetcher() {
             const summaryEl = document.getElementById('verifier-report-summary');
             if (!summaryEl) return;
 
+            const tokensLabel = this.reportTokenUsage.input + this.reportTokenUsage.output > 0
+                ? this.t(' · {input} input + {output} output tokens', { input: this.reportTokenUsage.input.toLocaleString(), output: this.reportTokenUsage.output.toLocaleString() })
+                : '';
+            const revisionHtml = this.reportRevisionId
+                ? `<div class="verifier-summary-meta">${this.t('Revision: ')}<a href="${this.escapeHtml(this.getRevisionPermalinkUrl(this.reportRevisionId) || '#')}" target="_blank" rel="noopener">${this.reportRevisionId}</a></div>`
+                : '';
+            // A lead-only report ("Check the lead against the body") has no
+            // citations to count; its findings are in the lead section.
+            if (this.reportLeadOnly) {
+                summaryEl.innerHTML = tokensLabel || revisionHtml
+                    ? `<div class="verifier-summary-meta">${tokensLabel.replace(/^ · /, '')}</div>${revisionHtml}`
+                    : '';
+                return;
+            }
+
             // Counts/pills are driven by the per-claim units: one verdict per
             // adjacent group (its collective verdict) plus one per solo
             // citation. The individual per-source rows shown inside group
@@ -9274,9 +9289,9 @@ function useToolforgeSourceFetcher() {
                 </div>
                 ${this.reportSeverity ? this.reportSortHtml() : ''}
                 <div class="verifier-summary-meta">
-                    ${claimsLabel}${demotedLabel}${hiddenCount > 0 ? this.t(' · {count} hidden by filter', { count: hiddenCount }) : ''}${this.reportTokenUsage.input + this.reportTokenUsage.output > 0 ? this.t(' · {input} input + {output} output tokens', { input: this.reportTokenUsage.input.toLocaleString(), output: this.reportTokenUsage.output.toLocaleString() }) : ''}
+                    ${claimsLabel}${demotedLabel}${hiddenCount > 0 ? this.t(' · {count} hidden by filter', { count: hiddenCount }) : ''}${tokensLabel}
                 </div>
-                ${this.reportRevisionId ? `<div class="verifier-summary-meta">${this.t('Revision: ')}<a href="${this.escapeHtml(this.getRevisionPermalinkUrl(this.reportRevisionId) || '#')}" target="_blank" rel="noopener">${this.reportRevisionId}</a></div>` : ''}
+                ${revisionHtml}
             `;
 
             summaryEl.querySelectorAll('.verifier-filter-chip').forEach(btn => {
@@ -9502,6 +9517,18 @@ function useToolforgeSourceFetcher() {
             groupEl.dataset.collectiveSkipped = 'true';
             const slot = groupEl.querySelector('.verifier-report-group-collective');
             if (slot) slot.style.display = 'none';
+            // With no combined verdict the members are counted one by one, so
+            // a set-aside member says so on its row. (A set-aside combined
+            // verdict moves the whole block to the lead section instead.)
+            for (const result of this.reportResults) {
+                if (result.groupId !== groupId || !result.leadDemoted) continue;
+                const actions = this.reportCardEls.get(result)?.querySelector('.report-card-header-actions');
+                if (!actions || actions.querySelector('.sv-lead-aside-tag')) continue;
+                const tag = document.createElement('span');
+                tag.className = 'sv-lead-aside-tag';
+                tag.textContent = this.t('Set aside: lead');
+                actions.appendChild(tag);
+            }
         }
 
         buildGroupRow(result) {
@@ -9514,19 +9541,13 @@ function useToolforgeSourceFetcher() {
             const reasonTypeHtml = (result.verdict === 'NOT SUPPORTED' && result.reason_type)
                 ? `<span class="reason-type-tag reason-type-${result.reason_type}">${this.reasonTypeLabel(result.reason_type)}</span>`
                 : '';
-            // Only shows on a member of a group with no combined verdict,
-            // where the member is counted on its own; a set-aside combined
-            // verdict moves its whole block instead.
-            const leadTagHtml = result.leadDemoted
-                ? `<span class="sv-lead-aside-tag">${this.escapeHtml(this.t('Set aside: lead'))}</span>`
-                : '';
             row.innerHTML = `
                 <div class="verifier-report-group-row-header">
                     ${result.url
                         ? `<a class="report-card-citation report-card-citation-link" href="${this.escapeHtml(result.url)}" target="_blank" rel="noopener noreferrer">[${result.citationNumber}]</a>`
                         : `<span class="report-card-citation">[${result.citationNumber}]</span>`}
                     <span class="report-card-header-actions">
-                        <span class="report-card-verdict ${verdictClass}">${verdictLabel}</span>${reasonTypeHtml}${leadTagHtml}
+                        <span class="report-card-verdict ${verdictClass}">${verdictLabel}</span>${reasonTypeHtml}
                     </span>
                 </div>
                 ${this.quoteHtml(this.quoteViewOf(result))}
@@ -10528,6 +10549,7 @@ function useToolforgeSourceFetcher() {
             this.reportLead = lead
                 ? { sentences: lead.sentences, body: lead.body, results: [], state: 'pending', bodyTruncated: lead.body.truncated }
                 : null;
+            this.reportLeadOnly = leadOnly;
 
             this.showReportView();
             document.getElementById('verifier-report-results').innerHTML = '';

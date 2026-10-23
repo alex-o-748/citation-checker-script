@@ -156,3 +156,34 @@ test('the exports list the lead\'s findings, escaped for a wikitable, and count 
     h.reportLead = null;
     assert.equal(h.leadReportLines('wikitext'), '');
 });
+
+test('a set-aside member is tagged only once its group has no combined verdict', () => {
+    const src = fs.readFileSync(MAIN_JS, 'utf8');
+    const method = extractMethod(src, 'hideGroupCollectiveSlot(groupId) {');
+    const dom = new JSDOM('<!DOCTYPE html><body><div id="verifier-report-results">'
+        + '<div class="verifier-report-group" data-group-id="g1"><div class="verifier-report-group-collective"></div>'
+        + '<div class="row" data-n="1"><span class="report-card-header-actions"></span></div>'
+        + '<div class="row" data-n="2"><span class="report-card-header-actions"></span></div></div></div></body>');
+    const doc = dom.window.document;
+    const Harness = new Function('document', 'CSS', `
+        class Harness {
+            constructor() { this.reportResults = []; this.reportCardEls = new Map(); }
+            t(en) { return en; }
+${method}
+        }
+        return Harness;
+    `)(doc, { escape: s => s });
+    const h = new Harness();
+    const row = n => doc.querySelector(`.row[data-n="${n}"]`);
+    h.reportResults = [
+        { groupId: 'g1', leadDemoted: true },
+        { groupId: 'g1', leadDemoted: false },
+    ];
+    h.reportResults.forEach((r, i) => h.reportCardEls.set(r, row(i + 1)));
+    assert.equal(doc.querySelectorAll('.sv-lead-aside-tag').length, 0, 'no tag while the combined verdict may still come');
+    h.hideGroupCollectiveSlot('g1');
+    assert.equal(row(1).querySelector('.sv-lead-aside-tag')?.textContent, 'Set aside: lead');
+    assert.equal(row(2).querySelector('.sv-lead-aside-tag'), null);
+    h.hideGroupCollectiveSlot('g1');
+    assert.equal(doc.querySelectorAll('.sv-lead-aside-tag').length, 1, 'tagged once');
+});
