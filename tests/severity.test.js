@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto';
 import {
     generateSeveritySystemPrompt, generateSeverityUserPrompt, parseSeverityResult,
     tierFor, compareSeverity, SEVERITY_TIERS, SEVERITY_TIER_ORDER, SEVERITY_PROMPT_VERSION,
+    runSeverityPass, needsSeverity,
 } from '../core/severity.js';
 
 const sc = (status, central = true) => ({ text: 'x', status, central });
@@ -100,4 +101,91 @@ test('compareSeverity orders by tier, then BLP, then lower support score; untier
 
 test('SEVERITY_TIER_ORDER lists every tier exactly once', () => {
     assert.deepEqual([...SEVERITY_TIER_ORDER].sort(), Object.values(SEVERITY_TIERS).sort());
+});
+
+test('needsSeverity: only NOT SUPPORTED and PARTIALLY SUPPORTED are ranked', () => {
+    assert.equal(needsSeverity({ verdict: 'NOT SUPPORTED' }), true);
+    assert.equal(needsSeverity({ verdict: 'PARTIALLY SUPPORTED' }), true);
+    for (const verdict of ['SUPPORTED', 'SOURCE UNAVAILABLE', 'SKIPPED', 'ERROR', undefined]) {
+        assert.equal(needsSeverity({ verdict }), false, String(verdict));
+    }
+    assert.equal(needsSeverity(null), false);
+});
+
+// runSeverityPass() is the sequence the batch pipeline and the userscript
+// both run; these pin the parts each front end relies on.
+const passArgs = (over = {}) => ({
+    claimText: 'The bridge opened in 1998.', sourceInfo: 'It opened in 2002.',
+    verdict: 'NOT SUPPORTED', reasonType: 'contradiction', sectionTitle: 'History', ...over,
+});
+const answer = subclaims => async () => ({ text: JSON.stringify({ subclaims }), usage: { input: 3, output: 2 } });
+
+test('runSeverityPass: tiers a parsed answer and records usage and prompt version', async () => {
+    let seen;
+    const r = await runSeverityPass(passArgs(), {
+        callModel: async (system, user) => {
+            seen = user;
+            return answer([{ text: 'opened in 1998', status: 'contradicted', central: true }])();
+        },
+    });
+    assert.equal(r.tier, SEVERITY_TIERS.CENTRAL_CONTRADICTED);
+    assert.equal(r.error, null);
+    assert.deepEqual(r.usage, { input: 3, output: 2 });
+    assert.equal(r.promptVersion, SEVERITY_PROMPT_VERSION);
+    assert.match(seen, /Section: History/);
+    assert.doesNotMatch(seen, /NOT SUPPORTED/, 'the first-pass verdict never reaches the model');
+});
+
+test('runSeverityPass: a truncated pure omission is discounted with no call; a missing source is not asked', async () => {
+    let calls = 0;
+    const callModel = async () => { calls++; return answer([])(); };
+    const discounted = await runSeverityPass(passArgs({ sourceTruncated: true, reasonType: 'omission' }), { callModel });
+    assert.equal(discounted.tier, SEVERITY_TIERS.DISCOUNTED);
+    assert.equal(discounted.promptVersion, undefined);
+    const noSource = await runSeverityPass(passArgs({ sourceInfo: '' }), { callModel });
+    assert.deepEqual(noSource, { tier: null, subclaims: null, error: 'no_source', usage: null });
+    assert.equal(calls, 0);
+});
+
+test('runSeverityPass: an unparseable answer is untiered; a failed call throws for the caller to judge', async () => {
+    const unparsed = await runSeverityPass(passArgs(), { callModel: async () => ({ text: 'no idea', usage: null }) });
+    assert.equal(unparsed.tier, null);
+    assert.equal(unparsed.error, 'parse_error');
+    assert.equal(unparsed.promptVersion, SEVERITY_PROMPT_VERSION, 'the model was asked, so the version is recorded');
+
+    await assert.rejects(
+        runSeverityPass(passArgs(), {
+            callModel: async () => { throw new Error('Claude API request failed (401): invalid x-api-key'); },
+            retry: { maxRetries: 1, sleepFn: async () => {} },
+        }),
+        /401/
+    );
+});
+
+test('tierFor: an unread cited source discounts absence like truncation, never a contradiction', () => {
+    const { CENTRAL_CONTRADICTED, CENTRAL_ABSENT, DISCOUNTED } = SEVERITY_TIERS;
+    const t = subclaims => tierFor({ subclaims, unreadSources: true });
+    assert.equal(t([sc('absent'), sc('supported')]), DISCOUNTED);
+    assert.equal(t([sc('absent', false)]), DISCOUNTED);
+    assert.equal(t([sc('contradicted'), sc('absent')]), CENTRAL_CONTRADICTED);
+    assert.equal(t([sc('contradicted', false), sc('absent')]), CENTRAL_ABSENT);
+    assert.equal(tierFor({ subclaims: [sc('supported')], unreadSources: true }), SEVERITY_TIERS.DISAGREEMENT);
+});
+
+test('runSeverityPass: an unread cited source discounts a pure omission with no call, and passes through to the tier', async () => {
+    let calls = 0;
+    const omission = await runSeverityPass(passArgs({ unreadSources: true, reasonType: 'omission' }), {
+        callModel: async () => { calls++; return answer([])(); },
+    });
+    assert.equal(omission.tier, SEVERITY_TIERS.DISCOUNTED);
+    assert.equal(calls, 0);
+
+    const absent = await runSeverityPass(passArgs({ unreadSources: true }), {
+        callModel: answer([{ text: 'opened in 1998', status: 'absent', central: true }]),
+    });
+    assert.equal(absent.tier, SEVERITY_TIERS.DISCOUNTED);
+    const contradicted = await runSeverityPass(passArgs({ unreadSources: true }), {
+        callModel: answer([{ text: 'opened in 1998', status: 'contradicted', central: true }]),
+    });
+    assert.equal(contradicted.tier, SEVERITY_TIERS.CENTRAL_CONTRADICTED);
 });

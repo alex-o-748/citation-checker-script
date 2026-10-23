@@ -5,6 +5,7 @@ import {
     isGroupClose,
     groupSourceEntries,
     shouldSkipCollective,
+    hasUnreadSource,
     mergeReportUnits,
 } from '../core/groups.js';
 
@@ -149,4 +150,15 @@ test('mergeReportUnits interleaves solo citations and groups in document order',
 
     const units = mergeReportUnits([solo1, member5, member6, solo2], groupResults);
     assert.deepEqual(units, [solo1, collective, solo2]);
+});
+
+test('hasUnreadSource: any source with no usable text, including a header with an empty body', () => {
+    assert.equal(hasUnreadSource([{ content: withContent('a') }, { content: withContent('b') }]), false);
+    assert.equal(hasUnreadSource([{ content: withContent('a') }, { content: null, error: '403' }]), true);
+    assert.equal(hasUnreadSource([{ content: withContent('a') }, { content: withContent('   ') }]), true);
+    // A named ref cited twice is one entry: nothing went unread.
+    assert.equal(hasUnreadSource(groupSourceEntries(
+        [{ citationNumber: 3 }, { citationNumber: 3 }],
+        () => ({ key: 'same', content: withContent('a') })
+    )), false);
 });

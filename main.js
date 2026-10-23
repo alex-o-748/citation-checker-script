@@ -1685,6 +1685,154 @@ function attachGroupMetadata(citations) {
     }
 }
 
+// --- core/article-context.js ---
+// Where in the article a citation sits: its section heading, the paragraph
+// around it, and the article's categories.
+//
+// Consumed by the severity pass (core/severity.js), which needs this context to
+// judge whether the unsupported part of a claim is central — the batch pipeline
+// cuts claims down to one sentence, and a sentence alone doesn't show what it
+// is doing in the article. See
+// docs/design-plans/2026-09-24-severity-ranking-for-flagged-claims.md.
+//
+// Deliberately separate from core/citations.js rather than more fields on
+// collectCitations(): most callers never need it, and it costs a pass over the
+// whole document. Inlined into main.js too (scripts/sync-main.js), where only
+// the opt-in severity ranking calls it.
+
+// Paragraphs are context for the model, not evidence, and a few hundred tokens
+// is plenty to see what a sentence is doing. A list item or table cell can be
+// much longer than a prose paragraph, so this is a ceiling, not a typical size.
+const MAX_PARAGRAPH_CHARS = 2000;
+
+// The block a claim is read as part of. A citation in a list item or a table
+// cell has no <p>, and the item or cell is the nearest equivalent.
+const PARAGRAPH_SELECTOR = 'p, li, dd, td, th, caption, blockquote';
+
+// h1 is left out on purpose: in the browser DOM it is the page title, which
+// sits outside #mw-content-text anyway, and Parsoid output has none.
+const HEADING_SELECTOR = 'h2, h3, h4, h5, h6';
+
+function cleanText(text) {
+    return text.replace(/\s+/g, ' ').trim();
+}
+
+// Heading text without the "[edit]" link the browser skin puts inside or
+// beside it. Parsoid headings carry no edit link, so this is a no-op there.
+function headingText(heading) {
+    const clone = heading.cloneNode(true);
+    for (const el of clone.querySelectorAll('.mw-editsection')) el.remove();
+    return cleanText(clone.textContent);
+}
+
+// What never counts as paragraph prose: footnote markers ("[12]"), edit
+// links, and the same non-prose core/claim.js skips in claim text —
+// TemplateStyles <style> blocks (ru.wikipedia's {{Когда?}} puts one mid-
+// sentence) and .noprint inline maintenance templates ([citation needed]).
+// Not named NON_PROSE_SELECTOR like core/claim.js's narrower list: both files
+// are inlined into one scope in main.js.
+const PARAGRAPH_NOISE_SELECTOR = '.reference, .mw-ref, .mw-editsection, style, script, link, .noprint, .ts-fix-template';
+
+function paragraphText(block, maxChars) {
+    const clone = block.cloneNode(true);
+    for (const el of clone.querySelectorAll(PARAGRAPH_NOISE_SELECTOR)) el.remove();
+    const text = cleanText(clone.textContent);
+    if (!text) return null;
+    return text.length > maxChars ? `${text.slice(0, maxChars).trimEnd()}…` : text;
+}
+
+/**
+ * Adds `sectionTitle` and `paragraphText` to each citation from
+ * collectCitations(), in place.
+ *
+ * `sectionTitle` is the heading path to the citation ("Career > Music"),
+ * or null in the lead — null is meaningful, since a lead sentence summarizes
+ * the body and is often sourced there instead.
+ *
+ * One pass over the document, not a backwards search per citation: a
+ * per-citation walk to the nearest heading is O(section) each, and the
+ * browser DOM has no <section> wrappers, so a long flat article would make
+ * this quadratic — the trap core/claim.js's header describes. querySelectorAll
+ * returns matches in document order, so headings and citation markers come
+ * back interleaved and the current heading is simply the last one seen.
+ */
+function attachArticleContext(citations, root, { maxParagraphChars = MAX_PARAGRAPH_CHARS } = {}) {
+    if (!root || citations.length === 0) return citations;
+
+    const byRef = new Map(citations.map(c => [c.refElement, c]));
+    // Index = heading level - 2, so path[0] is the h2.
+    const path = [];
+    const paragraphCache = new Map();
+
+    for (const el of root.querySelectorAll(`${HEADING_SELECTOR}, .reference a`)) {
+        if (/^H[2-6]$/.test(el.tagName)) {
+            // Old Vector puts a "Contents" h2 inside the table of contents.
+            if (el.closest('.toc, #toc')) continue;
+            const level = Number(el.tagName[1]) - 2;
+            path.length = level;
+            path[level] = headingText(el);
+            continue;
+        }
+
+        const citation = byRef.get(el);
+        if (!citation) continue;
+
+        // A skipped level (h2 then h4) leaves a hole; drop it rather than
+        // printing "History >  > Detail".
+        const title = path.filter(Boolean).join(' > ');
+        citation.sectionTitle = title || null;
+
+        const block = el.closest(PARAGRAPH_SELECTOR);
+        if (!block) {
+            citation.paragraphText = null;
+        } else {
+            // Several citations usually share one paragraph; clone it once.
+            if (!paragraphCache.has(block)) paragraphCache.set(block, paragraphText(block, maxParagraphChars));
+            citation.paragraphText = paragraphCache.get(block);
+        }
+    }
+
+    // A citation the loop never reached (not under `root`) still gets the
+    // fields, so consumers can rely on them being present.
+    for (const c of citations) {
+        if (!('sectionTitle' in c)) c.sectionTitle = null;
+        if (!('paragraphText' in c)) c.paragraphText = null;
+    }
+    return citations;
+}
+
+/**
+ * The article's categories, as names with spaces ("Living people"), from
+ * Parsoid's category links:
+ *
+ *   <link rel="mw:PageProp/Category" href="./Category:Living_people#Smith">
+ *
+ * Read from the article HTML the pipeline already fetched, so a --titles-file
+ * run gets them with no Wiki Replicas query. The namespace prefix is dropped
+ * without being checked, because it is localized ("Категория:" on ruwiki).
+ *
+ * Parsoid only: the browser DOM renders categories outside #mw-content-text.
+ */
+function articleCategories(root) {
+    if (!root) return [];
+    const names = new Set();
+    for (const link of root.querySelectorAll('link[rel~="mw:PageProp/Category"]')) {
+        const href = link.getAttribute('href') || '';
+        const target = href.replace(/^\.\//, '').split('#')[0];
+        const colon = target.indexOf(':');
+        if (colon === -1) continue;
+        let name = target.slice(colon + 1);
+        try {
+            name = decodeURIComponent(name);
+        } catch {
+            // Leave a malformed escape as-is rather than dropping the category.
+        }
+        name = name.replace(/_/g, ' ').trim();
+        if (name) names.add(name);
+    }
+    return [...names];
+}
+
 // --- core/groups.js ---
 // Adjacent-citation group semantics: when the collective (multi-source)
 // verification for a group should fire, how a group's members collapse to
@@ -1760,8 +1908,27 @@ function groupSourceEntries(members, sourceFor) {
  * @param {ReturnType<typeof groupSourceEntries>} entries
  */
 function shouldSkipCollective(entries) {
-    const availableCount = entries.filter(e => e.content && extractSourceText(e.content).trim()).length;
-    return availableCount <= 1;
+    return entries.filter(isReadable).length <= 1;
+}
+
+/**
+ * Whether any source cited for the group's claim could not be read. The
+ * severity pass (core/severity.js's tierFor()) treats that like a truncated
+ * source: a subclaim absent from the sources that were read may be in the one
+ * that wasn't, so absence is discounted and contradiction is not.
+ *
+ * Holds for the combined verdict and for a member judged on its own source
+ * alike. A flagged member's own source was necessarily read, so "any entry"
+ * and "any other entry" are the same question.
+ *
+ * @param {ReturnType<typeof groupSourceEntries>} entries
+ */
+function hasUnreadSource(entries) {
+    return entries.some(e => !isReadable(e));
+}
+
+function isReadable(entry) {
+    return Boolean(entry.content && extractSourceText(entry.content).trim());
 }
 
 /**
@@ -2921,6 +3088,286 @@ function buildCommentUrl(fields = {}, {
     params.set('preloadparams[]', buildTalkSectionBody(fields));
     return `${wikiBase}?${params.toString()}`;
 }
+
+// --- core/severity.js ---
+// Severity pass: for a claim the verifier already flagged, how much does the
+// failure matter?
+//
+// A second, separate model call — the verdict prompt in core/prompts.js is
+// tuned against the benchmark and stays untouched. The model splits the claim
+// into subclaims and labels each one: what the source does with it
+// (supported / absent / contradicted), and whether it is central to the
+// sentence. tierFor() turns that, plus whether all the evidence was read
+// (a truncated source, or a cited source that could not be fetched), into
+// a tier. The model is never asked for a number or for a severity directly:
+// categories calibrate far better than scores, and a tier computed from
+// observable labels can be explained to a volunteer ("a central fact is
+// contradicted") where a model's 0.73 cannot.
+//
+// Rationale and the alternatives rejected:
+// docs/design-plans/2026-09-24-severity-ranking-for-flagged-claims.md.
+//
+// Shared by the batch pipeline (service/severity-assessor.js) and the
+// userscript (inlined into main.js by scripts/sync-main.js, behind the
+// off-by-default "Rank problems by severity" setting). runSeverityPass() is
+// the one sequence both run; each front end only decides what a thrown error
+// means for it.
+
+
+// Bump whenever the prompt text changes, same contract as PROMPT_VERSION:
+// tests/severity.test.js pins a hash of the prompt against it.
+const SEVERITY_PROMPT_VERSION = 's1';
+
+const SUBCLAIM_STATUSES = Object.freeze({
+    SUPPORTED: 'supported',
+    ABSENT: 'absent',
+    CONTRADICTED: 'contradicted',
+});
+const STATUS_VALUES = new Set(Object.values(SUBCLAIM_STATUSES));
+
+// Only flags are ranked; a SUPPORTED or SOURCE UNAVAILABLE verdict has
+// nothing to rank.
+const SEVERITY_VERDICTS = new Set(['NOT SUPPORTED', 'PARTIALLY SUPPORTED']);
+
+// Whether a verified finding gets a severity pass at all. Takes anything with
+// a `verdict` field: a batch verification or a userscript report result.
+function needsSeverity(verification) {
+    return Boolean(verification) && SEVERITY_VERDICTS.has(verification.verdict);
+}
+
+// Most urgent first. Strings rather than 1/2/3 so a CSV cell reads on its own.
+const SEVERITY_TIERS = Object.freeze({
+    // A central subclaim is contradicted by the source.
+    CENTRAL_CONTRADICTED: 'T1',
+    // A central subclaim is absent from a source read in full, or a
+    // peripheral one is contradicted.
+    CENTRAL_ABSENT: 'T2',
+    // Only peripheral subclaims are absent — the "minor detail" case.
+    PERIPHERAL_ABSENT: 'T3',
+    // Only absences, and the source was cut off at a fetch cap: the missing
+    // text may simply be past the cutoff.
+    DISCOUNTED: 'discounted',
+    // The second pass found every subclaim supported, contradicting the
+    // first pass's flag. The likeliest false positives.
+    DISAGREEMENT: 'disagreement',
+});
+const SEVERITY_TIER_ORDER = Object.freeze([
+    SEVERITY_TIERS.CENTRAL_CONTRADICTED,
+    SEVERITY_TIERS.CENTRAL_ABSENT,
+    SEVERITY_TIERS.PERIPHERAL_ABSENT,
+    SEVERITY_TIERS.DISCOUNTED,
+    SEVERITY_TIERS.DISAGREEMENT,
+]);
+
+function generateSeveritySystemPrompt() {
+    return `You help Wikipedia volunteers decide which citation problems to fix first. You are given a claim from a Wikipedia article, the text of the source cited for it, and where the claim sits in the article.
+
+Split the claim into subclaims, then label each one.
+
+Subclaims:
+- A subclaim is one separate factual assertion: who, what, when, where, how many, what kind. Most claims have one to four.
+- Use the claim's own wording, in the claim's language. Do not add anything the claim does not say.
+- Do not split off words that assert nothing checkable.
+
+For each subclaim, "status":
+- "supported": the source states it, or it follows directly from what the source states.
+- "absent": the source does not address it.
+- "contradicted": the source states something incompatible with it.
+Decide status ONLY from the source text. Never use outside knowledge. Never use the article context as evidence: other sentences in the paragraph have their own citations.
+
+For each subclaim, "central":
+- true if it is the point of the sentence: changing or removing it would change what the sentence tells the reader.
+- false if it is a peripheral detail: a qualifier, a secondary date, an incidental descriptor, a middle name.
+- Use the article title, section and paragraph to judge this. Every claim has at least one central subclaim.
+
+Respond with JSON only:
+{"subclaims": [{"text": "<subclaim>", "status": "supported|absent|contradicted", "central": true|false}]}
+
+Example:
+Article: Riverside Bridge
+Section: History
+Claim: "The bridge, designed by engineer Anna Holt, opened in 1998."
+Source says it opened in August 2002 and names Holt as its designer, with no mention of her profession.
+{"subclaims": [{"text": "The bridge opened in 1998", "status": "contradicted", "central": true}, {"text": "The bridge was designed by Anna Holt", "status": "supported", "central": true}, {"text": "Anna Holt is an engineer", "status": "absent", "central": false}]}`;
+}
+
+/**
+ * @param {object} args
+ * @param {string} args.claimText
+ * @param {string} args.sourceInfo - Source content as fetched (the same string
+ *   the verdict call was given); extractSourceText() strips the fetch header.
+ * @param {string} [args.articleTitle]
+ * @param {string|null} [args.sectionTitle] - null means the lead.
+ * @param {string|null} [args.paragraphText]
+ *
+ * The first-pass verdict is deliberately NOT passed. Shown a flag, the model
+ * tends to find a failure to agree with it, and then the "disagreement" tier
+ * — the second pass finding nothing wrong — stops meaning anything.
+ */
+function generateSeverityUserPrompt({ claimText, sourceInfo, articleTitle, sectionTitle, paragraphText }) {
+    const lines = [];
+    if (articleTitle) lines.push(`Article: ${articleTitle}`);
+    lines.push(`Section: ${sectionTitle || '(lead section)'}`);
+    if (paragraphText) lines.push(`Paragraph (context only, not evidence): ${paragraphText}`);
+    lines.push('', `Claim: "${claimText}"`, '', 'Source text:', extractSourceText(sourceInfo || ''));
+    return lines.join('\n');
+}
+
+function extractJson(text) {
+    const trimmed = (text || '').trim();
+    const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+    if (fenced) return fenced[1].trim();
+    // Some models answer with the bare subclaim array. Checked before the
+    // brace match, which would otherwise grab just the first element.
+    if (trimmed.startsWith('[')) return trimmed;
+    const braces = trimmed.match(/\{[\s\S]*\}/);
+    return braces ? braces[0] : trimmed;
+}
+
+/**
+ * Parses the severity response. Returns { ok: true, subclaims } or
+ * { ok: false, error }.
+ *
+ * Strict about status (an unknown status can't be tiered, and guessing one
+ * would silently move a finding between tiers) and lenient about the rest:
+ * a subclaim with no usable `central` is treated as central, which can only
+ * rank a finding higher, never bury it.
+ */
+function parseSeverityResult(text) {
+    let parsed;
+    try {
+        parsed = JSON.parse(extractJson(text));
+    } catch {
+        return { ok: false, error: 'parse_error' };
+    }
+    const raw = Array.isArray(parsed) ? parsed : parsed?.subclaims;
+    if (!Array.isArray(raw) || raw.length === 0) return { ok: false, error: 'no_subclaims' };
+
+    const subclaims = [];
+    for (const item of raw) {
+        const status = String(item?.status ?? '').trim().toLowerCase();
+        if (!STATUS_VALUES.has(status)) return { ok: false, error: 'bad_status' };
+        subclaims.push({
+            text: String(item?.text ?? '').trim(),
+            status,
+            central: item?.central === false || item?.central === 'false' ? false : true,
+        });
+    }
+    return { ok: true, subclaims };
+}
+
+/**
+ * The tier for a flagged finding.
+ *
+ * Truncation discounts absence only. A contradiction survives it — the
+ * conflicting passage is in the part that was read — but "the source doesn't
+ * mention it" means nothing when most of the source was never seen: truncated
+ * rows falsely report failure on 18.4% of benchmark calls
+ * (docs/benchmark-ground-truth-audit-2026-09-06.md).
+ *
+ * `unreadSources` is the same case one level up: another source cited for the
+ * same claim (an adjacent-citation group) could not be fetched, so a subclaim
+ * absent from what was read may be in the source nobody read. It discounts
+ * exactly as truncation does. See hasUnreadSource() in core/groups.js.
+ *
+ * BLP is not a tier input; it orders findings within a tier (compareSeverity).
+ */
+function tierFor({ subclaims, sourceTruncated = false, unreadSources = false }) {
+    const failing = subclaims.filter(s => s.status !== SUBCLAIM_STATUSES.SUPPORTED);
+    if (failing.length === 0) return SEVERITY_TIERS.DISAGREEMENT;
+
+    const has = (status, central) => failing.some(s => s.status === status && s.central === central);
+    const { CONTRADICTED, ABSENT } = SUBCLAIM_STATUSES;
+
+    if (has(CONTRADICTED, true)) return SEVERITY_TIERS.CENTRAL_CONTRADICTED;
+    if (has(CONTRADICTED, false)) return SEVERITY_TIERS.CENTRAL_ABSENT;
+    if (sourceTruncated || unreadSources) return SEVERITY_TIERS.DISCOUNTED;
+    if (has(ABSENT, true)) return SEVERITY_TIERS.CENTRAL_ABSENT;
+    return SEVERITY_TIERS.PERIPHERAL_ABSENT;
+}
+
+/**
+ * One severity pass over one flagged finding: the no-call shortcuts, then the
+ * model call, the parse and tierFor().
+ *
+ * @param {object} args
+ * @param {string} args.claimText
+ * @param {string} args.sourceInfo - The exact source text the verdict was
+ *   reached on (a solo citation's fetched content, or a group's assembled
+ *   text), so the two passes see identical evidence.
+ * @param {boolean} [args.sourceTruncated]
+ * @param {boolean} [args.unreadSources] - Another source cited for the claim
+ *   could not be fetched; discounts absence like truncation (tierFor()).
+ * @param {string} [args.verdict] - The first-pass verdict. Read only for the
+ *   shortcut below; it is never shown to the model.
+ * @param {string|null} [args.reasonType]
+ * @param {string} [args.articleTitle]
+ * @param {string|null} [args.sectionTitle]
+ * @param {string|null} [args.paragraphText]
+ * @param {object} deps
+ * @param {Function} deps.callModel - (systemPrompt, userContent) => { text, usage }.
+ * @param {object} [deps.retry] - core/retry.js withRetry() options.
+ *
+ * Returns { tier, subclaims, error, usage, promptVersion }. promptVersion is
+ * set only when the model was actually asked, so a finding records which
+ * prompt produced its labels and not a version for a call that never ran.
+ * An unparseable answer comes back as { tier: null, error }; a failed model
+ * call (after retries) throws, because what it means differs per front end —
+ * the batch halts on a spent API key, the userscript just leaves one card
+ * unranked.
+ */
+async function runSeverityPass({
+    claimText, sourceInfo, sourceTruncated = false, unreadSources = false, verdict, reasonType,
+    articleTitle, sectionTitle, paragraphText,
+}, { callModel, retry = {} } = {}) {
+    if (typeof callModel !== 'function') {
+        throw new TypeError('runSeverityPass requires a callModel(systemPrompt, userContent) function');
+    }
+
+    // No model call for a pure omission on partly-read evidence: every
+    // subclaim the first pass could not find would be "absent", and tierFor()
+    // discounts absence on a truncated source or beside an unread one,
+    // whatever the labels say. The second pass could in principle turn up a
+    // contradiction the first missed, but paying a call per such omission for
+    // that is poor value.
+    if ((sourceTruncated || unreadSources) && verdict === 'NOT SUPPORTED' && reasonType === 'omission') {
+        return { tier: SEVERITY_TIERS.DISCOUNTED, subclaims: null, error: null, usage: null };
+    }
+    if (!sourceInfo) {
+        return { tier: null, subclaims: null, error: 'no_source', usage: null };
+    }
+
+    const systemPrompt = generateSeveritySystemPrompt();
+    const userContent = generateSeverityUserPrompt({ claimText, sourceInfo, articleTitle, sectionTitle, paragraphText });
+    const response = await withRetry(() => callModel(systemPrompt, userContent), retry);
+
+    const parsed = parseSeverityResult(response.text);
+    const asked = { usage: response.usage ?? null, promptVersion: SEVERITY_PROMPT_VERSION };
+    if (!parsed.ok) {
+        return { tier: null, subclaims: null, error: parsed.error, ...asked };
+    }
+    return {
+        tier: tierFor({ subclaims: parsed.subclaims, sourceTruncated, unreadSources }),
+        subclaims: parsed.subclaims,
+        error: null,
+        ...asked,
+    };
+}
+
+/**
+ * Sort comparator over findings: tier, then BLP first, then lower first-pass
+ * support score first. Findings with no tier (not flagged, or the pass
+ * failed) sort last.
+ */
+function compareSeverity(a, b) {
+    const rank = f => {
+        const i = SEVERITY_TIER_ORDER.indexOf(f.severityTier);
+        return i === -1 ? SEVERITY_TIER_ORDER.length : i;
+    };
+    return (rank(a) - rank(b))
+        || ((b.isBlp === true) - (a.isBlp === true))
+        || ((a.supportScore ?? 101) - (b.supportScore ?? 101));
+}
 // </core-injected>
 
 // Cap for manually-pasted source text. Unlike fetched sources — which the
@@ -3053,6 +3500,28 @@ function useToolforgeSourceFetcher() {
         'Last sentence only': 'Dernière phrase uniquement',
         '"Last sentence only" avoids flagging a multi-sentence claim as unsupported just because an earlier sentence lacks a citation.':
             '« Dernière phrase uniquement » évite de signaler une affirmation de plusieurs phrases comme non étayée simplement parce qu’une phrase précédente manque de source.',
+        'Rank problems by severity': 'Classer les problèmes par gravité',
+        'Runs one more check on each flagged citation to tell a contradicted key fact from a missing minor detail. Costs one extra model call per flagged citation.':
+            'Effectue une vérification supplémentaire sur chaque citation signalée pour distinguer un fait essentiel contredit d’un détail mineur absent. Coûte un appel au modèle de plus par citation signalée.',
+        '\n\nSeverity ranking is on: each flagged citation gets one more check at the end.':
+            '\n\nLe classement par gravité est activé : chaque citation signalée fera l’objet d’une vérification supplémentaire à la fin.',
+        'Checking severity…': 'Évaluation de la gravité…',
+        'Checking severity of [{num}]': 'Évaluation de la gravité de [{num}]',
+        'Severity': 'Gravité',
+        'Key fact contradicted': 'Fait essentiel contredit',
+        'Detail contradicted': 'Détail contredit',
+        'Key fact not in source': 'Fait essentiel absent de la source',
+        'Only a minor detail missing': 'Seul un détail mineur manque',
+        'Unclear: source only partly read': 'Incertain : source lue en partie seulement',
+        'Unclear: not every cited source was read': 'Incertain : toutes les sources citées n’ont pas été lues',
+        'Second check found it supported': 'La seconde vérification la juge étayée',
+        'Not ranked': 'Non classé',
+        'Contradicted': 'Contredit',
+        'Not in source': 'Absent de la source',
+        '(minor)': '(mineur)',
+        'Order': 'Ordre',
+        'Article order': 'Ordre de l’article',
+        'Most serious first': 'Les plus graves d’abord',
 
         // Verifier tab + first-run notification
         'Verify': 'Vérifier',
@@ -3349,6 +3818,28 @@ function useToolforgeSourceFetcher() {
         'Last sentence only': 'Solo la última frase',
         '"Last sentence only" avoids flagging a multi-sentence claim as unsupported just because an earlier sentence lacks a citation.':
             'Con «Solo la última frase» se evita marcar como no respaldada una afirmación de varias frases solo porque a una frase anterior le falta una fuente.',
+        'Rank problems by severity': 'Clasificar los problemas por gravedad',
+        'Runs one more check on each flagged citation to tell a contradicted key fact from a missing minor detail. Costs one extra model call per flagged citation.':
+            'Hace una comprobación más en cada cita señalada para distinguir un hecho clave contradicho de un detalle menor ausente. Supone una llamada adicional al modelo por cada cita señalada.',
+        '\n\nSeverity ranking is on: each flagged citation gets one more check at the end.':
+            '\n\nLa clasificación por gravedad está activada: cada cita señalada recibirá una comprobación más al final.',
+        'Checking severity…': 'Evaluando la gravedad…',
+        'Checking severity of [{num}]': 'Evaluando la gravedad de [{num}]',
+        'Severity': 'Gravedad',
+        'Key fact contradicted': 'Hecho clave contradicho',
+        'Detail contradicted': 'Detalle contradicho',
+        'Key fact not in source': 'Hecho clave ausente en la fuente',
+        'Only a minor detail missing': 'Solo falta un detalle menor',
+        'Unclear: source only partly read': 'Incierto: la fuente solo se leyó en parte',
+        'Unclear: not every cited source was read': 'Incierto: no se leyeron todas las fuentes citadas',
+        'Second check found it supported': 'La segunda comprobación la considera respaldada',
+        'Not ranked': 'Sin clasificar',
+        'Contradicted': 'Contradicho',
+        'Not in source': 'No está en la fuente',
+        '(minor)': '(menor)',
+        'Order': 'Orden',
+        'Article order': 'Orden del artículo',
+        'Most serious first': 'Los más graves primero',
 
         // Verifier tab + first-run notification
         'Verify': 'Verificar',
@@ -3641,6 +4132,28 @@ function useToolforgeSourceFetcher() {
         'Last sentence only': 'Только последнее предложение',
         '"Last sentence only" avoids flagging a multi-sentence claim as unsupported just because an earlier sentence lacks a citation.':
             '«Только последнее предложение» позволяет не помечать утверждение из нескольких предложений как неподтверждённое только потому, что в одном из предыдущих предложений нет сноски.',
+        'Rank problems by severity': 'Оценивать серьёзность проблем',
+        'Runs one more check on each flagged citation to tell a contradicted key fact from a missing minor detail. Costs one extra model call per flagged citation.':
+            'Проводит дополнительную проверку каждой проблемной сноски, чтобы отличить опровергнутый ключевой факт от отсутствующей второстепенной детали. Требует одного дополнительного запроса к модели на каждую такую сноску.',
+        '\n\nSeverity ranking is on: each flagged citation gets one more check at the end.':
+            '\n\nОценка серьёзности включена: в конце каждая проблемная сноска пройдёт ещё одну проверку.',
+        'Checking severity…': 'Оценка серьёзности…',
+        'Checking severity of [{num}]': 'Оценка серьёзности [{num}]',
+        'Severity': 'Серьёзность',
+        'Key fact contradicted': 'Ключевой факт опровергнут',
+        'Detail contradicted': 'Деталь опровергнута',
+        'Key fact not in source': 'Ключевого факта нет в источнике',
+        'Only a minor detail missing': 'Не хватает только второстепенной детали',
+        'Unclear: source only partly read': 'Неясно: источник прочитан не полностью',
+        'Unclear: not every cited source was read': 'Неясно: прочитаны не все указанные источники',
+        'Second check found it supported': 'Повторная проверка нашла подтверждение',
+        'Not ranked': 'Не оценено',
+        'Contradicted': 'Опровергнуто',
+        'Not in source': 'Нет в источнике',
+        '(minor)': '(второстепенное)',
+        'Order': 'Порядок',
+        'Article order': 'Как в статье',
+        'Most serious first': 'Сначала серьёзные',
 
         // Verifier tab + first-run notification
         'Verify': 'Проверка',
@@ -3941,6 +4454,28 @@ function useToolforgeSourceFetcher() {
         'Last sentence only': 'המשפט האחרון בלבד',
         '"Last sentence only" avoids flagging a multi-sentence claim as unsupported just because an earlier sentence lacks a citation.':
             '"המשפט האחרון בלבד" מונע סימון של טענה בת כמה משפטים כלא נתמכת רק משום שלאחד המשפטים הקודמים אין הערת שוליים.',
+        'Rank problems by severity': 'דירוג בעיות לפי חומרה',
+        'Runs one more check on each flagged citation to tell a contradicted key fact from a missing minor detail. Costs one extra model call per flagged citation.':
+            'בדיקה נוספת לכל הערת שוליים שסומנה, כדי להבחין בין עובדה מרכזית שהמקור סותר לבין פרט שולי שאינו מופיע בו. כרוכה בקריאה נוספת למודל לכל הערה כזו.',
+        '\n\nSeverity ranking is on: each flagged citation gets one more check at the end.':
+            '\n\nדירוג החומרה פעיל: בסוף תתבצע בדיקה נוספת לכל הערת שוליים שסומנה.',
+        'Checking severity…': 'בדיקת חומרה…',
+        'Checking severity of [{num}]': 'בדיקת חומרה של [{num}]',
+        'Severity': 'חומרה',
+        'Key fact contradicted': 'המקור סותר עובדה מרכזית',
+        'Detail contradicted': 'המקור סותר פרט שולי',
+        'Key fact not in source': 'עובדה מרכזית לא מופיעה במקור',
+        'Only a minor detail missing': 'חסר רק פרט שולי',
+        'Unclear: source only partly read': 'לא ברור: המקור נקרא רק בחלקו',
+        'Unclear: not every cited source was read': 'לא ברור: לא כל המקורות שצוטטו נקראו',
+        'Second check found it supported': 'הבדיקה השנייה מצאה שהטענה נתמכת',
+        'Not ranked': 'לא דורג',
+        'Contradicted': 'המקור סותר',
+        'Not in source': 'לא מופיע במקור',
+        '(minor)': '(שולי)',
+        'Order': 'סדר',
+        'Article order': 'לפי סדר הערך',
+        'Most serious first': 'החמורות ביותר תחילה',
 
         // Verifier tab + first-run notification
         'Verify': 'בדיקה',
@@ -4287,6 +4822,9 @@ function useToolforgeSourceFetcher() {
             // and 'sentence' narrows to just the sentence next to the ref.
             const storedClaimScope = localStorage.getItem('verifier_claim_scope');
             this.claimScope = storedClaimScope === 'sentence' ? 'sentence' : 'paragraph';
+            // Severity ranking (core/severity.js): one more model call per
+            // flagged citation, so off until the editor turns it on.
+            this.severityEnabled = localStorage.getItem('verifier_severity') === 'on';
             this.sidebarWidth = localStorage.getItem('verifier_sidebar_width') || '400px';
             this.isVisible = localStorage.getItem('verifier_sidebar_visible') === 'true';
             this.buttons = {};
@@ -4321,6 +4859,16 @@ function useToolforgeSourceFetcher() {
             this.hasReport = false;
             this.reportRevisionId = null;
             this.reportFilters = this.loadReportFilters();
+            // Severity state for the current report. reportSeverity snapshots
+            // the setting at run start, so flipping it mid-run can't rank half
+            // a report. severityInputs holds, per verdict, the exact source
+            // text and article context the severity pass needs; reportCardEls
+            // maps a result to the element its card content lives in.
+            this.reportSeverity = false;
+            this.severityInputs = new Map();
+            this.reportCardEls = new Map();
+            this.reportDocOrder = 0;
+            this.reportSort = this.loadReportSort();
 
             this.init();
         }
@@ -4422,6 +4970,8 @@ function useToolforgeSourceFetcher() {
                         <div id="verifier-claim-scope-label">${this.t('Claim scope')}</div>
                         <div id="verifier-claim-scope-container"></div>
                         <div id="verifier-claim-scope-note">${this.t('"Last sentence only" avoids flagging a multi-sentence claim as unsupported just because an earlier sentence lacks a citation.')}</div>
+                        <div id="verifier-severity-container"></div>
+                        <div id="verifier-severity-note">${this.t('Runs one more check on each flagged citation to tell a contradicted key fact from a missing minor detail. Costs one extra model call per flagged citation.')}</div>
                         <div id="verifier-accuracy-note"></div>
                         <div id="verifier-privacy-note">${this.t('Results are logged for research. Your username is not recorded.')}</div>
                         <div id="verifier-settings-done-container"></div>
@@ -4436,6 +4986,7 @@ function useToolforgeSourceFetcher() {
                             <div id="verifier-verdict"></div>
                             <div id="verifier-quote"></div>
                             <div id="verifier-comments"></div>
+                            <div id="verifier-severity"></div>
                             <div id="verifier-verdict-next"></div>
                             <div id="verifier-action-container"></div>
                         </div>
@@ -4799,6 +5350,10 @@ function useToolforgeSourceFetcher() {
                 ${root} #source-verifier-sidebar .oo-ui-dropdownWidget .oo-ui-labelElement-label {
                     color: var(--sv-ink) !important;
                 }
+                /* The settings checkbox's label (severity ranking). */
+                ${root} #source-verifier-sidebar .oo-ui-fieldLayout .oo-ui-labelElement-label {
+                    color: var(--sv-ink) !important;
+                }
                 /* Framed buttons only. A frameless button is deliberately
                    chrome-less — the header controls, the "paste source text"
                    link — so giving it a filled background turns it into a box
@@ -5099,6 +5654,11 @@ function useToolforgeSourceFetcher() {
                     margin-bottom: 6px;
                 }
                 #verifier-claim-scope-note {
+                    font-size: 12px;
+                    color: var(--sv-ink-4);
+                    margin-bottom: 10px;
+                }
+                #verifier-severity-note {
                     font-size: 12px;
                     color: var(--sv-ink-4);
                     margin-bottom: 10px;
@@ -5548,6 +6108,82 @@ function useToolforgeSourceFetcher() {
                 }
                 .reason-type-contradiction { background: var(--sv-err-bg); color: var(--sv-err-fg); }
                 .reason-type-omission { background: var(--sv-warn-bg); color: var(--sv-warn-fg); }
+
+                /* Severity block (opt-in; core/severity.js). Same markup in the
+                   sidebar and on report cards. */
+                .sv-severity {
+                    margin-top: 6px;
+                    font-size: 12px;
+                }
+                .sv-severity-label {
+                    margin-inline-end: 6px;
+                    font-size: 10px;
+                    font-weight: 600;
+                    letter-spacing: 0.04em;
+                    text-transform: uppercase;
+                    color: var(--sv-ink-subtle);
+                }
+                .sv-severity-badge {
+                    display: inline-block;
+                    padding: 1px 6px;
+                    border-radius: 3px;
+                    font-size: 11px;
+                    background: var(--sv-na-bg);
+                    color: var(--sv-na-fg);
+                }
+                .sv-severity-high { background: var(--sv-err-bg); color: var(--sv-err-fg); }
+                .sv-severity-medium { background: var(--sv-warn-bg); color: var(--sv-warn-fg); }
+                .sv-severity-pending {
+                    font-size: 12px;
+                    font-style: italic;
+                    color: var(--sv-ink-subtle);
+                }
+                .sv-subclaims {
+                    margin: 4px 0 0;
+                    padding-inline-start: 16px;
+                    color: var(--sv-ink-3);
+                }
+                .sv-subclaim {
+                    margin: 2px 0;
+                }
+                .sv-subclaim-status {
+                    font-weight: 600;
+                }
+                .sv-subclaim-contradicted .sv-subclaim-status { color: var(--sv-err-fg); }
+                .sv-subclaim-absent .sv-subclaim-status { color: var(--sv-warn-fg); }
+                .sv-subclaim-minor {
+                    color: var(--sv-ink-subtle);
+                }
+                .verifier-sort {
+                    display: flex;
+                    flex-wrap: wrap;
+                    align-items: center;
+                    gap: 6px;
+                    margin-top: 6px;
+                    font-size: 12px;
+                }
+                .verifier-sort-label {
+                    color: var(--sv-ink-5);
+                }
+                .verifier-sort-option {
+                    padding: 2px 8px;
+                    font: inherit;
+                    font-size: 12px;
+                    color: var(--sv-ink-chip);
+                    background: var(--sv-bg-card);
+                    border: 1px solid var(--sv-border-chip);
+                    border-radius: 12px;
+                    cursor: pointer;
+                }
+                .verifier-sort-option:hover {
+                    background: var(--sv-bg-chip-hover);
+                    border-color: var(--sv-border-chip-hover);
+                }
+                .verifier-sort-option.verifier-sort-active {
+                    font-weight: 600;
+                    color: var(--sv-accent-fg);
+                    border-color: var(--sv-accent-fg);
+                }
                 .report-card-claim {
                     color: var(--sv-ink-3);
                     font-size: 11px;
@@ -5908,6 +6544,13 @@ function useToolforgeSourceFetcher() {
             });
             this.buttons.claimScopeSelect.getMenu().selectItemByData(this.claimScope);
 
+            // Severity ranking toggle
+            this.buttons.severityToggle = new OO.ui.CheckboxInputWidget({ selected: this.severityEnabled });
+            this.buttons.severityField = new OO.ui.FieldLayout(this.buttons.severityToggle, {
+                label: this.t('Rank problems by severity'),
+                align: 'inline'
+            });
+
             this.buttons.setKey = new OO.ui.ButtonWidget({
                 label: this.t('Set API Key'),
                 flags: ['primary', 'progressive'],
@@ -5987,6 +6630,7 @@ function useToolforgeSourceFetcher() {
             document.getElementById('verifier-settings-btn-container').appendChild(this.buttons.settings.$element[0]);
             document.getElementById('verifier-provider-container').appendChild(this.buttons.providerSelect.$element[0]);
             document.getElementById('verifier-claim-scope-container').appendChild(this.buttons.claimScopeSelect.$element[0]);
+            document.getElementById('verifier-severity-container').appendChild(this.buttons.severityField.$element[0]);
             document.getElementById('verifier-settings-done-container').appendChild(this.buttons.settingsDone.$element[0]);
 
             this.updateProviderInfo();
@@ -6195,10 +6839,12 @@ function useToolforgeSourceFetcher() {
                 // When in report mode, don't switch to single-citation view.
                 // Instead, scroll to the matching report card if one exists.
                 if (this.reportMode) {
-                    const matchIndex = this.reportResults.findIndex(r => r.refElement === refElement);
-                    if (matchIndex !== -1) {
-                        const cards = document.querySelectorAll('#verifier-report-results .report-card');
-                        const card = cards[matchIndex];
+                    // Looked up by result, not by position: cards can be
+                    // sorted out of article order, and a group's members are
+                    // rows inside one block rather than cards of their own.
+                    const match = this.reportResults.find(r => r.refElement === refElement);
+                    if (match) {
+                        const card = this.reportCardEls.get(match);
                         if (card) {
                             card.scrollIntoView({ behavior: 'smooth', block: 'center' });
                             card.style.transition = 'box-shadow 0.3s';
@@ -6677,6 +7323,11 @@ function useToolforgeSourceFetcher() {
                 localStorage.setItem('verifier_claim_scope', this.claimScope);
             });
 
+            this.buttons.severityToggle.on('change', (selected) => {
+                this.severityEnabled = !!selected;
+                localStorage.setItem('verifier_severity', this.severityEnabled ? 'on' : 'off');
+            });
+
             this.buttons.setKey.on('click', () => {
                 this.setApiKey();
             });
@@ -6967,6 +7618,13 @@ function useToolforgeSourceFetcher() {
 
                 this.displayResult(result);
 
+                // Not awaited: the verdict is the answer, and the Verify
+                // button shouldn't stay busy for a refinement of it.
+                if (this.severityEnabled) {
+                    const parsed = this.parseVerificationResult(result);
+                    if (needsSeverity(parsed)) this.showSingleSeverity(parsed, verifyId);
+                }
+
             } catch (error) {
                 if (verifyId !== this.currentVerifyId) {
                     return;
@@ -7110,6 +7768,9 @@ function useToolforgeSourceFetcher() {
 	    }
 
 	    commentsEl.textContent = result.comments;
+
+	    const severityEl = document.getElementById('verifier-severity');
+	    if (severityEl) severityEl.innerHTML = '';
 
 	    const nextEl = document.getElementById('verifier-verdict-next');
 	    if (nextEl) {
@@ -7357,6 +8018,7 @@ function useToolforgeSourceFetcher() {
                     ${counts.error > 0 ? chip('error', counts.error, 'errors', '#adb5bd') : ''}
                     ${counts.skipped > 0 ? chip('skipped', counts.skipped, 'skipped', '#adb5bd') : ''}
                 </div>
+                ${this.reportSeverity ? this.reportSortHtml() : ''}
                 <div class="verifier-summary-meta">
                     ${claimsLabel}${hiddenCount > 0 ? this.t(' · {count} hidden by filter', { count: hiddenCount }) : ''}${this.reportTokenUsage.input + this.reportTokenUsage.output > 0 ? this.t(' · {input} input + {output} output tokens', { input: this.reportTokenUsage.input.toLocaleString(), output: this.reportTokenUsage.output.toLocaleString() }) : ''}
                 </div>
@@ -7367,6 +8029,12 @@ function useToolforgeSourceFetcher() {
                 btn.addEventListener('click', (e) => {
                     e.preventDefault();
                     this.toggleReportFilter(btn.dataset.filter);
+                });
+            });
+            summaryEl.querySelectorAll('.verifier-sort-option').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    this.setReportSort(btn.dataset.sort);
                 });
             });
         }
@@ -7406,7 +8074,10 @@ function useToolforgeSourceFetcher() {
 
             // Solo citation: render the original card layout unchanged.
             if (!result.groupSize || result.groupSize <= 1) {
-                resultsEl.appendChild(this.buildSoloCard(result));
+                const card = this.buildSoloCard(result);
+                card.dataset.docOrder = String(this.reportDocOrder++);
+                this.reportCardEls.set(result, card);
+                resultsEl.insertBefore(card, resultsEl.querySelector('.verifier-filter-empty'));
                 return;
             }
 
@@ -7416,10 +8087,13 @@ function useToolforgeSourceFetcher() {
             let groupEl = resultsEl.querySelector(`.verifier-report-group[data-group-id="${CSS.escape(result.groupId)}"]`);
             if (!groupEl) {
                 groupEl = this.buildGroupBlock(result);
-                resultsEl.appendChild(groupEl);
+                groupEl.dataset.docOrder = String(this.reportDocOrder++);
+                resultsEl.insertBefore(groupEl, resultsEl.querySelector('.verifier-filter-empty'));
             }
             const rowsEl = groupEl.querySelector('.verifier-report-group-rows');
-            rowsEl.appendChild(this.buildGroupRow(result));
+            const row = this.buildGroupRow(result);
+            this.reportCardEls.set(result, row);
+            rowsEl.appendChild(row);
         }
 
         buildSoloCard(result) {
@@ -7525,6 +8199,7 @@ function useToolforgeSourceFetcher() {
 
             const slot = groupEl.querySelector('.verifier-report-group-collective');
             if (!slot) return;
+            this.reportCardEls.set(result, slot);
 
             const reasonTypeHtml = (result.verdict === 'NOT SUPPORTED' && result.reason_type)
                 ? `<span class="reason-type-tag reason-type-${result.reason_type}">${this.reasonTypeLabel(result.reason_type)}</span>`
@@ -7839,6 +8514,233 @@ function useToolforgeSourceFetcher() {
             return callProviderAPI(this.currentProvider, { apiKey: this.getCurrentApiKey(), model: this.providers[this.currentProvider].model, systemPrompt: this.localizeSystemPrompt(generateGroupSystemPrompt()), userContent: generateGroupUserPrompt(claim, assembledText), maxTokens: groupMaxTokens(this.currentProvider), ...this.llmRouterConfigOverrides() });
         }
 
+        // ========================================
+        // SEVERITY RANKING (opt-in)
+        // ========================================
+
+        // One severity pass for one flagged verdict. core/severity.js's
+        // runSeverityPass() is the whole sequence, shared with the batch
+        // pipeline; this binds the selected provider and turns a failed call
+        // into an unranked result — here a failure costs one badge, not the
+        // run. The severity prompt is deliberately not localized: subclaims
+        // keep the claim's own wording, in the claim's language.
+        async assessSeverity(input, retry) {
+            const callModel = (systemPrompt, userContent) => callProviderAPI(this.currentProvider, {
+                apiKey: this.getCurrentApiKey(),
+                model: this.providers[this.currentProvider].model,
+                systemPrompt,
+                userContent,
+                ...this.llmRouterConfigOverrides()
+            });
+            try {
+                return await runSeverityPass(input, { callModel, retry });
+            } catch (e) {
+                return { tier: null, subclaims: null, error: e?.message || String(e), usage: null, failed: true };
+            }
+        }
+
+        // Section heading path and enclosing paragraph for one citation: the
+        // context the severity prompt uses to judge whether a subclaim is
+        // central. One pass over the article, like Verify All's.
+        articleContextFor(refElement) {
+            const citation = { refElement };
+            attachArticleContext([citation], document.getElementById('mw-content-text'));
+            return { sectionTitle: citation.sectionTitle, paragraphText: citation.paragraphText };
+        }
+
+        reportArticleTitle() {
+            return typeof mw !== 'undefined' ? mw.config.get('wgTitle') : document.title;
+        }
+
+        // The severity block under a verdict in the single-check view.
+        async showSingleSeverity(parsed, verifyId) {
+            const el = document.getElementById('verifier-severity');
+            if (!el) return;
+            el.innerHTML = `<div class="sv-severity-pending">${this.escapeHtml(this.t('Checking severity…'))}</div>`;
+            const severity = await this.assessSeverity({
+                claimText: this.activeClaim,
+                sourceInfo: this.activeSource,
+                sourceTruncated: (this.activeSource || '').includes('\nTruncated: true'),
+                verdict: parsed.verdict,
+                reasonType: parsed.reason_type,
+                articleTitle: this.reportArticleTitle(),
+                ...this.articleContextFor(this.activeRefElement)
+            }, { maxRetries: 3, shouldAbort: () => verifyId !== this.currentVerifyId });
+            // A newer click (or a cleared result) owns the panel now.
+            if (verifyId !== this.currentVerifyId) return;
+            el.innerHTML = this.severityHtml(severity);
+        }
+
+        // The badge says what was found, not a rank: "key fact contradicted"
+        // can be checked against the source, "T1" cannot. T2 covers two
+        // different findings, so it reads its subclaims to say which.
+        severityLabelFor(severity) {
+            const anyContradicted = (severity.subclaims || []).some(s => s.status === SUBCLAIM_STATUSES.CONTRADICTED);
+            switch (severity.tier) {
+                case SEVERITY_TIERS.CENTRAL_CONTRADICTED: return { cls: 'high', label: this.t('Key fact contradicted') };
+                case SEVERITY_TIERS.CENTRAL_ABSENT: return anyContradicted
+                    ? { cls: 'medium', label: this.t('Detail contradicted') }
+                    : { cls: 'medium', label: this.t('Key fact not in source') };
+                case SEVERITY_TIERS.PERIPHERAL_ABSENT: return { cls: 'low', label: this.t('Only a minor detail missing') };
+                // Discounted for one of two reasons, worded apart: the source
+                // was cut off, or another source cited for the claim was
+                // never read at all.
+                case SEVERITY_TIERS.DISCOUNTED: return severity.unreadSources
+                    ? { cls: 'low', label: this.t('Unclear: not every cited source was read') }
+                    : { cls: 'low', label: this.t('Unclear: source only partly read') };
+                case SEVERITY_TIERS.DISAGREEMENT: return { cls: 'low', label: this.t('Second check found it supported') };
+                default: return { cls: 'none', label: this.t('Not ranked') };
+            }
+        }
+
+        // Badge plus the subclaims that failed, which is what tells an editor
+        // what to fix. Supported subclaims are left out; an unranked result
+        // carries its error as a tooltip rather than as text.
+        severityHtml(severity) {
+            if (!severity) return '';
+            const { cls, label } = this.severityLabelFor(severity);
+            const items = (severity.subclaims || [])
+                .filter(s => s.status !== SUBCLAIM_STATUSES.SUPPORTED)
+                .map(s => `<li class="sv-subclaim sv-subclaim-${s.status}">`
+                    + `<span class="sv-subclaim-status">${this.escapeHtml(s.status === SUBCLAIM_STATUSES.CONTRADICTED ? this.t('Contradicted') : this.t('Not in source'))}</span> `
+                    + this.escapeHtml(s.text)
+                    + (s.central ? '' : ` <span class="sv-subclaim-minor">${this.escapeHtml(this.t('(minor)'))}</span>`)
+                    + `</li>`)
+                .join('');
+            const title = !severity.tier && severity.error ? ` title="${this.escapeHtml(severity.error)}"` : '';
+            return `<div class="sv-severity">`
+                + `<span class="sv-severity-label">${this.escapeHtml(this.t('Severity'))}</span>`
+                + `<span class="sv-severity-badge sv-severity-${cls}"${title}>${this.escapeHtml(label)}</span>`
+                + (items ? `<ul class="sv-subclaims">${items}</ul>` : '')
+                + `</div>`;
+        }
+
+        // Second phase of Verify All, when severity ranking is on: one pass
+        // per flagged claim. Run after every verdict rather than interleaved,
+        // so the verdicts arrive as fast as they do without ranking, and
+        // cards don't reorder while the editor is reading them — the sort is
+        // applied once, when ranking ends. Only report units are ranked: a
+        // group with a combined verdict is ranked on that, not on its rows.
+        async rankReportBySeverity(delayBetweenCalls) {
+            const units = this.getReportUnits().filter(u => needsSeverity(u) && this.severityInputs.has(u));
+            const startTime = Date.now();
+            const articleTitle = this.reportArticleTitle();
+            for (let k = 0; k < units.length; k++) {
+                if (this.reportCancelled) break;
+                const unit = units[k];
+                this.updateReportProgress(k, units.length, this.t('Checking severity of [{num}]', { num: unit.citationNumber }), startTime);
+                const input = this.severityInputs.get(unit);
+                const severity = await this.assessSeverity({
+                    ...input,
+                    verdict: unit.verdict,
+                    reasonType: unit.reason_type,
+                    articleTitle
+                }, {
+                    maxRetries: 4,
+                    minBackoffMs: 5000,
+                    maxBackoffMs: 30000,
+                    jitterMs: 0,
+                    shouldAbort: () => this.reportCancelled
+                });
+                if (severity.usage) {
+                    this.reportTokenUsage.input += severity.usage.input || 0;
+                    this.reportTokenUsage.output += severity.usage.output || 0;
+                }
+                unit.severity = { tier: severity.tier, subclaims: severity.subclaims, error: severity.error, unreadSources: Boolean(input.unreadSources) };
+                this.renderReportSeverity(unit);
+                this.renderReportSummary();
+                // Rate-limit pause only after a real model call; a truncated
+                // omission is discounted without one.
+                const called = severity.promptVersion || severity.failed;
+                if (called && !this.reportCancelled && k < units.length - 1) {
+                    await new Promise(r => setTimeout(r, delayBetweenCalls));
+                }
+            }
+            this.applyReportSort();
+        }
+
+        // Puts a unit's severity block in its card (solo), its group's
+        // combined-verdict slot, or its row (a member of a group whose
+        // combined check was skipped), and records the tier on the top-level
+        // block applyReportSort() moves.
+        renderReportSeverity(unit) {
+            const host = this.reportCardEls.get(unit);
+            if (!host || !unit.severity) return;
+            let slot = host.querySelector(':scope > .sv-severity-slot');
+            if (!slot) {
+                slot = document.createElement('div');
+                slot.className = 'sv-severity-slot';
+                host.insertBefore(slot, host.querySelector(':scope > .report-card-action, :scope > .verifier-feedback'));
+            }
+            slot.innerHTML = this.severityHtml(unit.severity);
+
+            const block = host.closest('.verifier-report-card, .verifier-report-group');
+            if (!block || !unit.severity.tier) return;
+            const candidate = { severityTier: unit.severity.tier, supportScore: typeof unit.support_score === 'number' ? unit.support_score : undefined };
+            // A skipped group's members are ranked one by one; the block
+            // sorts by the most serious of them.
+            if (!block.dataset.severityTier || compareSeverity(candidate, this.blockSeverity(block)) < 0) {
+                block.dataset.severityTier = candidate.severityTier;
+                if (candidate.supportScore === undefined) delete block.dataset.supportScore;
+                else block.dataset.supportScore = String(candidate.supportScore);
+            }
+        }
+
+        blockSeverity(block) {
+            if (!block.dataset.severityTier) return {};
+            return {
+                severityTier: block.dataset.severityTier,
+                supportScore: block.dataset.supportScore === undefined ? undefined : Number(block.dataset.supportScore)
+            };
+        }
+
+        loadReportSort() {
+            try {
+                return localStorage.getItem('verifier_report_sort') === 'severity' ? 'severity' : 'document';
+            } catch (e) {
+                return 'document';
+            }
+        }
+
+        setReportSort(sort) {
+            this.reportSort = sort === 'severity' ? 'severity' : 'document';
+            try {
+                localStorage.setItem('verifier_report_sort', this.reportSort);
+            } catch (e) {}
+            this.applyReportSort();
+            this.renderReportSummary();
+        }
+
+        // Orders the report's top-level blocks — solo cards and whole group
+        // blocks, so a group's rows never come apart. Article order, unless
+        // the report was severity-ranked and "Most serious first" is chosen:
+        // then compareSeverity() (tier, then lower support score), with
+        // article order breaking ties and keeping everything unranked, in
+        // place, after the ranked blocks. Filters are untouched: sorting only
+        // moves cards, it never hides one.
+        applyReportSort() {
+            const resultsEl = document.getElementById('verifier-report-results');
+            if (!resultsEl) return;
+            const bySeverity = this.reportSeverity && this.reportSort === 'severity';
+            const blocks = Array.from(resultsEl.children).filter(el => el.dataset.docOrder !== undefined);
+            blocks.sort((a, b) => (bySeverity ? compareSeverity(this.blockSeverity(a), this.blockSeverity(b)) : 0)
+                || (Number(a.dataset.docOrder) - Number(b.dataset.docOrder)));
+            const emptyEl = resultsEl.querySelector('.verifier-filter-empty');
+            for (const el of blocks) resultsEl.insertBefore(el, emptyEl);
+        }
+
+        reportSortHtml() {
+            const option = (key, label) => {
+                const active = this.reportSort === key;
+                return `<button type="button" class="verifier-sort-option${active ? ' verifier-sort-active' : ''}" data-sort="${key}" aria-pressed="${active ? 'true' : 'false'}">${this.escapeHtml(label)}</button>`;
+            };
+            return `<div class="verifier-sort" role="group" aria-label="${this.escapeHtml(this.t('Order'))}">`
+                + `<span class="verifier-sort-label">${this.escapeHtml(this.t('Order'))}</span>`
+                + option('document', this.t('Article order'))
+                + option('severity', this.t('Most serious first'))
+                + `</div>`;
+        }
+
         // Runs the single collective verification for one adjacent-citation
         // group and renders its verdict into the existing group block. Reads
         // each member's already-fetched source from sourceCache, dedupes sources
@@ -7868,6 +8770,9 @@ function useToolforgeSourceFetcher() {
                 return { key: cacheKey, url: m.url || null, content: fetchResult.content, error: fetchResult.error, status: fetchResult.status };
             });
             const truncated = entries.some(e => e.content && e.content.includes('\nTruncated: true'));
+            // A cited source nobody could read discounts absence in the
+            // severity pass, like truncation (core/groups.js's hasUnreadSource()).
+            const unreadSources = hasUnreadSource(entries);
             const { text: assembledText, anyAvailable } = assembleGroupSources(entries);
 
             // When only one source is available the collective verdict would
@@ -7875,6 +8780,15 @@ function useToolforgeSourceFetcher() {
             if (shouldSkipCollective(entries)) {
                 this.reportGroupResults.set(groupId, { skipped: true, groupId });
                 this.hideGroupCollectiveSlot(groupId);
+                // Each member is now ranked as its own claim, on its own
+                // source; a sibling that couldn't be read leaves its
+                // absences unproven, as it would for a combined verdict.
+                if (unreadSources) {
+                    for (const r of this.reportResults) {
+                        const input = r.groupId === groupId && this.severityInputs.get(r);
+                        if (input) input.unreadSources = true;
+                    }
+                }
                 // Marking the group skipped changes what getReportUnits()
                 // returns for it (members instead of nothing), so the pills and
                 // the filter state both have to be recomputed — the success
@@ -7944,6 +8858,18 @@ function useToolforgeSourceFetcher() {
                         quoteVerified: quoteView.verified,
                         quoteStatus: quoteView.status,
                     };
+                    // Ranked on the same assembled text the combined verdict
+                    // was reached on.
+                    if (this.reportSeverity) {
+                        this.severityInputs.set(result, {
+                            claimText,
+                            sourceInfo: assembledText,
+                            sourceTruncated: truncated,
+                            unreadSources,
+                            sectionTitle: members[0].sectionTitle,
+                            paragraphText: members[0].paragraphText
+                        });
+                    }
                 } catch (e) {
                     result = { ...base, verdict: 'ERROR', support_score: null, comments: e.message };
                 }
@@ -8015,6 +8941,11 @@ function useToolforgeSourceFetcher() {
                     { count: multiGroupCount }
                   )
                 : '';
+            // How many citations get flagged isn't known until the run ends,
+            // so the extra checks are announced rather than estimated.
+            const severityNote = this.severityEnabled
+                ? this.t('\n\nSeverity ranking is on: each flagged citation gets one more check at the end.')
+                : '';
 
             const confirmed = await new Promise(resolve => {
                 OO.ui.confirm(
@@ -8022,7 +8953,7 @@ function useToolforgeSourceFetcher() {
                         estimatedMinutes > 1
                             ? 'This will verify {citations} citations from {sources} unique sources.{groupNote}\n\nEstimated time: ~{minutes} minutes.\n\nContinue?'
                             : 'This will verify {citations} citations from {sources} unique sources.{groupNote}\n\nEstimated time: ~{minutes} minute.\n\nContinue?',
-                        { citations: checkable.length, sources: uniqueUrls.size, groupNote, minutes: estimatedMinutes }
+                        { citations: checkable.length, sources: uniqueUrls.size, groupNote: groupNote + severityNote, minutes: estimatedMinutes }
                     )
                 ).done(result => resolve(result));
             });
@@ -8041,6 +8972,13 @@ function useToolforgeSourceFetcher() {
             this.reportTokenUsage = { input: 0, output: 0 };
             this.hasReport = true;
             this.reportRevisionId = this.getArticleRevisionId();
+            this.reportSeverity = this.severityEnabled;
+            this.severityInputs = new Map();
+            this.reportCardEls = new Map();
+            this.reportDocOrder = 0;
+            if (this.reportSeverity) {
+                attachArticleContext(citations, document.getElementById('mw-content-text'));
+            }
 
             this.showReportView();
             document.getElementById('verifier-report-results').innerHTML = '';
@@ -8191,6 +9129,15 @@ function useToolforgeSourceFetcher() {
                                 quoteStatus: quoteView.status,
                                 truncated: sourceTruncated
                             };
+                            if (this.reportSeverity) {
+                                this.severityInputs.set(result, {
+                                    claimText: citation.claimText,
+                                    sourceInfo: sourceContent,
+                                    sourceTruncated,
+                                    sectionTitle: citation.sectionTitle,
+                                    paragraphText: citation.paragraphText
+                                });
+                            }
 
                             // Fire-and-forget logging
                             try {
@@ -8264,9 +9211,16 @@ function useToolforgeSourceFetcher() {
                 }
             }
 
+            // A Stop during ranking leaves every verdict in place, so the run
+            // still reports as completed; only a Stop before then is a cancel.
+            const cancelledVerdicts = this.reportCancelled;
+            if (this.reportSeverity && !cancelledVerdicts) {
+                await this.rankReportBySeverity(delayBetweenCalls);
+            }
+
             // Finalize
             this.reportRunning = false;
-            const finalPhase = this.reportCancelled
+            const finalPhase = cancelledVerdicts
                 ? this.t(citations.length === 1 ? 'Cancelled after {done} of {total} citation' : 'Cancelled after {done} of {total} citations', { done: this.reportResults.length, total: citations.length })
                 : this.t(this.reportResults.length === 1 ? 'Completed: {count} citation checked' : 'Completed: {count} citations checked', { count: this.reportResults.length });
             this.updateReportProgress(completed, progressTotal, finalPhase, startTime);
@@ -8554,6 +9508,8 @@ function useToolforgeSourceFetcher() {
             if (quoteEl) quoteEl.innerHTML = '';
             const nextEl = document.getElementById('verifier-verdict-next');
             if (nextEl) nextEl.textContent = '';
+            const severityEl = document.getElementById('verifier-severity');
+            if (severityEl) severityEl.innerHTML = '';
             this.activeCheckId = null;
             this.hasResult = false;
             this.renderUiState();
