@@ -115,17 +115,31 @@ function describeSource(source) {
     return `unavailable (${source.unavailableReason}, status ${source.status}): ${source.error}`;
 }
 
+// What the lead check (core/lead-check.js) would read for this article: how
+// many lead sentences, and how much body. An article with no body gets no
+// lead check, and its lead citations are not demoted.
+export function describeLead(lead) {
+    if (!lead) return null;
+    const { sentences, body } = lead;
+    if (!body.text) return `lead: ${sentences.length} sentence(s); no body, so no lead check`;
+    const cut = body.truncated ? `, cut from ${body.totalChars}` : '';
+    return `lead: ${sentences.length} sentence(s) against a body of ${body.chars} chars in ${body.sections.length} section(s)${cut}`;
+}
+
 function printArticle(result) {
     process.stdout.write(`## ${result.title} (page ${result.pageId}, rev ${result.revisionId})\n`);
     process.stdout.write(`outcome: ${result.outcome}\n`);
 
     if (result.outcome === ARTICLE_OUTCOMES.FETCH_FAILED) {
         process.stdout.write(`  article fetch failed (status ${result.fetchStatus}): ${result.error}\n\n`);
-        return { citations: 0, withUrl: 0, fetched: 0, failed: 0 };
+        return { citations: 0, withUrl: 0, fetched: 0, failed: 0, leadSentences: 0, leadCitations: 0 };
     }
+    const leadLine = describeLead(result.lead);
+    if (leadLine) process.stdout.write(`  ${leadLine}\n`);
+    const leadSentences = result.lead && result.lead.body.text ? result.lead.sentences.length : 0;
     if (result.outcome === ARTICLE_OUTCOMES.NO_CITATIONS) {
         process.stdout.write(`  no citations extracted\n\n`);
-        return { citations: 0, withUrl: 0, fetched: 0, failed: 0 };
+        return { citations: 0, withUrl: 0, fetched: 0, failed: 0, leadSentences, leadCitations: 0 };
     }
 
     // Skipped citations (claim too short to check) are never fetched, so
@@ -135,7 +149,8 @@ function printArticle(result) {
     const fetched = withUrlCitations.filter(c => c.source.content).length;
     const failed = withUrlCitations.length - fetched;
     const withUrl = withUrlCitations.length;
-    process.stdout.write(`  citations: ${result.citations.length} (${withUrl} with a fetchable URL${skipped ? `, ${skipped} skipped: claim too short` : ''})\n`);
+    const leadCitations = result.citations.filter(c => c.inLead).length;
+    process.stdout.write(`  citations: ${result.citations.length} (${withUrl} with a fetchable URL${skipped ? `, ${skipped} skipped: claim too short` : ''}${leadCitations ? `, ${leadCitations} in the lead` : ''})\n`);
     if (withUrl > 0) {
         process.stdout.write(`  sources: ${fetched} fetched, ${failed} failed (of ${withUrl} attempted)\n`);
     }
@@ -150,7 +165,7 @@ function printArticle(result) {
     }
     process.stdout.write('\n');
 
-    return { citations: result.citations.length, withUrl, fetched, failed };
+    return { citations: result.citations.length, withUrl, fetched, failed, leadSentences, leadCitations };
 }
 
 async function main(argv) {
@@ -204,6 +219,8 @@ async function main(argv) {
     let totalWithUrl = 0;
     let totalFetched = 0;
     let totalFailed = 0;
+    let totalLeadSentences = 0;
+    let totalLeadCitations = 0;
 
     // core/urls.js logs one console.log per citation it examines (no-URL,
     // page-number-extracted, Harvard/sfn resolution) — fine for a human
@@ -222,11 +239,13 @@ async function main(argv) {
             fetchSource: opts.liveSourceFetch ? makeLiveFetchSource() : stubFetchSource,
             fetchConcurrency: opts.fetchConcurrency,
         })) {
-            const { citations, withUrl, fetched, failed } = printArticle(result);
+            const { citations, withUrl, fetched, failed, leadSentences, leadCitations } = printArticle(result);
             totalCitations += citations;
             totalWithUrl += withUrl;
             totalFetched += fetched;
             totalFailed += failed;
+            totalLeadSentences += leadSentences;
+            totalLeadCitations += leadCitations;
         }
     } finally {
         console.log = realLog;
@@ -234,7 +253,9 @@ async function main(argv) {
 
     process.stderr.write(
         `done. ${totalCitations} citation(s) extracted across ${candidates.length} article(s), ` +
-        `${totalWithUrl} with a fetchable URL — ${totalFetched} fetched, ${totalFailed} failed.\n`
+        `${totalWithUrl} with a fetchable URL — ${totalFetched} fetched, ${totalFailed} failed. ` +
+        `Lead check: ${totalLeadSentences} lead sentence(s) with a body to check against; ` +
+        `${totalLeadCitations} lead citation(s).\n`
     );
     return 0;
 }
