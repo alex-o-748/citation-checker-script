@@ -509,6 +509,32 @@ Rules to keep if you touch it:
 Design, prototype numbers and the alternatives rejected:
 `docs/design-plans/2026-10-22-lead-checks.md`.
 
+### Uncited text is checked against the model's knowledge (`run-sweep.js --uncited-check`, read before touching `core/uncited*.js`)
+
+Every prose sentence is checked by exactly one thing: its citation's source if
+a citation follows it in its paragraph, the body if it is in the lead (the lead
+check, `core/lead-check.js`), and otherwise the model's general knowledge
+(`core/uncited-check.js`). Three rules to keep:
+
+- **"Cited" is fixed by the page, never by the claim scope.** A sentence is
+  cited when a marker sits in it or anywhere after it in its paragraph
+  (`core/uncited.js`). A rule that moved with the scope setting is what the
+  lead check's first draft dropped, and it couldn't be cached per revision.
+- **The check reports exceptions, not verdicts.** The model is asked which
+  statements it has a specific reason to doubt, "none" is the expected answer,
+  and only findings (plus ERROR rows for unchecked sentences) become rows:
+  NOT SUPPORTED / `doubtful`, `check_kind = uncited`, at most 3 per article.
+  Don't add "not flagged" rows: the model never judged those sentences.
+- **The action is always "find a source".** The model's idea of the right value
+  stays in its comment and is never offered as an edit.
+
+On the 2026-10-23 smoke test (9 injected errors), Qwen3.6-27B caught 8 with 5
+false flags, while gpt-oss-20b (the userscript's default) caught 7 with 14.
+Every finding from both models was `high`, so confidence doesn't rank anything
+yet. The batch runs it on Lift Wing, and the userscript side is unbuilt. Design,
+gaps and the evaluation plan:
+`docs/design-plans/2026-10-23-uncited-text-check.md`.
+
 ## Development Workflow
 
 - **Tests:** `node --test` via `npm test` from the repo root, runs everything in `tests/**/*.test.js`. New helpers should get a sibling `*.test.js` file. Behavioral validation also goes through the benchmark suite against the human-labeled citation dataset.
