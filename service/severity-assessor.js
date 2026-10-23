@@ -10,7 +10,7 @@
 
 import { runSeverityPass, SEVERITY_VERDICTS, needsSeverity } from '../core/severity.js';
 import { isSourceTooLargeError } from '../core/retry.js';
-import { ProviderAuthError, isAuthOrBillingError, assembleGroupText } from './verifier.js';
+import { ProviderAuthError, isAuthOrBillingError, assembleGroupText, groupHasUnreadSource } from './verifier.js';
 
 // Moved to core/severity.js so the userscript ranks the same verdicts; kept
 // exported here for the runner and its tests.
@@ -23,6 +23,8 @@ export { SEVERITY_VERDICTS, needsSeverity };
  *   reached on: a solo citation's `source.content`, or a group's
  *   assembleGroupText().
  * @param {boolean} args.sourceTruncated
+ * @param {boolean} [args.unreadSources] - Another source cited for the claim
+ *   could not be fetched (groupHasUnreadSource()); discounts like truncation.
  * @param {object} args.verification - The verdict being ranked.
  * @param {string} [args.articleTitle]
  * @param {string|null} [args.sectionTitle]
@@ -34,7 +36,7 @@ export { SEVERITY_VERDICTS, needsSeverity };
  * { tier, subclaims, error, usage, promptVersion }.
  */
 export async function assessSeverity({
-    claimText, sourceInfo, sourceTruncated = false, verification,
+    claimText, sourceInfo, sourceTruncated = false, unreadSources = false, verification,
     articleTitle, sectionTitle, paragraphText,
 }, { callModel, retry = {}, signal } = {}) {
     if (typeof callModel !== 'function') {
@@ -48,7 +50,7 @@ export async function assessSeverity({
 
     try {
         return await runSeverityPass({
-            claimText, sourceInfo, sourceTruncated,
+            claimText, sourceInfo, sourceTruncated, unreadSources,
             verdict: verification?.verdict, reasonType: verification?.reasonType,
             articleTitle, sectionTitle, paragraphText,
         }, { callModel, retry: retryOptions });
@@ -65,5 +67,6 @@ export async function assessSeverity({
 }
 
 // The source text a group's severity pass reads: the same assembled text
-// verifyGroup() judged, so the two passes see identical evidence.
-export { assembleGroupText };
+// verifyGroup() judged, so the two passes see identical evidence. And whether
+// a source cited for the group's claim went unread.
+export { assembleGroupText, groupHasUnreadSource };

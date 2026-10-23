@@ -73,8 +73,27 @@ export function groupSourceEntries(members, sourceFor) {
  * @param {ReturnType<typeof groupSourceEntries>} entries
  */
 export function shouldSkipCollective(entries) {
-    const availableCount = entries.filter(e => e.content && extractSourceText(e.content).trim()).length;
-    return availableCount <= 1;
+    return entries.filter(isReadable).length <= 1;
+}
+
+/**
+ * Whether any source cited for the group's claim could not be read. The
+ * severity pass (core/severity.js's tierFor()) treats that like a truncated
+ * source: a subclaim absent from the sources that were read may be in the one
+ * that wasn't, so absence is discounted and contradiction is not.
+ *
+ * Holds for the combined verdict and for a member judged on its own source
+ * alike. A flagged member's own source was necessarily read, so "any entry"
+ * and "any other entry" are the same question.
+ *
+ * @param {ReturnType<typeof groupSourceEntries>} entries
+ */
+export function hasUnreadSource(entries) {
+    return entries.some(e => !isReadable(e));
+}
+
+function isReadable(entry) {
+    return Boolean(entry.content && extractSourceText(entry.content).trim());
 }
 
 /**

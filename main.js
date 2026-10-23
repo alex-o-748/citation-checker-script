@@ -1908,8 +1908,27 @@ function groupSourceEntries(members, sourceFor) {
  * @param {ReturnType<typeof groupSourceEntries>} entries
  */
 function shouldSkipCollective(entries) {
-    const availableCount = entries.filter(e => e.content && extractSourceText(e.content).trim()).length;
-    return availableCount <= 1;
+    return entries.filter(isReadable).length <= 1;
+}
+
+/**
+ * Whether any source cited for the group's claim could not be read. The
+ * severity pass (core/severity.js's tierFor()) treats that like a truncated
+ * source: a subclaim absent from the sources that were read may be in the one
+ * that wasn't, so absence is discounted and contradiction is not.
+ *
+ * Holds for the combined verdict and for a member judged on its own source
+ * alike. A flagged member's own source was necessarily read, so "any entry"
+ * and "any other entry" are the same question.
+ *
+ * @param {ReturnType<typeof groupSourceEntries>} entries
+ */
+function hasUnreadSource(entries) {
+    return entries.some(e => !isReadable(e));
+}
+
+function isReadable(entry) {
+    return Boolean(entry.content && extractSourceText(entry.content).trim());
 }
 
 /**
@@ -3078,7 +3097,8 @@ function buildCommentUrl(fields = {}, {
 // tuned against the benchmark and stays untouched. The model splits the claim
 // into subclaims and labels each one: what the source does with it
 // (supported / absent / contradicted), and whether it is central to the
-// sentence. tierFor() turns that, plus whether the source was truncated, into
+// sentence. tierFor() turns that, plus whether all the evidence was read
+// (a truncated source, or a cited source that could not be fetched), into
 // a tier. The model is never asked for a number or for a severity directly:
 // categories calibrate far better than scores, and a tier computed from
 // observable labels can be explained to a volunteer ("a central fact is
@@ -3245,9 +3265,14 @@ function parseSeverityResult(text) {
  * rows falsely report failure on 18.4% of benchmark calls
  * (docs/benchmark-ground-truth-audit-2026-09-06.md).
  *
+ * `unreadSources` is the same case one level up: another source cited for the
+ * same claim (an adjacent-citation group) could not be fetched, so a subclaim
+ * absent from what was read may be in the source nobody read. It discounts
+ * exactly as truncation does. See hasUnreadSource() in core/groups.js.
+ *
  * BLP is not a tier input; it orders findings within a tier (compareSeverity).
  */
-function tierFor({ subclaims, sourceTruncated = false }) {
+function tierFor({ subclaims, sourceTruncated = false, unreadSources = false }) {
     const failing = subclaims.filter(s => s.status !== SUBCLAIM_STATUSES.SUPPORTED);
     if (failing.length === 0) return SEVERITY_TIERS.DISAGREEMENT;
 
@@ -3256,7 +3281,7 @@ function tierFor({ subclaims, sourceTruncated = false }) {
 
     if (has(CONTRADICTED, true)) return SEVERITY_TIERS.CENTRAL_CONTRADICTED;
     if (has(CONTRADICTED, false)) return SEVERITY_TIERS.CENTRAL_ABSENT;
-    if (sourceTruncated) return SEVERITY_TIERS.DISCOUNTED;
+    if (sourceTruncated || unreadSources) return SEVERITY_TIERS.DISCOUNTED;
     if (has(ABSENT, true)) return SEVERITY_TIERS.CENTRAL_ABSENT;
     return SEVERITY_TIERS.PERIPHERAL_ABSENT;
 }
@@ -3271,6 +3296,8 @@ function tierFor({ subclaims, sourceTruncated = false }) {
  *   reached on (a solo citation's fetched content, or a group's assembled
  *   text), so the two passes see identical evidence.
  * @param {boolean} [args.sourceTruncated]
+ * @param {boolean} [args.unreadSources] - Another source cited for the claim
+ *   could not be fetched; discounts absence like truncation (tierFor()).
  * @param {string} [args.verdict] - The first-pass verdict. Read only for the
  *   shortcut below; it is never shown to the model.
  * @param {string|null} [args.reasonType]
@@ -3290,19 +3317,20 @@ function tierFor({ subclaims, sourceTruncated = false }) {
  * unranked.
  */
 async function runSeverityPass({
-    claimText, sourceInfo, sourceTruncated = false, verdict, reasonType,
+    claimText, sourceInfo, sourceTruncated = false, unreadSources = false, verdict, reasonType,
     articleTitle, sectionTitle, paragraphText,
 }, { callModel, retry = {} } = {}) {
     if (typeof callModel !== 'function') {
         throw new TypeError('runSeverityPass requires a callModel(systemPrompt, userContent) function');
     }
 
-    // No model call for a pure omission on a truncated source: every subclaim
-    // the first pass could not find would be "absent", and tierFor()
-    // discounts absence on a truncated source whatever the labels say. The
-    // second pass could in principle turn up a contradiction the first missed,
-    // but paying a call per truncated omission for that is poor value.
-    if (sourceTruncated && verdict === 'NOT SUPPORTED' && reasonType === 'omission') {
+    // No model call for a pure omission on partly-read evidence: every
+    // subclaim the first pass could not find would be "absent", and tierFor()
+    // discounts absence on a truncated source or beside an unread one,
+    // whatever the labels say. The second pass could in principle turn up a
+    // contradiction the first missed, but paying a call per such omission for
+    // that is poor value.
+    if ((sourceTruncated || unreadSources) && verdict === 'NOT SUPPORTED' && reasonType === 'omission') {
         return { tier: SEVERITY_TIERS.DISCOUNTED, subclaims: null, error: null, usage: null };
     }
     if (!sourceInfo) {
@@ -3319,7 +3347,7 @@ async function runSeverityPass({
         return { tier: null, subclaims: null, error: parsed.error, ...asked };
     }
     return {
-        tier: tierFor({ subclaims: parsed.subclaims, sourceTruncated }),
+        tier: tierFor({ subclaims: parsed.subclaims, sourceTruncated, unreadSources }),
         subclaims: parsed.subclaims,
         error: null,
         ...asked,
@@ -3485,6 +3513,7 @@ function useToolforgeSourceFetcher() {
         'Key fact not in source': 'Fait essentiel absent de la source',
         'Only a minor detail missing': 'Seul un détail mineur manque',
         'Unclear: source only partly read': 'Incertain : source lue en partie seulement',
+        'Unclear: not every cited source was read': 'Incertain : toutes les sources citées n’ont pas été lues',
         'Second check found it supported': 'La seconde vérification la juge étayée',
         'Not ranked': 'Non classé',
         'Contradicted': 'Contredit',
@@ -3802,6 +3831,7 @@ function useToolforgeSourceFetcher() {
         'Key fact not in source': 'Hecho clave ausente en la fuente',
         'Only a minor detail missing': 'Solo falta un detalle menor',
         'Unclear: source only partly read': 'Incierto: la fuente solo se leyó en parte',
+        'Unclear: not every cited source was read': 'Incierto: no se leyeron todas las fuentes citadas',
         'Second check found it supported': 'La segunda comprobación la considera respaldada',
         'Not ranked': 'Sin clasificar',
         'Contradicted': 'Contradicho',
@@ -4115,6 +4145,7 @@ function useToolforgeSourceFetcher() {
         'Key fact not in source': 'Ключевого факта нет в источнике',
         'Only a minor detail missing': 'Не хватает только второстепенной детали',
         'Unclear: source only partly read': 'Неясно: источник прочитан не полностью',
+        'Unclear: not every cited source was read': 'Неясно: прочитаны не все указанные источники',
         'Second check found it supported': 'Повторная проверка нашла подтверждение',
         'Not ranked': 'Не оценено',
         'Contradicted': 'Опровергнуто',
@@ -4436,6 +4467,7 @@ function useToolforgeSourceFetcher() {
         'Key fact not in source': 'עובדה מרכזית לא מופיעה במקור',
         'Only a minor detail missing': 'חסר רק פרט שולי',
         'Unclear: source only partly read': 'לא ברור: המקור נקרא רק בחלקו',
+        'Unclear: not every cited source was read': 'לא ברור: לא כל המקורות שצוטטו נקראו',
         'Second check found it supported': 'הבדיקה השנייה מצאה שהטענה נתמכת',
         'Not ranked': 'לא דורג',
         'Contradicted': 'המקור סותר',
@@ -8550,7 +8582,12 @@ function useToolforgeSourceFetcher() {
                     ? { cls: 'medium', label: this.t('Detail contradicted') }
                     : { cls: 'medium', label: this.t('Key fact not in source') };
                 case SEVERITY_TIERS.PERIPHERAL_ABSENT: return { cls: 'low', label: this.t('Only a minor detail missing') };
-                case SEVERITY_TIERS.DISCOUNTED: return { cls: 'low', label: this.t('Unclear: source only partly read') };
+                // Discounted for one of two reasons, worded apart: the source
+                // was cut off, or another source cited for the claim was
+                // never read at all.
+                case SEVERITY_TIERS.DISCOUNTED: return severity.unreadSources
+                    ? { cls: 'low', label: this.t('Unclear: not every cited source was read') }
+                    : { cls: 'low', label: this.t('Unclear: source only partly read') };
                 case SEVERITY_TIERS.DISAGREEMENT: return { cls: 'low', label: this.t('Second check found it supported') };
                 default: return { cls: 'none', label: this.t('Not ranked') };
             }
@@ -8592,8 +8629,9 @@ function useToolforgeSourceFetcher() {
                 if (this.reportCancelled) break;
                 const unit = units[k];
                 this.updateReportProgress(k, units.length, this.t('Checking severity of [{num}]', { num: unit.citationNumber }), startTime);
+                const input = this.severityInputs.get(unit);
                 const severity = await this.assessSeverity({
-                    ...this.severityInputs.get(unit),
+                    ...input,
                     verdict: unit.verdict,
                     reasonType: unit.reason_type,
                     articleTitle
@@ -8608,7 +8646,7 @@ function useToolforgeSourceFetcher() {
                     this.reportTokenUsage.input += severity.usage.input || 0;
                     this.reportTokenUsage.output += severity.usage.output || 0;
                 }
-                unit.severity = { tier: severity.tier, subclaims: severity.subclaims, error: severity.error };
+                unit.severity = { tier: severity.tier, subclaims: severity.subclaims, error: severity.error, unreadSources: Boolean(input.unreadSources) };
                 this.renderReportSeverity(unit);
                 this.renderReportSummary();
                 // Rate-limit pause only after a real model call; a truncated
@@ -8732,6 +8770,9 @@ function useToolforgeSourceFetcher() {
                 return { key: cacheKey, url: m.url || null, content: fetchResult.content, error: fetchResult.error, status: fetchResult.status };
             });
             const truncated = entries.some(e => e.content && e.content.includes('\nTruncated: true'));
+            // A cited source nobody could read discounts absence in the
+            // severity pass, like truncation (core/groups.js's hasUnreadSource()).
+            const unreadSources = hasUnreadSource(entries);
             const { text: assembledText, anyAvailable } = assembleGroupSources(entries);
 
             // When only one source is available the collective verdict would
@@ -8739,6 +8780,15 @@ function useToolforgeSourceFetcher() {
             if (shouldSkipCollective(entries)) {
                 this.reportGroupResults.set(groupId, { skipped: true, groupId });
                 this.hideGroupCollectiveSlot(groupId);
+                // Each member is now ranked as its own claim, on its own
+                // source; a sibling that couldn't be read leaves its
+                // absences unproven, as it would for a combined verdict.
+                if (unreadSources) {
+                    for (const r of this.reportResults) {
+                        const input = r.groupId === groupId && this.severityInputs.get(r);
+                        if (input) input.unreadSources = true;
+                    }
+                }
                 // Marking the group skipped changes what getReportUnits()
                 // returns for it (members instead of nothing), so the pills and
                 // the filter state both have to be recomputed — the success
@@ -8815,6 +8865,7 @@ function useToolforgeSourceFetcher() {
                             claimText,
                             sourceInfo: assembledText,
                             sourceTruncated: truncated,
+                            unreadSources,
                             sectionTitle: members[0].sectionTitle,
                             paragraphText: members[0].paragraphText
                         });

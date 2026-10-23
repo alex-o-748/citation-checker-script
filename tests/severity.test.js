@@ -161,3 +161,31 @@ test('runSeverityPass: an unparseable answer is untiered; a failed call throws f
         /401/
     );
 });
+
+test('tierFor: an unread cited source discounts absence like truncation, never a contradiction', () => {
+    const { CENTRAL_CONTRADICTED, CENTRAL_ABSENT, DISCOUNTED } = SEVERITY_TIERS;
+    const t = subclaims => tierFor({ subclaims, unreadSources: true });
+    assert.equal(t([sc('absent'), sc('supported')]), DISCOUNTED);
+    assert.equal(t([sc('absent', false)]), DISCOUNTED);
+    assert.equal(t([sc('contradicted'), sc('absent')]), CENTRAL_CONTRADICTED);
+    assert.equal(t([sc('contradicted', false), sc('absent')]), CENTRAL_ABSENT);
+    assert.equal(tierFor({ subclaims: [sc('supported')], unreadSources: true }), SEVERITY_TIERS.DISAGREEMENT);
+});
+
+test('runSeverityPass: an unread cited source discounts a pure omission with no call, and passes through to the tier', async () => {
+    let calls = 0;
+    const omission = await runSeverityPass(passArgs({ unreadSources: true, reasonType: 'omission' }), {
+        callModel: async () => { calls++; return answer([])(); },
+    });
+    assert.equal(omission.tier, SEVERITY_TIERS.DISCOUNTED);
+    assert.equal(calls, 0);
+
+    const absent = await runSeverityPass(passArgs({ unreadSources: true }), {
+        callModel: answer([{ text: 'opened in 1998', status: 'absent', central: true }]),
+    });
+    assert.equal(absent.tier, SEVERITY_TIERS.DISCOUNTED);
+    const contradicted = await runSeverityPass(passArgs({ unreadSources: true }), {
+        callModel: answer([{ text: 'opened in 1998', status: 'contradicted', central: true }]),
+    });
+    assert.equal(contradicted.tier, SEVERITY_TIERS.CENTRAL_CONTRADICTED);
+});

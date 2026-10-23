@@ -404,7 +404,11 @@ Three rules to keep if you touch it:
   hash-pinned `SEVERITY_PROMPT_VERSION`.
 - The model never sees the first-pass verdict, and is never asked whether a
   claim is "probably true".
-- Truncation discounts absence, never contradiction.
+- Truncation discounts absence, never contradiction. So does a source cited
+  for the same claim (an adjacent-citation group) that could not be fetched
+  (`unreadSources`, `core/groups.js`'s `hasUnreadSource()`): a subclaim absent
+  from what was read may be in the source nobody read. It applies to a group's
+  combined finding and to each member judged on its own source alike.
 
 CSV only for now; no ToolsDB columns. Suggested actions are deliberately a
 separate, unbuilt module. Design and next steps:

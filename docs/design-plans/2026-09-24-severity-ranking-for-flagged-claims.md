@@ -196,6 +196,19 @@ so verdicts arrive as fast as without it and cards never reorder while being
 read; the sort applies once, at the end. Only report units are ranked: a group
 with a combined verdict is ranked on that, not on its per-source rows.
 
+**A source in the group that couldn't be fetched discounts like truncation**
+(2026-10-23, both front ends). An adjacent-citation group cites several sources
+for one claim. When one of them could not be fetched, a subclaim missing from
+the ones that were read may be in the one nobody read: the truncation argument
+one level up. `tierFor()` takes `unreadSources` and treats it exactly as
+`sourceTruncated` (absence discounted, contradiction kept), and the no-call
+shortcut for a pure omission applies to it too. It covers the group's combined
+finding (the collective prompt already labels the dead source "could not be
+retrieved") and each member judged on its own source: a member whose combined
+check was skipped in the userscript, and every member's own row in the batch.
+The userscript words the badge apart from truncation: "Unclear: not every
+cited source was read". The CSV tier is `discounted` either way.
+
 Not yet: tiers in the wikitext/plain-text exports (nothing unvalidated goes on
 a talk page) or in the worker log. Logging the tier with the check id is the
 cheapest route to step 1, since editors' Yes/No ratings would then label tiers

@@ -131,6 +131,7 @@ test('badge labels say what was found; T2 tells a contradicted detail from a mis
   assert.equal(label('T2', [{ status: 'absent', central: true }]), 'Key fact not in source');
   assert.equal(label('T3', []), 'Only a minor detail missing');
   assert.equal(label('discounted', null), 'Unclear: source only partly read');
+  assert.equal(h.severityLabelFor({ tier: 'discounted', subclaims: null, unreadSources: true }).label, 'Unclear: not every cited source was read');
   assert.equal(label('disagreement', []), 'Second check found it supported');
   assert.equal(label(null, null), 'Not ranked');
   assert.match(h.severityHtml({ tier: null, subclaims: null, error: 'parse_error' }), /title="parse_error"/);
