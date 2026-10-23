@@ -1,6 +1,6 @@
 # Checking the lead against the body
 
-> **Status (2026-10-23):** Proposed. Nothing is built. The numbers below come from a throwaway prototype run over 11 articles (7 enwiki, 4 ruwiki) and one model, not from the pipeline. Stage 1 produces the real numbers. The first draft (2026-10-22) proposed a different design; it is recorded under "Alternatives considered".
+> **Status (2026-10-23):** Implemented on `claude/clever-darwin-9yn9ef` (PR #387), all four stages; not yet validated against human labels (the labeled set's tooling exists, the labels don't). Where the build differs from the plan below, see "Implementation notes" at the end. The numbers in "The problem" come from a throwaway prototype over 11 articles (7 enwiki, 4 ruwiki) and one model. The first draft (2026-10-22) proposed a different design; it is recorded under "Alternatives considered".
 
 ## The problem
 
@@ -319,3 +319,47 @@ do show that the call shape works and that the signal is there.
   SOURCE UNAVAILABLE / `no_url` row. At paragraph scope each note also cuts
   the claim of the next real citation short. Parsoid marks them with
   `data-mw-group` on the marker. This is a separate fix in `core/citations.js`.
+
+## Implementation notes (2026-10-23)
+
+Built as designed, with these differences and additions:
+
+- **Where the prompt lives.** `core/lead-check.js` holds the prompt, its
+  hash-pinned `LEAD_PROMPT_VERSION`, the array parser and `runLeadCheck()`,
+  the one sequence both front ends run (as `core/severity.js` does for the
+  severity pass). `core/prompts.js` is untouched.
+- **A lead row's `source_url` is `index.php?curid=<page_id>`**, not the
+  revision permalink. By page, so a re-sweep updates the row in place as a
+  citation row is updated; the `permalink` column still pins the revision.
+- **The batch opts in, the userscript opts out.** `run-sweep.js --lead-check`
+  is off by default, like `--severity`: it adds rows of a new kind to CSVs
+  volunteers review. In the userscript the lead check is a few calls per
+  Verify All rather than one per citation, so it is on by default ("Check the
+  lead against the body" in Settings, `verifier_lead_check`).
+- **Two failures are absorbed by the check itself**, because both depend on
+  how much is asked at once. An answer that ran out of output budget (a
+  reasoning model thinking about every sentence) is retried as two calls of
+  half the sentences, down to one; it happened on live runs at 4 sentences
+  per call. A prompt too long for the model is retried with the body halved,
+  down to 10,000 chars. `isOutputBudgetError` moved to `core/retry.js` for
+  this.
+- **The sentence splitter fix landed in stage 1** for every userscript use,
+  not only lead sentences: `core/claim.js`'s `splitSentences()`, which
+  `lastSentence()` is now built on. Against sentencex on 2,175 enwiki claims
+  it cuts no last sentence short (the old regex cut 87).
+- **Footnote lists don't make a section an appendix.** The first version did,
+  and dropped short content sections that end in `{{reflist}}` with no
+  heading of their own. Only a bibliography (`.refbegin`) holding nearly all
+  of a section marks it, plus the per-wiki heading names.
+- **Not logged in the userscript.** The verification log has no field to tell
+  a lead sentence from a citation, so lead results stay out of it until the
+  Worker learns one.
+- **The labeled set is tooling only**: `benchmark/extract_lead_dataset.js`,
+  `run_lead_benchmark.js`, `analyze_lead.js` (`npm run lead:*`). The ~150
+  labels in "Evaluation" are still to be made.
+- **Checked end to end in a browser** (Chromium, real OOUI, saved enwiki and
+  ruwiki articles, since Wikipedia rate-limits the build container): the
+  lead-only check on Haakon VIII, Verify All on Нахлаот in the Russian UI, and
+  Verify All on Marie Curie's lead citations, which set aside four: [3], [5],
+  [6][7] and [13], each a lead citation credited with summary its source was
+  never meant to cover.
