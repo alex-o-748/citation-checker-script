@@ -87,6 +87,8 @@ docs/                            # Reference docs + design plans (see docs/READM
 | `buildQuoteView()` / `quoteHtml()` | Verify the model's `source_quote` against the source text and render it as an evidence block (see "Source quotes" below) |
 | `logVerification()` | Mint a `check_id`, log the verdict + claim + rationale + source quote to the worker, return the id |
 | `buildFeedbackControls()` | Yes/No/Comment row under a result; ratings go to Neon, comments to the talk page (see `docs/worker-logging-reference.md`) |
+| `assessSeverity()` / `showSingleSeverity()` / `rankReportBySeverity()` | Opt-in severity pass (`core/severity.js`'s `runSeverityPass()`) for a flagged verdict: in the single-check view, and as a second phase of Verify All (see "Severity ranking" below) |
+| `applyReportSort()` / `renderReportSeverity()` | Report order: article order, or "Most serious first" by `compareSeverity()` on a severity-ranked report. Moves whole cards and group blocks; never hides one |
 
 ## Benchmark Suite
 
@@ -386,7 +388,7 @@ the sample) comes back as a no.
 Rationale, costs and the alternatives rejected (page views, `page_assessments`,
 a category blacklist): `docs/design-plans/2026-09-16-selecting-for-future-activity.md`.
 
-### Severity ranking of flagged findings (`run-sweep.js --severity`)
+### Severity ranking of flagged findings (`run-sweep.js --severity`, userscript setting)
 
 A flagged finding can get a second, separate model call that splits its claim
 into subclaims, labels each `supported` / `absent` / `contradicted` (from the
@@ -402,11 +404,38 @@ Three rules to keep if you touch it:
   hash-pinned `SEVERITY_PROMPT_VERSION`.
 - The model never sees the first-pass verdict, and is never asked whether a
   claim is "probably true".
-- Truncation discounts absence, never contradiction.
+- Truncation discounts absence, never contradiction. So does a source cited
+  for the same claim (an adjacent-citation group) that could not be fetched
+  (`unreadSources`, `core/groups.js`'s `hasUnreadSource()`): a subclaim absent
+  from what was read may be in the source nobody read. It applies to a group's
+  combined finding and to each member judged on its own source alike.
 
 CSV only for now; no ToolsDB columns. Suggested actions are deliberately a
 separate, unbuilt module. Design and next steps:
 `docs/design-plans/2026-09-24-severity-ranking-for-flagged-claims.md`.
+
+**In the userscript** it is the "Rank problems by severity" setting, **off by
+default** (`verifier_severity` in `localStorage`) because it costs a model call
+per flagged citation. `core/severity.js` and `core/article-context.js` are in
+`scripts/sync-main.js`'s `CORE_ORDER`, and `runSeverityPass()` is the one
+sequence both front ends run — the batch's `assessSeverity()` only adds its
+halt-on-auth-error policy around it. Two choices to keep:
+
+- **Severity orders the report; it never filters it.** Every flagged card gets
+  a badge naming what was found ("Key fact contradicted", "Only a minor detail
+  missing") and the subclaims that failed. Article order stays the default;
+  "Most serious first" is a sort toggle in the report summary, persisted as
+  `verifier_report_sort`. The tiers are not yet validated against human labels,
+  and a filter would hide real problems on the strength of an unvalidated
+  signal, while a sort only moves them down a list the editor still sees.
+- **Ranking is a second phase, after every verdict**, not interleaved. Verdicts
+  arrive as fast as they do with the setting off, and cards don't jump while
+  being read; the sort applies once, when ranking ends. Only report units are
+  ranked (a group with a combined verdict is ranked on that).
+
+The wikitext/plain-text exports and the worker log are unchanged: tiers go
+nowhere public until they are validated, and logging them needs the Worker to
+accept new fields.
 
 ## Development Workflow
 

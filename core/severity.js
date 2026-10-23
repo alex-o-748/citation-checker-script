@@ -5,7 +5,8 @@
 // tuned against the benchmark and stays untouched. The model splits the claim
 // into subclaims and labels each one: what the source does with it
 // (supported / absent / contradicted), and whether it is central to the
-// sentence. tierFor() turns that, plus whether the source was truncated, into
+// sentence. tierFor() turns that, plus whether all the evidence was read
+// (a truncated source, or a cited source that could not be fetched), into
 // a tier. The model is never asked for a number or for a severity directly:
 // categories calibrate far better than scores, and a tier computed from
 // observable labels can be explained to a volunteer ("a central fact is
@@ -14,9 +15,14 @@
 // Rationale and the alternatives rejected:
 // docs/design-plans/2026-09-24-severity-ranking-for-flagged-claims.md.
 //
-// Not in scripts/sync-main.js's CORE_ORDER: batch pipeline only, for now.
+// Shared by the batch pipeline (service/severity-assessor.js) and the
+// userscript (inlined into main.js by scripts/sync-main.js, behind the
+// off-by-default "Rank problems by severity" setting). runSeverityPass() is
+// the one sequence both run; each front end only decides what a thrown error
+// means for it.
 
 import { extractSourceText } from './prompts.js';
+import { withRetry } from './retry.js';
 
 // Bump whenever the prompt text changes, same contract as PROMPT_VERSION:
 // tests/severity.test.js pins a hash of the prompt against it.
@@ -28,6 +34,16 @@ export const SUBCLAIM_STATUSES = Object.freeze({
     CONTRADICTED: 'contradicted',
 });
 const STATUS_VALUES = new Set(Object.values(SUBCLAIM_STATUSES));
+
+// Only flags are ranked; a SUPPORTED or SOURCE UNAVAILABLE verdict has
+// nothing to rank.
+export const SEVERITY_VERDICTS = new Set(['NOT SUPPORTED', 'PARTIALLY SUPPORTED']);
+
+// Whether a verified finding gets a severity pass at all. Takes anything with
+// a `verdict` field: a batch verification or a userscript report result.
+export function needsSeverity(verification) {
+    return Boolean(verification) && SEVERITY_VERDICTS.has(verification.verdict);
+}
 
 // Most urgent first. Strings rather than 1/2/3 so a CSV cell reads on its own.
 export const SEVERITY_TIERS = Object.freeze({
@@ -159,9 +175,14 @@ export function parseSeverityResult(text) {
  * rows falsely report failure on 18.4% of benchmark calls
  * (docs/benchmark-ground-truth-audit-2026-09-06.md).
  *
+ * `unreadSources` is the same case one level up: another source cited for the
+ * same claim (an adjacent-citation group) could not be fetched, so a subclaim
+ * absent from what was read may be in the source nobody read. It discounts
+ * exactly as truncation does. See hasUnreadSource() in core/groups.js.
+ *
  * BLP is not a tier input; it orders findings within a tier (compareSeverity).
  */
-export function tierFor({ subclaims, sourceTruncated = false }) {
+export function tierFor({ subclaims, sourceTruncated = false, unreadSources = false }) {
     const failing = subclaims.filter(s => s.status !== SUBCLAIM_STATUSES.SUPPORTED);
     if (failing.length === 0) return SEVERITY_TIERS.DISAGREEMENT;
 
@@ -170,9 +191,77 @@ export function tierFor({ subclaims, sourceTruncated = false }) {
 
     if (has(CONTRADICTED, true)) return SEVERITY_TIERS.CENTRAL_CONTRADICTED;
     if (has(CONTRADICTED, false)) return SEVERITY_TIERS.CENTRAL_ABSENT;
-    if (sourceTruncated) return SEVERITY_TIERS.DISCOUNTED;
+    if (sourceTruncated || unreadSources) return SEVERITY_TIERS.DISCOUNTED;
     if (has(ABSENT, true)) return SEVERITY_TIERS.CENTRAL_ABSENT;
     return SEVERITY_TIERS.PERIPHERAL_ABSENT;
+}
+
+/**
+ * One severity pass over one flagged finding: the no-call shortcuts, then the
+ * model call, the parse and tierFor().
+ *
+ * @param {object} args
+ * @param {string} args.claimText
+ * @param {string} args.sourceInfo - The exact source text the verdict was
+ *   reached on (a solo citation's fetched content, or a group's assembled
+ *   text), so the two passes see identical evidence.
+ * @param {boolean} [args.sourceTruncated]
+ * @param {boolean} [args.unreadSources] - Another source cited for the claim
+ *   could not be fetched; discounts absence like truncation (tierFor()).
+ * @param {string} [args.verdict] - The first-pass verdict. Read only for the
+ *   shortcut below; it is never shown to the model.
+ * @param {string|null} [args.reasonType]
+ * @param {string} [args.articleTitle]
+ * @param {string|null} [args.sectionTitle]
+ * @param {string|null} [args.paragraphText]
+ * @param {object} deps
+ * @param {Function} deps.callModel - (systemPrompt, userContent) => { text, usage }.
+ * @param {object} [deps.retry] - core/retry.js withRetry() options.
+ *
+ * Returns { tier, subclaims, error, usage, promptVersion }. promptVersion is
+ * set only when the model was actually asked, so a finding records which
+ * prompt produced its labels and not a version for a call that never ran.
+ * An unparseable answer comes back as { tier: null, error }; a failed model
+ * call (after retries) throws, because what it means differs per front end —
+ * the batch halts on a spent API key, the userscript just leaves one card
+ * unranked.
+ */
+export async function runSeverityPass({
+    claimText, sourceInfo, sourceTruncated = false, unreadSources = false, verdict, reasonType,
+    articleTitle, sectionTitle, paragraphText,
+}, { callModel, retry = {} } = {}) {
+    if (typeof callModel !== 'function') {
+        throw new TypeError('runSeverityPass requires a callModel(systemPrompt, userContent) function');
+    }
+
+    // No model call for a pure omission on partly-read evidence: every
+    // subclaim the first pass could not find would be "absent", and tierFor()
+    // discounts absence on a truncated source or beside an unread one,
+    // whatever the labels say. The second pass could in principle turn up a
+    // contradiction the first missed, but paying a call per such omission for
+    // that is poor value.
+    if ((sourceTruncated || unreadSources) && verdict === 'NOT SUPPORTED' && reasonType === 'omission') {
+        return { tier: SEVERITY_TIERS.DISCOUNTED, subclaims: null, error: null, usage: null };
+    }
+    if (!sourceInfo) {
+        return { tier: null, subclaims: null, error: 'no_source', usage: null };
+    }
+
+    const systemPrompt = generateSeveritySystemPrompt();
+    const userContent = generateSeverityUserPrompt({ claimText, sourceInfo, articleTitle, sectionTitle, paragraphText });
+    const response = await withRetry(() => callModel(systemPrompt, userContent), retry);
+
+    const parsed = parseSeverityResult(response.text);
+    const asked = { usage: response.usage ?? null, promptVersion: SEVERITY_PROMPT_VERSION };
+    if (!parsed.ok) {
+        return { tier: null, subclaims: null, error: parsed.error, ...asked };
+    }
+    return {
+        tier: tierFor({ subclaims: parsed.subclaims, sourceTruncated, unreadSources }),
+        subclaims: parsed.subclaims,
+        error: null,
+        ...asked,
+    };
 }
 
 /**

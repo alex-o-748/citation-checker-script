@@ -1106,6 +1106,43 @@ test('--severity ranks every flagged finding, solo and collective, with context 
     assert.match(csv.split('\n')[1], /,1,History,T1,/);
 });
 
+test('--severity discounts absence when a source cited for the claim could not be fetched', async () => {
+    // [1] solo; [2][3][4] one group whose [4] is dead. The combined check
+    // still runs (two readable sources), and [2] and [3] each get their own
+    // row too. All four flagged rows have a central subclaim absent.
+    const calls = [];
+    const written = [];
+    await runSweep(baseOpts({ severity: true }), baseIo({
+        fetchArticle: async () => ({
+            html: article(
+                '<p>The bridge opened in 1998.@@1@@ It was built for $200 million.@@2@@@@3@@@@4@@</p>',
+                { 1: link('https://a.example/x'), 2: link('https://b.example/x'), 3: link('https://c.example/x'), 4: link('https://d.example/x') }
+            ),
+            status: 200, error: null,
+        }),
+        fetchSourceFn: async url => (url === 'https://d.example/x'
+            ? { content: null, status: 404, error: 'not found' }
+            : { content: `text of ${url}`, status: 200, error: null }),
+        makeModelCallerFn: () => async (systemPrompt, userContent) => {
+            const isSeverity = systemPrompt.includes('decide which citation problems to fix first');
+            calls.push({ isSeverity, userContent });
+            const body = isSeverity
+                ? { subclaims: [{ text: 'built for $200 million', status: 'absent', central: true }] }
+                : { support_score: 10, verdict: 'NOT SUPPORTED', reason_type: 'contradiction', source_quote: '', comments: 'no' };
+            return { text: JSON.stringify(body), usage: { input: 1, output: 1 } };
+        },
+        appendFindingFn: async (_path, finding) => { written.push(finding); },
+    }));
+
+    const tierOf = f => [f.isCollective ? 'combined' : String(f.citationNumber), f.severityTier];
+    assert.deepEqual(Object.fromEntries(written.filter(f => f.verdict === 'NOT SUPPORTED').map(tierOf)), {
+        1: 'T2', 2: 'discounted', 3: 'discounted', combined: 'discounted',
+    });
+    assert.equal(written.find(f => String(f.citationNumber) === '4').severityTier, null, 'an unavailable source is not ranked');
+    const combinedCall = calls.find(c => c.isSeverity && c.userContent.includes('d.example'));
+    assert.match(combinedCall.userContent, /This source could not be retrieved/, 'the model is told the dead source exists');
+});
+
 test('without --severity no extra call is made and the columns stay empty', async () => {
     const calls = [];
     const written = [];

@@ -23,10 +23,12 @@ const CORE_ORDER = [
   'urls.js',
   'claim.js',
   'citations.js',
+  'article-context.js',
   'groups.js',
   'providers.js',
   'worker.js',
   'feedback.js',
+  'severity.js',
 ];
 
 function stripEsm(source) {

@@ -72,7 +72,7 @@ import { fetchSourceContent, STUB_FETCH_ERROR } from '../core/worker.js';
 import { createHostGate, DEFAULT_FETCH_CONCURRENCY } from './host-pool.js';
 import { verifyCitation, verifyGroup, makeModelCaller, ProviderAuthError } from './verifier.js';
 import { assembleFinding, assembleGroupFinding } from './finding-builder.js';
-import { assessSeverity, needsSeverity, assembleGroupText } from './severity-assessor.js';
+import { assessSeverity, needsSeverity, assembleGroupText, groupHasUnreadSource } from './severity-assessor.js';
 import { upsertFinding } from './findings-store.js';
 import { openToolsDbConnection } from './toolsdb.js';
 import { resolveTitleInfo } from './wikipedia-pageids.js';
@@ -852,12 +852,17 @@ export async function runSweep(opts, {
                 isBlp: isBlpByCategories(article.categories, opts.wiki),
             };
             const { solos, groups } = splitCitations(article.citations);
+            // A group member's own finding is judged on its source alone, so
+            // a sibling source that couldn't be fetched leaves its "absent"
+            // subclaims unproven, the same as for the group's combined one.
+            const unreadGroups = new Set(groups.filter(groupHasUnreadSource).map(members => members[0].groupId));
 
             for (const citation of [...solos, ...groups.flatMap(firstPerFootnote)]) {
                 funnel.citationsSeen++;
                 if (citation.url) funnel.citationsWithUrl++;
                 if (citation.source?.content) funnel.citationsFetched++;
-                yield { kind: 'solo', wikiCandidate, citation };
+                const unreadSources = citation.groupSize > 1 && unreadGroups.has(citation.groupId);
+                yield { kind: 'solo', wikiCandidate, citation, unreadSources };
             }
             for (const members of groups) {
                 yield { kind: 'group', wikiCandidate, members };
@@ -872,13 +877,13 @@ export async function runSweep(opts, {
     // that outlasted its retries is recorded (severity_error
     // retries_exhausted) and counts toward --max-consecutive-failures; an
     // auth/billing or non-transient error halts the run after this finding.
-    async function rankFinding({ claimText, sourceInfo, sourceTruncated, verification, wikiCandidate, context }) {
+    async function rankFinding({ claimText, sourceInfo, sourceTruncated, unreadSources = false, verification, wikiCandidate, context }) {
         if (!opts.severity || !needsSeverity(verification)) return null;
         const { onAttemptFailed, finish } = trackRetries();
         let severity;
         try {
             severity = await assessSeverity({
-                claimText, sourceInfo, sourceTruncated, verification,
+                claimText, sourceInfo, sourceTruncated, unreadSources, verification,
                 articleTitle: wikiCandidate.title,
                 sectionTitle: context?.sectionTitle ?? null,
                 paragraphText: context?.paragraphText ?? null,
@@ -935,6 +940,7 @@ export async function runSweep(opts, {
                     claimText: task.citation.claimText,
                     sourceInfo: content,
                     sourceTruncated: Boolean(content?.includes('\nTruncated: true')),
+                    unreadSources: task.unreadSources,
                     verification, wikiCandidate: task.wikiCandidate, context: task.citation,
                 });
 
@@ -976,6 +982,7 @@ export async function runSweep(opts, {
                     // The same assembled text verifyGroup() judged.
                     sourceInfo: assembleGroupText(task.members),
                     sourceTruncated: task.members.some(m => m.source?.content?.includes('\nTruncated: true')),
+                    unreadSources: groupHasUnreadSource(task.members),
                     verification, wikiCandidate: task.wikiCandidate, context: task.members[0],
                 });
 

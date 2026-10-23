@@ -26,7 +26,7 @@ import { canonicalizeVerdict, SKIPPED_VERDICT } from '../core/verdicts.js';
 import { isClaimTooShort, CLAIM_TOO_SHORT } from '../core/claim.js';
 import { verifyQuote } from '../core/quote.js';
 import { withRetry, isSourceTooLargeError } from '../core/retry.js';
-import { groupSourceEntries, shouldSkipCollective } from '../core/groups.js';
+import { groupSourceEntries, shouldSkipCollective, hasUnreadSource } from '../core/groups.js';
 import { sourceCacheKey } from './claim-extractor.js';
 
 // Thrown when the model call fails with 401/402/403. Distinct from a
@@ -231,21 +231,34 @@ export async function verifyCitation(claimText, source, {
  * must read exactly the text the verdict was reached on.
  */
 export function assembleGroupText(members) {
+    const entries = groupEntries(members);
+    if (shouldSkipCollective(entries)) return null;
+    return assembleGroupSources(entries).text;
+}
+
+/**
+ * Whether a source cited for the group's claim could not be fetched — the
+ * severity pass discounts absence for the group's combined finding and for
+ * each member's own finding alike (core/groups.js's hasUnreadSource()).
+ */
+export function groupHasUnreadSource(members) {
+    return hasUnreadSource(groupEntries(members));
+}
+
+function groupEntries(members) {
     // Dedupe by cache key so a source cited twice in the group (named refs)
     // is sent once, with both citation numbers on its label. Each member
     // already carries its own resolved `source` (processArticle() resolved
     // it per-citation against a shared cache), so — unlike the userscript,
     // which looks members up in a live sourceCache — this reads straight off
     // the member.
-    const entries = groupSourceEntries(members, m => ({
+    return groupSourceEntries(members, m => ({
         key: m.url ? sourceCacheKey(m.url, m.pageNum) : `__nourl_${m.citationNumber}`,
         url: m.url || null,
         content: m.source?.content ?? null,
         error: m.source?.error ?? null,
         status: m.source?.status ?? null,
     }));
-    if (shouldSkipCollective(entries)) return null;
-    return assembleGroupSources(entries).text;
 }
 
 /**
