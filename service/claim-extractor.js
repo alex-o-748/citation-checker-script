@@ -15,6 +15,7 @@
 import { collectCitations } from '../core/citations.js';
 import { attachArticleContext, articleCategories } from '../core/article-context.js';
 import { leadSentences, articleBody, markLeadCitations } from '../core/lead.js';
+import { uncitedSentences } from '../core/uncited.js';
 import { fetchArticleHtml } from '../core/wikipedia.js';
 import { sentencexLastSentence, sentencexSplitSentences } from './sentences.js';
 import { hostOf, runHostPool } from './host-pool.js';
@@ -56,7 +57,8 @@ export async function processArticle(candidate, {
     // ending the sentence. See service/sentences.js.
     langCode = 'en',
     splitLastSentence = sentencexLastSentence(langCode),
-    // Splits lead paragraphs for the lead check (core/lead.js).
+    // Splits lead paragraphs for the lead check (core/lead.js), and body
+    // paragraphs for the uncited-text check (core/uncited.js).
     splitSentences = sentencexSplitSentences(langCode),
     // How many sources to fetch at once. 1 is the old serial behavior; the
     // runners pass --fetch-concurrency. Never more than one per host either
@@ -97,8 +99,10 @@ export async function processArticle(candidate, {
     // (core/lead.js). Read here, from the same parsed HTML, so the sweep
     // never re-fetches or re-parses the article for it.
     const lead = extractLead(root, splitSentences);
+    // The uncited-text check's input: body sentences no citation covers.
+    const uncited = extractUncited(root, splitSentences);
     if (citations.length === 0) {
-        return { ...base, outcome: ARTICLE_OUTCOMES.NO_CITATIONS, categories, lead, citations: [] };
+        return { ...base, outcome: ARTICLE_OUTCOMES.NO_CITATIONS, categories, lead, uncited, citations: [] };
     }
     attachArticleContext(citations, root);
     markLeadCitations(citations, root);
@@ -140,7 +144,7 @@ export async function processArticle(candidate, {
         });
     }
 
-    return { ...base, outcome: ARTICLE_OUTCOMES.OK, categories, lead, citations: results };
+    return { ...base, outcome: ARTICLE_OUTCOMES.OK, categories, lead, uncited, citations: results };
 }
 
 // Plain data only: the DOM elements leadSentences() carries for the
@@ -150,6 +154,12 @@ function extractLead(root, splitSentences) {
         .map(({ index, paragraphIndex, text }) => ({ index, paragraphIndex, text }));
     const body = articleBody(root, { leadText: sentences.map(s => s.text).join(' ') });
     return { sentences, body };
+}
+
+// Plain data only, for the same reason: each paragraph's <p> is dropped.
+function extractUncited(root, splitSentences) {
+    const { paragraphs, ...rest } = uncitedSentences(root, { splitSentences });
+    return { ...rest, paragraphs: paragraphs.map(({ index, sectionTitle, text }) => ({ index, sectionTitle, text })) };
 }
 
 // Cache key must include the page number: the same PDF cited at two different

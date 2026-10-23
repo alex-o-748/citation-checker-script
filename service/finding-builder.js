@@ -17,14 +17,18 @@
 import { groupSourceUrl } from '../core/anchor.js';
 import { newCheckId } from '../core/feedback.js';
 import { LEAD_PROMPT_VERSION } from '../core/lead-check.js';
+import { UNCITED_PROMPT_VERSION, UNCITED_VERDICT, UNCITED_REASON_TYPE } from '../core/uncited-check.js';
 import { hostForWiki } from '../core/wikipedia.js';
 
 // What a row checked: a citation against its source(s) — solo or collective,
-// told apart by is_collective as before — or a lead sentence against the
-// article body (core/lead-check.js).
+// told apart by is_collective as before — a lead sentence against the
+// article body (core/lead-check.js), or an uncited body sentence against the
+// model's own knowledge (core/uncited-check.js). The last two are checked
+// against no source, so their source_url is the article itself.
 export const CHECK_KINDS = Object.freeze({
     CITATION: 'citation',
     LEAD_BODY: 'lead_body',
+    UNCITED: 'uncited',
 });
 
 // A label, and deliberately nothing more.
@@ -89,6 +93,7 @@ function finishFinding(base, { verification, provider, model, promptVersion, has
         checkKind: CHECK_KINDS.CITATION,
         inLead: false,
         bodySection: null,
+        uncitedConfidence: null,
         ...base,
         // A lead citation's partial or omission verdict, in an article that
         // got a lead check (core/lead.js's isLeadDemotedVerdict()): kept in
@@ -340,6 +345,80 @@ export function assembleLeadFinding({
             sectionTitle: null,
             inLead: true,
             bodySection: result.section ?? null,
+        },
+        { verification, provider, model, promptVersion, hasContent: true, fetchedAt, ttlDays, checkId }
+    );
+}
+
+/**
+ * One uncited-text finding (core/uncited-check.js's runUncitedCheck()
+ * `findings` entry), or one sentence it left unchecked (an `unchecked`
+ * entry, which carries `error`), as a finding row: `check_kind = uncited`, no
+ * citation number, the sentence as `claim_text`, the article as
+ * `source_url`, the section it is in as `section_title`.
+ *
+ * A finding is NOT SUPPORTED with reason_type `doubtful`: no citation
+ * supports the sentence and the model doubts it. Its explanation is the
+ * rationale, the words it doubts are the source_quote (the article is this
+ * row's source, so the quote is from the article), and its high/medium
+ * confidence goes in `uncited_confidence`. An unchecked sentence is an ERROR
+ * row with the error as its reason_type, as a lead sentence's is.
+ *
+ * Sentences the model was asked about and didn't report get no row: the
+ * check reports exceptions, and "not reported" is no verdict.
+ */
+export function assembleUncitedFinding({
+    candidate,
+    result,
+    provider,
+    model,
+    promptVersion = UNCITED_PROMPT_VERSION,
+    fetchedAt = new Date(),
+    ttlDays = FINDING_TTL_DAYS,
+    checkId = mintCheckId(),
+}) {
+    const failed = Boolean(result.error);
+    const verification = failed
+        ? {
+            verdict: 'ERROR',
+            supportScore: null,
+            reasonType: result.error,
+            rationale: `Uncited-text check gave no usable answer for this sentence: ${result.error}`,
+            sourceQuote: null,
+            quoteStatus: null,
+            usage: null,
+        }
+        : {
+            verdict: UNCITED_VERDICT,
+            supportScore: null,
+            reasonType: UNCITED_REASON_TYPE,
+            rationale: result.comments || null,
+            sourceQuote: result.excerpt || null,
+            quoteStatus: result.excerptStatus ?? null,
+            // A truthy usage is what marks "a model ran" for finishFinding().
+            usage: result.usage ?? { input: null, output: null },
+        };
+    return finishFinding(
+        {
+            checkKind: CHECK_KINDS.UNCITED,
+            wiki: candidate.wiki,
+            pageId: candidate.pageId,
+            pageTitle: candidate.title,
+            revisionId: candidate.revisionId,
+            claimText: result.text,
+            citationNumber: null,
+            refName: null,
+            sourceUrl: articleSourceUrl(candidate),
+            fetchedAt,
+            groupId: null,
+            isCollective: false,
+            fetchStatus: null,
+            fetchError: null,
+            sourceTruncated: false,
+            isBlp: candidate.isBlp ?? null,
+            sectionTitle: result.sectionTitle ?? null,
+            inLead: false,
+            uncitedConfidence: failed ? null : (result.confidence ?? null),
         },
         { verification, provider, model, promptVersion, hasContent: true, fetchedAt, ttlDays, checkId }
     );
