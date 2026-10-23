@@ -79,7 +79,7 @@ import { resolveTitleInfo } from './wikipedia-pageids.js';
 import { csvHeaderLine, appendFinding, csvPageTitles, cleanCsvPath, writeCleanCsv } from './csv-report.js';
 import { PROMPT_VERSION } from '../core/prompts.js';
 import { PROVIDER_MODELS, PROVIDER_ENV_VARS } from './provider-config.js';
-import { isRetryableError } from '../core/retry.js';
+import { isRetryableError, isOutputBudgetError } from '../core/retry.js';
 import { runChecksOnFile, summaryLines } from './run-checks.js';
 
 // reason_type on an ERROR row whose model call kept failing transiently.
@@ -93,7 +93,7 @@ export const RETRIES_EXHAUSTED = 'retries_exhausted';
 // Real incident, 2026-10-04: one such call halted a ruwiki sweep with gpt-oss
 // after 2 articles.
 export const OUTPUT_BUDGET_EXHAUSTED = 'output_budget_exhausted';
-export const isOutputBudgetError = error => /ran out of output budget/.test(error?.message ?? '');
+export { isOutputBudgetError };
 
 // reason_type on an ERROR row whose model finished normally (finish_reason
 // "stop") but returned no text. Same standing as the budget case: the service

@@ -4,7 +4,7 @@ import { JSDOM } from 'jsdom';
 
 import {
     splitLeadAndBody, leadParagraphs, leadSentences, markLeadCitations, articleBody,
-    isLeadDemotedVerdict, LEAD_BODY_MAX_CHARS,
+    isLeadDemotedVerdict, fitBody, LEAD_BODY_MAX_CHARS,
 } from '../core/lead.js';
 import { collectCitations } from '../core/citations.js';
 import { sentencexSplitSentences } from '../service/sentences.js';

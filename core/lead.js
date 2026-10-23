@@ -267,12 +267,23 @@ function leadWords(text) {
  * from. The lead is never part of it — every lead sentence would support
  * itself — nor are reference lists, navigation, or appendix sections.
  *
- * Over `maxChars`, whole sections are kept by how many of the lead's words
- * (`leadText`, 4+ letters) they contain, in article order, and `truncated`
- * is set: absence is then discounted, as on a truncated source.
+ * Over `maxChars`, see fitBody().
  */
 export function articleBody(root, { maxChars = LEAD_BODY_MAX_CHARS, leadText = '' } = {}) {
-    const sections = collectBodySections(splitLeadAndBody(root).body);
+    return fitBody(collectBodySections(splitLeadAndBody(root).body), { maxChars, leadText });
+}
+
+/**
+ * Fits body sections into `maxChars`, in articleBody()'s shape. Whole
+ * sections are kept by how many of the lead's words (`leadText`, 4+ letters)
+ * they contain, then put back in article order, and `truncated` is set:
+ * absence is then discounted, as on a truncated source. A single section
+ * larger than the whole budget keeps its start.
+ *
+ * Separate from articleBody() so the lead check can shrink a body a model
+ * rejected as too long (core/lead-check.js) without the article's DOM.
+ */
+export function fitBody(sections, { maxChars = LEAD_BODY_MAX_CHARS, leadText = '' } = {}) {
     const blocks = sections.map(bodySectionBlock);
     const full = blocks.join('\n\n');
     if (full.length <= maxChars) {
@@ -299,7 +310,6 @@ export function articleBody(root, { maxChars = LEAD_BODY_MAX_CHARS, leadText = '
     }
     let kept = sections.filter((_, i) => keep.has(i));
     let text = kept.map(bodySectionBlock).join('\n\n');
-    // A single section larger than the whole budget: keep its start.
     if (kept.length === 0 && sections.length > 0) {
         const top = sections[ranked[0].i];
         kept = [{ ...top, text: top.text.slice(0, Math.max(0, maxChars - top.heading.length - 20)) }];
