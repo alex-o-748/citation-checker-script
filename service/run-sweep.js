@@ -954,6 +954,9 @@ export async function runSweep(opts, {
                 chunkSize: leadChunkSize(opts.provider),
                 retry: { ...retryOptions, onAttemptFailed },
                 articleLangCode,
+                // --delay-ms applies between a lead check's calls as between
+                // any other two model calls.
+                pause: () => sleep(opts.delayMs),
                 onChunkError: error => {
                     if (!countTransientFailure(error)) return null;
                     const perCall = isPerCallModelFailure(error);

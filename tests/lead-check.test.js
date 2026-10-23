@@ -226,3 +226,20 @@ test('an answer that ran out of output budget is retried as two calls of half th
     ], 'results stay in lead order; a single sentence that still runs out goes to the caller\'s policy');
     assert.equal(codes.length, 1);
 });
+
+test('pause runs between calls, never before the first; shouldAbort stops before the next call', async () => {
+    const events = [];
+    const { callModel } = scriptedModel(id => ({ id, verdict: 'SUPPORTED' }));
+    const counting = async (...args) => { events.push('call'); return callModel(...args); };
+    await runLeadCheck({ sentences, body }, { callModel: counting, chunkSize: 1, pause: async () => events.push('pause') });
+    assert.deepEqual(events, ['call', 'pause', 'call', 'pause', 'call']);
+
+    let calls = 0;
+    const run = await runLeadCheck({ sentences, body }, {
+        callModel: async (...args) => { calls++; return callModel(...args); },
+        chunkSize: 1,
+        shouldAbort: () => calls >= 2,
+    });
+    assert.equal(calls, 2);
+    assert.deepEqual(run.results.map(r => r.index), [0, 1], 'the sentences answered before the stop are kept');
+});

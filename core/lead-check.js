@@ -252,6 +252,9 @@ function uncheckedResult(sentence, error, bodyTruncated) {
  * @param {number} [deps.chunkSize]
  * @param {object} [deps.retry] - core/retry.js options.
  * @param {Function} [deps.onChunk] - (results so far, sentences total), after each call.
+ * @param {Function} [deps.pause] - Awaited between two calls (a rate-limit delay).
+ * @param {Function} [deps.shouldAbort] - Checked before each call; true stops
+ *   the check, returning the sentences answered so far.
  * @param {Function} [deps.onChunkError] - (error) => an error code to record
  *   that chunk's sentences under, then carry on; or nothing, to throw. It may
  *   throw itself (an auth error that must halt a run). Without it, every
@@ -277,7 +280,7 @@ function uncheckedResult(sentence, error, bodyTruncated) {
  */
 export async function runLeadCheck({ sentences, body, articleTitle, only } = {}, {
     callModel, systemPrompt = generateLeadSystemPrompt(), chunkSize = LEAD_CHUNK_SIZE_DEFAULT,
-    retry = {}, onChunk, onChunkError,
+    retry = {}, onChunk, onChunkError, pause, shouldAbort,
 } = {}) {
     if (typeof callModel !== 'function') {
         throw new TypeError('runLeadCheck requires a callModel(systemPrompt, userContent) function');
@@ -300,6 +303,8 @@ export async function runLeadCheck({ sentences, body, articleTitle, only } = {},
     for (let i = 0; i < toCheck.length; i += size) queue.push(toCheck.slice(i, i + size));
 
     while (queue.length) {
+        if (typeof shouldAbort === 'function' && shouldAbort()) break;
+        if (calls > 0 && typeof pause === 'function') await pause();
         const chunk = queue.shift();
         let response = null;
         let failure = null;

@@ -394,6 +394,7 @@ export async function verifyLead(lead, {
     retry = {},
     articleLangCode,
     onChunkError,
+    pause,
 } = {}) {
     if (typeof callModel !== 'function') {
         throw new TypeError('verifyLead requires a callModel(systemPrompt, userContent) function');
@@ -408,6 +409,8 @@ export async function verifyLead(lead, {
         systemPrompt,
         chunkSize,
         retry: retryOptions,
+        pause,
+        shouldAbort: signal ? () => Boolean(signal.aborted) : undefined,
         onChunkError: error => {
             if (isAuthOrBillingError(error)) {
                 const status = Number((error.message || '').match(/\((\d{3})\)/)?.[1]) || null;
