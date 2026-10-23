@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-    createSweepChecker, reviewRows, renderMarkdown, formatProblems, junkInClaim, isTableLikeClaim,
+    createSweepChecker, reviewRows, renderMarkdown, formatProblems, uncitedFormatProblems, junkInClaim, isTableLikeClaim,
     scriptShare, LEVELS, SUSPECT_CAP, THRESHOLDS,
 } from '../service/sweep-checks.js';
 import { parseCsv, rowsToCsv } from '../service/csv-report.js';
@@ -326,4 +326,67 @@ test('flagged lead rows and demoted lead citations are not expected to carry a s
 
 test('a run without the lead check has no lead_check entry', () => {
     assert.equal(levelOf(check(many(5, () => finding())), 'lead_check'), undefined);
+});
+
+// --- uncited-text check ---
+
+// An uncited row as service/finding-builder.js's assembleUncitedFinding() shapes it.
+const uncitedRow = (claimText, overrides = {}) => finding({
+    checkKind: 'uncited', citationNumber: null, claimText, verdict: 'NOT SUPPORTED', reasonType: 'doubtful',
+    supportScore: null, uncitedConfidence: 'high', sourceQuote: 'designed by Gustave Eiffel', quoteStatus: 'exact',
+    rationale: 'Someone else designed it.', sourceUrl: 'https://en.wikipedia.org/w/index.php?curid=7',
+    promptVersion: 'u1', sectionTitle: 'History', ...overrides,
+});
+const uncitedError = (claimText, pageTitle = 'Test Article') => uncitedRow(claimText, {
+    pageTitle, verdict: 'ERROR', reasonType: 'retries_exhausted', uncitedConfidence: null, rationale: 'x',
+    sourceQuote: null, quoteStatus: null, provider: null, model: null, tokensIn: null, tokensOut: null,
+});
+
+test('uncited rows are not duplicates, not fetches, not format errors, and get a check of their own', () => {
+    const findings = [
+        ...many(20, () => finding()),
+        // A ranked citation finding, so the severity check runs at all.
+        finding({ verdict: 'NOT SUPPORTED', reasonType: 'omission', supportScore: 5, sourceQuote: null, quoteStatus: 'empty', severityTier: 'T2' }),
+        uncitedRow('It was designed by Gustave Eiffel.'),
+        uncitedRow('It is painted red.', { uncitedConfidence: 'medium' }),
+    ];
+    const result = check(findings, { titles: ['Test Article'] });
+    assert.equal(levelOf(result, 'structure'), LEVELS.PASS);
+    assert.equal(result.metrics.citationsWithUrl, 21, 'the article URL on uncited rows is not a fetch');
+    assert.equal(levelOf(result, 'format'), LEVELS.PASS, '"doubtful" is this check\'s reason_type, not a malformed verdict');
+    assert.equal(levelOf(result, 'severity'), LEVELS.PASS, 'uncited findings are never ranked');
+    assert.equal(levelOf(result, 'provenance'), LEVELS.PASS);
+    assert.match(result.checks.find(c => c.id === 'provenance').summary, /uncited-check prompt u1/);
+    assert.equal(levelOf(result, 'uncited_check'), LEVELS.PASS);
+    assert.match(result.checks.find(c => c.id === 'uncited_check').summary, /2 finding\(s\) \(high 1, medium 1\); 0 sentence\(s\) unchecked/);
+    const strata = Object.fromEntries(result.sample.map(s => [s.stratum, s.population]));
+    assert.equal(strata.uncited_doubtful, 2);
+    assert.equal(strata.not_supported_omission, 1, 'only the citation: uncited findings are not sampled as citation failures');
+});
+
+test('a repeated uncited sentence is a duplicate; the same text as a lead row is not', () => {
+    const lead = finding({ checkKind: 'lead_body', citationNumber: null, claimText: 'Same sentence.', promptVersion: 'l1', sourceUrl: 'https://en.wikipedia.org/w/index.php?curid=7' });
+    assert.equal(levelOf(check([...many(5, () => finding()), uncitedRow('Same sentence.'), lead]), 'structure'), LEVELS.PASS);
+    const twice = check([...many(5, () => finding()), uncitedRow('Same sentence.'), uncitedRow('Same sentence.')]);
+    assert.equal(levelOf(twice, 'structure'), LEVELS.FAIL);
+    assert.match(twice.suspects.find(s => s.check === 'duplicate').examples[0].detail, /uncited sentence "Same sentence\." appears more than once/);
+});
+
+test('uncited format: a confidence and a rationale', () => {
+    const [row] = toRows([uncitedRow('x', { uncitedConfidence: 'low', rationale: '' })]);
+    assert.deepEqual(uncitedFormatProblems(row), ['uncited_confidence "low"', 'empty rationale']);
+    const [ok] = toRows([uncitedRow('x')]);
+    assert.deepEqual(uncitedFormatProblems(ok), []);
+    assert.ok(formatProblems(ok).length > 0, 'the verdict prompt\'s rules would misjudge it');
+});
+
+test('articles whose uncited check failed warn, then fail', () => {
+    const articles = n => many(n, i => finding({ pageTitle: `Article ${i}` }));
+    assert.equal(levelOf(check([...articles(40), uncitedError('Lost.', 'Article 0')]), 'uncited_check'), LEVELS.PASS);
+    assert.equal(levelOf(check([...articles(40), ...many(3, i => uncitedError(`Lost ${i}.`, `Article ${i}`))]), 'uncited_check'), LEVELS.WARN);
+    assert.equal(levelOf(check([...articles(10), ...many(3, i => uncitedError(`Lost ${i}.`, `Article ${i}`))]), 'uncited_check'), LEVELS.FAIL);
+});
+
+test('a run without the uncited check has no uncited_check entry', () => {
+    assert.equal(levelOf(check(many(5, () => finding())), 'uncited_check'), undefined);
 });

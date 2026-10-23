@@ -1410,3 +1410,114 @@ test('a lead-check call that keeps failing is recorded on its sentences, and an 
     }));
     assert.equal(halted, 3, 'auth/billing halts the run, exit 3');
 });
+
+// --- --uncited-check ---
+
+// A Parsoid-shaped article: an uncited lead (the lead check's, never this
+// check's), and a body paragraph with one cited and two uncited sentences.
+const uncitedArticleHtml = '<!DOCTYPE html><body>'
+    + '<section data-mw-section-id="0"><p>The bridge is a famous bridge with an uncited lead.</p></section>'
+    + '<section data-mw-section-id="1"><h2>History</h2><p>The bridge opened to traffic in 1998.'
+    + '<sup id="cite_ref-1" class="reference"><a href="./Test#cite_note-1">[1]</a></sup>'
+    + ' It was designed by Gustave Eiffel. It is painted red.</p></section>'
+    + `<ol class="references"><li id="cite_note-1">${link('https://a.example/x')}</li></ol></body>`;
+
+// Citation checks come back SUPPORTED; the uncited check doubts statement 1.
+const uncitedModel = calls => () => async (systemPrompt, userContent, opts) => {
+    calls?.push({ kind: opts?.kind ?? 'verdict', userContent });
+    if (opts?.kind === 'uncited') {
+        return {
+            text: JSON.stringify({ issues: [{ id: 1, excerpt: 'Gustave Eiffel', comments: 'Eiffel did not design it.', confidence: 'high' }] }),
+            usage: { input: 200, output: 30 },
+        };
+    }
+    return {
+        text: JSON.stringify({ support_score: 90, verdict: 'SUPPORTED', source_quote: '', comments: 'ok' }),
+        usage: { input: 10, output: 5 },
+    };
+};
+
+test('parseCliArgs: --uncited-check is off by default, keeping 3 findings per article', () => {
+    assert.equal(parseCliArgs(['node', 'sweep.js']).uncitedCheck, false);
+    assert.equal(parseCliArgs(['node', 'sweep.js']).uncitedMaxFindings, 3);
+    const on = parseCliArgs(['node', 'sweep.js', '--uncited-check', '--uncited-max-findings', '10']);
+    assert.equal(on.uncitedCheck, true);
+    assert.equal(on.uncitedMaxFindings, 10);
+    assert.match(HELP_TEXT, /--uncited-check/);
+    assert.match(HELP_TEXT, /--uncited-max-findings/);
+});
+
+test('--uncited-check writes one uncited row per finding, and none for what the model did not report', async () => {
+    const written = [];
+    const calls = [];
+    const stderrChunks = [];
+    const code = await runSweep(baseOpts({ uncitedCheck: true, uncitedMaxFindings: 3 }), baseIo({
+        fetchArticle: async () => ({ html: uncitedArticleHtml, status: 200, error: null }),
+        makeModelCallerFn: uncitedModel(calls),
+        appendFindingFn: async (_path, finding) => { written.push(finding); },
+        stderr: { write: s => stderrChunks.push(s) },
+    }));
+    assert.equal(code, 0);
+
+    const uncited = written.filter(f => f.checkKind === 'uncited');
+    assert.deepEqual(uncited.map(f => [f.claimText, f.verdict, f.reasonType, f.uncitedConfidence, f.sectionTitle]), [
+        ['It was designed by Gustave Eiffel.', 'NOT SUPPORTED', 'doubtful', 'high', 'History'],
+    ]);
+    assert.equal(uncited[0].sourceUrl, 'https://en.wikipedia.org/w/index.php?curid=7');
+    assert.equal(written.filter(f => f.checkKind === 'citation').length, 1, 'citation checks run as usual');
+
+    const uncitedCalls = calls.filter(c => c.kind === 'uncited');
+    assert.equal(uncitedCalls.length, 1);
+    assert.match(uncitedCalls[0].userContent, /1\. "It was designed by Gustave Eiffel\."\n2\. "It is painted red\."/);
+    assert.doesNotMatch(uncitedCalls[0].userContent, /\d\. "The bridge is a famous bridge/, 'the lead is context, never a statement');
+
+    assert.match(stderrChunks.join(''), /uncited check: 2 uncited sentence\(s\) in 1 article\(s\) -> 1 finding\(s\) kept, 0 past the per-article limit, 0 unchecked; 0 article\(s\) had more than the sentence cap; 1 call\(s\), 200 tokens in, 30 out/);
+});
+
+test('without --uncited-check no uncited call is made', async () => {
+    const calls = [];
+    const written = [];
+    await runSweep(baseOpts(), baseIo({
+        fetchArticle: async () => ({ html: uncitedArticleHtml, status: 200, error: null }),
+        makeModelCallerFn: uncitedModel(calls),
+        appendFindingFn: async (_path, finding) => { written.push(finding); },
+    }));
+    assert.ok(!calls.some(c => c.kind === 'uncited'));
+    assert.ok(written.every(f => f.checkKind === 'citation'));
+});
+
+test('--uncited-max-findings must be a positive integer', async () => {
+    const stderrChunks = [];
+    const code = await runSweep(baseOpts({ uncitedCheck: true, uncitedMaxFindings: 0 }), baseIo({
+        stderr: { write: s => stderrChunks.push(s) },
+    }));
+    assert.equal(code, 2);
+    assert.match(stderrChunks.join(''), /--uncited-max-findings must be a positive integer/);
+});
+
+test('an uncited-check call that keeps failing is recorded on its sentences, and an auth error halts', async () => {
+    const written = [];
+    const failing = message => () => async (systemPrompt, userContent, opts) => {
+        if (opts?.kind === 'uncited') throw new Error(message);
+        return { text: JSON.stringify({ support_score: 90, verdict: 'SUPPORTED', source_quote: '', comments: 'ok' }), usage: { input: 1, output: 1 } };
+    };
+    const noSleep = { sleepFn: async () => {} };
+    const code = await runSweep(baseOpts({ uncitedCheck: true }), baseIo({
+        fetchArticle: async () => ({ html: uncitedArticleHtml, status: 200, error: null }),
+        makeModelCallerFn: failing('Lift Wing API request failed (503): unavailable'),
+        appendFindingFn: async (_path, finding) => { written.push(finding); },
+        retryOptions: noSleep,
+    }));
+    assert.equal(code, 0);
+    assert.deepEqual(written.filter(f => f.checkKind === 'uncited').map(f => [f.claimText, f.verdict, f.reasonType]), [
+        ['It was designed by Gustave Eiffel.', 'ERROR', RETRIES_EXHAUSTED],
+        ['It is painted red.', 'ERROR', RETRIES_EXHAUSTED],
+    ]);
+
+    const halted = await runSweep(baseOpts({ uncitedCheck: true }), baseIo({
+        fetchArticle: async () => ({ html: uncitedArticleHtml, status: 200, error: null }),
+        makeModelCallerFn: failing('Lift Wing API request failed (402): payment required'),
+        retryOptions: noSleep,
+    }));
+    assert.equal(halted, 3, 'auth/billing halts the run, exit 3');
+});
