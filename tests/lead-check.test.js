@@ -129,6 +129,9 @@ test('runLeadCheck chunks the statements, maps answers back, and verifies each q
     assert.deepEqual(calls[0].opts, { kind: 'lead' }, 'the caller can raise the output budget for it');
     assert.deepEqual(progress, [[2, 3], [3, 3]]);
     assert.deepEqual(run.usage, { input: 200, output: 20 });
+    assert.deepEqual(run.results.map(r => r.usage), [
+        { input: 50, output: 5 }, { input: 50, output: 5 }, { input: 100, output: 10 },
+    ], 'each sentence carries its share of its call');
     assert.equal(run.promptVersion, LEAD_PROMPT_VERSION);
     assert.equal(run.bodyTruncated, false);
 

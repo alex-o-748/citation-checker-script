@@ -70,8 +70,10 @@ import { runBatch, ARTICLE_OUTCOMES } from './claim-extractor.js';
 import { fetchArticleHtml, hostForWiki, langCodeForWiki } from '../core/wikipedia.js';
 import { fetchSourceContent, STUB_FETCH_ERROR } from '../core/worker.js';
 import { createHostGate, DEFAULT_FETCH_CONCURRENCY } from './host-pool.js';
-import { verifyCitation, verifyGroup, makeModelCaller, ProviderAuthError } from './verifier.js';
-import { assembleFinding, assembleGroupFinding } from './finding-builder.js';
+import { verifyCitation, verifyGroup, verifyLead, makeModelCaller, ProviderAuthError } from './verifier.js';
+import { isLeadDemotedVerdict } from '../core/lead.js';
+import { leadChunkSize, LEAD_OUTCOMES } from '../core/lead-check.js';
+import { assembleFinding, assembleGroupFinding, assembleLeadFinding } from './finding-builder.js';
 import { assessSeverity, needsSeverity, assembleGroupText, groupHasUnreadSource } from './severity-assessor.js';
 import { upsertFinding } from './findings-store.js';
 import { openToolsDbConnection } from './toolsdb.js';
@@ -137,6 +139,7 @@ export function parseCliArgs(argv) {
             'no-store':          { type: 'boolean', default: false },
             resume:              { type: 'boolean', default: false },
             severity:            { type: 'boolean', default: false },
+            'lead-check':        { type: 'boolean', default: false },
             'skip-checks':       { type: 'boolean', default: false },
             out:                 { type: 'string', default: 'findings.csv' },
             help:                { type: 'boolean', short: 'h', default: false },
@@ -166,6 +169,7 @@ export function parseCliArgs(argv) {
         store: !values['no-store'],
         resume: values.resume,
         severity: values.severity,
+        leadCheck: values['lead-check'],
         skipChecks: values['skip-checks'],
         out: values.out,
     };
@@ -263,6 +267,16 @@ Options:
                          severity_subclaims (see core/severity.js). Off by
                          default because it adds model calls in proportion to
                          the flag rate.
+  --lead-check          Check every lead sentence against the article's body
+                         (core/lead-check.js): one lead_body row per sentence,
+                         reporting what the lead says that the body doesn't
+                         cover or contradicts. In those articles, a lead
+                         citation's PARTIALLY SUPPORTED or omission verdict is
+                         marked lead_demoted (left out of the clean CSV and
+                         the severity pass): in the lead, "the source doesn't
+                         mention it" is the lead check's question. A few model
+                         calls per article, each carrying the body. Off by
+                         default; an article with no headings gets neither.
   --out <path>          CSV output path (default: findings.csv)
                         A cleaned copy is also written beside it as
                         <name>-clean.csv.
@@ -645,6 +659,8 @@ export async function runSweep(opts, {
         citationsSeen: 0, citationsWithUrl: 0, citationsFetched: 0,
         verified: 0, flagged: 0, published: 0,
         groupsChecked: 0, groupsSkipped: 0, groupsFlagged: 0,
+        leadArticles: 0, leadSentences: 0, leadNotCovered: 0, leadContradicted: 0, leadUnchecked: 0,
+        leadDemoted: 0,
     };
     // Severity pass tallies, by tier ('T1'...'disagreement', or 'error').
     const severityCounts = {};
@@ -856,17 +872,22 @@ export async function runSweep(opts, {
             // a sibling source that couldn't be fetched leaves its "absent"
             // subclaims unproven, the same as for the group's combined one.
             const unreadGroups = new Set(groups.filter(groupHasUnreadSource).map(members => members[0].groupId));
+            // Demotion applies only where a lead check runs: without one, a
+            // demoted lead citation would be a real failure with nothing to
+            // report it instead.
+            const leadChecked = Boolean(opts.leadCheck && article.lead?.body?.text && article.lead.sentences.length);
 
             for (const citation of [...solos, ...groups.flatMap(firstPerFootnote)]) {
                 funnel.citationsSeen++;
                 if (citation.url) funnel.citationsWithUrl++;
                 if (citation.source?.content) funnel.citationsFetched++;
                 const unreadSources = citation.groupSize > 1 && unreadGroups.has(citation.groupId);
-                yield { kind: 'solo', wikiCandidate, citation, unreadSources };
+                yield { kind: 'solo', wikiCandidate, citation, unreadSources, leadChecked };
             }
             for (const members of groups) {
-                yield { kind: 'group', wikiCandidate, members };
+                yield { kind: 'group', wikiCandidate, members, leadChecked };
             }
+            if (leadChecked) yield { kind: 'lead', wikiCandidate, lead: article.lead };
         }
     }
 
@@ -877,8 +898,8 @@ export async function runSweep(opts, {
     // that outlasted its retries is recorded (severity_error
     // retries_exhausted) and counts toward --max-consecutive-failures; an
     // auth/billing or non-transient error halts the run after this finding.
-    async function rankFinding({ claimText, sourceInfo, sourceTruncated, unreadSources = false, verification, wikiCandidate, context }) {
-        if (!opts.severity || !needsSeverity(verification)) return null;
+    async function rankFinding({ claimText, sourceInfo, sourceTruncated, unreadSources = false, verification, wikiCandidate, context, leadDemoted = false }) {
+        if (!opts.severity || !needsSeverity(verification) || leadDemoted) return null;
         const { onAttemptFailed, finish } = trackRetries();
         let severity;
         try {
@@ -908,6 +929,62 @@ export async function runSweep(opts, {
         return severity;
     }
 
+    // Whether a citation finding is demoted (core/lead.js): in lead prose, in
+    // an article that gets a lead check, and partial or an omission.
+    function demotes(task, citation, verification) {
+        const demoted = Boolean(task.leadChecked && citation?.inLead
+            && isLeadDemotedVerdict(verification.verdict, verification.reasonType));
+        if (demoted) funnel.leadDemoted++;
+        return demoted;
+    }
+
+    // The lead check for one article: every lead sentence against its body,
+    // one row per sentence. A failed call is recorded on its sentences under
+    // the same policy as a citation's (retries_exhausted and the
+    // consecutive-failure breaker; per-call failures recorded and passed
+    // over); an auth/billing or non-transient error halts the run.
+    async function checkLead(task) {
+        const verifyStartedAt = Date.now();
+        const { onAttemptFailed, finish } = trackRetries();
+        let run;
+        try {
+            run = await verifyLead(task.lead, {
+                callModel,
+                articleTitle: task.wikiCandidate.title,
+                chunkSize: leadChunkSize(opts.provider),
+                retry: { ...retryOptions, onAttemptFailed },
+                articleLangCode,
+                onChunkError: error => {
+                    if (!countTransientFailure(error)) return null;
+                    const perCall = isPerCallModelFailure(error);
+                    if (perCall) perCallFailures++; else transientFailures++;
+                    return perCall ? perCallReasonType(error) : RETRIES_EXHAUSTED;
+                },
+            });
+        } catch (error) {
+            if (!halted) { halted = true; haltError = error; }
+            return;
+        } finally {
+            recordVerifyDuration(verifyStartedAt);
+            finish();
+        }
+        funnel.leadArticles++;
+        if (run.results.some(r => r.verdict)) {
+            consecutiveFailures = 0;
+            await sleep(opts.delayMs);
+        }
+        for (const result of run.results) {
+            funnel.leadSentences++;
+            if (result.outcome === LEAD_OUTCOMES.NOT_COVERED) funnel.leadNotCovered++;
+            else if (result.outcome === LEAD_OUTCOMES.CONTRADICTED) funnel.leadContradicted++;
+            else if (!result.verdict) funnel.leadUnchecked++;
+            await record(assembleLeadFinding({
+                candidate: task.wikiCandidate, result,
+                provider: opts.provider, model: opts.model, promptVersion: run.promptVersion,
+            }));
+        }
+    }
+
     async function worker(tasks) {
         for await (const task of tasks) {
             if (halted) continue; // drain without dispatching new model calls
@@ -934,6 +1011,7 @@ export async function runSweep(opts, {
                     await sleep(opts.delayMs);
                 }
                 if (recordVerdict(verification.verdict)) funnel.flagged++;
+                const leadDemoted = demotes(task, task.citation, verification);
 
                 const content = task.citation.source?.content ?? null;
                 const severity = await rankFinding({
@@ -941,15 +1019,15 @@ export async function runSweep(opts, {
                     sourceInfo: content,
                     sourceTruncated: Boolean(content?.includes('\nTruncated: true')),
                     unreadSources: task.unreadSources,
-                    verification, wikiCandidate: task.wikiCandidate, context: task.citation,
+                    verification, wikiCandidate: task.wikiCandidate, context: task.citation, leadDemoted,
                 });
 
                 await record(assembleFinding({
                     candidate: task.wikiCandidate, citation: task.citation, verification,
                     provider: opts.provider, model: opts.model, promptVersion: PROMPT_VERSION,
-                    severity,
+                    severity, leadDemoted,
                 }));
-            } else {
+            } else if (task.kind === 'group') {
                 let verification;
                 const verifyStartedAt = Date.now();
                 const { onAttemptFailed, finish } = trackRetries();
@@ -976,6 +1054,7 @@ export async function runSweep(opts, {
                     await sleep(opts.delayMs);
                 }
                 if (recordVerdict(verification.verdict)) funnel.groupsFlagged++;
+                const leadDemoted = demotes(task, task.members[0], verification);
 
                 const severity = await rankFinding({
                     claimText: task.members[0].claimText,
@@ -983,14 +1062,16 @@ export async function runSweep(opts, {
                     sourceInfo: assembleGroupText(task.members),
                     sourceTruncated: task.members.some(m => m.source?.content?.includes('\nTruncated: true')),
                     unreadSources: groupHasUnreadSource(task.members),
-                    verification, wikiCandidate: task.wikiCandidate, context: task.members[0],
+                    verification, wikiCandidate: task.wikiCandidate, context: task.members[0], leadDemoted,
                 });
 
                 await record(assembleGroupFinding({
                     candidate: task.wikiCandidate, members: task.members, verification,
                     provider: opts.provider, model: opts.model, promptVersion: PROMPT_VERSION,
-                    severity,
+                    severity, leadDemoted,
                 }));
+            } else if (task.kind === 'lead') {
+                await checkLead(task);
             }
         }
     }
@@ -1030,6 +1111,11 @@ export async function runSweep(opts, {
         `(<=1 usable source), ${funnel.groupsFlagged} flagged.\n` +
         `sweep: verdicts: ${JSON.stringify(verdictCounts)}\n` +
         (opts.severity ? `sweep: severity tiers: ${JSON.stringify(severityCounts)}\n` : '') +
+        (opts.leadCheck
+            ? `sweep: lead check: ${funnel.leadSentences} lead sentence(s) in ${funnel.leadArticles} article(s) -> ` +
+              `${funnel.leadNotCovered} not covered in the body, ${funnel.leadContradicted} contradicting it, ` +
+              `${funnel.leadUnchecked} unchecked; ${funnel.leadDemoted} lead citation verdict(s) demoted.\n`
+            : '') +
         `sweep: wrote ${findings.length} finding(s) to ${opts.out}` +
         `${toolsDbQuery ? ` and ${storeStats.written} to ToolsDB` : ''}` +
         `${resumeSkipped ? ` (${resumeSkipped} article(s) skipped as already done)` : ''}.\n` +

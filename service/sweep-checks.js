@@ -101,6 +101,13 @@ export const THRESHOLDS = Object.freeze({
     // repeatedRationaleMinRows of them) suggests a degenerate model answer.
     repeatedRationaleShare: 0.02,
     repeatedRationaleMinRows: 10,
+    // Lead-check rows (check_kind lead_body) with no verdict, as a share of
+    // lead rows. First guesses with no incident behind them yet: the lead
+    // check batches several sentences per call, so one failed call costs
+    // several rows, and a model that keeps running out of output budget on
+    // them shows up here before anywhere else.
+    leadErrorWarn: 0.05,
+    leadErrorFail: 0.20,
 });
 
 export const SUSPECT_CAP = 20;
@@ -119,6 +126,9 @@ const KNOWN_VERDICTS = new Set([...VERDICT_LIST, 'ERROR', SKIPPED_VERDICT]);
 // reason_type service/verifier.js writes when a source exceeds the model's
 // context window (or the proxy's request-size cap).
 const SOURCE_TOO_LARGE_REASON = 'source_too_large';
+// service/finding-builder.js's CHECK_KINDS.LEAD_BODY: a lead sentence checked
+// against the article body.
+const LEAD_BODY_KIND = 'lead_body';
 
 // Markup that should never survive into claim text. Each was seen, or is the
 // obvious sibling of one seen (TemplateStyles CSS in Moscow Metro's ref [145]).
@@ -259,9 +269,16 @@ function quickHash(text) {
     return (h >>> 0).toString(16) + ':' + text.length;
 }
 
-// Review-sample strata: the verifier's own outcomes worth eyeballing.
+// Review-sample strata: the verifier's own outcomes worth eyeballing. Lead
+// rows have strata of their own, and demoted lead citations one more: it is
+// the sample that says whether demotion hid real failures.
 function stratumOf(row, modelRan) {
     if (!modelRan) return null;
+    if (row.check_kind === LEAD_BODY_KIND) {
+        if (row.verdict === VERDICTS.SUPPORTED) return null;
+        return row.reason_type === 'contradiction' ? 'lead_contradicted' : 'lead_not_covered';
+    }
+    if (row.lead_demoted === '1') return 'lead_demoted';
     switch (row.verdict) {
         case VERDICTS.NOT_SUPPORTED:
             return row.reason_type === 'contradiction' ? 'not_supported_contradiction' : 'not_supported_omission';
@@ -274,6 +291,7 @@ function stratumOf(row, modelRan) {
 export const SAMPLE_STRATA = Object.freeze([
     'not_supported_contradiction', 'not_supported_omission', 'partially_supported',
     'supported', 'unavailable_after_fetch',
+    'lead_contradicted', 'lead_not_covered', 'lead_demoted',
 ]);
 
 /**
@@ -310,6 +328,8 @@ export function createSweepChecker({
     const providers = new Set();
     const models = new Set();
     const promptVersions = new Set();
+    const leadPromptVersions = new Set();
+    const leadOutcomes = {};
     const duplicateKeys = new Set();
     const rationales = new Map(); // hash -> { count, text }
 
@@ -333,6 +353,9 @@ export function createSweepChecker({
     let severityExpected = 0;
     let severityMissing = 0;
     let severitySeen = false;
+    let leadRows = 0;
+    let leadUnanswered = 0;
+    let leadDemoted = 0;
     const tokensIn = [];
     const claimLengths = new Map(); // bucket of 20 chars -> count
 
@@ -381,6 +404,7 @@ export function createSweepChecker({
         const title = row.page_title ?? '';
         const verdict = row.verdict ?? '';
         const isCollective = row.is_collective === '1';
+        const isLead = row.check_kind === LEAD_BODY_KIND;
         // finding-builder.js records provider/model only when a model ran.
         const modelRan = Boolean(row.provider || row.tokens_in);
 
@@ -407,11 +431,23 @@ export function createSweepChecker({
             missingIdentity++;
             suspect('missing_permalink', index, row, 'no page_id / revision_id / permalink');
         }
-        const key = [title, row.revision_id, row.citation_number, row.is_collective, row.group_id].join('\u0000');
+        // A lead row has no citation number; the sentence is what identifies it.
+        const key = (isLead
+            ? [title, row.revision_id, LEAD_BODY_KIND, row.claim_text]
+            : [title, row.revision_id, row.citation_number, row.is_collective, row.group_id]).join('\u0000');
         if (duplicateKeys.has(key)) {
             duplicates++;
-            suspect('duplicate', index, row, `${title} #${row.citation_number} appears more than once`);
+            suspect('duplicate', index, row, isLead
+                ? `${title} lead sentence "${(row.claim_text ?? '').slice(0, 60)}" appears more than once`
+                : `${title} #${row.citation_number} appears more than once`);
         } else duplicateKeys.add(key);
+
+        if (isLead) {
+            leadRows++;
+            if (!VERDICT_LIST.includes(verdict)) leadUnanswered++;
+            bump(leadOutcomes, verdict === VERDICTS.NOT_SUPPORTED ? `${verdict}/${row.reason_type || '?'}` : verdict || '(blank)');
+        }
+        if (row.lead_demoted === '1') leadDemoted++;
 
         // Claims. A collective row repeats its members' claim, so only solo
         // rows are counted.
@@ -435,8 +471,9 @@ export function createSweepChecker({
             }
         }
 
-        // Fetching, per citation (collective rows carry no fetch of their own).
-        if (!isCollective && row.source_url) {
+        // Fetching, per citation (collective rows carry no fetch of their own,
+        // and a lead row's "source" is the article itself).
+        if (!isCollective && !isLead && row.source_url) {
             withUrl++;
             const host = hostOf(row.source_url) ?? '(unparseable)';
             let h = hosts.get(host);
@@ -463,7 +500,7 @@ export function createSweepChecker({
             modelRows++;
             if (row.provider) providers.add(row.provider);
             if (row.model) models.add(row.model);
-            if (row.prompt_version) promptVersions.add(row.prompt_version);
+            if (row.prompt_version) (isLead ? leadPromptVersions : promptVersions).add(row.prompt_version);
             if (row.tokens_in !== '' && row.tokens_in !== undefined) tokensIn.push(Number(row.tokens_in));
             if (row.quote_status) bump(quoteStatuses, row.quote_status);
 
@@ -499,7 +536,9 @@ export function createSweepChecker({
         // Severity pass: when it ran, every flagged model row gets a tier or an error.
         if (row.severity_tier || row.severity_error || row.severity_prompt_version) severitySeen = true;
         if (row.severity_tier) bump(severityTiers, row.severity_tier);
-        if (modelRan && (verdict === VERDICTS.NOT_SUPPORTED || verdict === VERDICTS.PARTIALLY_SUPPORTED)) {
+        // Lead rows and demoted lead citations are never ranked.
+        if (modelRan && !isLead && row.lead_demoted !== '1'
+            && (verdict === VERDICTS.NOT_SUPPORTED || verdict === VERDICTS.PARTIALLY_SUPPORTED)) {
             severityExpected++;
             if (!row.severity_tier && !row.severity_error) {
                 severityMissing++;
@@ -579,10 +618,12 @@ export function createSweepChecker({
         if (models.size > 1) provenanceIssues.push(`${models.size} models: ${[...models].join(', ')}`);
         if (providers.size > 1) provenanceIssues.push(`${providers.size} providers: ${[...providers].join(', ')}`);
         if (promptVersions.size > 1) provenanceIssues.push(`${promptVersions.size} prompt versions: ${[...promptVersions].join(', ')} (a --resume across a code update?)`);
+        if (leadPromptVersions.size > 1) provenanceIssues.push(`${leadPromptVersions.size} lead-check prompt versions: ${[...leadPromptVersions].join(', ')}`);
         if (multiRevision.length) provenanceIssues.push(`${multiRevision.length} article(s) checked at more than one revision: ${multiRevision.slice(0, 5).join(' · ')}`);
         add('provenance', provenanceIssues.length ? LEVELS.WARN : LEVELS.PASS, 'Provenance',
             provenanceIssues.length ? provenanceIssues.join('; ')
-                : `${[...models].join(', ') || 'no model rows'} · prompt ${[...promptVersions].join(', ') || '—'}`);
+                : `${[...models].join(', ') || 'no model rows'} · prompt ${[...promptVersions].join(', ') || '—'}`
+                    + (leadPromptVersions.size ? ` · lead-check prompt ${[...leadPromptVersions].join(', ')}` : ''));
 
         add('identity', missingIdentity ? LEVELS.WARN : LEVELS.PASS, 'Permalinks',
             missingIdentity ? `${missingIdentity} row(s) (${pct(missingIdentity, rows)}) have no page_id/revision_id/permalink` : 'every row has a permalink');
@@ -653,6 +694,17 @@ export function createSweepChecker({
                 + (Object.keys(severityTiers).length ? `; tiers: ${JSON.stringify(severityTiers)}` : ''));
         }
 
+        // --- Lead check ---
+        if (leadRows) {
+            const unansweredShare = share(leadUnanswered, leadRows);
+            const outcomes = Object.entries(leadOutcomes).sort((a, b) => b[1] - a[1]).map(([k, n]) => `${k} ${n}`).join(', ');
+            add('lead_check', unansweredShare > thresholds.leadErrorFail ? LEVELS.FAIL
+                : unansweredShare > thresholds.leadErrorWarn ? LEVELS.WARN : LEVELS.PASS,
+            'Lead check', `${leadRows} lead sentence(s) checked against the body; ${leadUnanswered} (${pct(leadUnanswered, leadRows)}) got no verdict`
+                + (outcomes ? ` — ${outcomes}` : '')
+                + `; ${leadDemoted} lead citation verdict(s) demoted`);
+        }
+
         // --- Claims ---
         const longShare = share(longClaims, claimsChecked);
         add('claim_length', longShare > thresholds.longClaimFail ? LEVELS.FAIL : longShare > thresholds.longClaimWarn ? LEVELS.WARN : LEVELS.PASS,
@@ -706,6 +758,9 @@ export function createSweepChecker({
                     modelRows,
                     quoteStatuses,
                     severityTiers,
+                    leadRows,
+                    leadOutcomes,
+                    leadDemoted,
                     tokensIn: { p50: at(0.5), p95: at(0.95), max: sortedTokens.at(-1) ?? null },
                     hostsWhereModelSaidUnavailable: unavailableHosts,
                     // Kept for comparing a later run of the same list against this one.

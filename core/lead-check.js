@@ -232,6 +232,7 @@ function uncheckedResult(sentence, error, bodyTruncated) {
         comments: null,
         outcome: null,
         bodyTruncated,
+        usage: null,
         error,
     };
 }
@@ -259,7 +260,8 @@ function uncheckedResult(sentence, error, bodyTruncated) {
  * Returns `{ results, bodyChars, bodyTruncated, usage, calls, promptVersion }`,
  * one result per checked sentence, in order:
  * `{ index, text, verdict, reasonType, supportScore, sourceQuote, quoteStatus,
- *    quoteText, section, comments, outcome, bodyTruncated, error }`.
+ *    quoteText, section, comments, outcome, bodyTruncated, usage, error }`,
+ * `usage` being the sentence's share of its call's tokens.
  * `quoteText` is core/quote.js's verifiedText: the only part a renderer may
  * show. A sentence the model left out, or answered unreadably, has `error`
  * set and no verdict.
@@ -337,19 +339,16 @@ export async function runLeadCheck({ sentences, body, articleTitle, only } = {},
             usage.output += response.usage?.output || 0;
         }
         const parsed = response ? parseLeadCheckResult(response.text) : null;
-        for (const sentence of chunk) {
-            if (failure) {
-                results.push(uncheckedResult(sentence, failure, truncated));
-                continue;
-            }
-            if (!parsed.ok) {
-                results.push(uncheckedResult(sentence, parsed.error, truncated));
-                continue;
-            }
-            const item = parsed.items.get(sentence.index + 1);
+        // Each answered sentence carries its share of the call's tokens, the
+        // remainder on the first, so per-row token columns still sum to what
+        // the calls cost.
+        const shareOf = (total, i) => Math.floor(total / chunk.length) + (i === 0 ? total % chunk.length : 0);
+        chunk.forEach((sentence, i) => {
+            const error = failure || (parsed.ok ? null : parsed.error);
+            const item = error ? null : parsed.items.get(sentence.index + 1);
             if (!item) {
-                results.push(uncheckedResult(sentence, 'missing_from_response', truncated));
-                continue;
+                results.push(uncheckedResult(sentence, error || 'missing_from_response', truncated));
+                return;
             }
             const quote = verifyQuote(current.text, item.sourceQuote);
             results.push({
@@ -365,9 +364,13 @@ export async function runLeadCheck({ sentences, body, articleTitle, only } = {},
                 comments: item.comments,
                 outcome: leadOutcomeFor(item.verdict, item.reasonType),
                 bodyTruncated: truncated,
+                usage: {
+                    input: shareOf(response.usage?.input || 0, i),
+                    output: shareOf(response.usage?.output || 0, i),
+                },
                 error: null,
             });
-        }
+        });
         if (typeof onChunk === 'function') onChunk(results, toCheck.length);
     }
 
