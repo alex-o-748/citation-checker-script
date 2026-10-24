@@ -268,3 +268,62 @@ test('an empty CSV fails', () => {
 test('THRESHOLDS is frozen, so a test cannot quietly loosen it for the next one', () => {
     assert.ok(Object.isFrozen(THRESHOLDS));
 });
+
+// A lead_body row as service/finding-builder.js's assembleLeadFinding() shapes it.
+const leadRow = (claimText, overrides = {}) => finding({
+    checkKind: 'lead_body', citationNumber: null, claimText, inLead: true,
+    sourceUrl: 'https://en.wikipedia.org/w/index.php?curid=7', promptVersion: 'l1', ...overrides,
+});
+
+test('lead rows are not duplicates of each other, not fetches, and get a check of their own', () => {
+    const findings = [
+        ...many(20, () => finding()),
+        leadRow('The bridge opened in 1998.'),
+        leadRow('It is the longest in the state.', { verdict: 'NOT SUPPORTED', reasonType: 'omission', supportScore: 5, sourceQuote: null, quoteStatus: 'empty' }),
+        leadRow('It cost $200 million.', { verdict: 'NOT SUPPORTED', reasonType: 'contradiction', supportScore: 10 }),
+        finding({ inLead: true, leadDemoted: true, verdict: 'PARTIALLY SUPPORTED', supportScore: 60 }),
+    ];
+    const result = check(findings, { titles: ['Test Article'] });
+    assert.equal(levelOf(result, 'structure'), LEVELS.PASS, 'three lead rows with no citation number are not duplicates');
+    assert.equal(result.metrics.citationsWithUrl, 21, 'the article URL on lead rows is not counted as a fetch');
+    assert.equal(levelOf(result, 'provenance'), LEVELS.PASS, 'the lead-check prompt version is not a second verdict prompt');
+    assert.match(result.checks.find(c => c.id === 'provenance').summary, /lead-check prompt l1/);
+    assert.equal(levelOf(result, 'lead_check'), LEVELS.PASS);
+    assert.match(result.checks.find(c => c.id === 'lead_check').summary,
+        /3 lead sentence\(s\) checked against the body; 0 \(0\.0%\) got no verdict .*; 1 lead citation verdict\(s\) demoted/);
+    assert.deepEqual(result.metrics.leadOutcomes, { SUPPORTED: 1, 'NOT SUPPORTED/omission': 1, 'NOT SUPPORTED/contradiction': 1 });
+    const strata = Object.fromEntries(result.sample.map(s => [s.stratum, s.population]));
+    assert.equal(strata.lead_not_covered, 1);
+    assert.equal(strata.lead_contradicted, 1);
+    assert.equal(strata.lead_demoted, 1);
+    assert.equal(strata.partially_supported, 0, 'a demoted citation is sampled as demoted, not as a partial');
+});
+
+test('a repeated lead sentence is still a duplicate', () => {
+    const result = check([...many(5, () => finding()), leadRow('Same sentence.'), leadRow('Same sentence.')]);
+    assert.equal(levelOf(result, 'structure'), LEVELS.FAIL);
+    assert.match(result.suspects.find(s => s.check === 'duplicate').examples[0].detail, /lead sentence "Same sentence\." appears more than once/);
+});
+
+test('lead rows with no verdict warn, then fail', () => {
+    const errorRow = text => leadRow(text, { verdict: 'ERROR', reasonType: 'retries_exhausted', supportScore: null, provider: null, model: null, tokensIn: null, tokensOut: null });
+    const some = check([...many(40, () => finding()), ...many(19, i => leadRow(`Lead ${i}.`)), errorRow('Lost.')]);
+    assert.equal(levelOf(some, 'lead_check'), LEVELS.PASS);
+    const more = check([...many(40, () => finding()), ...many(18, i => leadRow(`Lead ${i}.`)), errorRow('Lost 1.'), errorRow('Lost 2.')]);
+    assert.equal(levelOf(more, 'lead_check'), LEVELS.WARN);
+    const most = check([...many(40, () => finding()), ...many(5, i => leadRow(`Lead ${i}.`)), ...many(5, i => errorRow(`Lost ${i}.`))]);
+    assert.equal(levelOf(most, 'lead_check'), LEVELS.FAIL);
+});
+
+test('flagged lead rows and demoted lead citations are not expected to carry a severity tier', () => {
+    const findings = [
+        finding({ verdict: 'NOT SUPPORTED', reasonType: 'omission', supportScore: 5, sourceQuote: null, quoteStatus: 'empty', severityTier: 'T2' }),
+        leadRow('Not in the body.', { verdict: 'NOT SUPPORTED', reasonType: 'omission', supportScore: 5, sourceQuote: null, quoteStatus: 'empty' }),
+        finding({ inLead: true, leadDemoted: true, verdict: 'PARTIALLY SUPPORTED', supportScore: 60 }),
+    ];
+    assert.equal(levelOf(check(findings), 'severity'), LEVELS.PASS);
+});
+
+test('a run without the lead check has no lead_check entry', () => {
+    assert.equal(levelOf(check(many(5, () => finding())), 'lead_check'), undefined);
+});

@@ -63,6 +63,17 @@ export function isSourceTooLargeError(error) {
     return SOURCE_TOO_LARGE.test(error?.message ?? '');
 }
 
+// The model spent its whole output budget reasoning and never answered:
+// core/providers.js throws this for finish_reason "length" with no content.
+// Not retried either — the same prompt tends to do the same again — but
+// unlike a too-large source it depends on how much is asked at once, so the
+// lead check answers it by asking about fewer sentences per call
+// (core/lead-check.js). The batch runner records it as an ERROR row
+// (service/run-sweep.js's OUTPUT_BUDGET_EXHAUSTED).
+export function isOutputBudgetError(error) {
+    return /ran out of output budget/.test(error?.message ?? '');
+}
+
 function defaultSleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
