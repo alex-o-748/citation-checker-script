@@ -70,10 +70,11 @@ import { runBatch, ARTICLE_OUTCOMES } from './claim-extractor.js';
 import { fetchArticleHtml, hostForWiki, langCodeForWiki } from '../core/wikipedia.js';
 import { fetchSourceContent, STUB_FETCH_ERROR } from '../core/worker.js';
 import { createHostGate, DEFAULT_FETCH_CONCURRENCY } from './host-pool.js';
-import { verifyCitation, verifyGroup, verifyLead, makeModelCaller, ProviderAuthError } from './verifier.js';
+import { verifyCitation, verifyGroup, verifyLead, verifyUncited, makeModelCaller, ProviderAuthError } from './verifier.js';
 import { isLeadDemotedVerdict } from '../core/lead.js';
 import { leadChunkSize, LEAD_OUTCOMES } from '../core/lead-check.js';
-import { assembleFinding, assembleGroupFinding, assembleLeadFinding } from './finding-builder.js';
+import { uncitedChunkSize, UNCITED_MAX_FINDINGS } from '../core/uncited-check.js';
+import { assembleFinding, assembleGroupFinding, assembleLeadFinding, assembleUncitedFinding } from './finding-builder.js';
 import { assessSeverity, needsSeverity, assembleGroupText, groupHasUnreadSource } from './severity-assessor.js';
 import { upsertFinding } from './findings-store.js';
 import { openToolsDbConnection } from './toolsdb.js';
@@ -140,6 +141,8 @@ export function parseCliArgs(argv) {
             resume:              { type: 'boolean', default: false },
             severity:            { type: 'boolean', default: false },
             'lead-check':        { type: 'boolean', default: false },
+            'uncited-check':     { type: 'boolean', default: false },
+            'uncited-max-findings': { type: 'string', default: String(UNCITED_MAX_FINDINGS) },
             'skip-checks':       { type: 'boolean', default: false },
             out:                 { type: 'string', default: 'findings.csv' },
             help:                { type: 'boolean', short: 'h', default: false },
@@ -170,6 +173,8 @@ export function parseCliArgs(argv) {
         resume: values.resume,
         severity: values.severity,
         leadCheck: values['lead-check'],
+        uncitedCheck: values['uncited-check'],
+        uncitedMaxFindings: Number(values['uncited-max-findings']),
         skipChecks: values['skip-checks'],
         out: values.out,
     };
@@ -277,6 +282,19 @@ Options:
                          mention it" is the lead check's question. A few model
                          calls per article, each carrying the body. Off by
                          default; an article with no headings gets neither.
+  --uncited-check       Check the body sentences no citation covers against
+                         the model's own knowledge (core/uncited-check.js):
+                         one uncited row (NOT SUPPORTED, reason_type
+                         doubtful) per sentence the model has a specific
+                         reason to think is wrong, best first, at most
+                         --uncited-max-findings per article. Sentences it
+                         doesn't report get no row. The lead is left out
+                         (the lead check reads it); an article with no
+                         headings is read whole. Off by default.
+  --uncited-max-findings <n>
+                        Findings kept per article by --uncited-check
+                         (default: ${UNCITED_MAX_FINDINGS}). Raise it to measure the
+                         ranking: the kept rows are the top n.
   --out <path>          CSV output path (default: findings.csv)
                         A cleaned copy is also written beside it as
                         <name>-clean.csv.
@@ -436,6 +454,11 @@ export async function runSweep(opts, {
     const maxConsecutiveFailures = opts.maxConsecutiveFailures ?? DEFAULT_MAX_CONSECUTIVE_FAILURES;
     if (!Number.isInteger(maxConsecutiveFailures) || maxConsecutiveFailures < 1) {
         stderr.write(`sweep: --max-consecutive-failures must be a positive integer (got: ${opts.maxConsecutiveFailures})\n`);
+        return 2;
+    }
+    const uncitedMaxFindings = opts.uncitedMaxFindings ?? UNCITED_MAX_FINDINGS;
+    if (!Number.isInteger(uncitedMaxFindings) || uncitedMaxFindings < 1) {
+        stderr.write(`sweep: --uncited-max-findings must be a positive integer (got: ${opts.uncitedMaxFindings})\n`);
         return 2;
     }
 
@@ -661,6 +684,11 @@ export async function runSweep(opts, {
         groupsChecked: 0, groupsSkipped: 0, groupsFlagged: 0,
         leadArticles: 0, leadSentences: 0, leadNotCovered: 0, leadContradicted: 0, leadUnchecked: 0,
         leadDemoted: 0,
+        uncitedArticles: 0, uncitedSentences: 0, uncitedFound: 0, uncitedDropped: 0, uncitedUnchecked: 0,
+        uncitedCapped: 0,
+        // A call that finds nothing writes no row, so its tokens are counted
+        // here or nowhere.
+        uncitedCalls: 0, uncitedTokensIn: 0, uncitedTokensOut: 0,
     };
     // Severity pass tallies, by tier ('T1'...'disagreement', or 'error').
     const severityCounts = {};
@@ -888,6 +916,9 @@ export async function runSweep(opts, {
                 yield { kind: 'group', wikiCandidate, members, leadChecked };
             }
             if (leadChecked) yield { kind: 'lead', wikiCandidate, lead: article.lead };
+            if (opts.uncitedCheck && article.uncited?.sentences?.length) {
+                yield { kind: 'uncited', wikiCandidate, uncited: article.uncited };
+            }
         }
     }
 
@@ -988,6 +1019,59 @@ export async function runSweep(opts, {
         }
     }
 
+    // The uncited-text check for one article: its uncited body sentences
+    // against the model's knowledge, one row per finding kept (and one ERROR
+    // row per sentence a failed call left unchecked). Same failure policy as
+    // checkLead().
+    async function checkUncited(task) {
+        const verifyStartedAt = Date.now();
+        const { onAttemptFailed, finish } = trackRetries();
+        let run;
+        try {
+            run = await verifyUncited(task.uncited, {
+                callModel,
+                articleTitle: task.wikiCandidate.title,
+                chunkSize: uncitedChunkSize(opts.provider),
+                maxFindings: uncitedMaxFindings,
+                retry: { ...retryOptions, onAttemptFailed },
+                articleLangCode,
+                // --delay-ms applies between its calls, as for the lead check.
+                pause: () => sleep(opts.delayMs),
+                onChunkError: error => {
+                    if (!countTransientFailure(error)) return null;
+                    const perCall = isPerCallModelFailure(error);
+                    if (perCall) perCallFailures++; else transientFailures++;
+                    return perCall ? perCallReasonType(error) : RETRIES_EXHAUSTED;
+                },
+            });
+        } catch (error) {
+            if (!halted) { halted = true; haltError = error; }
+            return;
+        } finally {
+            recordVerifyDuration(verifyStartedAt);
+            finish();
+        }
+        funnel.uncitedArticles++;
+        funnel.uncitedSentences += run.checked;
+        funnel.uncitedFound += run.findings.length;
+        funnel.uncitedDropped += run.dropped;
+        funnel.uncitedUnchecked += run.unchecked.length;
+        if (task.uncited.capped) funnel.uncitedCapped++;
+        funnel.uncitedCalls += run.calls;
+        funnel.uncitedTokensIn += run.usage.input;
+        funnel.uncitedTokensOut += run.usage.output;
+        if (run.checked > 0) {
+            consecutiveFailures = 0;
+            await sleep(opts.delayMs);
+        }
+        for (const result of [...run.findings, ...run.unchecked]) {
+            await record(assembleUncitedFinding({
+                candidate: task.wikiCandidate, result,
+                provider: opts.provider, model: opts.model, promptVersion: run.promptVersion,
+            }));
+        }
+    }
+
     async function worker(tasks) {
         for await (const task of tasks) {
             if (halted) continue; // drain without dispatching new model calls
@@ -1075,6 +1159,8 @@ export async function runSweep(opts, {
                 }));
             } else if (task.kind === 'lead') {
                 await checkLead(task);
+            } else if (task.kind === 'uncited') {
+                await checkUncited(task);
             }
         }
     }
@@ -1118,6 +1204,12 @@ export async function runSweep(opts, {
             ? `sweep: lead check: ${funnel.leadSentences} lead sentence(s) in ${funnel.leadArticles} article(s) -> ` +
               `${funnel.leadNotCovered} not covered in the body, ${funnel.leadContradicted} contradicting it, ` +
               `${funnel.leadUnchecked} unchecked; ${funnel.leadDemoted} lead citation verdict(s) demoted.\n`
+            : '') +
+        (opts.uncitedCheck
+            ? `sweep: uncited check: ${funnel.uncitedSentences} uncited sentence(s) in ${funnel.uncitedArticles} article(s) -> ` +
+              `${funnel.uncitedFound} finding(s) kept, ${funnel.uncitedDropped} past the per-article limit, ` +
+              `${funnel.uncitedUnchecked} unchecked; ${funnel.uncitedCapped} article(s) had more than the sentence cap; ` +
+              `${funnel.uncitedCalls} call(s), ${funnel.uncitedTokensIn} tokens in, ${funnel.uncitedTokensOut} out.\n`
             : '') +
         `sweep: wrote ${findings.length} finding(s) to ${opts.out}` +
         `${toolsDbQuery ? ` and ${storeStats.written} to ToolsDB` : ''}` +

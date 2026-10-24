@@ -458,3 +458,24 @@ test('an article with no citations still carries its lead, and one with no headi
     assert.deepEqual(result.lead.sentences.map(s => s.text), ['Nothing cited here at all.']);
     assert.equal(result.lead.body.text, '');
 });
+
+test('processArticle carries the uncited-text check\'s input as plain data', async () => {
+    const html = '<!DOCTYPE html><body>'
+        + '<section data-mw-section-id="0"><p>The bridge is in the state.</p></section>'
+        + '<section data-mw-section-id="1"><h2>History</h2><p>Construction began in 1994.'
+        + '<sup id="cite_ref-1" class="reference"><a href="./Test#cite_note-1">[1]</a></sup> It was designed by Anna Holt.</p></section>'
+        + `<ol class="references"><li id="cite_note-1">${link('https://example.com/a')}</li></ol></body>`;
+    const result = await processArticle(candidate, {
+        parseHtml,
+        fetchSource: fetchSourceOk,
+        fetchArticle: async () => ({ html, status: 200, error: null }),
+    });
+    assert.deepEqual(result.uncited, {
+        sentences: [{ index: 0, paragraphIndex: 0, sectionTitle: 'History', text: 'It was designed by Anna Holt.', start: 28 }],
+        paragraphs: [{ index: 0, sectionTitle: 'History', text: 'Construction began in 1994. It was designed by Anna Holt.' }],
+        opening: 'The bridge is in the state.',
+        total: 1,
+        capped: false,
+        usesLead: false,
+    }, 'no DOM elements: the batch keeps this per article');
+});

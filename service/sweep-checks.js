@@ -108,6 +108,13 @@ export const THRESHOLDS = Object.freeze({
     // them shows up here before anywhere else.
     leadErrorWarn: 0.05,
     leadErrorFail: 0.20,
+    // Articles with an uncited-text row that got no answer (an ERROR row,
+    // check_kind uncited), as a share of all articles in the CSV. Of all
+    // articles, not of those checked: a sentence the model didn't report has
+    // no row, so the CSV can't tell a checked article from an unchecked one.
+    // First guesses, the lead check's.
+    uncitedErrorArticleWarn: 0.05,
+    uncitedErrorArticleFail: 0.20,
 });
 
 export const SUSPECT_CAP = 20;
@@ -129,6 +136,10 @@ const SOURCE_TOO_LARGE_REASON = 'source_too_large';
 // service/finding-builder.js's CHECK_KINDS.LEAD_BODY: a lead sentence checked
 // against the article body.
 const LEAD_BODY_KIND = 'lead_body';
+// CHECK_KINDS.UNCITED: an uncited body sentence against the model's own
+// knowledge (core/uncited-check.js). Its rows are findings only.
+const UNCITED_KIND = 'uncited';
+const UNCITED_CONFIDENCES = new Set(['high', 'medium']);
 
 // Markup that should never survive into claim text. Each was seen, or is the
 // obvious sibling of one seen (TemplateStyles CSS in Moscow Metro's ref [145]).
@@ -215,6 +226,17 @@ export function formatProblems(row) {
     return problems;
 }
 
+// The same, for an uncited-text row: its own prompt's rules, not the
+// verdict prompt's (its reason_type is "doubtful", and it has no score).
+export function uncitedFormatProblems(row) {
+    const problems = [];
+    if (!UNCITED_CONFIDENCES.has(row.uncited_confidence)) {
+        problems.push(`uncited_confidence "${row.uncited_confidence ?? ''}"`);
+    }
+    if (!row.rationale?.trim()) problems.push('empty rationale');
+    return problems;
+}
+
 function hostOf(url) {
     try { return new URL(url).host.toLowerCase(); } catch { return null; }
 }
@@ -271,9 +293,11 @@ function quickHash(text) {
 
 // Review-sample strata: the verifier's own outcomes worth eyeballing. Lead
 // rows have strata of their own, and demoted lead citations one more: it is
-// the sample that says whether demotion hid real failures.
+// the sample that says whether demotion hid real failures. Uncited-text
+// findings are one stratum: every one of them is a claim worth checking.
 function stratumOf(row, modelRan) {
     if (!modelRan) return null;
+    if (row.check_kind === UNCITED_KIND) return 'uncited_doubtful';
     if (row.check_kind === LEAD_BODY_KIND) {
         if (row.verdict === VERDICTS.SUPPORTED) return null;
         return row.reason_type === 'contradiction' ? 'lead_contradicted' : 'lead_not_covered';
@@ -292,6 +316,7 @@ export const SAMPLE_STRATA = Object.freeze([
     'not_supported_contradiction', 'not_supported_omission', 'partially_supported',
     'supported', 'unavailable_after_fetch',
     'lead_contradicted', 'lead_not_covered', 'lead_demoted',
+    'uncited_doubtful',
 ]);
 
 /**
@@ -329,6 +354,9 @@ export function createSweepChecker({
     const models = new Set();
     const promptVersions = new Set();
     const leadPromptVersions = new Set();
+    const uncitedPromptVersions = new Set();
+    const uncitedConfidences = {};
+    const uncitedErrorArticles = new Set();
     const leadOutcomes = {};
     const duplicateKeys = new Set();
     const rationales = new Map(); // hash -> { count, text }
@@ -356,6 +384,8 @@ export function createSweepChecker({
     let leadRows = 0;
     let leadUnanswered = 0;
     let leadDemoted = 0;
+    let uncitedRows = 0;
+    let uncitedUnanswered = 0;
     const tokensIn = [];
     const claimLengths = new Map(); // bucket of 20 chars -> count
 
@@ -405,6 +435,9 @@ export function createSweepChecker({
         const verdict = row.verdict ?? '';
         const isCollective = row.is_collective === '1';
         const isLead = row.check_kind === LEAD_BODY_KIND;
+        const isUncited = row.check_kind === UNCITED_KIND;
+        // Checked against no source: the row's source_url is the article.
+        const isArticleCheck = isLead || isUncited;
         // finding-builder.js records provider/model only when a model ran.
         const modelRan = Boolean(row.provider || row.tokens_in);
 
@@ -431,14 +464,15 @@ export function createSweepChecker({
             missingIdentity++;
             suspect('missing_permalink', index, row, 'no page_id / revision_id / permalink');
         }
-        // A lead row has no citation number; the sentence is what identifies it.
-        const key = (isLead
-            ? [title, row.revision_id, LEAD_BODY_KIND, row.claim_text]
+        // A lead or uncited row has no citation number; the sentence is what
+        // identifies it.
+        const key = (isArticleCheck
+            ? [title, row.revision_id, row.check_kind, row.claim_text]
             : [title, row.revision_id, row.citation_number, row.is_collective, row.group_id]).join('\u0000');
         if (duplicateKeys.has(key)) {
             duplicates++;
-            suspect('duplicate', index, row, isLead
-                ? `${title} lead sentence "${(row.claim_text ?? '').slice(0, 60)}" appears more than once`
+            suspect('duplicate', index, row, isArticleCheck
+                ? `${title} ${isLead ? 'lead' : 'uncited'} sentence "${(row.claim_text ?? '').slice(0, 60)}" appears more than once`
                 : `${title} #${row.citation_number} appears more than once`);
         } else duplicateKeys.add(key);
 
@@ -448,6 +482,13 @@ export function createSweepChecker({
             bump(leadOutcomes, verdict === VERDICTS.NOT_SUPPORTED ? `${verdict}/${row.reason_type || '?'}` : verdict || '(blank)');
         }
         if (row.lead_demoted === '1') leadDemoted++;
+        if (isUncited) {
+            uncitedRows++;
+            if (verdict === 'ERROR') {
+                uncitedUnanswered++;
+                uncitedErrorArticles.add(title);
+            } else bump(uncitedConfidences, row.uncited_confidence || '(blank)');
+        }
 
         // Claims. A collective row repeats its members' claim, so only solo
         // rows are counted.
@@ -472,8 +513,8 @@ export function createSweepChecker({
         }
 
         // Fetching, per citation (collective rows carry no fetch of their own,
-        // and a lead row's "source" is the article itself).
-        if (!isCollective && !isLead && row.source_url) {
+        // and a lead or uncited row's "source" is the article itself).
+        if (!isCollective && !isArticleCheck && row.source_url) {
             withUrl++;
             const host = hostOf(row.source_url) ?? '(unparseable)';
             let h = hosts.get(host);
@@ -500,12 +541,14 @@ export function createSweepChecker({
             modelRows++;
             if (row.provider) providers.add(row.provider);
             if (row.model) models.add(row.model);
-            if (row.prompt_version) (isLead ? leadPromptVersions : promptVersions).add(row.prompt_version);
+            if (row.prompt_version) {
+                (isLead ? leadPromptVersions : isUncited ? uncitedPromptVersions : promptVersions).add(row.prompt_version);
+            }
             if (row.tokens_in !== '' && row.tokens_in !== undefined) tokensIn.push(Number(row.tokens_in));
             if (row.quote_status) bump(quoteStatuses, row.quote_status);
 
             if (VERDICT_LIST.includes(verdict)) {
-                const problems = formatProblems(row);
+                const problems = isUncited ? uncitedFormatProblems(row) : formatProblems(row);
                 if (problems.length) {
                     formatRows++;
                     suspect('format', index, row, problems.join('; '));
@@ -536,8 +579,8 @@ export function createSweepChecker({
         // Severity pass: when it ran, every flagged model row gets a tier or an error.
         if (row.severity_tier || row.severity_error || row.severity_prompt_version) severitySeen = true;
         if (row.severity_tier) bump(severityTiers, row.severity_tier);
-        // Lead rows and demoted lead citations are never ranked.
-        if (modelRan && !isLead && row.lead_demoted !== '1'
+        // Lead and uncited rows, and demoted lead citations, are never ranked.
+        if (modelRan && !isArticleCheck && row.lead_demoted !== '1'
             && (verdict === VERDICTS.NOT_SUPPORTED || verdict === VERDICTS.PARTIALLY_SUPPORTED)) {
             severityExpected++;
             if (!row.severity_tier && !row.severity_error) {
@@ -619,11 +662,13 @@ export function createSweepChecker({
         if (providers.size > 1) provenanceIssues.push(`${providers.size} providers: ${[...providers].join(', ')}`);
         if (promptVersions.size > 1) provenanceIssues.push(`${promptVersions.size} prompt versions: ${[...promptVersions].join(', ')} (a --resume across a code update?)`);
         if (leadPromptVersions.size > 1) provenanceIssues.push(`${leadPromptVersions.size} lead-check prompt versions: ${[...leadPromptVersions].join(', ')}`);
+        if (uncitedPromptVersions.size > 1) provenanceIssues.push(`${uncitedPromptVersions.size} uncited-check prompt versions: ${[...uncitedPromptVersions].join(', ')}`);
         if (multiRevision.length) provenanceIssues.push(`${multiRevision.length} article(s) checked at more than one revision: ${multiRevision.slice(0, 5).join(' · ')}`);
         add('provenance', provenanceIssues.length ? LEVELS.WARN : LEVELS.PASS, 'Provenance',
             provenanceIssues.length ? provenanceIssues.join('; ')
                 : `${[...models].join(', ') || 'no model rows'} · prompt ${[...promptVersions].join(', ') || '—'}`
-                    + (leadPromptVersions.size ? ` · lead-check prompt ${[...leadPromptVersions].join(', ')}` : ''));
+                    + (leadPromptVersions.size ? ` · lead-check prompt ${[...leadPromptVersions].join(', ')}` : '')
+                    + (uncitedPromptVersions.size ? ` · uncited-check prompt ${[...uncitedPromptVersions].join(', ')}` : ''));
 
         add('identity', missingIdentity ? LEVELS.WARN : LEVELS.PASS, 'Permalinks',
             missingIdentity ? `${missingIdentity} row(s) (${pct(missingIdentity, rows)}) have no page_id/revision_id/permalink` : 'every row has a permalink');
@@ -705,6 +750,17 @@ export function createSweepChecker({
                 + `; ${leadDemoted} lead citation verdict(s) demoted`);
         }
 
+        // --- Uncited-text check ---
+        if (uncitedRows) {
+            const errorShare = share(uncitedErrorArticles.size, perArticle.size);
+            const found = uncitedRows - uncitedUnanswered;
+            const confidences = Object.entries(uncitedConfidences).sort((a, b) => b[1] - a[1]).map(([k, n]) => `${k} ${n}`).join(', ');
+            add('uncited_check', errorShare > thresholds.uncitedErrorArticleFail ? LEVELS.FAIL
+                : errorShare > thresholds.uncitedErrorArticleWarn ? LEVELS.WARN : LEVELS.PASS,
+            'Uncited-text check', `${found} finding(s)` + (confidences ? ` (${confidences})` : '')
+                + `; ${uncitedUnanswered} sentence(s) unchecked in ${uncitedErrorArticles.size} article(s) (${pct(uncitedErrorArticles.size, perArticle.size)} of articles)`);
+        }
+
         // --- Claims ---
         const longShare = share(longClaims, claimsChecked);
         add('claim_length', longShare > thresholds.longClaimFail ? LEVELS.FAIL : longShare > thresholds.longClaimWarn ? LEVELS.WARN : LEVELS.PASS,
@@ -761,6 +817,9 @@ export function createSweepChecker({
                     leadRows,
                     leadOutcomes,
                     leadDemoted,
+                    uncitedRows,
+                    uncitedConfidences,
+                    uncitedUnanswered,
                     tokensIn: { p50: at(0.5), p95: at(0.95), max: sortedTokens.at(-1) ?? null },
                     hostsWhereModelSaidUnavailable: unavailableHosts,
                     // Kept for comparing a later run of the same list against this one.

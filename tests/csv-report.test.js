@@ -50,7 +50,7 @@ test('rowsToCsv emits the header row', () => {
         'source_url,verdict,support_score,reason_type,rationale,source_quote,quote_status,fetch_status,' +
         'fetch_error,source_truncated,provider,model,prompt_version,tokens_in,tokens_out,published,' +
         'is_blp,section_title,severity_tier,severity_subclaims,severity_error,severity_prompt_version,'
-        + 'check_kind,in_lead,lead_demoted,body_section,check_id'
+        + 'check_kind,in_lead,lead_demoted,body_section,uncited_confidence,check_id'
     );
 });
 

@@ -28,6 +28,7 @@ import { verifyQuote } from '../core/quote.js';
 import { withRetry, isSourceTooLargeError } from '../core/retry.js';
 import { groupSourceEntries, shouldSkipCollective, hasUnreadSource } from '../core/groups.js';
 import { runLeadCheck, generateLeadSystemPrompt } from '../core/lead-check.js';
+import { runUncitedCheck, generateUncitedSystemPrompt, withUncitedCommentLanguage } from '../core/uncited-check.js';
 import { sourceCacheKey } from './claim-extractor.js';
 
 // Thrown when the model call fails with 401/402/403. Distinct from a
@@ -69,15 +70,16 @@ export function isAuthOrBillingError(error) {
 export function makeModelCaller({ provider, apiKey, model, workerBase }) {
     if (!provider) throw new TypeError('makeModelCaller requires a provider name');
     // `kind: 'group'` raises the output budget for a collective check
-    // (core/providers.js's groupMaxTokens()), and `kind: 'lead'` for a lead
-    // check, which answers several sentences at once; anything else keeps
-    // the provider's default.
+    // (core/providers.js's groupMaxTokens()), and `kind: 'lead'` /
+    // `'uncited'` for the lead and uncited-text checks, which each weigh
+    // several sentences in one call; anything else keeps the provider's
+    // default.
     return (systemPrompt, userContent, { kind } = {}) => callProviderAPI(provider, {
         apiKey,
         model,
         systemPrompt,
         userContent,
-        ...((kind === 'group' || kind === 'lead') && groupMaxTokens(provider) ? { maxTokens: groupMaxTokens(provider) } : {}),
+        ...(['group', 'lead', 'uncited'].includes(kind) && groupMaxTokens(provider) ? { maxTokens: groupMaxTokens(provider) } : {}),
         ...(workerBase ? { workerBase } : {}),
     });
 }
@@ -408,6 +410,55 @@ export async function verifyLead(lead, {
         callModel,
         systemPrompt,
         chunkSize,
+        retry: retryOptions,
+        pause,
+        shouldAbort: signal ? () => Boolean(signal.aborted) : undefined,
+        onChunkError: error => {
+            if (isAuthOrBillingError(error)) {
+                const status = Number((error.message || '').match(/\((\d{3})\)/)?.[1]) || null;
+                throw new ProviderAuthError(error.message, { status, cause: error });
+            }
+            return typeof onChunkError === 'function' ? onChunkError(error) : null;
+        },
+    });
+}
+
+/**
+ * The uncited-text check for one article: its uncited body sentences against
+ * the model's own knowledge (core/uncited-check.js's runUncitedCheck()), with
+ * the comment-language directive for the wiki.
+ *
+ * `uncited` is service/claim-extractor.js's `article.uncited`.
+ *
+ * Same error contract as verifyLead(): a 401/402/403 throws
+ * ProviderAuthError so the runner halts; any other failure of a call goes to
+ * `onChunkError`, which returns the reason to record that call's sentences
+ * under, or nothing to throw.
+ */
+export async function verifyUncited(uncited, {
+    callModel,
+    articleTitle,
+    chunkSize,
+    maxFindings,
+    signal,
+    retry = {},
+    articleLangCode,
+    onChunkError,
+    pause,
+} = {}) {
+    if (typeof callModel !== 'function') {
+        throw new TypeError('verifyUncited requires a callModel(systemPrompt, userContent) function');
+    }
+    const retryOptions = { ...retry };
+    if (signal && !retryOptions.shouldAbort) {
+        retryOptions.shouldAbort = () => Boolean(signal.aborted);
+    }
+    const systemPrompt = withUncitedCommentLanguage(generateUncitedSystemPrompt(), { lang: articleLangCode, articleLangCode });
+    return runUncitedCheck({ uncited, articleTitle }, {
+        callModel,
+        systemPrompt,
+        chunkSize,
+        ...(maxFindings !== undefined ? { maxFindings } : {}),
         retry: retryOptions,
         pause,
         shouldAbort: signal ? () => Boolean(signal.aborted) : undefined,
