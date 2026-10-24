@@ -100,10 +100,10 @@ const PROVIDERS = Object.freeze({
 
 const PROVIDER_IDS = Object.freeze(Object.keys(PROVIDERS));
 
-// Keyless and free at the point of use, so it is the only sensible landing
-// state for a first-time user. main.js migrates older stored selections
-// ('apertus', 'publicai') onto this.
-const DEFAULT_PROVIDER = 'huggingface';
+// Keyless Lift Wing Qwen3.8 is the shared default for the userscript, CLI,
+// and public API. main.js also migrates previously stored HuggingFace defaults
+// once, so existing users stop consuming exhausted shared HF credits.
+const DEFAULT_PROVIDER = 'liftwing';
 
 function getProvider(id) {
     return PROVIDERS[id] ?? null;
@@ -4806,6 +4806,17 @@ function useToolforgeSourceFetcher() {
             if (storedProvider === 'apertus' || storedProvider === 'publicai') {
                 storedProvider = DEFAULT_PROVIDER;
                 localStorage.setItem('source_verifier_provider', DEFAULT_PROVIDER);
+            }
+            // Older installs persisted HuggingFace even though it was the
+            // previous default. Migrate them once; don't override a user's
+            // explicit HuggingFace selection on subsequent visits.
+            const liftwingMigrationKey = 'source_verifier_liftwing_default_v1';
+            if (localStorage.getItem(liftwingMigrationKey) !== 'true') {
+                if (storedProvider === 'huggingface') {
+                    storedProvider = DEFAULT_PROVIDER;
+                    localStorage.setItem('source_verifier_provider', storedProvider);
+                }
+                localStorage.setItem(liftwingMigrationKey, 'true');
             }
             // 'liftwing-qwen38' was folded into 'liftwing' when it moved to
             // Qwen3.8, so keep that selection on the same model.
