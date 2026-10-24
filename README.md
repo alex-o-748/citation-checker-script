@@ -9,7 +9,8 @@ Inspired by [User:Polygnotus/Scripts/AI_Source_Verification.js](https://en.wikip
 - Click any `[N]` citation in an article to verify the associated claim
 - Batch-verify every citation in an article and generate a wiki-markup report of failed citations
 - Multiple LLM providers with a unified interface:
-  - **HuggingFace** (default, free, no API key — gpt-oss-20b by default; set an HF API key to use any HF-hosted model)
+  - **Lift Wing** (default, free, no API key — Qwen3.8-27B via Wikimedia Toolforge)
+  - **HuggingFace** (optional, currently not the default; set an HF API key to use HF-hosted models)
   - **PublicAI** (free, no API key — Qwen-SEA-LION / OLMo / Apertus)
   - **Claude** (Anthropic)
   - **Gemini** (Google)
@@ -27,7 +28,7 @@ To install, add the following line to your [`common.js`](https://en.wikipedia.or
 importScript('User:Alaexis/AI_Source_Verification.js');
 ```
 
-API keys for paid providers are stored in `localStorage` and configured from the sidebar UI. HuggingFace (the default) and PublicAI both work out of the box with no key.
+API keys for paid providers are stored in `localStorage` and configured from the sidebar UI. Lift Wing (the default) works out of the box with no key. Existing saved HuggingFace selections are migrated to Lift Wing once; users can reselect HuggingFace explicitly.
 
 ## Usage
 
@@ -68,7 +69,8 @@ Run `npx ccs --help` for the full option and exit-code table.
 
 | Provider | Flag value | Env var required |
 | --- | --- | --- |
-| HuggingFace (default) | `--provider huggingface` | none (routed via the worker proxy; `HF_API_KEY` opts into direct calls) |
+| Lift Wing (default) | `--provider liftwing` | none (Qwen3.8 through Toolforge) |
+| HuggingFace | `--provider huggingface` | none (routed via the worker proxy; `HF_API_KEY` opts into direct calls) |
 | PublicAI | `--provider publicai` | none (routed via the worker proxy) |
 | Claude | `--provider claude` | `CLAUDE_API_KEY` |
 | Gemini | `--provider gemini` | `GEMINI_API_KEY` |
