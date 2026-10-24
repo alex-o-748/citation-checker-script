@@ -91,13 +91,6 @@ export const PROVIDERS = {
         type: 'publicai'
     },
     // Wikimedia Lift Wing models
-    'liftwing-qwen3.6-27b': {
-        name: 'Qwen3.6-27B (Lift Wing)',
-        model: 'llm-qwen36-27b',
-        endpoint: 'https://llm-router.toolforge.org/liftwing',
-        requiresKey: false,
-        type: 'liftwing'
-    },
     'liftwing-qwen3.8-27b': {
         name: 'Qwen3.8-27B (Lift Wing)',
         model: 'llm-qwen38-27b',

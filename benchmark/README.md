@@ -516,13 +516,15 @@ mixed with predefined provider keys in the same `--providers` list
 
 One new model has been added for benchmarking:
 
-1. **Qwen3.6-27B on LiftWing** (`liftwing-qwen3.6-27b`) - A Wikimedia Lift Wing hosted model
+1. **Qwen3.8-27B on LiftWing** (`liftwing-qwen3.8-27b`) - A Wikimedia Lift Wing hosted model.
+   It replaced Qwen3.6-27B (`liftwing-qwen3.6-27b`), which Lift Wing is retiring and
+   tf-llm-router no longer allows; that provider's past results stay in the results files.
 
 To benchmark this new model:
 
 ```bash
 npm run benchmark:new-models    # Run the new model
-npm run benchmark:liftwing      # Run only Qwen3.6-27B on LiftWing
+npm run benchmark:liftwing      # Run only Qwen3.8-27B on LiftWing
 ```
 (`--providers=claude-sonnet-4-5,hf:mistralai/Mistral-Small-24B-Instruct-2501`).
 
