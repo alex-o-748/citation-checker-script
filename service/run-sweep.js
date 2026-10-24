@@ -1035,6 +1035,8 @@ export async function runSweep(opts, {
                 maxFindings: uncitedMaxFindings,
                 retry: { ...retryOptions, onAttemptFailed },
                 articleLangCode,
+                // --delay-ms applies between its calls, as for the lead check.
+                pause: () => sleep(opts.delayMs),
                 onChunkError: error => {
                     if (!countTransientFailure(error)) return null;
                     const perCall = isPerCallModelFailure(error);
