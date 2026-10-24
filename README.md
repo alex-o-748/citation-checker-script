@@ -9,7 +9,8 @@ Inspired by [User:Polygnotus/Scripts/AI_Source_Verification.js](https://en.wikip
 - Click any `[N]` citation in an article to verify the associated claim
 - Batch-verify every citation in an article and generate a wiki-markup report of failed citations
 - Multiple LLM providers with a unified interface:
-  - **HuggingFace** (default, free, no API key — gpt-oss-20b by default; set an HF API key to use any HF-hosted model)
+  - **Lift Wing** (default, free, no API key — Qwen3.8-27B hosted by the Wikimedia Foundation)
+  - **HuggingFace** (free, no API key — gpt-oss-20b by default; set an HF API key to use any HF-hosted model)
   - **PublicAI** (free, no API key — Qwen-SEA-LION / OLMo / Apertus)
   - **Claude** (Anthropic)
   - **Gemini** (Google)
@@ -27,7 +28,7 @@ To install, add the following line to your [`common.js`](https://en.wikipedia.or
 importScript('User:Alaexis/AI_Source_Verification.js');
 ```
 
-API keys for paid providers are stored in `localStorage` and configured from the sidebar UI. HuggingFace (the default) and PublicAI both work out of the box with no key.
+API keys for paid providers are stored in `localStorage` and configured from the sidebar UI. Lift Wing (the default), HuggingFace and PublicAI all work out of the box with no key.
 
 ## Usage
 

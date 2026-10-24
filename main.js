@@ -102,8 +102,10 @@ const PROVIDER_IDS = Object.freeze(Object.keys(PROVIDERS));
 
 // Keyless and free at the point of use, so it is the only sensible landing
 // state for a first-time user. main.js migrates older stored selections
-// ('apertus', 'publicai') onto this.
-const DEFAULT_PROVIDER = 'huggingface';
+// ('apertus', 'publicai') onto this. Moved from 'huggingface' to Lift Wing
+// (Qwen3.8) on 2026-10-24, when the proxy's HF credits ran out; main.js also
+// moves keyless HuggingFace users over, once.
+const DEFAULT_PROVIDER = 'liftwing';
 
 function getProvider(id) {
     return PROVIDERS[id] ?? null;
@@ -4812,6 +4814,17 @@ function useToolforgeSourceFetcher() {
             if (storedProvider === 'liftwing-qwen38') {
                 storedProvider = 'liftwing';
                 localStorage.setItem('source_verifier_provider', storedProvider);
+            }
+            // The proxy's HuggingFace credits ran out (2026-10-24), so move
+            // keyless HF users to the default. Once only, so anyone who picks
+            // HF again afterwards keeps it; users with their own HF key call
+            // HF directly and are left alone.
+            if (!localStorage.getItem('verifier_hf_migrated')) {
+                if (storedProvider === 'huggingface' && !localStorage.getItem('hf_api_key')) {
+                    storedProvider = DEFAULT_PROVIDER;
+                    localStorage.setItem('source_verifier_provider', storedProvider);
+                }
+                localStorage.setItem('verifier_hf_migrated', '1');
             }
             this.currentProvider = storedProvider || DEFAULT_PROVIDER;
             // 'paragraph' (default) is the full "between citations" span, which

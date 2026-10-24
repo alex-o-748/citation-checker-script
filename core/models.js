@@ -93,8 +93,10 @@ export const PROVIDER_IDS = Object.freeze(Object.keys(PROVIDERS));
 
 // Keyless and free at the point of use, so it is the only sensible landing
 // state for a first-time user. main.js migrates older stored selections
-// ('apertus', 'publicai') onto this.
-export const DEFAULT_PROVIDER = 'huggingface';
+// ('apertus', 'publicai') onto this. Moved from 'huggingface' to Lift Wing
+// (Qwen3.8) on 2026-10-24, when the proxy's HF credits ran out; main.js also
+// moves keyless HuggingFace users over, once.
+export const DEFAULT_PROVIDER = 'liftwing';
 
 export function getProvider(id) {
     return PROVIDERS[id] ?? null;
