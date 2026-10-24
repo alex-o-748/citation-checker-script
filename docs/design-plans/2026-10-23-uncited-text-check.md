@@ -1,6 +1,6 @@
 # Checking uncited text against the model's knowledge
 
-> **Status (2026-10-23):** In progress on `claude/article-accuracy-model-checks-6babki`, stacked on the lead-check branch (`claude/clever-darwin-9yn9ef`, [#387](https://github.com/alex-o-748/citation-checker-script/pull/387)). Stages 1–3 below are built: extraction, the check, and the batch pipeline. The userscript (stage 4) and the labeled evaluation set are not. The numbers come from a smoke test on 7 enwiki articles with 9 injected errors (§ What the smoke test found); they show the shape works and which model to use, and nothing about accuracy.
+> **Status (2026-10-24):** In progress on `claude/article-accuracy-model-checks-6babki`, stacked on the lead-check branch (`claude/clever-darwin-9yn9ef`, [#387](https://github.com/alex-o-748/citation-checker-script/pull/387)). Built: extraction, the check, the batch pipeline, and the userscript behind a setting that is **off by default** and runs on its own model (§ The userscript). The labeled evaluation set is not built. The numbers come from a smoke test on 7 enwiki articles with 9 injected errors (§ What the smoke test found); they show the shape works and which model to use, and nothing about accuracy.
 
 ## The problem
 
@@ -169,6 +169,53 @@ more than 5% of articles had a sentence left unchecked, and fails above 20%.
 That is a share of all articles, because the CSV can't tell a checked article
 with no findings from an unchecked one.
 
+## The userscript
+
+A setting, **off by default** (`verifier_uncited_check`): "Check uncited text
+against general knowledge". It stays off because the evidence is the model's
+memory rather than a source, and it is unvalidated. Under it is a choice of
+model (`verifier_uncited_model`), disabled while the setting is off:
+
+- **Lift Wing (recommended)**, the default: `UNCITED_DEFAULT_PROVIDER`. It is
+  keyless like the default provider, and it did far better in the smoke test.
+- **Same as citation checks**: the provider the sidebar is set to.
+
+The model is a separate setting, not the sidebar's provider, because that
+provider's default (gpt-oss-20b) is the one this check should not run on.
+
+With it on:
+
+- **Verify All ends with an uncited-text phase**, after the lead check, on the
+  chosen model at that model's pace (3 s between Lift Wing calls). The
+  confirmation dialog says it will run and on which model.
+- **"Check uncited text"** runs it alone, as "Check the lead against the
+  body" does for the lead.
+- **The report gets an "Uncited text" section** after "Lead vs body". It shows
+  a status line naming the model, the cap, stop and unchecked notes, and one
+  card per finding: "No citation, may be wrong", the section, the sentence with
+  the doubted words marked, and the model's comment. A line above the cards
+  says the model works from general knowledge, not a source, and to find a
+  reliable source before changing anything. Clicking a card highlights the
+  paragraph in the article.
+- **Words are marked only where they appear in the sentence verbatim.** An
+  excerpt found only after normalization, or not found, marks nothing, so
+  everything shown is the article's text.
+- **Not counted, not exported, not logged.** The summary pills count citation
+  verdicts only. The wikitext and plain-text reports leave the section out:
+  unvalidated doubts don't belong on a talk page. The verification log has no
+  field for a sentence checked against no source (the lead check has the same
+  gap).
+
+Tested in Chromium with real OOUI (2026-10-24):
+- the settings: off by default, the dropdown disabled until the setting is on,
+  both persisted, the button appearing;
+- "Check uncited text" on Ada Lovelace against live Qwen3.8;
+- Verify All on a small article with stubbed calls, which ran citations, then
+  the lead check, then the uncited check on Lift Wing, while the citations ran
+  on gpt-oss.
+
+`tests/uncited_ui.test.js` pins the shipped methods.
+
 ## What the smoke test found
 
 Throwaway harness, 2026-10-23: 7 enwiki articles, 107 uncited sentences, with
@@ -211,16 +258,24 @@ What that says:
   stopped a Qwen comment that argued its way to "I will report no issues" and
   reported the issue anyway. The flag stayed (still wrong), but the comment now
   states a claim a reviewer can judge.
-- **Not tried:** `llm-qwen38-27b`, the `liftwing` provider's model since
-  2026-10-21, which the deployed router still rejects ("Model not allowed");
-  DeepSeek-V3.2 through tf-llm-router's `/hf` (its HF token was rejected, 401);
-  GLM and DeepSeek through the Worker (not allowed). A larger open model is the
-  obvious comparison once one is reachable.
+- **Not tried in the smoke test:** `llm-qwen38-27b`, the `liftwing`
+  provider's model since 2026-10-21, which the deployed router rejected on
+  2026-10-23 ("Model not allowed") and accepts since 2026-10-24; DeepSeek-V3.2
+  through tf-llm-router's `/hf` (its HF token was rejected, 401); GLM and
+  DeepSeek through the Worker (not allowed). A larger open model is the obvious
+  comparison once one is reachable.
+- **Qwen3.8, two browser runs on Ada Lovelace (2026-10-24, 12 uncited
+  sentences).** The first, with no error in the checked text, flagged one
+  sentence: Menabrea "was never Prime Minister of Italy". He was, from 1867
+  to 1869. That is the same confident denial gpt-oss made. The second, with
+  Turin → Oxford injected, caught the injection with a correct comment and
+  flagged nothing else. Two runs prove nothing, but they point the same way as
+  the smoke test: the check catches well-known errors, and its false flags are
+  confident and vary between runs.
 
 **Consequences:** the batch runs this check on Lift Wing, its default
-provider. The userscript doesn't ship it on gpt-oss-20b: before stage 5 either
-the check gets its own default provider, or the evaluation set shows gpt-oss
-is acceptable after all.
+provider, and so does the userscript unless the editor chooses otherwise
+(`UNCITED_DEFAULT_PROVIDER`). It is never silently on gpt-oss-20b.
 
 ## Code
 
@@ -236,6 +291,8 @@ is acceptable after all.
 | `service/csv-report.js` | `uncited_confidence` |
 | `service/sweep-checks.js` | The handling above, `uncitedFormatProblems()`, the `uncited_check` run check |
 | `service/run-extract.js` | An uncited line in the funnel, so a past batch can be measured with no model calls |
+| `main.js` | The setting, `articleUncited()`, `runReportUncitedCheck()`, the report section, "Check uncited text", and strings in all four tables (§ The userscript) |
+| `scripts/sync-main.js` | `uncited.js` and `uncited-check.js` in `CORE_ORDER` |
 
 Both core modules are browser-safe and prefix their top-level names, ready for
 `scripts/sync-main.js`'s `CORE_ORDER` when the userscript side lands.
@@ -268,10 +325,9 @@ never merged into `dataset.json`.
    `run-extract.js` over a past batch for real sentence counts, then a small
    sweep with `--uncited-check` on Lift Wing, and hand-check every finding.
 4. **The evaluation set** above, and a model comparison on it.
-5. **Userscript:** a "Check uncited text" action and a Verify All phase, with
-   cards worded "Uncited, and may be wrong", the action "find a source", and
-   the doubted words highlighted in the article. Not before 4, and not on the
-   current default provider (§ What the smoke test found).
+5. **Userscript**, behind a setting that is off by default and on its own
+   model (§ The userscript). Done, ahead of 4, because it is opt-in. Turning
+   it on by default, exporting its findings, or logging them waits on 4.
 
 ## Alternatives considered
 
