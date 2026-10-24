@@ -19,8 +19,9 @@
 //   never offered as an edit.
 //
 // Its own prompt with its own hash-pinned version, like the lead and severity
-// passes. Shared by the batch (service/verifier.js's verifyUncited()) and,
-// when it lands, the userscript; runUncitedCheck() is the one sequence.
+// passes. Shared by the batch (service/verifier.js's verifyUncited()) and
+// the userscript (inlined into main.js, so top-level names carry an UNCITED_
+// / uncited prefix); runUncitedCheck() is the one sequence.
 // Design: docs/design-plans/2026-10-23-uncited-text-check.md.
 
 import { withRetry, isSourceTooLargeError, isOutputBudgetError } from './retry.js';
@@ -65,6 +66,14 @@ export const UNCITED_CHUNK_SIZE_DEFAULT = 12;
 export function uncitedChunkSize(provider) {
     return UNCITED_CHUNK_SIZES[provider] ?? UNCITED_CHUNK_SIZE_DEFAULT;
 }
+
+// The provider a front end runs this check on unless the editor picks the
+// one their citation checks use. Not the keyless default provider
+// (core/models.js's DEFAULT_PROVIDER, gpt-oss-20b): on the 2026-10-23 smoke
+// test it flagged 14 of 98 correct sentences against Lift Wing Qwen's 5, and
+// confidently denied true facts. Keyless too, so nothing is lost by it.
+// docs/design-plans/2026-10-23-uncited-text-check.md.
+export const UNCITED_DEFAULT_PROVIDER = 'liftwing';
 
 // The paragraph text shown before a chunk's first statement, at most.
 export const UNCITED_CONTEXT_MAX_CHARS = 1500;
@@ -129,7 +138,7 @@ export function withUncitedCommentLanguage(prompt, { lang, articleLangCode } = {
     return `${prompt}\n\nLANGUAGE: ${instruction} The "excerpt" field is an exception: copy it from the statement exactly, never translated. Keep the "confidence" values in English (high, medium).`;
 }
 
-function contextBefore(paragraph, start) {
+function uncitedContextBefore(paragraph, start) {
     const text = paragraph.text.slice(0, start).trim();
     if (text.length <= UNCITED_CONTEXT_MAX_CHARS) return text;
     return `…${text.slice(text.length - UNCITED_CONTEXT_MAX_CHARS).trimStart()}`;
@@ -158,7 +167,7 @@ export function generateUncitedUserPrompt({ articleTitle, opening, paragraphs, s
                 section = title;
                 if (title) lines.push(`Section: ${title}`);
             }
-            const context = paragraph ? contextBefore(paragraph, s.start ?? 0) : '';
+            const context = paragraph ? uncitedContextBefore(paragraph, s.start ?? 0) : '';
             if (context) lines.push('Earlier in the paragraph, for context:', context);
             lines.push('Statements to check:');
         }
@@ -167,7 +176,7 @@ export function generateUncitedUserPrompt({ articleTitle, opening, paragraphs, s
     return lines.join('\n');
 }
 
-function extractJsonObject(text) {
+function uncitedExtractJson(text) {
     const trimmed = (text || '').trim();
     const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
     const body = fenced ? fenced[1].trim() : trimmed;
@@ -196,7 +205,7 @@ function extractJsonObject(text) {
 export function parseUncitedCheckResult(text) {
     let parsed;
     try {
-        parsed = JSON.parse(extractJsonObject(text));
+        parsed = JSON.parse(uncitedExtractJson(text));
     } catch {
         return { ok: false, error: 'parse_error' };
     }
@@ -241,7 +250,7 @@ export function locateExcerpt(sentence, excerpt) {
     return QUOTE_STATUSES.NOT_FOUND;
 }
 
-function excerptFound(status) {
+function uncitedExcerptFound(status) {
     return status === QUOTE_STATUSES.EXACT || status === QUOTE_STATUSES.NORMALIZED;
 }
 
@@ -249,16 +258,16 @@ function excerptFound(status) {
 // statement and is in exactly one other statement of the call: a model that
 // numbered off by one still names the words. An issue whose id is not in the
 // call at all, and whose excerpt doesn't settle it, is dropped (null).
-function resolveIssue(issue, statements) {
+function uncitedResolveIssue(issue, statements) {
     const byId = statements.find(s => s.index + 1 === issue.id) ?? null;
     const status = byId ? locateExcerpt(byId.text, issue.excerpt) : QUOTE_STATUSES.NOT_FOUND;
-    if (byId && (excerptFound(status) || status === QUOTE_STATUSES.EMPTY)) {
+    if (byId && (uncitedExcerptFound(status) || status === QUOTE_STATUSES.EMPTY)) {
         return { statement: byId, excerptStatus: status };
     }
     if (issue.excerpt) {
         const matches = statements
             .map(s => ({ s, status: locateExcerpt(s.text, issue.excerpt) }))
-            .filter(m => excerptFound(m.status));
+            .filter(m => uncitedExcerptFound(m.status));
         if (matches.length === 1) return { statement: matches[0].s, excerptStatus: matches[0].status };
     }
     return byId ? { statement: byId, excerptStatus: status } : null;
@@ -288,7 +297,11 @@ export function rankUncitedFindings(findings) {
  * @param {number} [deps.chunkSize]
  * @param {number} [deps.maxFindings] - Findings kept, best first.
  * @param {object} [deps.retry] - core/retry.js options.
- * @param {Function} [deps.onChunk] - (sentences answered so far, sentences total), after each call.
+ * @param {Function} [deps.onChunk] - (sentences done so far, answered or not;
+ *   sentences total), after each call.
+ * @param {Function} [deps.pause] - Awaited between two calls (a rate-limit delay).
+ * @param {Function} [deps.shouldAbort] - Checked before each call; true stops
+ *   the check, returning what was found so far.
  * @param {Function} [deps.onChunkError] - (error) => an error code to record
  *   that call's sentences under, then carry on; or nothing, to throw. It may
  *   throw itself (an auth error that must halt a run).
@@ -309,7 +322,7 @@ export function rankUncitedFindings(findings) {
  */
 export async function runUncitedCheck({ uncited, articleTitle } = {}, {
     callModel, systemPrompt = generateUncitedSystemPrompt(), chunkSize = UNCITED_CHUNK_SIZE_DEFAULT,
-    maxFindings = UNCITED_MAX_FINDINGS, retry = {}, onChunk, onChunkError,
+    maxFindings = UNCITED_MAX_FINDINGS, retry = {}, onChunk, onChunkError, pause, shouldAbort,
 } = {}) {
     if (typeof callModel !== 'function') {
         throw new TypeError('runUncitedCheck requires a callModel(systemPrompt, userContent) function');
@@ -326,6 +339,8 @@ export async function runUncitedCheck({ uncited, articleTitle } = {}, {
     const found = [];
 
     while (queue.length) {
+        if (typeof shouldAbort === 'function' && shouldAbort()) break;
+        if (result.calls > 0 && typeof pause === 'function') await pause();
         const chunk = queue.shift();
         const userContent = generateUncitedUserPrompt({ articleTitle, opening: uncited.opening, paragraphs, statements: chunk });
         let response = null;
@@ -362,7 +377,7 @@ export async function runUncitedCheck({ uncited, articleTitle } = {}, {
             const seen = new Set();
             const issues = [];
             for (const issue of parsed.issues) {
-                const resolved = resolveIssue(issue, chunk);
+                const resolved = uncitedResolveIssue(issue, chunk);
                 if (!resolved || seen.has(resolved.statement.index)) continue;
                 seen.add(resolved.statement.index);
                 issues.push({ issue, ...resolved });
@@ -388,7 +403,7 @@ export async function runUncitedCheck({ uncited, articleTitle } = {}, {
                 });
             });
         }
-        if (typeof onChunk === 'function') onChunk(result.checked, sentences.length);
+        if (typeof onChunk === 'function') onChunk(result.checked + result.unchecked.length, sentences.length);
     }
 
     const ranked = rankUncitedFindings(found);

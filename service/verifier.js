@@ -444,6 +444,7 @@ export async function verifyUncited(uncited, {
     retry = {},
     articleLangCode,
     onChunkError,
+    pause,
 } = {}) {
     if (typeof callModel !== 'function') {
         throw new TypeError('verifyUncited requires a callModel(systemPrompt, userContent) function');
@@ -459,6 +460,8 @@ export async function verifyUncited(uncited, {
         chunkSize,
         ...(maxFindings !== undefined ? { maxFindings } : {}),
         retry: retryOptions,
+        pause,
+        shouldAbort: signal ? () => Boolean(signal.aborted) : undefined,
         onChunkError: error => {
             if (isAuthOrBillingError(error)) {
                 const status = Number((error.message || '').match(/\((\d{3})\)/)?.[1]) || null;

@@ -295,3 +295,20 @@ test('the language directive keeps the excerpt verbatim and English untouched', 
     const de = withUncitedCommentLanguage(base, { lang: 'de', articleLangCode: 'de' });
     assert.match(de, /same language as the statements, not in English/);
 });
+
+test('runUncitedCheck: pause runs between calls, never before the first; shouldAbort stops before the next', async () => {
+    const events = [];
+    const callModel = async () => { events.push('call'); return { text: '{"issues": []}', usage: { input: 1, output: 1 } }; };
+    await runUncitedCheck({ uncited }, { callModel, chunkSize: 2, pause: async () => { events.push('pause'); } });
+    assert.deepEqual(events, ['call', 'pause', 'call', 'pause', 'call']);
+
+    let calls = 0;
+    const run = await runUncitedCheck({ uncited }, {
+        callModel: async () => { calls++; return { text: '{"issues": [{"id": 1, "excerpt": "", "comments": "x", "confidence": "high"}]}', usage: { input: 1, output: 1 } }; },
+        chunkSize: 2,
+        shouldAbort: () => calls >= 1,
+    });
+    assert.equal(calls, 1);
+    assert.equal(run.checked, 2, 'what was answered before the stop is kept');
+    assert.deepEqual(run.findings.map(f => f.index), [0]);
+});

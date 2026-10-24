@@ -26,9 +26,9 @@
 // has no body and so no lead check, and there its paragraphs are read here
 // instead, so that no prose is left to nothing.
 //
-// Nothing here is Node-specific, so this can join scripts/sync-main.js's
-// CORE_ORDER when the userscript side lands; top-level names carry an
-// UNCITED_ / uncited prefix for that shared scope.
+// Nothing here is Node-specific: it is inlined into main.js
+// (scripts/sync-main.js), so top-level names carry an UNCITED_ / uncited
+// prefix for that shared scope.
 
 import { MAINTENANCE_MARKER_RE, MIN_CLAIM_LENGTH, splitSentences } from './claim.js';
 import { LEAD_TEXT_NOISE, bodyParagraphs, leadParagraphs } from './lead.js';
