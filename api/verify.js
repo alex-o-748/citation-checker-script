@@ -6,16 +6,13 @@
 // verification behaviour beside core/pipeline.js.
 
 import { verifyCitation, VERIFY_STAGES } from '../core/pipeline.js';
-import { modelFor } from '../core/models.js';
+import { DEFAULT_PROVIDER, modelFor } from '../core/models.js';
 import { fetchSourceContent } from '../core/worker.js';
 
-// Every request goes to HuggingFace's gpt-oss-20b through the tf-llm-router
-// Toolforge tool (its /hf route, as `ccs verify --live-llm-router` uses),
-// never through the personal Cloudflare worker. The same model as the
-// userscript and CLI default, and on 2026-09-27 ~1.5s per text-only check
-// against ~24s for Lift Wing on either route; it also scores higher on the
-// benchmark (65% exact vs 50% for llm-qwen36-27b, 181 rows).
-export const API_PROVIDER = 'huggingface';
+// All public API requests use the shared Lift Wing Qwen3.8 default.
+// The Toolforge router's /liftwing route handles inference without
+// HuggingFace credits or a user-supplied key.
+export const API_PROVIDER = DEFAULT_PROVIDER;
 const LLM_ROUTER_BASE = 'https://llm-router.toolforge.org';
 
 // source_url fetches go to the tf-source-fetcher Toolforge tool, as the batch
