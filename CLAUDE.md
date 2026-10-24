@@ -91,6 +91,7 @@ docs/                            # Reference docs + design plans (see docs/READM
 | `assessSeverity()` / `showSingleSeverity()` / `rankReportBySeverity()` | Opt-in severity pass (`core/severity.js`'s `runSeverityPass()`) for a flagged verdict: in the single-check view, and as a second phase of Verify All (see "Severity ranking" below) |
 | `applyReportSort()` / `renderReportSeverity()` | Report order: article order, or "Most serious first" by `compareSeverity()` on a severity-ranked report. Moves whole cards and group blocks; never hides one |
 | `articleLead()` / `runReportLeadCheck()` / `renderReportLead()` | The lead check (`core/lead-check.js`): the last phase of Verify All, or all of "Check the lead against the body"; the report's lead section (see "The lead check" below) |
+| `articleUncited()` / `runReportUncitedCheck()` / `renderReportUncited()` | The uncited-text check (`core/uncited-check.js`), opt-in: a phase of Verify All after the lead's, or all of "Check uncited text", on its own model (`uncitedProvider()`); the report's "Uncited text" section (see "Uncited text is checked" below) |
 | `getCountedReportUnits()` | `getReportUnits()` minus set-aside lead citations: what the summary, the severity ranking and the exports count |
 
 ## Benchmark Suite
@@ -509,7 +510,7 @@ Rules to keep if you touch it:
 Design, prototype numbers and the alternatives rejected:
 `docs/design-plans/2026-10-22-lead-checks.md`.
 
-### Uncited text is checked against the model's knowledge (`run-sweep.js --uncited-check`, read before touching `core/uncited*.js`)
+### Uncited text is checked against the model's knowledge (`run-sweep.js --uncited-check`, userscript setting; read before touching `core/uncited*.js`)
 
 Every prose sentence is checked by exactly one thing: its citation's source if
 a citation follows it in its paragraph, the body if it is in the lead (the lead
@@ -531,9 +532,17 @@ check, `core/lead-check.js`), and otherwise the model's general knowledge
 On the 2026-10-23 smoke test (9 injected errors), Qwen3.6-27B caught 8 with 5
 false flags, while gpt-oss-20b (the userscript's default) caught 7 with 14.
 Every finding from both models was `high`, so confidence doesn't rank anything
-yet. The batch runs it on Lift Wing, and the userscript side is unbuilt. Design,
-gaps and the evaluation plan:
-`docs/design-plans/2026-10-23-uncited-text-check.md`.
+yet.
+
+**In the userscript it is off by default** (`verifier_uncited_check`), with its
+own model setting (`verifier_uncited_model`): Lift Wing
+(`UNCITED_DEFAULT_PROVIDER`) unless the editor picks "Same as citation
+checks". It is a separate setting from the sidebar provider because that
+provider's default is gpt-oss-20b, the model this check should not run on.
+Findings are a report section of their own. They are not counted in the
+summary, not in the wikitext/plain-text exports, and not logged. Keep them out
+of all three until the evaluation set exists. Design, gaps and the evaluation
+plan: `docs/design-plans/2026-10-23-uncited-text-check.md`.
 
 ## Development Workflow
 
