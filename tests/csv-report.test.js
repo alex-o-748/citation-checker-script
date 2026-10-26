@@ -49,7 +49,8 @@ test('rowsToCsv emits the header row', () => {
         'page_title,page_id,revision_id,permalink,citation_number,ref_name,is_collective,group_id,claim_text,' +
         'source_url,verdict,support_score,reason_type,rationale,source_quote,quote_status,fetch_status,' +
         'fetch_error,source_truncated,provider,model,prompt_version,tokens_in,tokens_out,published,' +
-        'is_blp,section_title,severity_tier,severity_subclaims,severity_error,severity_prompt_version,check_id'
+        'is_blp,section_title,severity_tier,severity_subclaims,severity_error,severity_prompt_version,'
+        + 'check_kind,in_lead,lead_demoted,body_section,check_id'
     );
 });
 
@@ -302,4 +303,41 @@ test('cleaner handles quoted newlines and derives a non-destructive output path'
     assert.equal(parseCsv(cleanCsvText(csv))[1][8], 'line one\nline two, "quoted"');
     assert.equal(cleanCsvPath('reports/run.csv'), 'reports/run-clean.csv');
     assert.equal(cleanCsvPath('findings'), 'findings-clean.csv');
+});
+
+test('a demoted lead citation is left out of the clean CSV; lead rows follow the truncation rule', () => {
+    const csv = rowsToCsv([
+        { ...baseFinding(), citationNumber: '1', inLead: true, leadDemoted: true, verdict: 'PARTIALLY SUPPORTED' },
+        { ...baseFinding(), citationNumber: '2', inLead: true, verdict: 'NOT SUPPORTED', reasonType: 'contradiction' },
+        { ...baseFinding(), checkKind: 'lead_body', citationNumber: null, claimText: 'Covered.', verdict: 'SUPPORTED' },
+        { ...baseFinding(), checkKind: 'lead_body', citationNumber: null, claimText: 'Not in body.', verdict: 'NOT SUPPORTED', reasonType: 'omission' },
+        { ...baseFinding(), checkKind: 'lead_body', citationNumber: null, claimText: 'Cut body.', verdict: 'NOT SUPPORTED', reasonType: 'omission', sourceTruncated: true },
+    ]);
+    const records = parseCsv(cleanCsvText(csv));
+    const at = name => records[0].indexOf(name);
+    assert.deepEqual(records.slice(1).map(row => [row[at('check_kind')], row[at('citation_number')] || row[at('claim_text')]]), [
+        ['citation', '2'],
+        ['lead_body', 'Covered.'],
+        ['lead_body', 'Not in body.'],
+    ]);
+});
+
+test('the lead columns: check_kind defaults to citation, flags are 0/1, body_section is carried', () => {
+    const records = parseCsv(rowsToCsv([
+        baseFinding(),
+        { ...baseFinding(), checkKind: 'lead_body', inLead: true, bodySection: 'Early life' },
+    ]));
+    const at = name => records[0].indexOf(name);
+    assert.deepEqual(records.slice(1).map(row => [row[at('check_kind')], row[at('in_lead')], row[at('lead_demoted')], row[at('body_section')]]), [
+        ['citation', '0', '0', ''],
+        ['lead_body', '1', '0', 'Early life'],
+    ]);
+});
+
+test('cleaning a CSV from before the lead columns still works', () => {
+    const csv = rowsToCsv([{ ...baseFinding(), citationNumber: '1' }]);
+    const [header, ...rest] = parseCsv(csv);
+    const keep = header.map((name, i) => (['check_kind', 'in_lead', 'lead_demoted', 'body_section'].includes(name) ? -1 : i)).filter(i => i >= 0);
+    const old = [header, ...rest].map(row => keep.map(i => row[i]).join(',')).join('\n') + '\n';
+    assert.equal(parseCsv(cleanCsvText(old)).length, 2);
 });

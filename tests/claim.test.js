@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
-import { extractClaimText, getCitationGroup, hasTextBetween, lastSentence, MAINTENANCE_MARKER_RE, isClaimTooShort, MIN_CLAIM_LENGTH } from '../core/claim.js';
+import { extractClaimText, getCitationGroup, hasTextBetween, lastSentence, splitSentences, MAINTENANCE_MARKER_RE, isClaimTooShort, MIN_CLAIM_LENGTH } from '../core/claim.js';
 
 function mkDoc(html) {
   return new JSDOM(`<!DOCTYPE html><body>${html}</body>`).window.document;
@@ -312,6 +312,51 @@ test('lastSentence splits before non-ASCII capitals and «» quotes, not lowerca
   assert.equal(lastSentence('Il pleut. «Oui», dit-il.'), '«Oui», dit-il.');
   assert.equal(lastSentence('Έβρεχε. Ήρθε αργά.'), 'Ήρθε αργά.');
   assert.equal(lastSentence('т. е. одно предложение'), 'т. е. одно предложение');
+});
+
+test('splitSentences splits real boundaries, including after a closing quote', () => {
+  assert.deepEqual(splitSentences('Paris is the capital of France. It is on the Seine.'),
+    ['Paris is the capital of France.', 'It is on the Seine.']);
+  assert.deepEqual(splitSentences('He said "yes." Then he left.'), ['He said "yes."', 'Then he left.']);
+  assert.deepEqual(splitSentences('Born in 1990 (b. 1990). Later moved.'), ['Born in 1990 (b. 1990).', 'Later moved.']);
+  assert.deepEqual(splitSentences('He finished 1st. The next race was harder.'), ['He finished 1st.', 'The next race was harder.']);
+  assert.deepEqual(splitSentences('It warmed by 1.5 °C. Policy followed.'), ['It warmed by 1.5 °C.', 'Policy followed.']);
+  assert.deepEqual(splitSentences('They weighed the trade-offs. The choice was hard.'),
+    ['They weighed the trade-offs.', 'The choice was hard.']);
+  assert.deepEqual(splitSentences(''), []);
+  assert.deepEqual(splitSentences('  One sentence  '), ['One sentence']);
+});
+
+// Each of these used to be cut, leaving a claim without its subject or
+// speaker. Real cases from enwiki articles measured against sentencex.
+test('splitSentences does not split at initials, abbreviations or dotted acronyms', () => {
+  for (const text of [
+    'His uncle founded Elektrotechnische Fabrik J. Einstein & Cie, a company that made dynamos.',
+    'It peaked at No. 1 on the chart.',
+    'The case Roe v. Wade was decided in 1973.',
+    'He served in the U.S. Army for two years.',
+    'His motto, Alt for Norge (lit. \'All for Norway\'), was his grandfather\'s.',
+    'Independent Sens. Angus King and Bernie Sanders caucus with the Democrats.',
+    'Il est né en 52 av. J.-C. Rome.',
+    'Родился в с. Кулла Гунибского района.',
+  ]) {
+    assert.deepEqual(splitSentences(text), [text], text);
+  }
+});
+
+test('splitSentences keeps a closed quotation whole, but not an unclosed one', () => {
+  const quoted = 'A tutor said the boy "had worked through the whole book. Soon the flight of his genius was so high I could not follow."';
+  assert.deepEqual(splitSentences(`${quoted} He was twelve.`), [quoted, 'He was twelve.']);
+  assert.deepEqual(splitSentences('Он сказал: «Мы пришли. Мы победили.» Потом ушёл.'),
+    ['Он сказал: «Мы пришли. Мы победили.»', 'Потом ушёл.']);
+  // A claim cut off mid-quote still splits: only quotations that close count.
+  assert.deepEqual(splitSentences('An unclosed "quote here. And more text.'), ['An unclosed "quote here.', 'And more text.']);
+});
+
+test('splitSentences treats a spaced ellipsis as an elision, not a sentence end', () => {
+  const text = 'He wrote: I see my life in terms of music ... I get most joy in life out of music.';
+  assert.deepEqual(splitSentences(text), [text]);
+  assert.deepEqual(splitSentences('It went on and on... Then it stopped.'), ['It went on and on...', 'Then it stopped.']);
 });
 
 test('MAINTENANCE_MARKER_RE strips common ru.wikipedia markers', () => {

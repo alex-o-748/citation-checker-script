@@ -68,6 +68,15 @@ const COLUMNS = [
     ['severity_subclaims', f => (f.severitySubclaims ? JSON.stringify(f.severitySubclaims) : null)],
     ['severity_error', f => f.severityError],
     ['severity_prompt_version', f => f.severityPromptVersion],
+    // The lead check (core/lead-check.js). check_kind is "citation" or
+    // "lead_body"; in_lead marks a citation in lead prose; lead_demoted, a
+    // lead citation's partial or omission verdict in an article that got a
+    // lead check (left out of the clean CSV); body_section, the section a
+    // lead row's quote was found in.
+    ['check_kind', f => f.checkKind ?? 'citation'],
+    ['in_lead', f => (f.inLead ? 1 : 0)],
+    ['lead_demoted', f => (f.leadDemoted ? 1 : 0)],
+    ['body_section', f => f.bodySection],
     // Last, not first, despite being the row's identifier — csvPageTitles()
     // below reads the FIRST field of every record as the page title, which is
     // what --resume skips on. Moving check_id to column 1 would silently make
@@ -137,6 +146,12 @@ export function cleanCsvPath(path) {
  *    findings are never shown — even when rule 1 dropped the collective
  *    itself. Falling back to the members there would surface one source's
  *    partial view of a claim several sources back.
+ * 3. A demoted lead citation (lead_demoted) is not shown: in the lead, "the
+ *    source doesn't mention it" is the lead check's question, answered on its
+ *    own row. Skipped for a CSV from before that column existed.
+ *
+ * Lead-check rows need no rule of their own: a body cut to fit is marked
+ * source_truncated, so rule 1 keeps only what survives truncation there too.
  *
  * Group IDs are only meaningful within an article revision, so the key
  * includes page identity.
@@ -166,6 +181,7 @@ export function cleanCsvText(text) {
     const cleanRows = rows.filter(row => {
         if (truthy(row[indexes.source_truncated] || '') && !survivesTruncation(row)) return false;
         if (row[indexes.group_id] && !isCollective(row) && collectiveGroups.has(groupKey(row))) return false;
+        if (indexes.lead_demoted !== undefined && truthy(row[indexes.lead_demoted] || '')) return false;
         return true;
     });
     return [header, ...cleanRows]
