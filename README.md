@@ -111,9 +111,14 @@ node service/run-sweep.js --titles-file articles.txt --out findings.csv
 # writes findings.csv and findings-clean.csv
 ```
 
-The clean file excludes every check made against truncated source content. If
-a collective check was completed for an adjacent citation group, it also
-excludes that group's individual checks so the group is represented once.
+On a truncated source, the clean file keeps only SUPPORTED and NOT SUPPORTED /
+contradiction checks: "not mentioned" may just mean "past the cutoff". If a
+collective check was completed for an adjacent citation group, it also
+excludes that group's individual checks so the group is represented once. And
+if one of a group's sources could not be read (SOURCE UNAVAILABLE), the
+group's PARTIALLY SUPPORTED and NOT SUPPORTED / omission checks are excluded
+on the same reasoning, whether they come from the collective check or, when
+the collective was skipped, from the individual ones.
 
 To clean a CSV from an earlier run without changing the original file:
 

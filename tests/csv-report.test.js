@@ -286,6 +286,87 @@ for (const [verdict, reasonType] of [['SUPPORTED', undefined], ['NOT SUPPORTED',
     });
 }
 
+// Uwe Boll: Forbes [40] returned a 502, so with one readable source the
+// collective was skipped, and Variety [39] was judged alone on a claim whose
+// Musk half Forbes was cited for.
+test('with no collective, a member omission is dropped when another member was SOURCE UNAVAILABLE', () => {
+    const csv = rowsToCsv([
+        { ...baseFinding(), citationNumber: '40', groupId: 'g1', verdict: 'SOURCE UNAVAILABLE', fetchStatus: 502 },
+        { ...baseFinding(), citationNumber: '39', groupId: 'g1', verdict: 'NOT SUPPORTED', reasonType: 'omission' },
+        { ...baseFinding(), citationNumber: '41', verdict: 'NOT SUPPORTED', reasonType: 'omission' },
+    ]);
+    const records = parseCsv(cleanCsvText(csv));
+    const citationIndex = records[0].indexOf('citation_number');
+    assert.deepEqual(records.slice(1).map(row => row[citationIndex]), ['40', '41']);
+});
+
+for (const [verdict, reasonType, kept] of [
+    ['SUPPORTED', undefined, true],
+    ['NOT SUPPORTED', 'contradiction', true],
+    ['PARTIALLY SUPPORTED', undefined, false],
+    ['ERROR', undefined, true],
+]) {
+    test(`with no collective and an unread member, a ${verdict}${reasonType ? ` / ${reasonType}` : ''} member is ${kept ? 'kept' : 'dropped'}`, () => {
+        const csv = rowsToCsv([
+            { ...baseFinding(), citationNumber: '2', groupId: 'g1', verdict, reasonType },
+            { ...baseFinding(), citationNumber: '3', groupId: 'g1', verdict: 'SOURCE UNAVAILABLE' },
+        ]);
+        const records = parseCsv(cleanCsvText(csv));
+        const citationIndex = records[0].indexOf('citation_number');
+        assert.deepEqual(records.slice(1).map(row => row[citationIndex]), kept ? ['2', '3'] : ['3']);
+    });
+}
+
+// The 2026 Tour Championship case: one member came back as a login page, the
+// collective ran anyway (fetched text counts as available) and reported the
+// quote missing after reading only the other source.
+test('a collective omission is dropped when a member was SOURCE UNAVAILABLE on its own check', () => {
+    const csv = rowsToCsv([
+        { ...baseFinding(), citationNumber: '19', groupId: 'g1', verdict: 'NOT SUPPORTED', reasonType: 'omission' },
+        { ...baseFinding(), citationNumber: '20', groupId: 'g1', verdict: 'SOURCE UNAVAILABLE' },
+        {
+            ...baseFinding(), citationNumber: '19, 20', groupId: 'g1', isCollective: true,
+            verdict: 'NOT SUPPORTED', reasonType: 'omission',
+        },
+        { ...baseFinding(), citationNumber: '21' },
+    ]);
+    const records = parseCsv(cleanCsvText(csv));
+    const citationIndex = records[0].indexOf('citation_number');
+    assert.deepEqual(records.slice(1).map(row => row[citationIndex]), ['21']);
+});
+
+for (const [verdict, reasonType, kept] of [
+    ['SUPPORTED', undefined, true],
+    ['NOT SUPPORTED', 'contradiction', true],
+    ['PARTIALLY SUPPORTED', undefined, false],
+]) {
+    test(`with an unread member, a ${verdict}${reasonType ? ` / ${reasonType}` : ''} collective is ${kept ? 'kept' : 'dropped'}`, () => {
+        const csv = rowsToCsv([
+            { ...baseFinding(), citationNumber: '2', groupId: 'g1' },
+            { ...baseFinding(), citationNumber: '3', groupId: 'g1', verdict: 'SOURCE UNAVAILABLE' },
+            { ...baseFinding(), citationNumber: '2, 3', groupId: 'g1', isCollective: true, verdict, reasonType },
+        ]);
+        const records = parseCsv(cleanCsvText(csv));
+        const citationIndex = records[0].indexOf('citation_number');
+        assert.deepEqual(records.slice(1).map(row => row[citationIndex]), kept ? ['2, 3'] : []);
+    });
+}
+
+test('an unread member only affects its own group', () => {
+    const csv = rowsToCsv([
+        { ...baseFinding(), citationNumber: '2', groupId: 'g1', verdict: 'SOURCE UNAVAILABLE' },
+        { ...baseFinding(), citationNumber: '2, 3', groupId: 'g1', isCollective: true, verdict: 'NOT SUPPORTED', reasonType: 'omission' },
+        { ...baseFinding(), citationNumber: '4', groupId: 'g2' },
+        { ...baseFinding(), citationNumber: '4, 5', groupId: 'g2', isCollective: true, verdict: 'NOT SUPPORTED', reasonType: 'omission' },
+        { ...baseFinding(), pageId: 7, citationNumber: '2, 3', groupId: 'g1', isCollective: true, verdict: 'NOT SUPPORTED', reasonType: 'omission' },
+        { ...baseFinding(), citationNumber: '6', verdict: 'NOT SUPPORTED', reasonType: 'omission' },
+    ]);
+    const records = parseCsv(cleanCsvText(csv));
+    const citationIndex = records[0].indexOf('citation_number');
+    const pageIndex = records[0].indexOf('page_id');
+    assert.deepEqual(records.slice(1).map(row => `${row[pageIndex]}:${row[citationIndex]}`), ['42:4, 5', '7:2, 3', '42:6']);
+});
+
 test('cleaning scopes repeated group IDs to their article revision', () => {
     const csv = rowsToCsv([
         { ...baseFinding(), pageId: 1, revisionId: 10, citationNumber: '1', groupId: 'same' },
