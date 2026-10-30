@@ -7,7 +7,9 @@ export const HELP_TEXT = `usage: node service/clean-csv.js <input.csv> [--out <p
 Creates a clean copy of a batch findings CSV. On a truncated source it keeps
 only SUPPORTED and NOT SUPPORTED / contradiction checks, and once a group has a collective
 check it removes that group's individual citation checks — even when the
-collective check was itself removed. The input file is never modified.
+collective check was itself removed. In a group where one source was SOURCE
+UNAVAILABLE, it drops the group's PARTIALLY SUPPORTED and NOT SUPPORTED /
+omission checks, collective or individual. The input file is never modified.
 `;
 
 export async function main(argv = process.argv, io = {}) {
