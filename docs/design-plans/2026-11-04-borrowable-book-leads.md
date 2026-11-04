@@ -1,6 +1,6 @@
 # Leads from borrowable books: names the book never mentions, and contradictions in its snippets
 
-> **Status (2026-11-04):** Proposed. Step 0 (measuring the Open Library endpoint) has to happen before any code.
+> **Status (2026-11-04):** Proposed. Step 0 partly done (first result below): the per-book search to build on is archive.org's own full-text search with `identifier:`, not Open Library's endpoint. Finish step 0 before any code.
 
 ## The problem
 
@@ -15,7 +15,8 @@ The model can't read the book itself. IA's open endpoints were tested as follows
 | Endpoint | Open (public-domain) book | Lending-library (`inlibrary`, `access-restricted-item`) book |
 | --- | --- | --- |
 | `{datanode}/fulltext/inside.php` | paragraph-length passages, page numbers, bounding boxes | refused, "Item not available" (tested 2026-08-04) |
-| `openlibrary.org/search/inside.json?item_id={id}&q={term}` | not tested | **works, with "a limited amount of surrounding text"** (GreenC, IA Slack, 2026-11-04; not yet run by us) |
+| `openlibrary.org/search/inside.json?item_id={id}&q={term}` | — | **`item_id` was ignored in the one run so far**: corpus-wide results (see step 0) |
+| `archive.org/services/search/beta/page_production/?service_backend=fts`, `q="{term}" identifier:("{id}")` | up to five ~100-character highlights per book, no per-hit page | **the same**, lending-library books included (in production in `source-finder`, CNfirmed's search-inside step) |
 | `{datanode}/{dir}/{id}_djvu.txt` | whole OCR text | not available |
 
 Whole-page text of a restricted book is a policy grant, not an API. GreenC says only a few IA staff
@@ -69,6 +70,36 @@ From these, write down in this doc:
   (`alex-o-748/public-ai-proxy`) or tf-source-fetcher. Check whether either already passes JSON
   through unchanged; if not, that's a small new route and a two-repo change.
 
+### First result, 2026-11-04
+
+Alaexis ran GreenC's example, `inside.json?item_id=visualeffectsind0000goul&q=television`. **What came
+back was a search of the whole index**: `total: 1951732` hits, twenty books shown, none of them
+`visualeffectsind0000goul`. So `item_id` was ignored (unless it was dropped from the URL; worth one
+re-run). The response is Open Library's wrapper over IA's full-text index (`_index: fts_main_v2`,
+host `search-text.us.archive.org`), **the same index CNfirmed already queries through archive.org**.
+Per book it returns:
+
+- **Up to five highlights of ~100–130 characters**, each centred on the term, matches marked
+  `{{{term}}}`. Enough for a clause, so rule 2 stays possible; above the ~60-character floor below.
+- **No per-hit page.** Each book has one `page_num` (e.g. 736, 332), which highlights from a contents
+  page and a copyright page can't share. It looks like the page count. **So leads show no page
+  number**; the editor gets a link to the book's search (`archive.org/details/{id}?q="{term}"`).
+- Availability per book (`is_restricted`, `is_lendable`, `status: borrow_available` / `private` /
+  `open`), which saves the metadata call.
+
+**Decision: build on archive.org's full-text search with `identifier:`**, as `source-finder` does
+(README, *Books on the Internet Archive*, steps 7 and *Endpoints*). It is on Wikipedia's CSP
+allowlist, so no Worker route is needed, and its quirks are already mapped: a space is AND; an
+explicit `AND` is read as the word; an identifier containing a dot never matches `identifier:`;
+`/`, `~`, `[`, `]` or an unbalanced quote fail the query; **about 1 query in 8 fails with HTTP 400
+under load, and the failure is served again for the same URL for ~20 minutes.** That last one matters
+most here: **an error must never be read as zero hits**, or rule 1 fires on a backend hiccup. Retry
+as `source-finder` does (ask for one more hit, after 5 and 15 seconds), and on a final error report
+nothing.
+
+Still to measure: zero hits for an absent term in an indexed restricted book (expect the book simply
+missing from the results), and a book that isn't in the index at all (the control query below).
+
 **Stop and rewrite this design if** hits carry under ~60 characters, or zero hits can't be told
 apart from "not indexed". Rule 2 needs a clause of context and rule 1 needs a reliable zero.
 
@@ -78,7 +109,7 @@ apart from "not indexed". Rule 2 needs a clause of context and rule 1 needs a re
 | --- | --- | --- |
 | Recognize an IA book link | `core/urls.js` | `parseIaBookUrl(url)` → `{ identifier, page }` for `archive.org/details/{id}[/page/{n}][/mode/…]`. Distinct from `parseArchiveOrgUrl()`, which is Wayback. |
 | Pure logic: terms, queries, response parsing, rules | **new `core/books.js`** | No I/O. Add to `scripts/sync-main.js`'s `CORE_ORDER` after `urls.js`, then `npm run build`. |
-| Network calls | `core/worker.js` | `fetchIaMetadata(id)` (`archive.org/metadata/{id}`, on the CSP allowlist) and `searchInsideBook(id, term)` (through the Worker). Both injectable, like `fetchSource` in `core/pipeline.js`. |
+| Network calls | `core/worker.js` | `fetchIaMetadata(id)` (`archive.org/metadata/{id}`, on the CSP allowlist) and `searchInsideBook(id, term)` (archive.org's full-text search with `identifier:`; on the CSP allowlist, so no Worker route). Both injectable, like `fetchSource` in `core/pipeline.js`. |
 | The contradiction prompt | `core/books.js` | Its own prompt and its own hash-pinned `BOOK_LEAD_PROMPT_VERSION`, as `core/severity.js` does. **The verdict prompt is not touched.** |
 | Userscript wiring | `main.js`, the branch in `verifyClaim()` that already special-cases Google Books | See "The flow". |
 | Tests | **new `tests/books.test.js`** | Built on the step 0 fixtures. |
@@ -149,9 +180,9 @@ The main risk is a snippet about a different thing with the same name: "died in 
 father. `same_subject` and the editor's own reading are the guard. That's why this is a lead and
 not a NOT SUPPORTED.
 
-**What the editor sees:** *"The book may say otherwise (p. 214): '…died at Amorbach in 1815…'"*, the
-verified text only, and a link to the page (`archive.org/details/{id}/page/{n}`), which the editor
-can open by borrowing the book.
+**What the editor sees:** *"The book may say otherwise: '…died at Amorbach in 1815…'"*, the
+verified text only, and a link to the book searched for the quote's words (`archive.org/details/{id}?q="…"`), which
+opens on the matching page once the editor borrows the book. The search returns no page number.
 
 **Provider:** the user's selected provider, through `callProviderAPI()`. One extra call per checked
 book citation, and only when there are snippets to judge.
