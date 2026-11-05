@@ -17,6 +17,7 @@ core/                            # Shared logic, imported by benchmark/, cli/, s
   claim.js, feedback.js, parsing.js, prompts.js, providers.js, quote.js, urls.js, worker.js
   models.js                      # Provider/model registry — the one place a model id is named
   pipeline.js                    # verifyCitation(): fetch -> prompt -> model -> parse -> quote, in one call
+  lead.js, lead-check.js         # The lead check: lead sentences and body, and every lead sentence against the body (see "The lead check" below)
 cli/verify.js                    # Node CLI front-end (verify a single citation from the command line)
 bin/ccs                          # Executable shim for the CLI
 scripts/sync-main.js             # Inlines core/ modules into main.js for the userscript build
@@ -89,6 +90,8 @@ docs/                            # Reference docs + design plans (see docs/READM
 | `buildFeedbackControls()` | Yes/No/Comment row under a result; ratings go to Neon, comments to the talk page (see `docs/worker-logging-reference.md`) |
 | `assessSeverity()` / `showSingleSeverity()` / `rankReportBySeverity()` | Opt-in severity pass (`core/severity.js`'s `runSeverityPass()`) for a flagged verdict: in the single-check view, and as a second phase of Verify All (see "Severity ranking" below) |
 | `applyReportSort()` / `renderReportSeverity()` | Report order: article order, or "Most serious first" by `compareSeverity()` on a severity-ranked report. Moves whole cards and group blocks; never hides one |
+| `articleLead()` / `runReportLeadCheck()` / `renderReportLead()` | The lead check (`core/lead-check.js`): the last phase of Verify All, or all of "Check the lead against the body"; the report's lead section (see "The lead check" below) |
+| `getCountedReportUnits()` | `getReportUnits()` minus set-aside lead citations: what the summary, the severity ranking and the exports count |
 
 ## Benchmark Suite
 
@@ -122,6 +125,11 @@ npm run wice:convert          # Fetch + convert WiCE dev+test -> dataset_wice.js
 npm run wice:benchmark        # Run providers against dataset_wice.json
 npm run wice:analyze          # Metrics for the WiCE run
 npm run wice:analyze:unanimous  # Score only rows whose label isn't a projection artifact
+
+# Lead check — lead sentences labeled against their article body (see "The lead check")
+npm run lead:extract -- --titles-file <path> --wiki enwiki  # -> dataset_lead.json (keeps existing labels)
+npm run lead:benchmark -- --providers=hf-gpt-oss-20b         # -> results_lead.json
+npm run lead:analyze                                         # Score labeled sentences
 ```
 
 `run_benchmark.js` and `analyze_results.js` both take `--dataset` / `--results` (and the analyzer `--analysis`), which is what lets an alternate corpus run without touching `dataset.json` / `results.json`.
@@ -284,7 +292,7 @@ Since 2026-10 `run-sweep.js` stores every finding in ToolsDB by default, and `ru
 
 - **The CSV is still the record; the store follows it.** A failed ToolsDB write is counted and reported, never fatal to the sweep, and the summary prints the `run-import-findings.js` command that backfills it. Halting a day-long batch over a database hiccup costs more than the row.
 - **The pick fails if it can't read ToolsDB**, rather than continuing without the filter: silently re-picking checked articles is the failure the filter exists to prevent.
-- **Apply migrations 003, 004 and 005 (`service/migrations/`) before the first store.** 003 (citation_number INT → text) had never been applied to the live table when storing became the default; the first backfill lost ~10% of rows to `Incorrect integer value: 'a'` / `'2, 3'` until it was. 005 makes it TEXT, since a collective row joins every member's number and overflowed 64 characters. 004 widens `reason_type` (the pipeline writes 23-byte reasons into a 16-byte column) and `group_id` (Cyrillic ref names), and makes `provider` `NOT NULL DEFAULT ''`: it is part of the unique key, and MariaDB never matches NULLs there, so every re-store of a no-model row (SOURCE UNAVAILABLE, SKIPPED) used to insert a duplicate. `buildUpsertQuery()` writes `''` for "no model ran" to match.
+- **Apply migrations 003, 004 and 005 (`service/migrations/`) before the first store**, and 006 before the first store or import of any kind once the lead check is deployed, not only a `--lead-check` sweep: it adds `check_kind` and `lead_demoted`, and `buildUpsertQuery()` names both on every row, so without it every write fails with an unknown column (the sweep still finishes and writes its CSV; backfill with `run-import-findings.js` after migrating). 003 (citation_number INT → text) had never been applied to the live table when storing became the default; the first backfill lost ~10% of rows to `Incorrect integer value: 'a'` / `'2, 3'` until it was. 005 makes it TEXT, since a collective row joins every member's number and overflowed 64 characters. 004 widens `reason_type` (the pipeline writes 23-byte reasons into a 16-byte column) and `group_id` (Cyrillic ref names), and makes `provider` `NOT NULL DEFAULT ''`: it is part of the unique key, and MariaDB never matches NULLs there, so every re-store of a no-model row (SOURCE UNAVAILABLE, SKIPPED) used to insert a duplicate. `buildUpsertQuery()` writes `''` for "no model ran" to match.
 
 ### Post-run checks (`service/sweep-checks.js`, read before adding a halt-or-record decision)
 
@@ -437,6 +445,70 @@ The wikitext/plain-text exports and the worker log are unchanged: tiers go
 nowhere public until they are validated, and logging them needs the Worker to
 accept new fields.
 
+### The lead check (`core/lead.js`, `core/lead-check.js`; `run-sweep.js --lead-check`, userscript setting)
+
+A lead summarizes the body, so per WP:LEADCITE a lead statement needs no
+citation of its own when the body covers it. The tool treated lead citations
+like any other: a lead citation got credited with the uncited summary around
+it (a false PARTIALLY / NOT SUPPORTED), and uncited lead text was never checked.
+Now there are two independent checks and one presentation rule:
+
+- **Citation checks are unchanged**, in the lead too, at the user's claim scope.
+- **The lead check**: every lead sentence (lead-prose `<p>`s, not the infobox)
+  against the article body (`articleBody()`: later sections, minus reference
+  lists, navigation and appendix sections, under `== Heading ==` lines). A few
+  sentences per call, the body sent with each. Its own prompt with a
+  hash-pinned `LEAD_PROMPT_VERSION`; the verdict vocabulary is the same, and
+  `omission` means "not covered in the body". A sentence failing both checks
+  is reported by both, on purpose: the fixes differ (a better source; content
+  added to the body).
+- **Demotion**: in lead prose, a citation's PARTIALLY SUPPORTED or NOT
+  SUPPORTED / omission verdict is set aside (`isLeadDemotedVerdict()`).
+  Crediting a citation with the summary around it always comes back as one of
+  those, never as a contradiction. Set-aside verdicts are kept and shown
+  apart: out of the userscript's counts, filters, severity ranking and exports;
+  in the batch, `lead_demoted = 1`, left out of the clean CSV and the severity
+  pass, never published.
+
+Rules to keep if you touch it:
+
+- **The lead is never part of the body text.** Every lead sentence would
+  support itself. `tests/lead.test.js` pins it.
+- **Demotion only where a lead check runs.** An article with no headings has
+  no body, so it gets neither. Demoting without a lead check hides a real
+  failure with nothing to report it instead.
+- **A contradiction is never demoted**, the same rule as truncation in the
+  severity pass.
+- **A footnote list never makes a section an appendix.** Short articles put
+  `{{reflist}}` under their last content section; the first version dropped
+  such sections and reported their facts as missing from the body. Only the
+  heading names (`LEAD_APPENDIX_HEADINGS`, five languages) and a bibliography
+  (`.refbegin`) holding nearly all of a section do.
+- **`runLeadCheck()` absorbs two failures itself**, because both depend on how
+  much is asked at once: an answer that ran out of output budget is retried
+  as two calls of half the sentences (it happens on reasoning models at 4 per
+  call), and a prompt too long for the model is retried with the body halved
+  (`body_truncated`: absence discounted, contradiction not). Everything else
+  goes to the caller's `onChunkError`: the sweep's transient-failure policy, or
+  "record and carry on" in the userscript.
+- **Batch rows**: `check_kind = lead_body`, the sentence as `claim_text`,
+  `source_url` = `index.php?curid=<page_id>` (by page, so a re-sweep updates
+  in place, and never colliding with a citation row in `uniq_finding`), and
+  `body_section`; citation rows get `in_lead` and `lead_demoted`. The post-run
+  checks key lead rows by sentence, keep them out of the fetch statistics and
+  the severity expectation, and sample them (and demoted citations) in strata
+  of their own.
+- **In the userscript it is on by default** (`verifier_lead_check`), because it
+  costs a few calls per Verify All, not one per citation. Lead results are
+  **not logged**: the Worker has no field to tell a lead sentence from a
+  citation.
+- **Not yet validated.** `benchmark/dataset_lead.json` (separate from
+  `dataset.json`, like WiCE) is built by `npm run lead:extract`; its labels are
+  for people to make.
+
+Design, prototype numbers and the alternatives rejected:
+`docs/design-plans/2026-10-22-lead-checks.md`.
+
 ## Development Workflow
 
 - **Tests:** `node --test` via `npm test` from the repo root, runs everything in `tests/**/*.test.js`. New helpers should get a sibling `*.test.js` file. Behavioral validation also goes through the benchmark suite against the human-labeled citation dataset.
@@ -460,7 +532,7 @@ accept new fields.
 Sentence scope narrows a claim to its last sentence, and "where does a sentence start" is decided differently per front end, on purpose:
 
 - **Batch pipeline** — `service/sentences.js` wraps [sentencex](https://github.com/wikimedia/sentencex) (Wikimedia's MIT segmenter, per-language abbreviation lists for ~244 languages), injected via `processArticle({ langCode })` → `collectCitations({ splitLastSentence })` → `extractClaimText({ splitLastSentence })`. The runners pass `langCodeForWiki(opts.wiki)`. It keeps `А. С. Пушкин`, `в 1837 г. Пушкин`, `ул. Ленина` and `Dr. Smith` whole.
-- **Userscript / CLI / benchmark** — `core/claim.js`'s `lastSentence()` regex: split after `.!?…` when the next character is any uppercase letter (`\p{Lu}`, so Cyrillic and Greek count) or an opening quote. It **does** cut at abbreviations and initials; that is accepted because sentence scope is opt-in there and an editor reads the claim. `tests/sentences.test.js` pins that gap.
+- **Userscript / CLI / benchmark** — `core/claim.js`'s `splitSentences()` (and `lastSentence()`, built on it): split after `.!?…` (and any closing quotes or brackets) when the next character is any uppercase letter (`\p{Lu}`, so Cyrillic and Greek count), a digit or an opening quote — except after an initial or any single letter (`J. R. R. Tolkien`, `А. С. Пушкин`, `г.`), a dotted run (`U.S.`, `e.g.`, `J.-C.`), a listed abbreviation for the five sidebar languages (`SENTENCE_ABBREVIATIONS`: `Dr.`, `No.`, `v.`, `ул.`…), a spaced elision (` ... `), or inside a quotation that closes. Until 2026-10-23 it had none of those exceptions; measured against sentencex on 2,175 enwiki claims, that cut 87 last sentences short, often losing the claim's subject or speaker. With them it cuts none short, and the 10 remaining disagreements are mostly sentencex's own errors. The exceptions err toward joining two sentences, never toward a sentence without its subject. sentencex stays in the batch because its lists cover ~244 languages, not five.
 
 sentencex is a native Node module and cannot go into `core/` (which is inlined into `main.js`), which is why it is injected rather than imported. Its `package.json` says Node ≥ 20; it has been run on Node 18.20 (Toolforge's `node18` image) and passes, with only an `EBADENGINE` warning at install.
 

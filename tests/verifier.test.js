@@ -7,7 +7,9 @@ import {
     isAuthOrBillingError,
     ProviderAuthError,
     makeModelCaller,
+    verifyLead,
 } from '../service/verifier.js';
+import { fitBody } from '../core/lead.js';
 
 const okResponse = (body) => async () => ({
     text: JSON.stringify(body),
@@ -431,4 +433,59 @@ test('verifyGroup asks callModel for the larger group output budget', async () =
         },
     });
     assert.deepEqual(opts, { kind: 'group' });
+});
+
+const leadInput = {
+    sentences: [
+        { index: 0, paragraphIndex: 0, text: 'The bridge opened in 1998.' },
+        { index: 1, paragraphIndex: 0, text: 'It cost $200 million.' },
+    ],
+    body: fitBody([{ level: 2, heading: 'History', text: 'The bridge opened to traffic in 1998.' }]),
+};
+
+test('verifyLead checks every lead sentence against the body, with the comment-language directive', async () => {
+    const prompts = [];
+    const callModel = async (systemPrompt, userContent, opts) => {
+        prompts.push({ systemPrompt, userContent, opts });
+        return {
+            text: JSON.stringify([
+                { id: 1, verdict: 'SUPPORTED', source_quote: 'The bridge opened to traffic in 1998.', section: 'History' },
+                { id: 2, verdict: 'NOT SUPPORTED', reason_type: 'omission', source_quote: '' },
+            ]),
+            usage: { input: 50, output: 20 },
+        };
+    };
+    const run = await verifyLead(leadInput, { callModel, articleTitle: 'Morrison Bridge', articleLangCode: 'ru' });
+    assert.equal(prompts.length, 1);
+    assert.deepEqual(prompts[0].opts, { kind: 'lead' });
+    assert.match(prompts[0].systemPrompt, /Write the "comments" field in Russian/);
+    assert.match(prompts[0].userContent, /^Article: Morrison Bridge$/m);
+    assert.deepEqual(run.results.map(r => [r.outcome, r.section, r.quoteStatus]), [
+        ['covered', 'History', 'exact'],
+        ['not_covered', null, 'empty'],
+    ]);
+});
+
+test('verifyLead halts on an auth error, and hands any other failure to onChunkError', async () => {
+    const denied = async () => { throw new Error('API request failed (402): balance exhausted'); };
+    await assert.rejects(verifyLead(leadInput, { callModel: denied, retry: { maxRetries: 1 } }), ProviderAuthError);
+
+    const flaky = async () => { throw new Error('API request failed (503): unavailable'); };
+    const seen = [];
+    const run = await verifyLead(leadInput, {
+        callModel: flaky,
+        retry: { maxRetries: 1 },
+        onChunkError: error => { seen.push(error.message); return 'retries_exhausted'; },
+    });
+    assert.equal(seen.length, 1);
+    assert.deepEqual(run.results.map(r => r.error), ['retries_exhausted', 'retries_exhausted']);
+    await assert.rejects(verifyLead(leadInput, { callModel: flaky, retry: { maxRetries: 1 } }), /503/,
+        'with no policy for it, the failure is thrown');
+});
+
+test('verifyLead requires a callModel function, and asks nothing of an article with no body', async () => {
+    await assert.rejects(() => verifyLead(leadInput, {}), TypeError);
+    const callModel = async () => { throw new Error('must not be called'); };
+    const run = await verifyLead({ sentences: leadInput.sentences, body: fitBody([]) }, { callModel });
+    assert.deepEqual(run.results, []);
 });

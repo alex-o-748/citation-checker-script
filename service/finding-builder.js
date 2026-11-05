@@ -16,6 +16,16 @@
 
 import { groupSourceUrl } from '../core/anchor.js';
 import { newCheckId } from '../core/feedback.js';
+import { LEAD_PROMPT_VERSION } from '../core/lead-check.js';
+import { hostForWiki } from '../core/wikipedia.js';
+
+// What a row checked: a citation against its source(s) — solo or collective,
+// told apart by is_collective as before — or a lead sentence against the
+// article body (core/lead-check.js).
+export const CHECK_KINDS = Object.freeze({
+    CITATION: 'citation',
+    LEAD_BODY: 'lead_body',
+});
 
 // A label, and deliberately nothing more.
 //
@@ -73,10 +83,17 @@ function computeExpiresAt(hasContent, fetchedAt, ttlDays) {
 // fetchStatus). `verification` is either verifyCitation()'s or
 // verifyGroup()'s return value — both carry verdict/supportScore/reasonType/
 // rationale/sourceQuote/quoteStatus/usage under the same names.
-function finishFinding(base, { verification, provider, model, promptVersion, hasContent, fetchedAt, ttlDays, checkId, severity }) {
+function finishFinding(base, { verification, provider, model, promptVersion, hasContent, fetchedAt, ttlDays, checkId, severity, leadDemoted = false }) {
     const modelRan = Boolean(verification.usage);
     return {
+        checkKind: CHECK_KINDS.CITATION,
+        inLead: false,
+        bodySection: null,
         ...base,
+        // A lead citation's partial or omission verdict, in an article that
+        // got a lead check (core/lead.js's isLeadDemotedVerdict()): kept in
+        // the CSV and the store, left out of the clean CSV, never ranked.
+        leadDemoted: Boolean(leadDemoted),
         checkId,
         // Severity pass (service/severity-assessor.js). All null when it
         // didn't run — the finding wasn't flagged, or the run didn't ask for
@@ -143,6 +160,7 @@ export function assembleFinding({
     ttlDays = FINDING_TTL_DAYS,
     checkId = mintCheckId(),
     severity = null,
+    leadDemoted = false,
 }) {
     const hasContent = Boolean(citation.source?.content);
 
@@ -170,8 +188,9 @@ export function assembleFinding({
             sourceTruncated: Boolean(citation.source?.content?.includes('\nTruncated: true')),
             isBlp: candidate.isBlp ?? null,
             sectionTitle: citation.sectionTitle ?? null,
+            inLead: Boolean(citation.inLead),
         },
-        { verification, provider, model, promptVersion, hasContent, fetchedAt, ttlDays, checkId, severity }
+        { verification, provider, model, promptVersion, hasContent, fetchedAt, ttlDays, checkId, severity, leadDemoted }
     );
 }
 
@@ -208,6 +227,7 @@ export function assembleGroupFinding({
     ttlDays = FINDING_TTL_DAYS,
     checkId = mintCheckId(),
     severity = null,
+    leadDemoted = false,
 }) {
     if (verification.skipped) {
         throw new TypeError('assembleGroupFinding requires a completed (non-skipped) verifyGroup() result');
@@ -243,7 +263,84 @@ export function assembleGroupFinding({
             isBlp: candidate.isBlp ?? null,
             // Members share one claim, so they share its position too.
             sectionTitle: members[0]?.sectionTitle ?? null,
+            inLead: Boolean(members[0]?.inLead),
         },
-        { verification, provider, model, promptVersion, hasContent, fetchedAt, ttlDays, checkId, severity }
+        { verification, provider, model, promptVersion, hasContent, fetchedAt, ttlDays, checkId, severity, leadDemoted }
+    );
+}
+
+// The "source" a lead row was checked against: the article itself. By page
+// id, not revision, so a re-sweep updates the row in place the way a citation
+// row (keyed on its source URL) is updated; the permalink column still pins
+// the revision it was judged at.
+export function articleSourceUrl(candidate) {
+    return `https://${hostForWiki(candidate.wiki)}/w/index.php?curid=${candidate.pageId}`;
+}
+
+/**
+ * One lead sentence's lead-check result (core/lead-check.js's runLeadCheck()
+ * `results` entry) as a finding row: `check_kind = lead_body`, no citation
+ * number, the sentence as `claim_text`, the article as `source_url`, the
+ * section the quote was found in as `body_section`, and `source_truncated`
+ * set when the body sent was cut to fit.
+ *
+ * A sentence the check couldn't answer (`result.error`) becomes an ERROR row
+ * with the error as its reason_type, as a citation's failed call does.
+ */
+export function assembleLeadFinding({
+    candidate,
+    result,
+    provider,
+    model,
+    promptVersion = LEAD_PROMPT_VERSION,
+    fetchedAt = new Date(),
+    ttlDays = FINDING_TTL_DAYS,
+    checkId = mintCheckId(),
+}) {
+    const answered = Boolean(result.verdict);
+    const verification = answered
+        ? {
+            verdict: result.verdict,
+            supportScore: result.supportScore ?? null,
+            reasonType: result.reasonType ?? null,
+            rationale: result.comments || null,
+            sourceQuote: result.sourceQuote || null,
+            quoteStatus: result.quoteStatus ?? null,
+            // A truthy usage is what marks "a model ran" for finishFinding().
+            usage: result.usage ?? { input: null, output: null },
+        }
+        : {
+            verdict: 'ERROR',
+            supportScore: null,
+            reasonType: result.error ?? null,
+            rationale: `Lead check gave no usable answer for this sentence: ${result.error ?? 'unknown'}`,
+            sourceQuote: null,
+            quoteStatus: null,
+            usage: null,
+        };
+    return finishFinding(
+        {
+            checkKind: CHECK_KINDS.LEAD_BODY,
+            wiki: candidate.wiki,
+            pageId: candidate.pageId,
+            pageTitle: candidate.title,
+            revisionId: candidate.revisionId,
+            claimText: result.text,
+            citationNumber: null,
+            refName: null,
+            sourceUrl: articleSourceUrl(candidate),
+            fetchedAt,
+            groupId: null,
+            isCollective: false,
+            fetchStatus: null,
+            fetchError: null,
+            sourceTruncated: Boolean(result.bodyTruncated),
+            isBlp: candidate.isBlp ?? null,
+            // null is "the lead", as on a citation row.
+            sectionTitle: null,
+            inLead: true,
+            bodySection: result.section ?? null,
+        },
+        { verification, provider, model, promptVersion, hasContent: true, fetchedAt, ttlDays, checkId }
     );
 }

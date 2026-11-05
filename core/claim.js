@@ -124,19 +124,116 @@ export function getCitationGroup(refElement) {
     return refsInContainer.slice(start, end + 1);
 }
 
-// Splits on a sentence-ending mark followed by whitespace and what looks like
-// the start of a new sentence, then returns the last piece. Naive about
-// abbreviations and initials: "Dr. Smith", "А. С. Пушкин" and "в 1837 г.
-// Пушкин" all split after the period, cutting the claim short. The batch
-// pipeline therefore replaces this with sentencex, which carries per-language
-// abbreviation lists (service/sentences.js); the userscript keeps this
-// version, where sentence scope is an opt-in and an editor reads the claim.
+// A candidate sentence boundary: whitespace after a sentence-ending mark
+// (optionally followed by closing quotes or brackets, so `…follow." He` is a
+// boundary), before what looks like the start of a new sentence — any
+// uppercase letter (\p{Lu}, so Cyrillic, Greek, accented Latin all count; an
+// ASCII-only class silently made sentence scope a no-op on ru.wikipedia), a
+// digit, or an opening quote or bracket, including the «» and „“ quotes
+// non-English wikis use.
 //
-// "Looks like the start of a sentence" is any uppercase letter (\p{Lu}, so
-// Cyrillic, Greek, accented Latin all count — an ASCII-only class silently
-// made sentence scope a no-op on ru.wikipedia), a digit, or an opening quote
-// or bracket, including the «» and „“ quotes non-English wikis use.
-const SENTENCE_SPLIT_RE = /(?<=[.!?…])\s+(?=[\p{Lu}\p{Lt}\d"'(«„“‘])/u;
+// A candidate is then rejected in two cases, below. This is the userscript's
+// splitter (and the CLI's and benchmark's). The batch pipeline injects
+// sentencex instead (service/sentences.js), which carries abbreviation lists
+// for ~244 languages; this one knows the languages the sidebar is translated
+// into, plus initials and quotations in any script. Measured against sentencex
+// on 2,175 enwiki claims, the version without these two rules cut 87 last
+// sentences short — at "J. Einstein & Cie", "Dr.", "No. 1" and inside quoted
+// speech — which is a claim checked without its subject.
+const SENTENCE_BOUNDARY_RE = /(?<=[.!?…]["'”’»)\]]*)\s+(?=[\p{Lu}\p{Lt}\d"'(«„“‘])/gu;
+
+// 1. The period ends an abbreviation, not the sentence. Matched against the
+//    word before the period, lowercased. Any single letter also counts (an
+//    initial — "J. R. R. Tolkien", "А. С. Пушкин" — or a one-letter
+//    abbreviation: b., c., p., v., г., с., д.), as does a dotted run like
+//    "U.S", "e.g", "т.е" or "J.-C". Sentence endings lost to this rule are the
+//    better failure: two sentences checked together, rather than one checked
+//    without its subject.
+//
+//    "etc." is deliberately absent: it ends sentences as often as not.
+const SENTENCE_ABBREVIATIONS = new Set([
+    // en
+    'mr', 'mrs', 'ms', 'dr', 'prof', 'st', 'mt', 'ft', 'jr', 'sr', 'no', 'nos', 'vol', 'vols',
+    'fig', 'figs', 'ed', 'eds', 'ca', 'cf', 'approx', 'gen', 'col', 'lt', 'sgt', 'capt',
+    'cmdr', 'adm', 'gov', 'sen', 'sens', 'rep', 'reps', 'rev', 'hon', 'pres', 'inc', 'ltd',
+    'co', 'corp', 'bros', 'vs', 'op', 'pp', 'ch', 'esp', 'est', 'lit',
+    // fr
+    'mme', 'mlle', 'mm', 'mgr', 'ste', 'av', 'apr', 'env', 'chap', 'coll', 'éd',
+    // es
+    'sra', 'srta', 'dra', 'dña', 'ud', 'uds', 'gral', 'avda', 'pág', 'págs', 'núm', 'ej',
+    // ru
+    'гг', 'ул', 'пр', 'просп', 'пер', 'пл', 'пос', 'дер', 'им', 'см', 'ср', 'др', 'род',
+    'ум', 'рис', 'стр', 'тыс', 'млн', 'млрд', 'руб', 'коп', 'св', 'акад', 'проф', 'ген',
+    'англ', 'нем', 'фр', 'франц', 'лат', 'ивр', 'греч', 'араб', 'итал', 'исп', 'кит', 'яп',
+    'обл', 'оз', 'вв', 'нар', 'арт', 'чел', 'кв', 'км', 'га', 'гос',
+]);
+
+// The word immediately before a period at `end` (exclusive): letters, with
+// internal periods or hyphens ("U.S", "J.-C").
+const WORD_BEFORE_PERIOD_RE = /[\p{L}\p{M}]+(?:[.-]+[\p{L}\p{M}]+)*$/u;
+
+function endsWithAbbreviation(text, periodIndex) {
+    const before = text.slice(Math.max(0, periodIndex - 40), periodIndex);
+    const match = WORD_BEFORE_PERIOD_RE.exec(before);
+    if (!match) return false;
+    const preceding = before.slice(0, match.index);
+    // "1st." or "5th." is a number, not an abbreviation, whatever its letters.
+    if (/\d$/.test(preceding)) return false;
+    const word = match[0].toLowerCase();
+    // An initial stands on its own; "1.5 °C." is a unit ending a sentence.
+    if ([...word].length === 1) return !preceding || /[\s(\["'«„“‘]$/u.test(preceding);
+    // Periods inside the word, not hyphens: "U.S" or "J.-C", but not "trade-offs".
+    if (word.includes('.')) return true;
+    return SENTENCE_ABBREVIATIONS.has(word);
+}
+
+// 2. The boundary falls inside a quotation: `the boy "had worked through the
+//    whole book. … Soon the flight of his mathematical genius was so high I
+//    could not follow."` is one sentence. Only quotations that close count,
+//    so a claim cut off mid-quote still splits; and a "quotation" longer than
+//    QUOTE_SPAN_MAX is more likely two stray marks (inch signs) than speech.
+//    Single quotes are ignored: ’ and ' are apostrophes far more often.
+const QUOTE_CLOSERS = { '“': '”', '„': '“', '«': '»', '"': '"' };
+const QUOTE_SPAN_MAX = 1000;
+
+function quotedSpans(text) {
+    const spans = [];
+    const open = [];
+    for (let i = 0; i < text.length; i++) {
+        const ch = text[i];
+        const top = open[open.length - 1];
+        if (top && ch === top.close) {
+            open.pop();
+            if (i - top.at <= QUOTE_SPAN_MAX) spans.push([top.at, i]);
+        } else if (ch in QUOTE_CLOSERS) {
+            open.push({ at: i, close: QUOTE_CLOSERS[ch] });
+        }
+    }
+    return spans;
+}
+
+// An ellipsis with a space before it (" ... ", " … ") marks words left out of
+// a quotation, not the end of a sentence.
+const SPACED_ELLIPSIS_RE = /\s(?:\.{3}|…)$/u;
+
+// Splits `text` into sentences, trimmed, empty pieces dropped. Returns
+// [text.trim()] when there is no boundary.
+export function splitSentences(text) {
+    if (!text) return [];
+    const spans = quotedSpans(text);
+    const pieces = [];
+    let start = 0;
+    for (const match of text.matchAll(SENTENCE_BOUNDARY_RE)) {
+        const at = match.index;
+        if (SPACED_ELLIPSIS_RE.test(text.slice(Math.max(0, at - 4), at))) continue;
+        if (text[at - 1] === '.' && endsWithAbbreviation(text, at - 1)) continue;
+        if (spans.some(([open, close]) => open < at && at < close)) continue;
+        pieces.push(text.slice(start, at));
+        start = at;
+    }
+    pieces.push(text.slice(start));
+    return pieces.map(p => p.trim()).filter(Boolean);
+}
 
 // Returns just the final sentence of `text` — the sentence immediately
 // preceding wherever `text` ends. Used for the batch pipeline's stricter
@@ -144,8 +241,8 @@ const SENTENCE_SPLIT_RE = /(?<=[.!?…])\s+(?=[\p{Lu}\p{Lt}\d"'(«„“‘])/u;
 // string unchanged if no sentence boundary is found.
 export function lastSentence(text) {
     if (!text) return text;
-    const parts = text.split(SENTENCE_SPLIT_RE);
-    return parts[parts.length - 1].trim();
+    const sentences = splitSentences(text);
+    return sentences.length ? sentences[sentences.length - 1] : text.trim();
 }
 
 // Claims shorter than this are not a checkable statement: a bare name at the

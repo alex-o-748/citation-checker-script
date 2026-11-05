@@ -995,6 +995,17 @@ function isSourceTooLargeError(error) {
     return SOURCE_TOO_LARGE.test(error?.message ?? '');
 }
 
+// The model spent its whole output budget reasoning and never answered:
+// core/providers.js throws this for finish_reason "length" with no content.
+// Not retried either — the same prompt tends to do the same again — but
+// unlike a too-large source it depends on how much is asked at once, so the
+// lead check answers it by asking about fewer sentences per call
+// (core/lead-check.js). The batch runner records it as an ERROR row
+// (service/run-sweep.js's OUTPUT_BUDGET_EXHAUSTED).
+function isOutputBudgetError(error) {
+    return /ran out of output budget/.test(error?.message ?? '');
+}
+
 function defaultSleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -1404,19 +1415,116 @@ function getCitationGroup(refElement) {
     return refsInContainer.slice(start, end + 1);
 }
 
-// Splits on a sentence-ending mark followed by whitespace and what looks like
-// the start of a new sentence, then returns the last piece. Naive about
-// abbreviations and initials: "Dr. Smith", "А. С. Пушкин" and "в 1837 г.
-// Пушкин" all split after the period, cutting the claim short. The batch
-// pipeline therefore replaces this with sentencex, which carries per-language
-// abbreviation lists (service/sentences.js); the userscript keeps this
-// version, where sentence scope is an opt-in and an editor reads the claim.
+// A candidate sentence boundary: whitespace after a sentence-ending mark
+// (optionally followed by closing quotes or brackets, so `…follow." He` is a
+// boundary), before what looks like the start of a new sentence — any
+// uppercase letter (\p{Lu}, so Cyrillic, Greek, accented Latin all count; an
+// ASCII-only class silently made sentence scope a no-op on ru.wikipedia), a
+// digit, or an opening quote or bracket, including the «» and „“ quotes
+// non-English wikis use.
 //
-// "Looks like the start of a sentence" is any uppercase letter (\p{Lu}, so
-// Cyrillic, Greek, accented Latin all count — an ASCII-only class silently
-// made sentence scope a no-op on ru.wikipedia), a digit, or an opening quote
-// or bracket, including the «» and „“ quotes non-English wikis use.
-const SENTENCE_SPLIT_RE = /(?<=[.!?…])\s+(?=[\p{Lu}\p{Lt}\d"'(«„“‘])/u;
+// A candidate is then rejected in two cases, below. This is the userscript's
+// splitter (and the CLI's and benchmark's). The batch pipeline injects
+// sentencex instead (service/sentences.js), which carries abbreviation lists
+// for ~244 languages; this one knows the languages the sidebar is translated
+// into, plus initials and quotations in any script. Measured against sentencex
+// on 2,175 enwiki claims, the version without these two rules cut 87 last
+// sentences short — at "J. Einstein & Cie", "Dr.", "No. 1" and inside quoted
+// speech — which is a claim checked without its subject.
+const SENTENCE_BOUNDARY_RE = /(?<=[.!?…]["'”’»)\]]*)\s+(?=[\p{Lu}\p{Lt}\d"'(«„“‘])/gu;
+
+// 1. The period ends an abbreviation, not the sentence. Matched against the
+//    word before the period, lowercased. Any single letter also counts (an
+//    initial — "J. R. R. Tolkien", "А. С. Пушкин" — or a one-letter
+//    abbreviation: b., c., p., v., г., с., д.), as does a dotted run like
+//    "U.S", "e.g", "т.е" or "J.-C". Sentence endings lost to this rule are the
+//    better failure: two sentences checked together, rather than one checked
+//    without its subject.
+//
+//    "etc." is deliberately absent: it ends sentences as often as not.
+const SENTENCE_ABBREVIATIONS = new Set([
+    // en
+    'mr', 'mrs', 'ms', 'dr', 'prof', 'st', 'mt', 'ft', 'jr', 'sr', 'no', 'nos', 'vol', 'vols',
+    'fig', 'figs', 'ed', 'eds', 'ca', 'cf', 'approx', 'gen', 'col', 'lt', 'sgt', 'capt',
+    'cmdr', 'adm', 'gov', 'sen', 'sens', 'rep', 'reps', 'rev', 'hon', 'pres', 'inc', 'ltd',
+    'co', 'corp', 'bros', 'vs', 'op', 'pp', 'ch', 'esp', 'est', 'lit',
+    // fr
+    'mme', 'mlle', 'mm', 'mgr', 'ste', 'av', 'apr', 'env', 'chap', 'coll', 'éd',
+    // es
+    'sra', 'srta', 'dra', 'dña', 'ud', 'uds', 'gral', 'avda', 'pág', 'págs', 'núm', 'ej',
+    // ru
+    'гг', 'ул', 'пр', 'просп', 'пер', 'пл', 'пос', 'дер', 'им', 'см', 'ср', 'др', 'род',
+    'ум', 'рис', 'стр', 'тыс', 'млн', 'млрд', 'руб', 'коп', 'св', 'акад', 'проф', 'ген',
+    'англ', 'нем', 'фр', 'франц', 'лат', 'ивр', 'греч', 'араб', 'итал', 'исп', 'кит', 'яп',
+    'обл', 'оз', 'вв', 'нар', 'арт', 'чел', 'кв', 'км', 'га', 'гос',
+]);
+
+// The word immediately before a period at `end` (exclusive): letters, with
+// internal periods or hyphens ("U.S", "J.-C").
+const WORD_BEFORE_PERIOD_RE = /[\p{L}\p{M}]+(?:[.-]+[\p{L}\p{M}]+)*$/u;
+
+function endsWithAbbreviation(text, periodIndex) {
+    const before = text.slice(Math.max(0, periodIndex - 40), periodIndex);
+    const match = WORD_BEFORE_PERIOD_RE.exec(before);
+    if (!match) return false;
+    const preceding = before.slice(0, match.index);
+    // "1st." or "5th." is a number, not an abbreviation, whatever its letters.
+    if (/\d$/.test(preceding)) return false;
+    const word = match[0].toLowerCase();
+    // An initial stands on its own; "1.5 °C." is a unit ending a sentence.
+    if ([...word].length === 1) return !preceding || /[\s(\["'«„“‘]$/u.test(preceding);
+    // Periods inside the word, not hyphens: "U.S" or "J.-C", but not "trade-offs".
+    if (word.includes('.')) return true;
+    return SENTENCE_ABBREVIATIONS.has(word);
+}
+
+// 2. The boundary falls inside a quotation: `the boy "had worked through the
+//    whole book. … Soon the flight of his mathematical genius was so high I
+//    could not follow."` is one sentence. Only quotations that close count,
+//    so a claim cut off mid-quote still splits; and a "quotation" longer than
+//    QUOTE_SPAN_MAX is more likely two stray marks (inch signs) than speech.
+//    Single quotes are ignored: ’ and ' are apostrophes far more often.
+const QUOTE_CLOSERS = { '“': '”', '„': '“', '«': '»', '"': '"' };
+const QUOTE_SPAN_MAX = 1000;
+
+function quotedSpans(text) {
+    const spans = [];
+    const open = [];
+    for (let i = 0; i < text.length; i++) {
+        const ch = text[i];
+        const top = open[open.length - 1];
+        if (top && ch === top.close) {
+            open.pop();
+            if (i - top.at <= QUOTE_SPAN_MAX) spans.push([top.at, i]);
+        } else if (ch in QUOTE_CLOSERS) {
+            open.push({ at: i, close: QUOTE_CLOSERS[ch] });
+        }
+    }
+    return spans;
+}
+
+// An ellipsis with a space before it (" ... ", " … ") marks words left out of
+// a quotation, not the end of a sentence.
+const SPACED_ELLIPSIS_RE = /\s(?:\.{3}|…)$/u;
+
+// Splits `text` into sentences, trimmed, empty pieces dropped. Returns
+// [text.trim()] when there is no boundary.
+function splitSentences(text) {
+    if (!text) return [];
+    const spans = quotedSpans(text);
+    const pieces = [];
+    let start = 0;
+    for (const match of text.matchAll(SENTENCE_BOUNDARY_RE)) {
+        const at = match.index;
+        if (SPACED_ELLIPSIS_RE.test(text.slice(Math.max(0, at - 4), at))) continue;
+        if (text[at - 1] === '.' && endsWithAbbreviation(text, at - 1)) continue;
+        if (spans.some(([open, close]) => open < at && at < close)) continue;
+        pieces.push(text.slice(start, at));
+        start = at;
+    }
+    pieces.push(text.slice(start));
+    return pieces.map(p => p.trim()).filter(Boolean);
+}
 
 // Returns just the final sentence of `text` — the sentence immediately
 // preceding wherever `text` ends. Used for the batch pipeline's stricter
@@ -1424,8 +1532,8 @@ const SENTENCE_SPLIT_RE = /(?<=[.!?…])\s+(?=[\p{Lu}\p{Lt}\d"'(«„“‘])/u;
 // string unchanged if no sentence boundary is found.
 function lastSentence(text) {
     if (!text) return text;
-    const parts = text.split(SENTENCE_SPLIT_RE);
-    return parts[parts.length - 1].trim();
+    const sentences = splitSentences(text);
+    return sentences.length ? sentences[sentences.length - 1] : text.trim();
 }
 
 // Claims shorter than this are not a checkable statement: a bare name at the
@@ -1831,6 +1939,347 @@ function articleCategories(root) {
         if (name) names.add(name);
     }
     return [...names];
+}
+
+// --- core/lead.js ---
+// The lead section, its sentences, and the body it summarizes.
+//
+// A lead has a different sourcing standard from the body: per WP:LEADCITE a
+// lead statement needs no citation of its own when the body covers it. So the
+// lead gets a check of its own — every lead sentence against the body text
+// (core/lead-check.js) — and lead citations' omission and partial verdicts are
+// demoted rather than reported (isLeadDemotedVerdict, below). Design:
+// docs/design-plans/2026-10-22-lead-checks.md.
+//
+// Works on both HTML shapes the tool sees, and on any of the three root shapes
+// collectCitations() is called with:
+//   Parsoid (batch)      <section data-mw-section-id="0"> is the lead; later
+//                        sections are the body
+//   browser skin         .mw-parser-output children before the first heading
+//                        are the lead; the first heading starts the body
+//
+// Nothing here is Node-specific. Inlined into main.js (scripts/sync-main.js),
+// so every top-level name carries a LEAD_ / lead / body prefix: the inlined
+// modules share one scope there.
+
+
+// The body sent with a lead check is capped like a source is: 100,000 chars
+// is core/worker.js's WORKER_CONTENT_CAP, so a body under it is a prompt the
+// providers already handle. Above it, sections are kept by relevance to the
+// lead (articleBody) and the check is marked truncated.
+const LEAD_BODY_MAX_CHARS = 100000;
+
+// Lead blocks that hold no lead prose: the infobox (a summary too, with its
+// own citations, checked as citations), images, hatnotes, navigation, and
+// maintenance boxes. The lead check reads lead <p>s only.
+const LEAD_NON_PROSE_CONTAINER = [
+    'table', 'figure', 'blockquote', '.infobox', '.hatnote', '.sidebar', '.navbox', '.ambox',
+    '.mbox-small', '.metadata', '.shortdescription', '.thumb', '.gallery', '.toc', '#toc',
+].join(', ');
+
+// Subtrees whose text is never prose: footnote markers, edit links,
+// TemplateStyles CSS, and .noprint inline maintenance templates
+// ([citation needed]) — the same things core/claim.js leaves out of a claim.
+const LEAD_TEXT_NOISE = '.reference, .mw-ref, .mw-editsection, style, script, link, meta, .noprint, .ts-fix-template';
+
+// Footnote lists and bibliographies. Their text is never body.
+//
+// A footnote list says nothing about its section: short articles often put
+// {{reflist}} straight under their last content section, with no heading of
+// its own, and that section is body. A "Notes" or "References" section is
+// dropped anyway, by name, or because nothing is left once its list is.
+//
+// A bibliography (.refbegin: Further reading, Sources, a list of works
+// consulted) marks its section as an appendix when it is nearly all the
+// section holds — fewer than BODY_APPENDIX_MAX_PROSE chars of anything else,
+// an introductory line at most. That catches "Further reading" under any
+// heading in any language, intro and subsections included.
+const BODY_FOOTNOTE_LIST = '.reflist, .mw-references-wrap, ol.references';
+const BODY_BIBLIOGRAPHY = '.refbegin';
+const BODY_APPENDIX_MAX_PROSE = 300;
+
+// Everything else that is on the page but is not body text.
+const BODY_NOISE = `${LEAD_TEXT_NOISE}, .navbox, .metadata, .hatnote, .sidebar, .infobox, `
+    + '.catlinks, .printfooter, .mw-empty-elt, .shortdescription';
+
+// Appendix sections, by heading, for the five sidebar languages. Matched
+// after lowercasing. A bibliography is also caught by BODY_BIBLIOGRAPHY; the names
+// catch the ones that are lists of links (See also, External links).
+//
+// English "Bibliography" is deliberately absent: on enwiki it is as often a
+// writer's list of works (body, and what a lead's "she wrote twelve novels"
+// summarizes) as a list of sources, and a sources list is usually a .refbegin
+// anyway. frwiki's and eswiki's are lists of sources by convention.
+const LEAD_APPENDIX_HEADINGS = new Set([
+    // en
+    'see also', 'notes', 'references', 'footnotes', 'citations', 'sources', 'further reading',
+    'external links', 'works cited', 'notes and references', 'references and notes',
+    'explanatory notes', 'cited sources', 'general references',
+    // ru
+    'см. также', 'примечания', 'литература', 'ссылки', 'источники', 'комментарии', 'сноски',
+    // fr
+    'voir aussi', 'notes et références', 'références', 'bibliographie', 'liens externes',
+    'articles connexes',
+    // es
+    'véase también', 'referencias', 'notas', 'bibliografía', 'enlaces externos', 'fuentes',
+    // he
+    'ראו גם', 'הערות שוליים', 'הערות', 'קישורים חיצוניים', 'לקריאה נוספת', 'מקורות',
+]);
+
+const BODY_BLOCK_ELEMENTS = new Set([
+    'P', 'LI', 'DD', 'DT', 'TR', 'CAPTION', 'FIGCAPTION', 'BLOCKQUOTE', 'DIV', 'UL', 'OL', 'DL', 'TABLE',
+]);
+
+function isLeadHeading(el) {
+    return /^H[2-6]$/.test(el.tagName) || el.classList.contains('mw-heading');
+}
+
+/**
+ * Splits an article into its lead and body, as two lists of top-level
+ * elements. The body is empty when the article has no headings.
+ */
+function splitLeadAndBody(root) {
+    if (!root) return { lead: [], body: [] };
+    const section0 = root.querySelector('section[data-mw-section-id="0"]');
+    if (section0) {
+        const body = [];
+        for (let n = section0.nextElementSibling; n; n = n.nextElementSibling) body.push(n);
+        return { lead: [section0], body };
+    }
+    const container = (typeof root.matches === 'function' && root.matches('.mw-parser-output'))
+        ? root
+        : (root.querySelector('.mw-parser-output') || root);
+    const lead = [];
+    const body = [];
+    for (const child of container.children) {
+        if (body.length === 0 && !isLeadHeading(child)) lead.push(child);
+        else body.push(child);
+    }
+    return { lead, body };
+}
+
+// Text of `node` with LEAD_TEXT_NOISE subtrees left out, whitespace and
+// maintenance markers cleaned the way core/claim.js cleans a claim.
+function leadProseText(node) {
+    let text = '';
+    const walk = n => {
+        for (const child of n.childNodes) {
+            if (child.nodeType === 3) text += child.data;
+            else if (child.nodeType === 1 && !child.matches(LEAD_TEXT_NOISE)) walk(child);
+        }
+    };
+    walk(node);
+    return text
+        .replace(/\s+/g, ' ')
+        .replace(MAINTENANCE_MARKER_RE, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+/**
+ * The lead's prose paragraphs, in order: lead <p>s outside the infobox,
+ * tables, figures, hatnotes and the like, that hold any text.
+ */
+function leadParagraphs(root) {
+    const blocks = [];
+    for (const node of splitLeadAndBody(root).lead) {
+        const candidates = node.matches('p') ? [node] : node.querySelectorAll('p');
+        for (const p of candidates) {
+            if (p.closest(LEAD_NON_PROSE_CONTAINER)) continue;
+            if (leadProseText(p)) blocks.push(p);
+        }
+    }
+    return blocks;
+}
+
+/**
+ * Every lead sentence, in order: `{ index, paragraphIndex, text, block }`,
+ * where `block` is the lead <p> it came from (for highlighting). Sentences
+ * shorter than MIN_CLAIM_LENGTH are left out, as a claim that short is.
+ *
+ * `splitSentences` defaults to core/claim.js's; the batch pipeline injects
+ * sentencex (service/sentences.js), as it does for sentence-scope claims.
+ */
+function leadSentences(root, { splitSentences: split = splitSentences, minLength = MIN_CLAIM_LENGTH } = {}) {
+    const sentences = [];
+    leadParagraphs(root).forEach((block, paragraphIndex) => {
+        for (const text of split(leadProseText(block))) {
+            if (text.length < minLength) continue;
+            sentences.push({ index: sentences.length, paragraphIndex, text, block });
+        }
+    });
+    return sentences;
+}
+
+/**
+ * Sets `inLead` on each citation from collectCitations(): true when its
+ * marker sits in a lead prose paragraph. Infobox citations, though in the
+ * lead section, are false — demotion applies to lead prose only.
+ */
+function markLeadCitations(citations, root) {
+    const blocks = new Set(leadParagraphs(root));
+    for (const c of citations) {
+        const p = c.refElement && c.refElement.closest('p');
+        c.inLead = Boolean(p && blocks.has(p));
+    }
+    return citations;
+}
+
+function bodyHeadingText(heading) {
+    const clone = heading.cloneNode(true);
+    for (const el of clone.querySelectorAll('.mw-editsection')) el.remove();
+    return clone.textContent.replace(/\s+/g, ' ').trim();
+}
+
+function bodySectionText(parts) {
+    return parts.join('')
+        .replace(MAINTENANCE_MARKER_RE, '')
+        .split('\n')
+        .map(line => line.replace(/[ \t ]+/g, ' ').trim())
+        .filter(Boolean)
+        .join('\n');
+}
+
+// The body's sections in document order: { level, heading, text, appendix }.
+// One pass, walking the body's nodes; Parsoid's nested <section>s and the
+// skin's flat markup come out the same, since headings are met in order.
+function collectBodySections(nodes) {
+    const sections = [];
+    let current = null;
+    const start = (level, heading) => {
+        current = { level, heading, parts: [], hasBibliography: false };
+        sections.push(current);
+    };
+    const walk = node => {
+        if (node.nodeType === 3) {
+            if (current) current.parts.push(node.data);
+            return;
+        }
+        if (node.nodeType !== 1) return;
+        if (/^H[2-6]$/.test(node.tagName)) {
+            start(Number(node.tagName[1]), bodyHeadingText(node));
+            return;
+        }
+        if (node.matches(BODY_BIBLIOGRAPHY)) {
+            if (current) current.hasBibliography = true;
+            return;
+        }
+        if (node.matches(BODY_FOOTNOTE_LIST)) return;
+        if (node.matches(BODY_NOISE)) return;
+        for (const child of node.childNodes) walk(child);
+        if (!current) return;
+        if (BODY_BLOCK_ELEMENTS.has(node.tagName)) current.parts.push('\n');
+        else if (node.tagName === 'TD' || node.tagName === 'TH') current.parts.push(' ');
+    };
+    for (const node of nodes) walk(node);
+
+    // An appendix takes its subsections with it: "Further reading > Books".
+    const kept = [];
+    let appendixLevel = null;
+    for (const s of sections) {
+        if (appendixLevel !== null && s.level > appendixLevel) continue;
+        appendixLevel = null;
+        const text = bodySectionText(s.parts);
+        const bibliography = s.hasBibliography && text.length < BODY_APPENDIX_MAX_PROSE;
+        if (bibliography || LEAD_APPENDIX_HEADINGS.has(s.heading.toLowerCase())) {
+            appendixLevel = s.level;
+            continue;
+        }
+        if (text) kept.push({ level: s.level, heading: s.heading, text });
+    }
+    return kept;
+}
+
+function bodySectionBlock(s) {
+    const bar = '='.repeat(s.level);
+    return `${bar} ${s.heading} ${bar}\n${s.text}`;
+}
+
+function leadWords(text) {
+    return new Set((text.toLowerCase().match(/[\p{L}\p{N}]{4,}/gu) || []));
+}
+
+/**
+ * The article body, as the text a lead check reads:
+ *
+ *   { text, sections: [{ level, heading, text }], chars, totalChars, truncated }
+ *
+ * `text` is every kept section under a wikitext-style heading line
+ * ("== Early life =="), so the model can name the section its quote came
+ * from. The lead is never part of it — every lead sentence would support
+ * itself — nor are reference lists, navigation, or appendix sections.
+ *
+ * Over `maxChars`, see fitBody().
+ */
+function articleBody(root, { maxChars = LEAD_BODY_MAX_CHARS, leadText = '' } = {}) {
+    return fitBody(collectBodySections(splitLeadAndBody(root).body), { maxChars, leadText });
+}
+
+/**
+ * Fits body sections into `maxChars`, in articleBody()'s shape. Whole
+ * sections are kept by how many of the lead's words (`leadText`, 4+ letters)
+ * they contain, then put back in article order, and `truncated` is set:
+ * absence is then discounted, as on a truncated source. A single section
+ * larger than the whole budget keeps its start.
+ *
+ * Separate from articleBody() so the lead check can shrink a body a model
+ * rejected as too long (core/lead-check.js) without the article's DOM.
+ */
+function fitBody(sections, { maxChars = LEAD_BODY_MAX_CHARS, leadText = '' } = {}) {
+    const blocks = sections.map(bodySectionBlock);
+    const full = blocks.join('\n\n');
+    if (full.length <= maxChars) {
+        return { text: full, sections, chars: full.length, totalChars: full.length, truncated: false };
+    }
+
+    const wanted = leadWords(leadText);
+    const ranked = sections
+        .map((s, i) => {
+            const words = leadWords(s.text);
+            let score = 0;
+            for (const w of wanted) if (words.has(w)) score++;
+            return { i, score };
+        })
+        .sort((a, b) => (b.score - a.score) || (a.i - b.i));
+
+    const keep = new Set();
+    let used = 0;
+    for (const { i } of ranked) {
+        const cost = blocks[i].length + 2;
+        if (used + cost > maxChars) continue;
+        keep.add(i);
+        used += cost;
+    }
+    let kept = sections.filter((_, i) => keep.has(i));
+    let text = kept.map(bodySectionBlock).join('\n\n');
+    if (kept.length === 0 && sections.length > 0) {
+        const top = sections[ranked[0].i];
+        kept = [{ ...top, text: top.text.slice(0, Math.max(0, maxChars - top.heading.length - 20)) }];
+        text = bodySectionBlock(kept[0]);
+    }
+    return { text, sections: kept, chars: text.length, totalChars: full.length, truncated: true };
+}
+
+/**
+ * Whether a lead citation's verdict is demoted rather than reported:
+ * PARTIALLY SUPPORTED, or NOT SUPPORTED as an omission.
+ *
+ * Crediting a lead citation with the summary around it — the claim it gets
+ * spans uncited summary sentences its source was never meant to cover —
+ * always comes back as "the source doesn't mention it", never as a
+ * contradiction. In the lead the standard is "the body covers it", which the
+ * lead check judges, so these verdicts are shown apart and not counted.
+ * A contradiction, SOURCE UNAVAILABLE, or a NOT SUPPORTED with no
+ * reason_type is reported as anywhere else.
+ *
+ * Callers apply it only to citations in lead prose (markLeadCitations), and
+ * only where a lead check runs: demoting without one hides a real failure
+ * with nothing to replace it.
+ */
+function isLeadDemotedVerdict(verdict, reasonType) {
+    const v = canonicalizeVerdict(verdict);
+    if (v === VERDICTS.PARTIALLY_SUPPORTED) return true;
+    return v === VERDICTS.NOT_SUPPORTED && String(reasonType || '').toLowerCase() === 'omission';
 }
 
 // --- core/groups.js ---
@@ -3368,6 +3817,394 @@ function compareSeverity(a, b) {
         || ((b.isBlp === true) - (a.isBlp === true))
         || ((a.supportScore ?? 101) - (b.supportScore ?? 101));
 }
+
+// --- core/lead-check.js ---
+// The lead check: every lead sentence against the article body.
+//
+// A lead summarizes the body, so per WP:LEADCITE a lead statement needs no
+// citation of its own as long as the body covers it. This check asks exactly
+// that, for every lead sentence, whether or not it carries a citation and
+// whatever the claim scope. It is independent of the citation checks: a
+// sentence that fails both is reported by both, because the two fixes differ
+// (a better source; content added to the body). Design:
+// docs/design-plans/2026-10-22-lead-checks.md.
+//
+// Its own prompt with its own hash-pinned version, like the severity pass:
+// the verdict prompt in core/prompts.js is tuned against the benchmark and
+// stays untouched. Same verdict vocabulary, so every consumer reads the
+// result the way it reads a citation verdict; only the meaning of "omission"
+// shifts, to "not covered in the body".
+//
+// Shared by the batch pipeline (service/verifier.js's verifyLead()) and the
+// userscript (inlined into main.js). runLeadCheck() is the one sequence both
+// run; each front end only decides what a thrown error means for it.
+
+
+// Bump whenever the prompt text changes, same contract as PROMPT_VERSION:
+// tests/lead-check.test.js pins a hash of the prompt against it.
+const LEAD_PROMPT_VERSION = 'l1';
+
+// What a lead sentence's verdict means for the editor.
+const LEAD_OUTCOMES = Object.freeze({
+    // SUPPORTED: the body covers it. Nothing to report.
+    COVERED: 'covered',
+    // PARTIALLY SUPPORTED, or NOT SUPPORTED as an omission: add it to the body.
+    NOT_COVERED: 'not_covered',
+    // NOT SUPPORTED as a contradiction: the lead and the body disagree.
+    CONTRADICTED: 'contradicted',
+});
+
+function leadOutcomeFor(verdict, reasonType) {
+    const v = canonicalizeVerdict(verdict);
+    if (v === VERDICTS.SUPPORTED) return LEAD_OUTCOMES.COVERED;
+    if (v === VERDICTS.NOT_SUPPORTED && String(reasonType || '').toLowerCase() === 'contradiction') {
+        return LEAD_OUTCOMES.CONTRADICTED;
+    }
+    if (v === VERDICTS.NOT_SUPPORTED || v === VERDICTS.PARTIALLY_SUPPORTED) return LEAD_OUTCOMES.NOT_COVERED;
+    return null;
+}
+
+// Sentences per model call. The body is sent with every call, so fewer calls
+// are cheaper — but the answer is one JSON item per sentence, and a model
+// that reasons before answering spends its output budget on each of them: in
+// the 2026-10-22 prototype, 8 sentences in one call to the default provider
+// used 15.8k of its 16,384 output tokens. Lift Wing's router clamps output to
+// 4,096. First guesses, per provider; LEAD_CHUNK_SIZE_DEFAULT for the rest.
+const LEAD_CHUNK_SIZES = Object.freeze({
+    liftwing: 3,
+    'liftwing-safeguard': 3,
+    huggingface: 4,
+    publicai: 4,
+    claude: 8,
+    gemini: 6,
+    openai: 8,
+});
+const LEAD_CHUNK_SIZE_DEFAULT = 4;
+
+function leadChunkSize(provider) {
+    return LEAD_CHUNK_SIZES[provider] ?? LEAD_CHUNK_SIZE_DEFAULT;
+}
+
+// A body a model rejects as too long is halved and retried, down to this.
+// Below it, the remaining sentences are recorded as unchecked rather than
+// judged against a body too small to mean anything.
+const LEAD_BODY_MIN_CHARS = 10000;
+
+function generateLeadSystemPrompt() {
+    return `You are a fact-checking assistant for Wikipedia. The lead section of a Wikipedia article summarizes the rest of the article, its body. You are given the BODY of an article, under its section headings, and numbered STATEMENTS from the same article's lead. For each statement, decide whether the body supports it.
+
+Rules:
+- ONLY use the body text provided. Never use outside knowledge. Do not judge whether a statement is true, only whether the body says it.
+- A lead summarizes at a higher level of generality than the body. A statement is supported when it is a fair summary of what the body states: a paraphrase, a generalization that follows directly from the body, or facts gathered from several sections together.
+- Specific details must actually appear in the body: numbers, dates, names, places, rankings and superlatives ("the first", "the largest"), direct quotations, and evaluations attributed to others ("widely regarded as", "critics praised").
+- Search the whole body before deciding the body does not cover a statement: the passage that supports it can sit in any section, including one mainly about something else.
+- The lead is given for context only, so you know who or what a statement refers to ("She later moved to Paris"). It is never evidence.
+- Names from languages using non-Latin scripts may have several valid romanizations. Do not treat transliteration differences as errors.
+
+Verdicts:
+- SUPPORTED: the body states it, or it fairly summarizes what the body states.
+- PARTIALLY SUPPORTED: the body supports part of the statement, but a specific detail is missing from the body.
+- NOT SUPPORTED: the body does not cover the statement, or contradicts it. Add "reason_type": "contradiction" when the body states something incompatible with the statement (a different date, number, name or outcome), or "omission" when the body does not address it. If both apply, use "contradiction". Do not include reason_type for other verdicts.
+
+The "source_quote" field: copy EXACTLY, character for character, the passage of the body that decides the verdict: the one that supports the statement, or the one that contradicts it. Keep it short, normally one sentence. Never quote a section heading, the lead, or the statement itself. Use "" for omission. It is checked automatically against the body, and a quote that does not appear there verbatim is discarded.
+
+The "section" field: the heading of the section the quote comes from, as written in the body without the = signs, or "" when there is no quote.
+
+Support score guide:
+- 80-100: SUPPORTED
+- 50-79: PARTIALLY SUPPORTED
+- 0-49: NOT SUPPORTED
+
+Respond with a JSON array only, one object per statement, in the order given:
+[{"id": <statement number>, "verdict": "<verdict>", "support_score": <number>, "reason_type": "<only for NOT SUPPORTED>", "source_quote": "<passage>", "section": "<heading>", "comments": "<brief explanation, without repeating the quote>"}]
+
+<example>
+Article: Morrison Bridge
+
+Article body:
+== History ==
+The Morrison Bridge project broke ground in 1994. The bridge was opened to traffic in August 2002, four years behind schedule.
+
+== Design ==
+It is a cable-stayed bridge with a main span of 300 metres, designed by engineer Anna Holt.
+
+The lead, for context only (it is never evidence):
+The Morrison Bridge is a cable-stayed bridge that opened in 2002. It was designed by Anna Holt and cost $200 million. Construction began in 1998. It is the longest bridge in the state.
+
+Statements from the lead to check:
+1. "The Morrison Bridge is a cable-stayed bridge that opened in 2002."
+2. "It was designed by Anna Holt and cost $200 million."
+3. "Construction began in 1998."
+4. "It is the longest bridge in the state."
+
+[{"id": 1, "verdict": "SUPPORTED", "support_score": 95, "source_quote": "The bridge was opened to traffic in August 2002, four years behind schedule.", "section": "History", "comments": "History gives the 2002 opening, and Design says it is cable-stayed."},
+{"id": 2, "verdict": "PARTIALLY SUPPORTED", "support_score": 60, "source_quote": "It is a cable-stayed bridge with a main span of 300 metres, designed by engineer Anna Holt.", "section": "Design", "comments": "The body names Anna Holt as the designer but gives no cost."},
+{"id": 3, "verdict": "NOT SUPPORTED", "reason_type": "contradiction", "support_score": 10, "source_quote": "The Morrison Bridge project broke ground in 1994.", "section": "History", "comments": "The body says construction began in 1994, not 1998."},
+{"id": 4, "verdict": "NOT SUPPORTED", "reason_type": "omission", "support_score": 5, "source_quote": "", "section": "", "comments": "The body does not compare it with other bridges in the state."}]
+</example>`;
+}
+
+/**
+ * @param {object} args
+ * @param {string} [args.articleTitle]
+ * @param {string} args.bodyText - articleBody()'s `text`.
+ * @param {Array<{index: number, paragraphIndex: number, text: string}>} args.leadSentences - Every lead sentence, for context.
+ * @param {Array<{index: number, text: string}>} args.statements - The ones to check; numbered index + 1.
+ */
+function generateLeadUserPrompt({ articleTitle, bodyText, leadSentences, statements }) {
+    const paragraphs = [];
+    for (const s of leadSentences) {
+        (paragraphs[s.paragraphIndex ?? 0] ??= []).push(s.text);
+    }
+    const lead = paragraphs.filter(Boolean).map(p => p.join(' ')).join('\n\n');
+    const lines = [];
+    if (articleTitle) lines.push(`Article: ${articleTitle}`, '');
+    lines.push('Article body:', bodyText, '');
+    lines.push('The lead, for context only (it is never evidence):', lead, '');
+    lines.push('Statements from the lead to check:');
+    for (const s of statements) lines.push(`${s.index + 1}. "${s.text}"`);
+    return lines.join('\n');
+}
+
+function extractJsonArray(text) {
+    const trimmed = (text || '').trim();
+    const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+    const body = fenced ? fenced[1].trim() : trimmed;
+    const start = body.indexOf('[');
+    const end = body.lastIndexOf(']');
+    if (start !== -1 && end > start) return body.slice(start, end + 1);
+    return body;
+}
+
+/**
+ * Parses a lead-check response: `{ ok: true, items: Map<id, item> }` or
+ * `{ ok: false, error }`. Each item is
+ * `{ verdict, reasonType, supportScore, sourceQuote, section, comments }`.
+ *
+ * Lenient about shape (a bare array, or an object holding one; string ids)
+ * and strict about the verdict: only the three a body can give count, and
+ * an item with any other is left out, so its sentence is recorded as
+ * unchecked rather than guessed.
+ */
+function parseLeadCheckResult(text) {
+    let parsed;
+    try {
+        parsed = JSON.parse(extractJsonArray(text));
+    } catch {
+        return { ok: false, error: 'parse_error' };
+    }
+    const raw = Array.isArray(parsed)
+        ? parsed
+        : (parsed && typeof parsed === 'object' ? Object.values(parsed).find(Array.isArray) : null);
+    if (!Array.isArray(raw)) return { ok: false, error: 'parse_error' };
+
+    const items = new Map();
+    for (const item of raw) {
+        const id = Number(item?.id);
+        const verdict = canonicalizeVerdict(item?.verdict);
+        if (!Number.isInteger(id) || ![VERDICTS.SUPPORTED, VERDICTS.PARTIALLY_SUPPORTED, VERDICTS.NOT_SUPPORTED].includes(verdict)) {
+            continue;
+        }
+        const quote = item.source_quote ?? item.sourceQuote ?? item.quote;
+        const reasonType = verdict === VERDICTS.NOT_SUPPORTED && item.reason_type
+            ? String(item.reason_type).trim().toLowerCase()
+            : null;
+        items.set(id, {
+            verdict,
+            reasonType,
+            supportScore: Number.isFinite(Number(item.support_score)) ? Number(item.support_score) : null,
+            sourceQuote: typeof quote === 'string' ? quote.trim() : '',
+            section: typeof item.section === 'string' ? item.section.trim() : '',
+            comments: typeof item.comments === 'string' ? item.comments.trim() : '',
+        });
+    }
+    if (items.size === 0) return { ok: false, error: 'no_items' };
+    return { ok: true, items };
+}
+
+// The section a verified quote is actually in, which beats the model's own
+// "section" when they disagree. Falls back to the model's when it names a
+// real heading, else null.
+function sectionFor(sections, quote, claimed) {
+    if (quote) {
+        for (const s of sections) {
+            if (verifyQuote(s.text, quote).verified) return s.heading;
+        }
+    }
+    const named = sections.find(s => s.heading.toLowerCase() === String(claimed || '').toLowerCase());
+    return named ? named.heading : null;
+}
+
+function uncheckedResult(sentence, error, bodyTruncated) {
+    return {
+        index: sentence.index,
+        text: sentence.text,
+        verdict: null,
+        reasonType: null,
+        supportScore: null,
+        sourceQuote: null,
+        quoteStatus: null,
+        quoteText: null,
+        section: null,
+        comments: null,
+        outcome: null,
+        bodyTruncated,
+        usage: null,
+        error,
+    };
+}
+
+/**
+ * Checks lead sentences against the body.
+ *
+ * @param {object} input
+ * @param {Array<{index, paragraphIndex, text}>} input.sentences - core/lead.js's leadSentences().
+ * @param {object} input.body - core/lead.js's articleBody().
+ * @param {string} [input.articleTitle]
+ * @param {Array<number>} [input.only] - Sentence indexes to check (default: all).
+ *   The rest are still sent as context.
+ * @param {object} deps
+ * @param {Function} deps.callModel - (systemPrompt, userContent, { kind: 'lead' }) => { text, usage }.
+ * @param {string} [deps.systemPrompt] - A localized generateLeadSystemPrompt().
+ * @param {number} [deps.chunkSize]
+ * @param {object} [deps.retry] - core/retry.js options.
+ * @param {Function} [deps.onChunk] - (results so far, sentences total), after each call.
+ * @param {Function} [deps.pause] - Awaited between two calls (a rate-limit delay).
+ * @param {Function} [deps.shouldAbort] - Checked before each call; true stops
+ *   the check, returning the sentences answered so far.
+ * @param {Function} [deps.onChunkError] - (error) => an error code to record
+ *   that chunk's sentences under, then carry on; or nothing, to throw. It may
+ *   throw itself (an auth error that must halt a run). Without it, every
+ *   failure but a too-long prompt is thrown, losing the chunks before it.
+ *
+ * Returns `{ results, bodyChars, bodyTruncated, usage, calls, promptVersion }`,
+ * one result per checked sentence, in order:
+ * `{ index, text, verdict, reasonType, supportScore, sourceQuote, quoteStatus,
+ *    quoteText, section, comments, outcome, bodyTruncated, usage, error }`,
+ * `usage` being the sentence's share of its call's tokens.
+ * `quoteText` is core/quote.js's verifiedText: the only part a renderer may
+ * show. A sentence the model left out, or answered unreadably, has `error`
+ * set and no verdict.
+ *
+ * Two failures are handled here, because both depend on how much is asked
+ * at once. A prompt too long for the model is retried with the body halved
+ * (down to LEAD_BODY_MIN_CHARS), and later calls keep the smaller body. An
+ * answer that ran out of output budget — a reasoning model thinking about
+ * every sentence before answering — is retried as two calls of half the
+ * sentences each, down to one. Every other failure (an exhausted retry, an
+ * auth error, a budget run out on a single sentence) goes to onChunkError,
+ * the caller's own policy.
+ */
+async function runLeadCheck({ sentences, body, articleTitle, only } = {}, {
+    callModel, systemPrompt = generateLeadSystemPrompt(), chunkSize = LEAD_CHUNK_SIZE_DEFAULT,
+    retry = {}, onChunk, onChunkError, pause, shouldAbort,
+} = {}) {
+    if (typeof callModel !== 'function') {
+        throw new TypeError('runLeadCheck requires a callModel(systemPrompt, userContent) function');
+    }
+    const usage = { input: 0, output: 0 };
+    const empty = { results: [], bodyChars: body?.chars ?? 0, bodyTruncated: Boolean(body?.truncated), usage, calls: 0, promptVersion: LEAD_PROMPT_VERSION };
+    if (!body?.text || !Array.isArray(sentences) || sentences.length === 0) return empty;
+
+    const wanted = only ? new Set(only) : null;
+    const toCheck = sentences.filter(s => !wanted || wanted.has(s.index));
+    const leadText = sentences.map(s => s.text).join(' ');
+    const size = Math.max(1, chunkSize);
+    let current = body;
+    let calls = 0;
+    const results = [];
+
+    // A queue rather than a fixed loop: a chunk whose answer ran out of
+    // output budget goes back on the front as two halves.
+    const queue = [];
+    for (let i = 0; i < toCheck.length; i += size) queue.push(toCheck.slice(i, i + size));
+
+    while (queue.length) {
+        if (typeof shouldAbort === 'function' && shouldAbort()) break;
+        if (calls > 0 && typeof pause === 'function') await pause();
+        const chunk = queue.shift();
+        let response = null;
+        let failure = null;
+        let split = false;
+        for (;;) {
+            const userContent = generateLeadUserPrompt({ articleTitle, bodyText: current.text, leadSentences: sentences, statements: chunk });
+            try {
+                calls++;
+                response = await withRetry(() => callModel(systemPrompt, userContent, { kind: 'lead' }), retry);
+                break;
+            } catch (error) {
+                if (isOutputBudgetError(error) && chunk.length > 1) {
+                    const half = Math.ceil(chunk.length / 2);
+                    queue.unshift(chunk.slice(0, half), chunk.slice(half));
+                    split = true;
+                    break;
+                }
+                if (!isSourceTooLargeError(error)) {
+                    const code = typeof onChunkError === 'function' ? onChunkError(error) : null;
+                    if (!code) throw error;
+                    failure = code;
+                    break;
+                }
+                const smaller = Math.floor(current.chars / 2);
+                if (smaller < LEAD_BODY_MIN_CHARS) {
+                    failure = 'body_too_large';
+                    break;
+                }
+                current = { ...fitBody(current.sections, { maxChars: smaller, leadText }), totalChars: body.totalChars };
+            }
+        }
+        if (split) continue;
+
+        const truncated = Boolean(current.truncated);
+        if (response) {
+            usage.input += response.usage?.input || 0;
+            usage.output += response.usage?.output || 0;
+        }
+        const parsed = response ? parseLeadCheckResult(response.text) : null;
+        // Each answered sentence carries its share of the call's tokens, the
+        // remainder on the first, so per-row token columns still sum to what
+        // the calls cost.
+        const shareOf = (total, i) => Math.floor(total / chunk.length) + (i === 0 ? total % chunk.length : 0);
+        chunk.forEach((sentence, i) => {
+            const error = failure || (parsed.ok ? null : parsed.error);
+            const item = error ? null : parsed.items.get(sentence.index + 1);
+            if (!item) {
+                results.push(uncheckedResult(sentence, error || 'missing_from_response', truncated));
+                return;
+            }
+            const quote = verifyQuote(current.text, item.sourceQuote);
+            results.push({
+                index: sentence.index,
+                text: sentence.text,
+                verdict: item.verdict,
+                reasonType: item.reasonType,
+                supportScore: item.supportScore,
+                sourceQuote: item.sourceQuote,
+                quoteStatus: quote.status,
+                quoteText: quote.verifiedText || null,
+                section: sectionFor(current.sections, quote.verified ? item.sourceQuote : '', item.section),
+                comments: item.comments,
+                outcome: leadOutcomeFor(item.verdict, item.reasonType),
+                bodyTruncated: truncated,
+                usage: {
+                    input: shareOf(response.usage?.input || 0, i),
+                    output: shareOf(response.usage?.output || 0, i),
+                },
+                error: null,
+            });
+        });
+        if (typeof onChunk === 'function') onChunk(results, toCheck.length);
+    }
+
+    return {
+        results,
+        bodyChars: current.chars,
+        bodyTruncated: Boolean(current.truncated),
+        usage,
+        calls,
+        promptVersion: LEAD_PROMPT_VERSION,
+    };
+}
 // </core-injected>
 
 // Cap for manually-pasted source text. Unlike fetched sources — which the
@@ -3501,6 +4338,67 @@ function useToolforgeSourceFetcher() {
         '"Last sentence only" avoids flagging a multi-sentence claim as unsupported just because an earlier sentence lacks a citation.':
             '« Dernière phrase uniquement » évite de signaler une affirmation de plusieurs phrases comme non étayée simplement parce qu’une phrase précédente manque de source.',
         'Rank problems by severity': 'Classer les problèmes par gravité',
+        // Lead check (core/lead-check.js)
+        'Verify All also checks each sentence of the lead against the rest of the article, since a lead statement may be sourced in the body instead. A lead citation found to support only part of its claim is then set aside rather than counted as a problem. A few extra model calls per article.':
+            '« Vérifier toutes les citations » compare aussi chaque phrase du résumé introductif au reste de l\'article, car une affirmation du résumé introductif peut être sourcée dans le corps de l\'article. Une citation du résumé introductif qui ne soutient qu\'une partie de son affirmation est alors mise de côté plutôt que comptée comme un problème. Quelques appels supplémentaires au modèle par article.',
+        'Check the lead against the body':
+            'Comparer le résumé introductif au corps de l\'article',
+        'This citation is in the lead, where a statement can be supported by the article body instead of its own citation. This verdict may only mean the source backs part of the sentence. "Check the lead against the body" checks it against the body.':
+            'Cette citation se trouve dans le résumé introductif, où une affirmation peut être sourcée par le corps de l\'article plutôt que par sa propre citation. Ce verdict peut seulement signifier que la source ne soutient qu\'une partie de la phrase. « Comparer le résumé introductif au corps de l\'article » la vérifie par rapport au corps de l\'article.',
+        'Set aside: lead':
+            'Mise de côté : résumé introductif',
+        'In the lead, a statement can be supported by the article body instead of its own citation, so a lead citation that backs only part of its claim, or none of it, is not counted as a problem. The lead check above covers what the body says. These are worth a look when the claim is contentious.':
+            'Dans le résumé introductif, une affirmation peut être sourcée par le corps de l\'article plutôt que par sa propre citation : une citation du résumé introductif qui ne soutient qu\'une partie de son affirmation, ou rien de celle-ci, n\'est donc pas comptée comme un problème. La comparaison ci-dessus couvre ce que dit le corps de l\'article. Ces citations méritent un coup d\'œil si l\'affirmation est contestée.',
+        'The lead is checked against the body after the citations.':
+            'Le résumé introductif est comparé au corps de l\'article après les citations.',
+        'Checking the lead against the body… ({done} of {total} sentences)':
+            'Comparaison du résumé introductif au corps de l\'article… ({done} phrases sur {total})',
+        '{covered} of {total} lead sentences are covered in the body.':
+            '{covered} phrases du résumé introductif sur {total} sont couvertes par le corps de l\'article.',
+        'The body is long, so only the sections closest to the lead were sent. A sentence reported as not covered may be in a section that was left out.':
+            'Le corps de l\'article est long : seules les sections les plus proches du résumé introductif ont été envoyées. Une phrase signalée comme absente du corps peut se trouver dans une section omise.',
+        'Covered in the body ({count})':
+            'Couvertes par le corps de l\'article ({count})',
+        'Lead vs body':
+            'Résumé introductif et corps de l\'article',
+        'Contradicts the body':
+            'Contredit le corps de l\'article',
+        'Not covered in the body':
+            'Absent du corps de l\'article',
+        'From the body':
+            'Dans le corps de l\'article',
+        'Section: {section}':
+            'Section : {section}',
+        'Checking the lead against the body':
+            'Comparaison du résumé introductif au corps de l\'article',
+        '! Lead sentence !! Finding !! Quote from the body !! Comments':
+            '! Phrase du résumé introductif !! Constat !! Citation du corps de l\'article !! Commentaires',
+        'Lead sentence: {text}':
+            'Phrase du résumé introductif : {text}',
+        'This article has no body to check the lead against.':
+            'Cet article n\'a pas de corps auquel comparer le résumé introductif.',
+        '\n\nThe lead check is on: the {count} lead sentences are also checked against the article body at the end.':
+            '\n\nLa comparaison du résumé introductif est activée : ses {count} phrases sont aussi comparées au corps de l\'article à la fin.',
+        'This will check {count} lead sentences against the article body.\n\nContinue?':
+            'Cette action comparera {count} phrases du résumé introductif au corps de l\'article.\n\nContinuer ?',
+        'Lead check complete':
+            'Comparaison du résumé introductif terminée',
+        '{count} lead citation set aside':
+            '{count} citation du résumé introductif mise de côté',
+        '{count} lead citations set aside':
+            '{count} citations du résumé introductif mises de côté',
+        ' · {count} lead citation set aside':
+            ' · {count} citation du résumé introductif mise de côté',
+        ' · {count} lead citations set aside':
+            ' · {count} citations du résumé introductif mises de côté',
+        '{count} lead sentence could not be checked.':
+            '{count} phrase du résumé introductif n\'a pas pu être vérifiée.',
+        '{count} lead sentences could not be checked.':
+            '{count} phrases du résumé introductif n\'ont pas pu être vérifiées.',
+        '{count} lead citation was set aside: its source backs only part of its claim, which in the lead the body may cover.':
+            '{count} citation du résumé introductif a été mise de côté : sa source ne soutient qu\'une partie de son affirmation, et dans le résumé introductif le reste peut être couvert par le corps de l\'article.',
+        '{count} lead citations were set aside: their sources back only part of their claims, which in the lead the body may cover.':
+            '{count} citations du résumé introductif ont été mises de côté : leurs sources ne soutiennent qu\'une partie de leurs affirmations, et dans le résumé introductif le reste peut être couvert par le corps de l\'article.',
         'Runs one more check on each flagged citation to tell a contradicted key fact from a missing minor detail. Costs one extra model call per flagged citation.':
             'Effectue une vérification supplémentaire sur chaque citation signalée pour distinguer un fait essentiel contredit d’un détail mineur absent. Coûte un appel au modèle de plus par citation signalée.',
         '\n\nSeverity ranking is on: each flagged citation gets one more check at the end.':
@@ -3819,6 +4717,67 @@ function useToolforgeSourceFetcher() {
         '"Last sentence only" avoids flagging a multi-sentence claim as unsupported just because an earlier sentence lacks a citation.':
             'Con «Solo la última frase» se evita marcar como no respaldada una afirmación de varias frases solo porque a una frase anterior le falta una fuente.',
         'Rank problems by severity': 'Clasificar los problemas por gravedad',
+        // Lead check (core/lead-check.js)
+        'Verify All also checks each sentence of the lead against the rest of the article, since a lead statement may be sourced in the body instead. A lead citation found to support only part of its claim is then set aside rather than counted as a problem. A few extra model calls per article.':
+            '«Verificar todas las citas» también compara cada oración de la introducción con el resto del artículo, ya que una afirmación de la introducción puede estar referenciada en el cuerpo del artículo. Una cita de la introducción que solo respalda parte de su afirmación se aparta entonces en lugar de contarse como un problema. Supone algunas llamadas adicionales al modelo por artículo.',
+        'Check the lead against the body':
+            'Comparar la introducción con el cuerpo del artículo',
+        'This citation is in the lead, where a statement can be supported by the article body instead of its own citation. This verdict may only mean the source backs part of the sentence. "Check the lead against the body" checks it against the body.':
+            'Esta cita está en la introducción, donde una afirmación puede estar respaldada por el cuerpo del artículo en lugar de por su propia cita. Este veredicto puede significar solo que la fuente respalda parte de la oración. «Comparar la introducción con el cuerpo del artículo» la contrasta con el cuerpo del artículo.',
+        'Set aside: lead':
+            'Apartada: introducción',
+        'In the lead, a statement can be supported by the article body instead of its own citation, so a lead citation that backs only part of its claim, or none of it, is not counted as a problem. The lead check above covers what the body says. These are worth a look when the claim is contentious.':
+            'En la introducción, una afirmación puede estar respaldada por el cuerpo del artículo en lugar de por su propia cita, así que una cita de la introducción que solo respalda parte de su afirmación, o nada de ella, no se cuenta como un problema. La comparación de arriba cubre lo que dice el cuerpo del artículo. Conviene revisarlas cuando la afirmación es polémica.',
+        'The lead is checked against the body after the citations.':
+            'La introducción se compara con el cuerpo del artículo después de las citas.',
+        'Checking the lead against the body… ({done} of {total} sentences)':
+            'Comparando la introducción con el cuerpo del artículo… ({done} de {total} oraciones)',
+        '{covered} of {total} lead sentences are covered in the body.':
+            '{covered} de {total} oraciones de la introducción están cubiertas en el cuerpo del artículo.',
+        'The body is long, so only the sections closest to the lead were sent. A sentence reported as not covered may be in a section that was left out.':
+            'El cuerpo del artículo es largo, así que solo se enviaron las secciones más cercanas a la introducción. Una oración marcada como ausente del cuerpo puede estar en una sección que quedó fuera.',
+        'Covered in the body ({count})':
+            'Cubiertas en el cuerpo del artículo ({count})',
+        'Lead vs body':
+            'Introducción y cuerpo del artículo',
+        'Contradicts the body':
+            'Contradice el cuerpo del artículo',
+        'Not covered in the body':
+            'No está en el cuerpo del artículo',
+        'From the body':
+            'Del cuerpo del artículo',
+        'Section: {section}':
+            'Sección: {section}',
+        'Checking the lead against the body':
+            'Comparando la introducción con el cuerpo del artículo',
+        '! Lead sentence !! Finding !! Quote from the body !! Comments':
+            '! Oración de la introducción !! Hallazgo !! Cita del cuerpo del artículo !! Comentarios',
+        'Lead sentence: {text}':
+            'Oración de la introducción: {text}',
+        'This article has no body to check the lead against.':
+            'Este artículo no tiene cuerpo con el que comparar la introducción.',
+        '\n\nThe lead check is on: the {count} lead sentences are also checked against the article body at the end.':
+            '\n\nLa comparación de la introducción está activada: al final también se comparan sus {count} oraciones con el cuerpo del artículo.',
+        'This will check {count} lead sentences against the article body.\n\nContinue?':
+            'Se compararán {count} oraciones de la introducción con el cuerpo del artículo.\n\n¿Continuar?',
+        'Lead check complete':
+            'Comparación de la introducción completada',
+        '{count} lead citation set aside':
+            '{count} cita de la introducción apartada',
+        '{count} lead citations set aside':
+            '{count} citas de la introducción apartadas',
+        ' · {count} lead citation set aside':
+            ' · {count} cita de la introducción apartada',
+        ' · {count} lead citations set aside':
+            ' · {count} citas de la introducción apartadas',
+        '{count} lead sentence could not be checked.':
+            'No se pudo comprobar {count} oración de la introducción.',
+        '{count} lead sentences could not be checked.':
+            'No se pudieron comprobar {count} oraciones de la introducción.',
+        '{count} lead citation was set aside: its source backs only part of its claim, which in the lead the body may cover.':
+            'Se apartó {count} cita de la introducción: su fuente solo respalda parte de su afirmación, y en la introducción el resto puede estar cubierto por el cuerpo del artículo.',
+        '{count} lead citations were set aside: their sources back only part of their claims, which in the lead the body may cover.':
+            'Se apartaron {count} citas de la introducción: sus fuentes solo respaldan parte de sus afirmaciones, y en la introducción el resto puede estar cubierto por el cuerpo del artículo.',
         'Runs one more check on each flagged citation to tell a contradicted key fact from a missing minor detail. Costs one extra model call per flagged citation.':
             'Hace una comprobación más en cada cita señalada para distinguir un hecho clave contradicho de un detalle menor ausente. Supone una llamada adicional al modelo por cada cita señalada.',
         '\n\nSeverity ranking is on: each flagged citation gets one more check at the end.':
@@ -4133,6 +5092,67 @@ function useToolforgeSourceFetcher() {
         '"Last sentence only" avoids flagging a multi-sentence claim as unsupported just because an earlier sentence lacks a citation.':
             '«Только последнее предложение» позволяет не помечать утверждение из нескольких предложений как неподтверждённое только потому, что в одном из предыдущих предложений нет сноски.',
         'Rank problems by severity': 'Оценивать серьёзность проблем',
+        // Lead check (core/lead-check.js)
+        'Verify All also checks each sentence of the lead against the rest of the article, since a lead statement may be sourced in the body instead. A lead citation found to support only part of its claim is then set aside rather than counted as a problem. A few extra model calls per article.':
+            '«Проверить все сноски» также сверяет каждое предложение преамбулы с остальной статьёй: утверждение в преамбуле может подтверждаться источниками в основном тексте. Сноска в преамбуле, подтверждающая лишь часть утверждения, тогда откладывается, а не считается проблемой. Несколько дополнительных обращений к модели на статью.',
+        'Check the lead against the body':
+            'Сверить преамбулу с основным текстом',
+        'This citation is in the lead, where a statement can be supported by the article body instead of its own citation. This verdict may only mean the source backs part of the sentence. "Check the lead against the body" checks it against the body.':
+            'Эта сноска стоит в преамбуле, где утверждение может подтверждаться основным текстом статьи, а не собственной сноской. Этот вердикт может означать лишь, что источник подтверждает часть предложения. «Сверить преамбулу с основным текстом» проверит его по основному тексту.',
+        'Set aside: lead':
+            'Отложено: преамбула',
+        'In the lead, a statement can be supported by the article body instead of its own citation, so a lead citation that backs only part of its claim, or none of it, is not counted as a problem. The lead check above covers what the body says. These are worth a look when the claim is contentious.':
+            'В преамбуле утверждение может подтверждаться основным текстом статьи, а не собственной сноской, поэтому сноска в преамбуле, подтверждающая лишь часть утверждения или ничего из него, не считается проблемой. Сверка выше показывает, что сказано в основном тексте. Эти сноски стоит посмотреть, если утверждение спорное.',
+        'The lead is checked against the body after the citations.':
+            'Преамбула сверяется с основным текстом после сносок.',
+        'Checking the lead against the body… ({done} of {total} sentences)':
+            'Сверка преамбулы с основным текстом… (предложений: {done} из {total})',
+        '{covered} of {total} lead sentences are covered in the body.':
+            'Основной текст подтверждает предложений преамбулы: {covered} из {total}.',
+        'The body is long, so only the sections closest to the lead were sent. A sentence reported as not covered may be in a section that was left out.':
+            'Основной текст длинный, поэтому отправлены только разделы, ближайшие к преамбуле. Предложение, отмеченное как отсутствующее в основном тексте, может быть в пропущенном разделе.',
+        'Covered in the body ({count})':
+            'Подтверждено основным текстом ({count})',
+        'Lead vs body':
+            'Преамбула и основной текст',
+        'Contradicts the body':
+            'Противоречит основному тексту',
+        'Not covered in the body':
+            'Нет в основном тексте',
+        'From the body':
+            'Из основного текста',
+        'Section: {section}':
+            'Раздел: {section}',
+        'Checking the lead against the body':
+            'Сверка преамбулы с основным текстом',
+        '! Lead sentence !! Finding !! Quote from the body !! Comments':
+            '! Предложение преамбулы !! Результат !! Цитата из основного текста !! Комментарии',
+        'Lead sentence: {text}':
+            'Предложение преамбулы: {text}',
+        'This article has no body to check the lead against.':
+            'В этой статье нет основного текста, с которым можно сверить преамбулу.',
+        '\n\nThe lead check is on: the {count} lead sentences are also checked against the article body at the end.':
+            '\n\nСверка преамбулы включена: в конце предложения преамбулы (всего {count}) также сверяются с основным текстом.',
+        'This will check {count} lead sentences against the article body.\n\nContinue?':
+            'Будет сверено с основным текстом предложений преамбулы: {count}.\n\nПродолжить?',
+        'Lead check complete':
+            'Сверка преамбулы завершена',
+        '{count} lead citation set aside':
+            'Отложено сносок в преамбуле: {count}',
+        '{count} lead citations set aside':
+            'Отложено сносок в преамбуле: {count}',
+        ' · {count} lead citation set aside':
+            ' · отложено сносок в преамбуле: {count}',
+        ' · {count} lead citations set aside':
+            ' · отложено сносок в преамбуле: {count}',
+        '{count} lead sentence could not be checked.':
+            'Не удалось проверить предложений преамбулы: {count}.',
+        '{count} lead sentences could not be checked.':
+            'Не удалось проверить предложений преамбулы: {count}.',
+        '{count} lead citation was set aside: its source backs only part of its claim, which in the lead the body may cover.':
+            'Отложено сносок в преамбуле: {count}. Их источники подтверждают лишь часть утверждения, а в преамбуле остальное может подтверждаться основным текстом.',
+        '{count} lead citations were set aside: their sources back only part of their claims, which in the lead the body may cover.':
+            'Отложено сносок в преамбуле: {count}. Их источники подтверждают лишь часть утверждений, а в преамбуле остальное может подтверждаться основным текстом.',
         'Runs one more check on each flagged citation to tell a contradicted key fact from a missing minor detail. Costs one extra model call per flagged citation.':
             'Проводит дополнительную проверку каждой проблемной сноски, чтобы отличить опровергнутый ключевой факт от отсутствующей второстепенной детали. Требует одного дополнительного запроса к модели на каждую такую сноску.',
         '\n\nSeverity ranking is on: each flagged citation gets one more check at the end.':
@@ -4455,6 +5475,67 @@ function useToolforgeSourceFetcher() {
         '"Last sentence only" avoids flagging a multi-sentence claim as unsupported just because an earlier sentence lacks a citation.':
             '"המשפט האחרון בלבד" מונע סימון של טענה בת כמה משפטים כלא נתמכת רק משום שלאחד המשפטים הקודמים אין הערת שוליים.',
         'Rank problems by severity': 'דירוג בעיות לפי חומרה',
+        // Lead check (core/lead-check.js)
+        'Verify All also checks each sentence of the lead against the rest of the article, since a lead statement may be sourced in the body instead. A lead citation found to support only part of its claim is then set aside rather than counted as a problem. A few extra model calls per article.':
+            '״בדיקת כל הערות השוליים״ בודקת גם כל משפט בפתיח מול שאר הערך, כי טענה בפתיח יכולה להיות מגובה במקורות בגוף הערך. הערת שוליים בפתיח שתומכת רק בחלק מהטענה מוצגת אז בנפרד ואינה נספרת כבעיה. כמה קריאות נוספות למודל לכל ערך.',
+        'Check the lead against the body':
+            'השוואת הפתיח לגוף הערך',
+        'This citation is in the lead, where a statement can be supported by the article body instead of its own citation. This verdict may only mean the source backs part of the sentence. "Check the lead against the body" checks it against the body.':
+            'הערת השוליים הזו נמצאת בפתיח, שבו טענה יכולה להיות מגובה בגוף הערך במקום בהערת שוליים משלה. ייתכן שהקביעה הזו אומרת רק שהמקור תומך בחלק מהמשפט. ״השוואת הפתיח לגוף הערך״ בודקת אותו מול גוף הערך.',
+        'Set aside: lead':
+            'הוצג בנפרד: פתיח',
+        'In the lead, a statement can be supported by the article body instead of its own citation, so a lead citation that backs only part of its claim, or none of it, is not counted as a problem. The lead check above covers what the body says. These are worth a look when the claim is contentious.':
+            'בפתיח, טענה יכולה להיות מגובה בגוף הערך במקום בהערת שוליים משלה, ולכן הערת שוליים בפתיח שתומכת רק בחלק מהטענה, או באף חלק ממנה, אינה נספרת כבעיה. ההשוואה שלמעלה מכסה את מה שנאמר בגוף הערך. כדאי לעבור עליהן כשהטענה שנויה במחלוקת.',
+        'The lead is checked against the body after the citations.':
+            'הפתיח מושווה לגוף הערך אחרי הערות השוליים.',
+        'Checking the lead against the body… ({done} of {total} sentences)':
+            'השוואת הפתיח לגוף הערך… ({done} מתוך {total} משפטים)',
+        '{covered} of {total} lead sentences are covered in the body.':
+            '{covered} מתוך {total} משפטי הפתיח מכוסים בגוף הערך.',
+        'The body is long, so only the sections closest to the lead were sent. A sentence reported as not covered may be in a section that was left out.':
+            'גוף הערך ארוך, ולכן נשלחו רק הפרקים הקרובים ביותר לפתיח. משפט שסומן כלא מופיע בגוף הערך עשוי להופיע בפרק שהושמט.',
+        'Covered in the body ({count})':
+            'מכוסים בגוף הערך ({count})',
+        'Lead vs body':
+            'הפתיח מול גוף הערך',
+        'Contradicts the body':
+            'סותר את גוף הערך',
+        'Not covered in the body':
+            'לא מופיע בגוף הערך',
+        'From the body':
+            'מגוף הערך',
+        'Section: {section}':
+            'פרק: {section}',
+        'Checking the lead against the body':
+            'השוואת הפתיח לגוף הערך',
+        '! Lead sentence !! Finding !! Quote from the body !! Comments':
+            '! משפט בפתיח !! ממצא !! ציטוט מגוף הערך !! הערות',
+        'Lead sentence: {text}':
+            'משפט בפתיח: {text}',
+        'This article has no body to check the lead against.':
+            'אין בערך הזה גוף שאפשר להשוות אליו את הפתיח.',
+        '\n\nThe lead check is on: the {count} lead sentences are also checked against the article body at the end.':
+            '\n\nהשוואת הפתיח פעילה: בסוף מושווים גם {count} משפטי הפתיח לגוף הערך.',
+        'This will check {count} lead sentences against the article body.\n\nContinue?':
+            'יושוו {count} משפטי פתיח לגוף הערך.\n\nלהמשיך?',
+        'Lead check complete':
+            'השוואת הפתיח הושלמה',
+        '{count} lead citation set aside':
+            '{count} הערת שוליים בפתיח הוצגה בנפרד',
+        '{count} lead citations set aside':
+            '{count} הערות שוליים בפתיח הוצגו בנפרד',
+        ' · {count} lead citation set aside':
+            ' · {count} הערת שוליים בפתיח הוצגה בנפרד',
+        ' · {count} lead citations set aside':
+            ' · {count} הערות שוליים בפתיח הוצגו בנפרד',
+        '{count} lead sentence could not be checked.':
+            'לא ניתן היה לבדוק {count} משפט בפתיח.',
+        '{count} lead sentences could not be checked.':
+            'לא ניתן היה לבדוק {count} משפטים בפתיח.',
+        '{count} lead citation was set aside: its source backs only part of its claim, which in the lead the body may cover.':
+            '{count} הערת שוליים בפתיח הוצגה בנפרד: המקור שלה תומך רק בחלק מהטענה, ובפתיח את השאר יכול לכסות גוף הערך.',
+        '{count} lead citations were set aside: their sources back only part of their claims, which in the lead the body may cover.':
+            '{count} הערות שוליים בפתיח הוצגו בנפרד: המקורות שלהן תומכים רק בחלק מהטענות, ובפתיח את השאר יכול לכסות גוף הערך.',
         'Runs one more check on each flagged citation to tell a contradicted key fact from a missing minor detail. Costs one extra model call per flagged citation.':
             'בדיקה נוספת לכל הערת שוליים שסומנה, כדי להבחין בין עובדה מרכזית שהמקור סותר לבין פרט שולי שאינו מופיע בו. כרוכה בקריאה נוספת למודל לכל הערה כזו.',
         '\n\nSeverity ranking is on: each flagged citation gets one more check at the end.':
@@ -4836,6 +5917,11 @@ function useToolforgeSourceFetcher() {
             // Severity ranking (core/severity.js): one more model call per
             // flagged citation, so off until the editor turns it on.
             this.severityEnabled = localStorage.getItem('verifier_severity') === 'on';
+            // Lead check (core/lead-check.js): Verify All checks every lead
+            // sentence against the article body, and sets aside a lead
+            // citation's partial or omission verdict. A few calls per
+            // article rather than one per citation, so on unless turned off.
+            this.leadCheckEnabled = localStorage.getItem('verifier_lead_check') !== 'off';
             this.sidebarWidth = localStorage.getItem('verifier_sidebar_width') || '400px';
             this.isVisible = localStorage.getItem('verifier_sidebar_visible') === 'true';
             this.buttons = {};
@@ -4983,6 +6069,8 @@ function useToolforgeSourceFetcher() {
                         <div id="verifier-claim-scope-note">${this.t('"Last sentence only" avoids flagging a multi-sentence claim as unsupported just because an earlier sentence lacks a citation.')}</div>
                         <div id="verifier-severity-container"></div>
                         <div id="verifier-severity-note">${this.t('Runs one more check on each flagged citation to tell a contradicted key fact from a missing minor detail. Costs one extra model call per flagged citation.')}</div>
+                        <div id="verifier-lead-check-container"></div>
+                        <div id="verifier-lead-check-note">${this.t('Verify All also checks each sentence of the lead against the rest of the article, since a lead statement may be sourced in the body instead. A lead citation found to support only part of its claim is then set aside rather than counted as a problem. A few extra model calls per article.')}</div>
                         <div id="verifier-accuracy-note"></div>
                         <div id="verifier-privacy-note">${this.t('Results are logged for research. Your username is not recorded.')}</div>
                         <div id="verifier-settings-done-container"></div>
@@ -4998,6 +6086,7 @@ function useToolforgeSourceFetcher() {
                             <div id="verifier-quote"></div>
                             <div id="verifier-comments"></div>
                             <div id="verifier-severity"></div>
+                            <div id="verifier-lead-note"></div>
                             <div id="verifier-verdict-next"></div>
                             <div id="verifier-action-container"></div>
                         </div>
@@ -5030,6 +6119,7 @@ function useToolforgeSourceFetcher() {
                             <div id="verifier-report-progress"></div>
                             <div id="verifier-report-summary"></div>
                             <div id="verifier-report-results"></div>
+                            <div id="verifier-report-lead"></div>
                             <div id="verifier-report-actions"></div>
                         </div>
                     </div>
@@ -6165,6 +7255,127 @@ function useToolforgeSourceFetcher() {
                 .sv-subclaim-minor {
                     color: var(--sv-ink-subtle);
                 }
+
+                /* Lead check (core/lead-check.js): the report's lead section,
+                   and the single-check note on a set-aside lead citation. */
+                #verifier-lead-check-note {
+                    font-size: 12px;
+                    color: var(--sv-ink-4);
+                    margin-bottom: 10px;
+                }
+                #verifier-lead-note {
+                    margin-top: 8px;
+                    font-size: 12px;
+                    line-height: 1.45;
+                    color: var(--sv-warn-fg);
+                }
+                #verifier-lead-note:empty {
+                    display: none;
+                }
+                #verifier-report-lead {
+                    margin-bottom: 12px;
+                }
+                #verifier-report-lead:empty {
+                    display: none;
+                }
+                .sv-lead-check h4 {
+                    margin: 0 0 4px;
+                    font-size: 13px;
+                    color: var(--sv-accent-fg);
+                }
+                .sv-lead-status {
+                    font-size: 12px;
+                    color: var(--sv-ink-3);
+                    margin-bottom: 6px;
+                }
+                .sv-lead-note {
+                    font-size: 11px;
+                    color: var(--sv-warn-fg);
+                    background: var(--sv-warn-bg);
+                    border: 1px solid var(--sv-warn-bd);
+                    border-radius: 3px;
+                    padding: 2px 6px;
+                    margin-bottom: 6px;
+                }
+                .sv-lead-card {
+                    padding: 8px 10px;
+                    margin-bottom: 6px;
+                    border: 1px solid var(--sv-border);
+                    border-inline-start: 3px solid var(--sv-seg-partial);
+                    border-radius: 4px;
+                    background: var(--sv-bg-card);
+                    color: var(--sv-ink);
+                    font-size: 12px;
+                    cursor: pointer;
+                }
+                .sv-lead-card:hover {
+                    background: var(--sv-bg-hover);
+                }
+                .sv-lead-card.sv-lead-contradicted {
+                    border-inline-start-color: var(--sv-seg-not-supported);
+                }
+                .sv-lead-card-header {
+                    display: flex;
+                    flex-wrap: wrap;
+                    align-items: center;
+                    gap: 6px;
+                    margin-bottom: 4px;
+                }
+                .sv-lead-tag {
+                    font-weight: bold;
+                    font-size: 11px;
+                    padding: 1px 6px;
+                    border-radius: 3px;
+                    background: var(--sv-warn-bg);
+                    color: var(--sv-warn-fg);
+                }
+                .sv-lead-contradicted .sv-lead-tag {
+                    background: var(--sv-err-bg);
+                    color: var(--sv-err-fg);
+                }
+                .sv-lead-section {
+                    font-size: 11px;
+                    color: var(--sv-ink-subtle);
+                }
+                .sv-lead-sentence {
+                    color: var(--sv-ink-2);
+                    margin-bottom: 2px;
+                }
+                .sv-lead-covered,
+                .sv-lead-demoted {
+                    margin-top: 6px;
+                    font-size: 12px;
+                    color: var(--sv-ink-3);
+                }
+                .sv-lead-covered summary,
+                .sv-lead-demoted summary {
+                    cursor: pointer;
+                    color: var(--sv-ink-4);
+                }
+                .sv-lead-covered ul {
+                    margin: 4px 0 0;
+                    padding-inline-start: 16px;
+                }
+                .sv-lead-demoted-note {
+                    margin: 4px 0 6px;
+                    font-size: 11px;
+                    color: var(--sv-ink-4);
+                }
+                .sv-lead-demoted-cards {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 6px;
+                }
+                .sv-lead-aside-tag {
+                    display: inline-block;
+                    font-size: 11px;
+                    padding: 1px 6px;
+                    border-radius: 3px;
+                    margin-inline-start: 6px;
+                    background: var(--sv-na-bg);
+                    color: var(--sv-na-fg);
+                    vertical-align: middle;
+                }
                 .verifier-sort {
                     display: flex;
                     flex-wrap: wrap;
@@ -6562,6 +7773,13 @@ function useToolforgeSourceFetcher() {
                 align: 'inline'
             });
 
+            // Lead check toggle
+            this.buttons.leadCheckToggle = new OO.ui.CheckboxInputWidget({ selected: this.leadCheckEnabled });
+            this.buttons.leadCheckField = new OO.ui.FieldLayout(this.buttons.leadCheckToggle, {
+                label: this.t('Check the lead against the body'),
+                align: 'inline'
+            });
+
             this.buttons.setKey = new OO.ui.ButtonWidget({
                 label: this.t('Set API Key'),
                 flags: ['primary', 'progressive'],
@@ -6621,6 +7839,13 @@ function useToolforgeSourceFetcher() {
                 icon: 'articles'
             });
 
+            // An uncited lead sentence has no citation to click, so the lead
+            // check also runs on its own.
+            this.buttons.checkLead = new OO.ui.ButtonWidget({
+                label: this.t('Check the lead against the body'),
+                flags: ['progressive']
+            });
+
             this.buttons.stopAll = new OO.ui.ButtonWidget({
                 label: this.t('Stop'),
                 flags: ['destructive'],
@@ -6642,6 +7867,7 @@ function useToolforgeSourceFetcher() {
             document.getElementById('verifier-provider-container').appendChild(this.buttons.providerSelect.$element[0]);
             document.getElementById('verifier-claim-scope-container').appendChild(this.buttons.claimScopeSelect.$element[0]);
             document.getElementById('verifier-severity-container').appendChild(this.buttons.severityField.$element[0]);
+            document.getElementById('verifier-lead-check-container').appendChild(this.buttons.leadCheckField.$element[0]);
             document.getElementById('verifier-settings-done-container').appendChild(this.buttons.settingsDone.$element[0]);
 
             this.updateProviderInfo();
@@ -6740,6 +7966,9 @@ function useToolforgeSourceFetcher() {
                         container.appendChild(this.buttons.verify.$element[0]);
                     }
                     container.appendChild(this.buttons.verifyAll.$element[0]);
+                    if (this.leadCheckEnabled && this.articleLead()) {
+                        container.appendChild(this.buttons.checkLead.$element[0]);
+                    }
 
                     if (this.hasReport && !this.reportMode) {
                         container.appendChild(this.buttons.backToReport.$element[0]);
@@ -7339,6 +8568,12 @@ function useToolforgeSourceFetcher() {
                 localStorage.setItem('verifier_severity', this.severityEnabled ? 'on' : 'off');
             });
 
+            this.buttons.leadCheckToggle.on('change', (selected) => {
+                this.leadCheckEnabled = !!selected;
+                localStorage.setItem('verifier_lead_check', this.leadCheckEnabled ? 'on' : 'off');
+                this.updateButtonVisibility();
+            });
+
             this.buttons.setKey.on('click', () => {
                 this.setApiKey();
             });
@@ -7390,6 +8625,10 @@ function useToolforgeSourceFetcher() {
 
             this.buttons.verifyAll.on('click', () => {
                 this.verifyAllCitations();
+            });
+
+            this.buttons.checkLead.on('click', () => {
+                this.verifyAllCitations({ leadOnly: true });
             });
 
             this.buttons.stopAll.on('click', () => {
@@ -7629,11 +8868,22 @@ function useToolforgeSourceFetcher() {
 
                 this.displayResult(result);
 
+                // A lead citation's partial or omission verdict says only
+                // that its source doesn't cover the whole claim, which in the
+                // lead the body may. Shown, with a note, and not ranked.
+                const parsedVerdict = this.parseVerificationResult(result);
+                const leadDemoted = this.isDemotedLeadVerdict(this.activeRefElement, parsedVerdict.verdict, parsedVerdict.reason_type);
+                const leadNoteEl = document.getElementById('verifier-lead-note');
+                if (leadNoteEl) {
+                    leadNoteEl.textContent = leadDemoted
+                        ? this.t('This citation is in the lead, where a statement can be supported by the article body instead of its own citation. This verdict may only mean the source backs part of the sentence. "Check the lead against the body" checks it against the body.')
+                        : '';
+                }
+
                 // Not awaited: the verdict is the answer, and the Verify
                 // button shouldn't stay busy for a refinement of it.
-                if (this.severityEnabled) {
-                    const parsed = this.parseVerificationResult(result);
-                    if (needsSeverity(parsed)) this.showSingleSeverity(parsed, verifyId);
+                if (this.severityEnabled && !leadDemoted) {
+                    if (needsSeverity(parsedVerdict)) this.showSingleSeverity(parsedVerdict, verifyId);
                 }
 
             } catch (error) {
@@ -7965,11 +9215,26 @@ function useToolforgeSourceFetcher() {
             const summaryEl = document.getElementById('verifier-report-summary');
             if (!summaryEl) return;
 
+            const tokensLabel = this.reportTokenUsage.input + this.reportTokenUsage.output > 0
+                ? this.t(' · {input} input + {output} output tokens', { input: this.reportTokenUsage.input.toLocaleString(), output: this.reportTokenUsage.output.toLocaleString() })
+                : '';
+            const revisionHtml = this.reportRevisionId
+                ? `<div class="verifier-summary-meta">${this.t('Revision: ')}<a href="${this.escapeHtml(this.getRevisionPermalinkUrl(this.reportRevisionId) || '#')}" target="_blank" rel="noopener">${this.reportRevisionId}</a></div>`
+                : '';
+            // A lead-only report ("Check the lead against the body") has no
+            // citations to count; its findings are in the lead section.
+            if (this.reportLeadOnly) {
+                summaryEl.innerHTML = tokensLabel || revisionHtml
+                    ? `<div class="verifier-summary-meta">${tokensLabel.replace(/^ · /, '')}</div>${revisionHtml}`
+                    : '';
+                return;
+            }
+
             // Counts/pills are driven by the per-claim units: one verdict per
             // adjacent group (its collective verdict) plus one per solo
             // citation. The individual per-source rows shown inside group
             // blocks are debug detail and don't feed the pills.
-            const units = this.getReportUnits();
+            const units = this.getCountedReportUnits();
             const counts = { supported: 0, partial: 0, 'not-supported': 0, unavailable: 0, error: 0, skipped: 0 };
             for (const u of units) {
                 if (u.verdict === 'SUPPORTED') counts.supported++;
@@ -8011,6 +9276,10 @@ function useToolforgeSourceFetcher() {
             const claimsLabel = citationCount === total
                 ? this.t(total === 1 ? '{count} citation checked' : '{count} citations checked', { count: total })
                 : this.t(total === 1 ? '{citations} citations across {claims} claim' : '{citations} citations across {claims} claims', { citations: citationCount, claims: total });
+            const demotedCount = this.getReportUnits().filter(u => u.leadDemoted).length;
+            const demotedLabel = demotedCount
+                ? this.t(demotedCount === 1 ? ' · {count} lead citation set aside' : ' · {count} lead citations set aside', { count: demotedCount })
+                : '';
 
             summaryEl.innerHTML = `
                 <div class="verifier-summary-bar">
@@ -8031,9 +9300,9 @@ function useToolforgeSourceFetcher() {
                 </div>
                 ${this.reportSeverity ? this.reportSortHtml() : ''}
                 <div class="verifier-summary-meta">
-                    ${claimsLabel}${hiddenCount > 0 ? this.t(' · {count} hidden by filter', { count: hiddenCount }) : ''}${this.reportTokenUsage.input + this.reportTokenUsage.output > 0 ? this.t(' · {input} input + {output} output tokens', { input: this.reportTokenUsage.input.toLocaleString(), output: this.reportTokenUsage.output.toLocaleString() }) : ''}
+                    ${claimsLabel}${demotedLabel}${hiddenCount > 0 ? this.t(' · {count} hidden by filter', { count: hiddenCount }) : ''}${tokensLabel}
                 </div>
-                ${this.reportRevisionId ? `<div class="verifier-summary-meta">${this.t('Revision: ')}<a href="${this.escapeHtml(this.getRevisionPermalinkUrl(this.reportRevisionId) || '#')}" target="_blank" rel="noopener">${this.reportRevisionId}</a></div>` : ''}
+                ${revisionHtml}
             `;
 
             summaryEl.querySelectorAll('.verifier-filter-chip').forEach(btn => {
@@ -8088,6 +9357,14 @@ function useToolforgeSourceFetcher() {
                 const card = this.buildSoloCard(result);
                 card.dataset.docOrder = String(this.reportDocOrder++);
                 this.reportCardEls.set(result, card);
+                // A set-aside lead citation goes in the lead section, outside
+                // the filters and the sort (renderReportLead()).
+                const demotedCards = result.leadDemoted ? this.leadDemotedCards() : null;
+                if (demotedCards) {
+                    demotedCards.appendChild(card);
+                    this.renderReportLead();
+                    return;
+                }
                 resultsEl.insertBefore(card, resultsEl.querySelector('.verifier-filter-empty'));
                 return;
             }
@@ -8230,6 +9507,14 @@ function useToolforgeSourceFetcher() {
 
             const feedback = this.buildFeedbackControls(result);
             if (feedback) slot.appendChild(feedback);
+
+            // A set-aside combined verdict takes its whole group block, rows
+            // and all, to the lead section.
+            const demotedCards = result.leadDemoted ? this.leadDemotedCards() : null;
+            if (demotedCards) {
+                demotedCards.appendChild(groupEl);
+                this.renderReportLead();
+            }
         }
 
         // Called when the collective check is skipped for want of a second
@@ -8243,6 +9528,18 @@ function useToolforgeSourceFetcher() {
             groupEl.dataset.collectiveSkipped = 'true';
             const slot = groupEl.querySelector('.verifier-report-group-collective');
             if (slot) slot.style.display = 'none';
+            // With no combined verdict the members are counted one by one, so
+            // a set-aside member says so on its row. (A set-aside combined
+            // verdict moves the whole block to the lead section instead.)
+            for (const result of this.reportResults) {
+                if (result.groupId !== groupId || !result.leadDemoted) continue;
+                const actions = this.reportCardEls.get(result)?.querySelector('.report-card-header-actions');
+                if (!actions || actions.querySelector('.sv-lead-aside-tag')) continue;
+                const tag = document.createElement('span');
+                tag.className = 'sv-lead-aside-tag';
+                tag.textContent = this.t('Set aside: lead');
+                actions.appendChild(tag);
+            }
         }
 
         buildGroupRow(result) {
@@ -8370,7 +9667,7 @@ function useToolforgeSourceFetcher() {
 
             // One row per claim: solo citations, and adjacent groups collapsed
             // to their single combined verdict (members linked, sources listed).
-            const reportUnits = this.getReportUnits();
+            const reportUnits = this.getCountedReportUnits();
             for (const r of reportUnits) {
                 let verdictWiki;
                 switch (r.verdict) {
@@ -8411,6 +9708,7 @@ function useToolforgeSourceFetcher() {
             }
 
             wikitext += `|}\n\n`;
+            wikitext += this.leadReportLines('wikitext');
 
             const counts = { supported: 0, partial: 0, notSupported: 0, unavailable: 0 };
             for (const r of reportUnits) {
@@ -8456,7 +9754,7 @@ function useToolforgeSourceFetcher() {
             }
             text += `${'='.repeat(60)}\n\n`;
 
-            for (const r of this.getReportUnits()) {
+            for (const r of this.getCountedReportUnits()) {
                 const claimExcerpt = `${r.claimText.substring(0, 100)}${r.claimText.length > 100 ? '...' : ''}`;
                 const verdictLabel = (r.verdict === 'NOT SUPPORTED' && r.reason_type)
                     ? `${this.t(r.verdict)} (${this.reasonTypeLabel(r.reason_type)})`
@@ -8480,6 +9778,8 @@ function useToolforgeSourceFetcher() {
                 }
                 text += `\n`;
             }
+
+            text += this.leadReportLines('plaintext');
 
             if (this.reportTokenUsage.input + this.reportTokenUsage.output > 0) {
                 text += this.t('Tokens used: {input} input, {output} output', { input: this.reportTokenUsage.input.toLocaleString(), output: this.reportTokenUsage.output.toLocaleString() }) + `\n`;
@@ -8633,7 +9933,7 @@ function useToolforgeSourceFetcher() {
         // applied once, when ranking ends. Only report units are ranked: a
         // group with a combined verdict is ranked on that, not on its rows.
         async rankReportBySeverity(delayBetweenCalls) {
-            const units = this.getReportUnits().filter(u => needsSeverity(u) && this.severityInputs.has(u));
+            const units = this.getCountedReportUnits().filter(u => needsSeverity(u) && this.severityInputs.has(u));
             const startTime = Date.now();
             const articleTitle = this.reportArticleTitle();
             for (let k = 0; k < units.length; k++) {
@@ -8903,6 +10203,8 @@ function useToolforgeSourceFetcher() {
                 } catch (e) {}
             }
 
+            result.inLead = Boolean(members[0].inLead);
+            result.leadDemoted = this.demotesInReport(result);
             this.reportGroupResults.set(groupId, result);
             this.renderGroupCollectiveResult(result);
             this.renderReportSummary();
@@ -8921,16 +10223,274 @@ function useToolforgeSourceFetcher() {
         // Used by the summary counts and the wikitext/plaintext exporters.
         // Shared with the batch pipeline via core/groups.js's
         // mergeReportUnits() — see that file's header.
+        // ========================================
+        // LEAD CHECK (core/lead.js, core/lead-check.js)
+        // ========================================
+
+        // The lead's sentences and the body they summarize, read once per page
+        // view: the article under the sidebar doesn't change. Null for an
+        // article with no body (no headings) or no lead prose, which gets no
+        // lead check and no demotion.
+        articleLead() {
+            if (this._articleLead !== undefined) return this._articleLead;
+            let lead = null;
+            try {
+                const root = document.getElementById('mw-content-text');
+                const sentences = root ? leadSentences(root) : [];
+                if (sentences.length) {
+                    const body = articleBody(root, { leadText: sentences.map(s => s.text).join(' ') });
+                    if (body.text) lead = { sentences, body, paragraphs: new Set(leadParagraphs(root)) };
+                }
+            } catch (e) {
+                console.warn('[Verifier] Could not read the lead:', e);
+            }
+            this._articleLead = lead;
+            return lead;
+        }
+
+        isLeadProseRef(refElement) {
+            const lead = this.articleLead();
+            const p = refElement && refElement.closest('p');
+            return Boolean(lead && p && lead.paragraphs.has(p));
+        }
+
+        // A single check's verdict, set aside under the same rule Verify All
+        // applies: lead prose, an article with a body, the setting on, and a
+        // partial or omission verdict.
+        isDemotedLeadVerdict(refElement, verdict, reasonType) {
+            return this.leadCheckEnabled && this.isLeadProseRef(refElement) && isLeadDemotedVerdict(verdict, reasonType);
+        }
+
+        // The same, for a report row: asks the run's own lead state rather
+        // than the setting, which may change while the run is going.
+        demotesInReport(result) {
+            return Boolean(this.reportLead && result.inLead && isLeadDemotedVerdict(result.verdict, result.reason_type));
+        }
+
+        // Units the summary, the severity ranking and the exports count:
+        // everything but set-aside lead citations, which are shown apart, in
+        // the lead section.
+        getCountedReportUnits() {
+            return this.getReportUnits().filter(u => !u.leadDemoted);
+        }
+
+        // Builds the report's lead section for a new run: the lead check's
+        // findings, re-rendered as results arrive, and a collapsed list the
+        // set-aside lead citations' cards are moved into (they keep their
+        // buttons and feedback controls, so they are moved, not re-rendered).
+        resetReportLead() {
+            const el = document.getElementById('verifier-report-lead');
+            if (!el) return;
+            el.innerHTML = '';
+            if (!this.reportLead) return;
+            const check = document.createElement('div');
+            check.className = 'sv-lead-check';
+            el.appendChild(check);
+            const demoted = document.createElement('details');
+            demoted.className = 'sv-lead-demoted';
+            demoted.style.display = 'none';
+            demoted.innerHTML = `<summary></summary>`
+                + `<div class="sv-lead-demoted-note">${this.escapeHtml(this.t('In the lead, a statement can be supported by the article body instead of its own citation, so a lead citation that backs only part of its claim, or none of it, is not counted as a problem. The lead check above covers what the body says. These are worth a look when the claim is contentious.'))}</div>`
+                + `<div class="sv-lead-demoted-cards"></div>`;
+            el.appendChild(demoted);
+            this.renderReportLead();
+        }
+
+        leadDemotedCards() {
+            return document.querySelector('#verifier-report-lead .sv-lead-demoted-cards');
+        }
+
+        renderReportLead() {
+            const el = document.querySelector('#verifier-report-lead .sv-lead-check');
+            if (!el || !this.reportLead) return;
+            el.innerHTML = this.leadCheckHtml(this.reportLead);
+            el.querySelectorAll('[data-lead-index]').forEach(card => {
+                card.addEventListener('click', () => this.scrollToLeadSentence(Number(card.dataset.leadIndex)));
+            });
+            const demoted = document.querySelector('#verifier-report-lead .sv-lead-demoted');
+            const cards = this.leadDemotedCards();
+            if (demoted && cards) {
+                const count = cards.children.length;
+                demoted.style.display = count ? '' : 'none';
+                demoted.querySelector('summary').textContent = this.t(
+                    count === 1 ? '{count} lead citation set aside' : '{count} lead citations set aside', { count });
+            }
+        }
+
+        // The lead check's part of the report, from its state alone:
+        // { sentences, results, state: 'pending' | 'running' | 'done', bodyTruncated }.
+        leadCheckHtml(lead) {
+            const results = lead.results || [];
+            const total = lead.sentences.length;
+            const covered = results.filter(r => r.outcome === LEAD_OUTCOMES.COVERED);
+            const flagged = results.filter(r => r.outcome === LEAD_OUTCOMES.NOT_COVERED || r.outcome === LEAD_OUTCOMES.CONTRADICTED);
+            const unchecked = results.filter(r => !r.verdict);
+            let status;
+            if (lead.state === 'pending') {
+                status = this.t('The lead is checked against the body after the citations.');
+            } else if (lead.state === 'running') {
+                status = this.t('Checking the lead against the body… ({done} of {total} sentences)', { done: results.length, total });
+            } else {
+                status = this.t('{covered} of {total} lead sentences are covered in the body.', { covered: covered.length, total });
+            }
+            const notes = [];
+            if (lead.bodyTruncated) {
+                notes.push(this.t('The body is long, so only the sections closest to the lead were sent. A sentence reported as not covered may be in a section that was left out.'));
+            }
+            if (lead.state === 'done' && unchecked.length) {
+                notes.push(this.t(unchecked.length === 1 ? '{count} lead sentence could not be checked.' : '{count} lead sentences could not be checked.', { count: unchecked.length }));
+            }
+            const coveredHtml = covered.length
+                ? `<details class="sv-lead-covered"><summary>${this.escapeHtml(this.t('Covered in the body ({count})', { count: covered.length }))}</summary><ul>`
+                    + covered.map(r => `<li>${this.escapeHtml(r.text)}${r.section ? ` <span class="sv-lead-section">(${this.escapeHtml(r.section)})</span>` : ''}</li>`).join('')
+                    + `</ul></details>`
+                : '';
+            return `<h4>${this.escapeHtml(this.t('Lead vs body'))}</h4>`
+                + `<div class="sv-lead-status">${this.escapeHtml(status)}</div>`
+                + notes.map(n => `<div class="sv-lead-note">${this.escapeHtml(n)}</div>`).join('')
+                + flagged.map(r => this.leadFindingCardHtml(r)).join('')
+                + coveredHtml;
+        }
+
+        leadFindingCardHtml(r) {
+            const contradicted = r.outcome === LEAD_OUTCOMES.CONTRADICTED;
+            const tag = contradicted ? this.t('Contradicts the body') : this.t('Not covered in the body');
+            // quoteText is core/quote.js's verifiedText: only text located in
+            // the body is ever shown.
+            const quoteHtml = r.quoteText
+                ? `<div class="sv-quote"><span class="sv-quote-label">${this.escapeHtml(this.t('From the body'))}</span>`
+                    + `<div class="sv-quote-text">“${this.escapeHtml(r.quoteText)}”</div></div>`
+                : '';
+            return `<div class="sv-lead-card ${contradicted ? 'sv-lead-contradicted' : 'sv-lead-not-covered'}" data-lead-index="${r.index}">`
+                + `<div class="sv-lead-card-header"><span class="sv-lead-tag">${this.escapeHtml(tag)}</span>`
+                + (r.section ? `<span class="sv-lead-section">${this.escapeHtml(this.t('Section: {section}', { section: r.section }))}</span>` : '')
+                + `</div>`
+                + `<div class="sv-lead-sentence">${this.escapeHtml(r.text)}</div>`
+                + quoteHtml
+                + (r.comments ? `<div class="report-card-comment">${this.escapeHtml(r.comments)}</div>` : '')
+                + `</div>`;
+        }
+
+        scrollToLeadSentence(index) {
+            const sentence = this.reportLead && this.reportLead.sentences.find(s => s.index === index);
+            const block = sentence && sentence.block;
+            if (!block || !block.isConnected) return;
+            block.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            this.clearHighlights();
+            block.classList.add('claim-highlight');
+        }
+
+        // The lead phase of Verify All (or all of "Check the lead against the
+        // body"): core/lead-check.js's runLeadCheck() with the selected
+        // provider. A failed call costs its sentences, listed as unchecked,
+        // not the check. Not logged: the verification log has no field to
+        // tell a lead sentence from a citation.
+        async runReportLeadCheck(delayBetweenCalls, startTime) {
+            const lead = this.reportLead;
+            const provider = this.currentProvider;
+            const total = lead.sentences.length;
+            const phase = this.t('Checking the lead against the body');
+            lead.state = 'running';
+            this.updateReportProgress(0, total, phase, startTime);
+            this.renderReportLead();
+            const callModel = (systemPrompt, userContent) => callProviderAPI(provider, {
+                apiKey: this.getCurrentApiKey(),
+                model: this.providers[provider].model,
+                systemPrompt,
+                userContent,
+                maxTokens: groupMaxTokens(provider),
+                ...this.llmRouterConfigOverrides()
+            });
+            let run = null;
+            try {
+                run = await runLeadCheck({ sentences: lead.sentences, body: lead.body, articleTitle: this.reportArticleTitle() }, {
+                    callModel,
+                    systemPrompt: this.localizeSystemPrompt(generateLeadSystemPrompt()),
+                    chunkSize: leadChunkSize(provider),
+                    retry: { maxRetries: 4, minBackoffMs: 5000, maxBackoffMs: 30000, jitterMs: 0, shouldAbort: () => this.reportCancelled },
+                    pause: () => new Promise(r => setTimeout(r, delayBetweenCalls)),
+                    shouldAbort: () => this.reportCancelled,
+                    onChunkError: e => {
+                        console.warn('[Verifier] Lead check call failed:', e);
+                        return 'error';
+                    },
+                    onChunk: results => {
+                        lead.results = results.slice();
+                        this.updateReportProgress(results.length, total, phase, startTime);
+                        this.renderReportLead();
+                    }
+                });
+            } catch (e) {
+                console.warn('[Verifier] Lead check failed:', e);
+            }
+            if (run) {
+                lead.results = run.results;
+                lead.bodyTruncated = run.bodyTruncated;
+                this.reportTokenUsage.input += run.usage.input || 0;
+                this.reportTokenUsage.output += run.usage.output || 0;
+            }
+            lead.state = 'done';
+            this.renderReportLead();
+            this.renderReportSummary();
+        }
+
+        // The lead section of the exports: what the lead says that the body
+        // doesn't cover or contradicts, and a count of the set-aside lead
+        // citations (shown apart, not in the table above).
+        leadReportLines(format) {
+            const lead = this.reportLead;
+            if (!lead || lead.state !== 'done') return '';
+            const results = lead.results || [];
+            const covered = results.filter(r => r.outcome === LEAD_OUTCOMES.COVERED).length;
+            const flagged = results.filter(r => r.outcome === LEAD_OUTCOMES.NOT_COVERED || r.outcome === LEAD_OUTCOMES.CONTRADICTED);
+            const demoted = this.getReportUnits().filter(u => u.leadDemoted).length;
+            const findingLabel = r => (r.outcome === LEAD_OUTCOMES.CONTRADICTED ? this.t('Contradicts the body') : this.t('Not covered in the body'));
+            const summary = this.t('{covered} of {total} lead sentences are covered in the body.', { covered, total: lead.sentences.length });
+            const demotedLine = demoted
+                ? this.t(demoted === 1 ? '{count} lead citation was set aside: its source backs only part of its claim, which in the lead the body may cover.' : '{count} lead citations were set aside: their sources back only part of their claims, which in the lead the body may cover.', { count: demoted })
+                : '';
+            if (format === 'wikitext') {
+                let text = `=== ${this.t('Lead vs body')} ===\n${summary}\n`;
+                if (flagged.length) {
+                    text += `{| class="wikitable"\n|-\n${this.t('! Lead sentence !! Finding !! Quote from the body !! Comments')}\n`;
+                    for (const r of flagged) {
+                        const quote = r.quoteText ? `''"${this.escapeWikitableCell(r.quoteText)}"''` : '—';
+                        text += `|-\n| ${this.escapeWikitableCell(r.text)} || ${findingLabel(r)} || ${quote} || ${this.escapeWikitableCell(r.comments || '')}\n`;
+                    }
+                    text += `|}\n`;
+                }
+                if (demotedLine) text += `${demotedLine}\n`;
+                return text + `\n`;
+            }
+            let text = `${this.t('Lead vs body')}\n${summary}\n\n`;
+            for (const r of flagged) {
+                text += `${findingLabel(r)}\n  ${this.t('Lead sentence: {text}', { text: r.text })}\n`;
+                if (r.quoteText) text += `  ${this.t('Quote: "{text}"', { text: r.quoteText })}\n`;
+                if (r.comments) text += `  ${this.t('Comments: {text}', { text: r.comments })}\n`;
+                text += `\n`;
+            }
+            if (demotedLine) text += `${demotedLine}\n\n`;
+            return text;
+        }
+
         getReportUnits() {
             return mergeReportUnits(this.reportResults, this.reportGroupResults);
         }
 
-        async verifyAllCitations() {
-            const citations = this.collectAllCitations();
-            if (citations.length === 0) {
+        // `leadOnly`: the lead check alone ("Check the lead against the
+        // body"), as a report with no citation rows.
+        async verifyAllCitations({ leadOnly = false } = {}) {
+            const lead = this.leadCheckEnabled ? this.articleLead() : null;
+            if (leadOnly && !lead) {
+                mw.notify(this.t('This article has no body to check the lead against.'), { type: 'warn', autoHide: true });
+                return;
+            }
+            const citations = leadOnly ? [] : this.collectAllCitations();
+            if (!leadOnly && citations.length === 0) {
                 mw.notify(this.t('No citations found on this page.'), { type: 'warn', autoHide: true });
                 return;
             }
+            markLeadCitations(citations, document.getElementById('mw-content-text'));
 
             // Estimate time and show confirmation. Adjacent citations that
             // share a claim get one extra "collective" LLM call per group (in
@@ -8957,15 +10517,20 @@ function useToolforgeSourceFetcher() {
             const severityNote = this.severityEnabled
                 ? this.t('\n\nSeverity ranking is on: each flagged citation gets one more check at the end.')
                 : '';
+            const leadNote = lead
+                ? this.t('\n\nThe lead check is on: the {count} lead sentences are also checked against the article body at the end.', { count: lead.sentences.length })
+                : '';
 
             const confirmed = await new Promise(resolve => {
                 OO.ui.confirm(
-                    this.t(
-                        estimatedMinutes > 1
-                            ? 'This will verify {citations} citations from {sources} unique sources.{groupNote}\n\nEstimated time: ~{minutes} minutes.\n\nContinue?'
-                            : 'This will verify {citations} citations from {sources} unique sources.{groupNote}\n\nEstimated time: ~{minutes} minute.\n\nContinue?',
-                        { citations: checkable.length, sources: uniqueUrls.size, groupNote: groupNote + severityNote, minutes: estimatedMinutes }
-                    )
+                    leadOnly
+                        ? this.t('This will check {count} lead sentences against the article body.\n\nContinue?', { count: lead.sentences.length })
+                        : this.t(
+                            estimatedMinutes > 1
+                                ? 'This will verify {citations} citations from {sources} unique sources.{groupNote}\n\nEstimated time: ~{minutes} minutes.\n\nContinue?'
+                                : 'This will verify {citations} citations from {sources} unique sources.{groupNote}\n\nEstimated time: ~{minutes} minute.\n\nContinue?',
+                            { citations: checkable.length, sources: uniqueUrls.size, groupNote: groupNote + severityNote + leadNote, minutes: estimatedMinutes }
+                        )
                 ).done(result => resolve(result));
             });
             if (!confirmed) return;
@@ -8990,11 +10555,18 @@ function useToolforgeSourceFetcher() {
             if (this.reportSeverity) {
                 attachArticleContext(citations, document.getElementById('mw-content-text'));
             }
+            // The lead check's state for this report, or null when it doesn't
+            // run. Fixed for the run: demotion asks this, not the setting.
+            this.reportLead = lead
+                ? { sentences: lead.sentences, body: lead.body, results: [], state: 'pending', bodyTruncated: lead.body.truncated }
+                : null;
+            this.reportLeadOnly = leadOnly;
 
             this.showReportView();
             document.getElementById('verifier-report-results').innerHTML = '';
             document.getElementById('verifier-report-summary').innerHTML = '';
             document.getElementById('verifier-report-actions').innerHTML = '';
+            this.resetReportLead();
             this.applyReportFilters();
             this.updateButtonVisibility();
 
@@ -9193,6 +10765,8 @@ function useToolforgeSourceFetcher() {
                     const providerConfig = this.providers[this.currentProvider] || {};
                     result.providerName = providerConfig.name || this.currentProvider || '';
                     result.model = providerConfig.model || '';
+                    result.inLead = Boolean(citation.inLead);
+                    result.leadDemoted = this.demotesInReport(result);
                     this.reportResults.push(result);
                     this.renderReportCard(result, this.reportResults.length - 1);
                     this.renderReportSummary();
@@ -9225,16 +10799,26 @@ function useToolforgeSourceFetcher() {
             // A Stop during ranking leaves every verdict in place, so the run
             // still reports as completed; only a Stop before then is a cancel.
             const cancelledVerdicts = this.reportCancelled;
-            if (this.reportSeverity && !cancelledVerdicts) {
+            if (this.reportLead && !cancelledVerdicts) {
+                await this.runReportLeadCheck(delayBetweenCalls, startTime);
+            }
+            if (this.reportSeverity && !this.reportCancelled) {
                 await this.rankReportBySeverity(delayBetweenCalls);
             }
 
             // Finalize
             this.reportRunning = false;
-            const finalPhase = cancelledVerdicts
+            const finalPhase = leadOnly
+                ? this.t('Lead check complete')
+                : cancelledVerdicts
                 ? this.t(citations.length === 1 ? 'Cancelled after {done} of {total} citation' : 'Cancelled after {done} of {total} citations', { done: this.reportResults.length, total: citations.length })
                 : this.t(this.reportResults.length === 1 ? 'Completed: {count} citation checked' : 'Completed: {count} citations checked', { count: this.reportResults.length });
-            this.updateReportProgress(completed, progressTotal, finalPhase, startTime);
+            if (leadOnly) {
+                const n = this.reportLead.sentences.length;
+                this.updateReportProgress(n, n, finalPhase, startTime);
+            } else {
+                this.updateReportProgress(completed, progressTotal, finalPhase, startTime);
+            }
             this.renderReportSummary();
             this.renderReportActions();
             this.updateButtonVisibility();
@@ -9521,6 +11105,8 @@ function useToolforgeSourceFetcher() {
             if (nextEl) nextEl.textContent = '';
             const severityEl = document.getElementById('verifier-severity');
             if (severityEl) severityEl.innerHTML = '';
+            const leadNoteEl = document.getElementById('verifier-lead-note');
+            if (leadNoteEl) leadNoteEl.textContent = '';
             this.activeCheckId = null;
             this.hasResult = false;
             this.renderUiState();

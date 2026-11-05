@@ -43,8 +43,9 @@ export function buildUpsertQuery(finding) {
             source_quote, quote_status,
             provider, model, prompt_version,
             fetch_status, source_truncated, tokens_in, tokens_out,
-            expires_at, published
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            expires_at, published,
+            check_kind, lead_demoted
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON DUPLICATE KEY UPDATE
             page_title = VALUES(page_title),
             revision_id = VALUES(revision_id),
@@ -68,7 +69,9 @@ export function buildUpsertQuery(finding) {
             tokens_in = VALUES(tokens_in),
             tokens_out = VALUES(tokens_out),
             expires_at = VALUES(expires_at),
-            published = VALUES(published)
+            published = VALUES(published),
+            check_kind = VALUES(check_kind),
+            lead_demoted = VALUES(lead_demoted)
     `.trim().replace(/\n {8}/g, '\n');
 
     const params = [
@@ -107,6 +110,9 @@ export function buildUpsertQuery(finding) {
         finding.tokensOut,
         finding.expiresAt,
         finding.published ? 1 : 0,
+        // service/migrations/006-lead-check.sql.
+        finding.checkKind ?? 'citation',
+        finding.leadDemoted ? 1 : 0,
     ];
 
     return { sql, params };

@@ -27,6 +27,7 @@ import { isClaimTooShort, CLAIM_TOO_SHORT } from '../core/claim.js';
 import { verifyQuote } from '../core/quote.js';
 import { withRetry, isSourceTooLargeError } from '../core/retry.js';
 import { groupSourceEntries, shouldSkipCollective, hasUnreadSource } from '../core/groups.js';
+import { runLeadCheck, generateLeadSystemPrompt } from '../core/lead-check.js';
 import { sourceCacheKey } from './claim-extractor.js';
 
 // Thrown when the model call fails with 401/402/403. Distinct from a
@@ -68,14 +69,15 @@ export function isAuthOrBillingError(error) {
 export function makeModelCaller({ provider, apiKey, model, workerBase }) {
     if (!provider) throw new TypeError('makeModelCaller requires a provider name');
     // `kind: 'group'` raises the output budget for a collective check
-    // (core/providers.js's groupMaxTokens()); anything else keeps the
-    // provider's default.
+    // (core/providers.js's groupMaxTokens()), and `kind: 'lead'` for a lead
+    // check, which answers several sentences at once; anything else keeps
+    // the provider's default.
     return (systemPrompt, userContent, { kind } = {}) => callProviderAPI(provider, {
         apiKey,
         model,
         systemPrompt,
         userContent,
-        ...(kind === 'group' ? { maxTokens: groupMaxTokens(provider) } : {}),
+        ...((kind === 'group' || kind === 'lead') && groupMaxTokens(provider) ? { maxTokens: groupMaxTokens(provider) } : {}),
         ...(workerBase ? { workerBase } : {}),
     });
 }
@@ -370,4 +372,51 @@ export async function verifyGroup(members, {
         quoteStatus: quote.status,
         usage: response.usage ?? null,
     };
+}
+
+/**
+ * The lead check for one article: every lead sentence against its body
+ * (core/lead-check.js's runLeadCheck()), with the comment-language directive
+ * the verdict calls get.
+ *
+ * `lead` is service/claim-extractor.js's `article.lead`: `{ sentences, body }`.
+ *
+ * Same error contract as verifyCitation(): a 401/402/403 throws
+ * ProviderAuthError so the runner halts. Any other failure of a call goes to
+ * `onChunkError` (the runner's transient-failure policy), which returns the
+ * reason to record that chunk's sentences under, or nothing to throw.
+ */
+export async function verifyLead(lead, {
+    callModel,
+    articleTitle,
+    chunkSize,
+    signal,
+    retry = {},
+    articleLangCode,
+    onChunkError,
+    pause,
+} = {}) {
+    if (typeof callModel !== 'function') {
+        throw new TypeError('verifyLead requires a callModel(systemPrompt, userContent) function');
+    }
+    const retryOptions = { ...retry };
+    if (signal && !retryOptions.shouldAbort) {
+        retryOptions.shouldAbort = () => Boolean(signal.aborted);
+    }
+    const systemPrompt = withCommentLanguage(generateLeadSystemPrompt(), { lang: articleLangCode, articleLangCode });
+    return runLeadCheck({ sentences: lead?.sentences, body: lead?.body, articleTitle }, {
+        callModel,
+        systemPrompt,
+        chunkSize,
+        retry: retryOptions,
+        pause,
+        shouldAbort: signal ? () => Boolean(signal.aborted) : undefined,
+        onChunkError: error => {
+            if (isAuthOrBillingError(error)) {
+                const status = Number((error.message || '').match(/\((\d{3})\)/)?.[1]) || null;
+                throw new ProviderAuthError(error.message, { status, cause: error });
+            }
+            return typeof onChunkError === 'function' ? onChunkError(error) : null;
+        },
+    });
 }
