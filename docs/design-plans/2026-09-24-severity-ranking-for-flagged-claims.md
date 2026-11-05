@@ -121,7 +121,9 @@ finding on a truncated source is discounted without a model call.
 
 This is the same principle `cleanCsvText()` applies to the `-clean.csv` (since
 2026-09-25). On a truncated source it keeps only SUPPORTED and NOT SUPPORTED /
-contradiction rows. The two differ in one case: a truncated **PARTIALLY
+contradiction rows, and (since 2026-10-30) it drops a group's PARTIALLY
+SUPPORTED and NOT SUPPORTED / omission rows when one of the group's sources is
+SOURCE UNAVAILABLE, the cleaner's counterpart of `unreadSources`. The two differ in one case: a truncated **PARTIALLY
 SUPPORTED** finding whose second pass found a contradiction. It is tiered T1 or
 T2 here, and the cleaner still drops it, because the cleaner only reads the
 first-pass verdict. Making the cleaner keep such rows by `severity_tier` would

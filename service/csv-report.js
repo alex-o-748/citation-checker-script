@@ -135,7 +135,7 @@ export function cleanCsvPath(path) {
 }
 
 /**
- * Two independent rules, so neither depends on what the other removed:
+ * Four independent rules, so none depends on what another removed:
  *
  * 1. A finding on a truncated source is kept only if it is SUPPORTED or NOT
  *    SUPPORTED / contradiction — verdicts resting on a passage the model
@@ -143,10 +143,20 @@ export function cleanCsvPath(path) {
  *    a truncated source (omission above all: "not mentioned" may just mean
  *    "past the cutoff") is dropped.
  * 2. Once an adjacent-citation group has a collective finding, its individual
- *    findings are never shown — even when rule 1 dropped the collective
+ *    findings are never shown — even when rule 1, 3 or 4 dropped the collective
  *    itself. Falling back to the members there would surface one source's
  *    partial view of a claim several sources back.
- * 3. A demoted lead citation (lead_demoted) is not shown: in the lead, "the
+ * 3. In a group where any source is SOURCE UNAVAILABLE, the group's verdict
+ *    loses its PARTIALLY SUPPORTED and NOT SUPPORTED / omission findings:
+ *    "not in the sources" may just mean "in the one nobody read". The group's
+ *    verdict is its collective row when there is one, and otherwise its
+ *    members' rows — core/groups.js's shouldSkipCollective() skips the
+ *    collective when only one source is readable, so in the commonest
+ *    incomplete group the members are all there is. Rule 2 already removes
+ *    members once a collective exists, so this applies to every row in the
+ *    group. It is the cleaner's half of what core/groups.js's
+ *    hasUnreadSource() does for the severity pass.
+ * 4. A demoted lead citation (lead_demoted) is not shown: in the lead, "the
  *    source doesn't mention it" is the lead check's question, answered on its
  *    own row. Skipped for a CSV from before that column existed.
  *
@@ -175,12 +185,20 @@ export function cleanCsvText(text) {
     const isCollective = row => truthy(row[indexes.is_collective] || '');
     const survivesTruncation = row => row[indexes.verdict] === 'SUPPORTED'
         || (row[indexes.verdict] === 'NOT SUPPORTED' && row[indexes.reason_type] === 'contradiction');
+    // Narrower than !survivesTruncation(): only the verdicts unread text could
+    // undo. An ERROR or SKIPPED row says nothing about the claim either way.
+    const undoneByUnreadSource = row => row[indexes.verdict] === 'PARTIALLY SUPPORTED'
+        || (row[indexes.verdict] === 'NOT SUPPORTED' && row[indexes.reason_type] !== 'contradiction');
     const collectiveGroups = new Set(rows
         .filter(row => row[indexes.group_id] && isCollective(row))
+        .map(groupKey));
+    const incompleteGroups = new Set(rows
+        .filter(row => row[indexes.group_id] && row[indexes.verdict] === 'SOURCE UNAVAILABLE')
         .map(groupKey));
     const cleanRows = rows.filter(row => {
         if (truthy(row[indexes.source_truncated] || '') && !survivesTruncation(row)) return false;
         if (row[indexes.group_id] && !isCollective(row) && collectiveGroups.has(groupKey(row))) return false;
+        if (row[indexes.group_id] && incompleteGroups.has(groupKey(row)) && undoneByUnreadSource(row)) return false;
         if (indexes.lead_demoted !== undefined && truthy(row[indexes.lead_demoted] || '')) return false;
         return true;
     });

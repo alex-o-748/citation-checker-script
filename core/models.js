@@ -91,10 +91,10 @@ export const PROVIDERS = Object.freeze({
 
 export const PROVIDER_IDS = Object.freeze(Object.keys(PROVIDERS));
 
-// Keyless and free at the point of use, so it is the only sensible landing
-// state for a first-time user. main.js migrates older stored selections
-// ('apertus', 'publicai') onto this.
-export const DEFAULT_PROVIDER = 'huggingface';
+// Keyless Lift Wing Qwen3.8 is the shared default for the userscript, CLI,
+// and public API. main.js also migrates previously stored HuggingFace defaults
+// once, so existing users stop consuming exhausted shared HF credits.
+export const DEFAULT_PROVIDER = 'liftwing';
 
 export function getProvider(id) {
     return PROVIDERS[id] ?? null;
