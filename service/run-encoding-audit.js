@@ -21,6 +21,11 @@
 // run-sweep.js findings CSV as-is, or an export of ToolsDB's citation_findings
 // or the Neon verification log.
 //
+// Since the fix (charset decoding in both fetchers, and core/worker.js
+// rejecting undecodable text), this measures what is left: a URL that still
+// comes back garbled after every fallback. Run it over a regenerated batch to
+// confirm the set is clean.
+//
 // Caveat: a re-fetch today is not the fetch at check time. A site that has
 // since moved to UTF-8, or died, is classified by what it serves now.
 //
@@ -34,47 +39,22 @@ import { fileURLToPath } from 'node:url';
 
 import { streamCsvRows } from './csv-stream.js';
 import { createHostGate, hostOf, runHostPool, DEFAULT_FETCH_CONCURRENCY } from './host-pool.js';
-import { fetchSourceContent } from '../core/worker.js';
+import { fetchSourceContent, encodingDamage, UNDECODABLE_SOURCE_ERROR } from '../core/worker.js';
+
+export { encodingDamage };
 
 export const FETCHERS = Object.freeze({
     worker: 'https://publicai-proxy.alaexis.workers.dev', // userscript, CLI
     toolforge: 'https://source-fetcher.toolforge.org',    // batch pipeline
 });
 
-// A page that failed to decode is overwhelmingly U+FFFD (72% and 82% on the
-// two reported sources), while a clean page has none or a stray handful from
-// a single bad byte. The thresholds sit far from both.
-export const GARBLED_MIN_SHARE = 0.05;
-export const GARBLED_MIN_COUNT = 50;
-
-// The other way a decode goes wrong: UTF-8 bytes read as Latin-1/Windows-1252
-// turn every Cyrillic letter into a two-character pair starting Ð or Ñ
-// ("Ð•Ð²Ñ€ÐµÐ¸"). Not seen yet, but it is the same bug with the opposite
-// mistake, and it would pass a U+FFFD count untouched.
-const MOJIBAKE_PAIR = /[ÐÑ][\u0080-¿]/g;
-
-/**
- * Scores a fetched text for decode damage.
- * @returns {{ length, replacement, mojibake, share, garbled: boolean }}
- */
-export function encodingDamage(text) {
-    const s = typeof text === 'string' ? text : '';
-    let replacement = 0;
-    for (const ch of s) if (ch === '�') replacement++;
-    const mojibake = (s.match(MOJIBAKE_PAIR) || []).length * 2;
-    const damaged = Math.max(replacement, mojibake);
-    const share = s.length ? damaged / s.length : 0;
-    return {
-        length: s.length,
-        replacement,
-        mojibake,
-        share,
-        garbled: damaged >= GARBLED_MIN_COUNT && share >= GARBLED_MIN_SHARE,
-    };
-}
-
 /** 'garbled' | 'clean' | 'fetch_failed' for one fetch result. */
+//
+// Since core/worker.js started rejecting undecodable text itself, a garbled
+// fetch arrives here as a failure carrying UNDECODABLE_SOURCE_ERROR, not as
+// content — counted as garbled all the same.
 export function classifyFetch(result) {
+    if (result?.error === UNDECODABLE_SOURCE_ERROR) return { status: 'garbled', damage: encodingDamage('') };
     if (!result || !result.content) return { status: 'fetch_failed', damage: encodingDamage('') };
     const damage = encodingDamage(result.content);
     return { status: damage.garbled ? 'garbled' : 'clean', damage };

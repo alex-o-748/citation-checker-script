@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { encodingDamage, classifyFetch, summarize } from '../service/run-encoding-audit.js';
+import { UNDECODABLE_SOURCE_ERROR } from '../core/worker.js';
 
 // The start of what the Worker returned for the crjs.ru Wayback snapshot
 // cited by Еврейские беженцы [62] (2026-11-05): Windows-1251 decoded as UTF-8.
@@ -31,6 +32,7 @@ test('classifyFetch separates failed, clean and garbled fetches', () => {
     assert.equal(classifyFetch({ content: null, error: 'HTTP 404' }).status, 'fetch_failed');
     assert.equal(classifyFetch({ content: CLEAN }).status, 'clean');
     assert.equal(classifyFetch({ content: GARBLED }).status, 'garbled');
+    assert.equal(classifyFetch({ content: null, error: UNDECODABLE_SOURCE_ERROR }).status, 'garbled');
 });
 
 test('summarize joins URL results back onto rows and counts verdicts', () => {
