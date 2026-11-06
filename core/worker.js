@@ -82,6 +82,51 @@ export function isContentTruncated(data) {
     return (data?.content?.length ?? 0) >= WORKER_CONTENT_CAP;
 }
 
+// --- Undecodable sources ---
+//
+// Both fetchers used to decode every page as UTF-8, so a Windows-1251 or
+// KOI8-R page — older Russian sites, and Wayback snapshots of them — arrived
+// as a wall of U+FFFD with a 200. The model was then shown noise: sometimes it
+// said so (SOURCE UNAVAILABLE), sometimes it reported a passage that is in the
+// source verbatim as "not mentioned" (ru:Еврейские беженцы [62], 2026-11-05).
+// The fetchers now decode by charset (public-ai-proxy and tf-source-fetcher,
+// src/charset.js in each); this is the backstop for any decode failure that
+// still gets through. Such a fetch is treated as a failed one — never as
+// content — so the archive -> live and live -> Wayback fallbacks get their
+// chance, and a check with nothing readable ends as SOURCE UNAVAILABLE (with
+// the paste / PDF prompt in the userscript) instead of a verdict on noise.
+export const UNDECODABLE_SOURCE_ERROR = 'Source text could not be decoded (wrong character encoding)';
+
+// A failed decode is overwhelmingly damage (72% and 82% on the two reported
+// sources); a clean page has none, or a stray handful from one bad byte. The
+// thresholds sit far from both.
+export const GARBLED_MIN_SHARE = 0.05;
+export const GARBLED_MIN_COUNT = 50;
+
+// The same bug's mirror image: UTF-8 read as Latin-1 turns every Cyrillic
+// letter into a pair starting Ð or Ñ ("Ð•Ð²Ñ€ÐµÐ¸"), which a U+FFFD count misses.
+const MOJIBAKE_PAIR = /[ÐÑ][\u0080-\u00BF]/g;
+
+/**
+ * Scores text for decode damage.
+ * @returns {{ length, replacement, mojibake, share, garbled: boolean }}
+ */
+export function encodingDamage(text) {
+    const s = typeof text === 'string' ? text : '';
+    let replacement = 0;
+    for (let i = 0; i < s.length; i++) if (s.charCodeAt(i) === 0xFFFD) replacement++;
+    const mojibake = (s.match(MOJIBAKE_PAIR) || []).length * 2;
+    const damaged = Math.max(replacement, mojibake);
+    const share = s.length ? damaged / s.length : 0;
+    return {
+        length: s.length,
+        replacement,
+        mojibake,
+        share,
+        garbled: damaged >= GARBLED_MIN_COUNT && share >= GARBLED_MIN_SHARE,
+    };
+}
+
 // `onRequest`, when supplied, is called once per outbound HTTP call this
 // function makes — `{ kind: 'source-fetch', url, status, ok, error, latencyMs,
 // bytes }` — regardless of success or failure. It exists for the Internet
@@ -132,6 +177,13 @@ async function fetchViaProxy(fetchUrl, pageNum, workerBase, sourceUrl, onRequest
         }
 
         if (data.content && data.content.length > 100) {
+            // Not retryable (a 200): the same bytes would decode the same way.
+            // Returned as a failure so fetchSourceContent's fallbacks run.
+            if (encodingDamage(data.content).garbled) {
+                console.warn('[CitationVerifier] Source text is undecodable (character encoding):', fetchUrl);
+                report(status, false, UNDECODABLE_SOURCE_ERROR);
+                return { content: null, error: UNDECODABLE_SOURCE_ERROR, status };
+            }
             const isTruncated = isContentTruncated(data);
             let meta = `Source URL: ${sourceUrl}`;
             if (data.pdf) {
@@ -284,6 +336,7 @@ export const FETCH_ERROR_KINDS = Object.freeze({
     PUBLISHER_NETWORK: 'publisher_network',
     PUBLISHER_TIMEOUT: 'publisher_timeout',
     EMPTY_CONTENT: 'empty_content',
+    UNDECODABLE: 'undecodable',
     OTHER: 'other',
 });
 const OUR_FETCH_ERROR_KINDS = new Set([FETCH_ERROR_KINDS.FETCHER_DOWN, FETCH_ERROR_KINDS.FETCHER_TIMEOUT]);
@@ -298,6 +351,7 @@ export function classifyFetchError(message) {
     if (/^Request to source timed out/i.test(text)) return FETCH_ERROR_KINDS.PUBLISHER_TIMEOUT;
     if (/^(?:fetch failed|terminated)\b/i.test(text)) return FETCH_ERROR_KINDS.PUBLISHER_NETWORK;
     if (/^Source content was empty or too short/.test(text)) return FETCH_ERROR_KINDS.EMPTY_CONTENT;
+    if (text === UNDECODABLE_SOURCE_ERROR) return FETCH_ERROR_KINDS.UNDECODABLE;
     return FETCH_ERROR_KINDS.OTHER;
 }
 
