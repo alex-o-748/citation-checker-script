@@ -91,7 +91,7 @@ docs/                            # Reference docs + design plans (see docs/READM
 | `assessSeverity()` / `showSingleSeverity()` / `rankReportBySeverity()` | Opt-in severity pass (`core/severity.js`'s `runSeverityPass()`) for a flagged verdict: in the single-check view, and as a second phase of Verify All (see "Severity ranking" below) |
 | `applyReportSort()` / `renderReportSeverity()` | Report order: article order, or "Most serious first" by `compareSeverity()` on a severity-ranked report. Moves whole cards and group blocks; never hides one |
 | `articleLead()` / `runReportLeadCheck()` / `renderReportLead()` | The lead check (`core/lead-check.js`): the last phase of Verify All, or all of "Check the lead against the body"; the report's lead section (see "The lead check" below) |
-| `renderReportTabs()` / `selectReportTab()` | The report's Citations and Lead tabs, when Verify All ran both checks: one panel at a time, each tab keeping its scroll position (see "The lead check" below) |
+| `findingHtml()` / `toggleFinding()` / `handleFindingClick()` | The one card every report finding uses (citations, groups and their sources, lead sentences): head line, claim and comment clamped while closed, everything else in details opened on demand (see "The report: one card, one scroll area" below) |
 | `getCountedReportUnits()` | `getReportUnits()` minus set-aside lead citations: what the summary, the severity ranking and the exports count |
 
 ## Benchmark Suite
@@ -524,15 +524,11 @@ Rules to keep if you touch it:
   costs a few calls per Verify All, not one per citation. Lead results are
   **not logged**: the Worker has no field to tell a lead sentence from a
   citation.
-- **In the report it has a tab of its own.** A Verify All that ran the lead
-  check shows two tabs, Citations and Lead (`renderReportTabs()`); the Lead
-  tab's badge counts sentences with a finding. A report holding one check has
-  no tabs. The sidebar is the report's **one scroll area** and the tab bar
-  sticks to its top: the citation list used to have its own 50vh scrollbar
-  with the lead section under it, so the wheel moved whichever was under the
-  pointer and ran on past the list into the lead section.
-  `tests/styles.test.js` fails if anything in the report scrolls on its own
-  again.
+- **In the report it is a panel above the citations**, closed: one line with
+  its name and status, so its results arriving never move the citation cards.
+  Open, it holds its finding cards, the covered sentences and the set-aside
+  citations. It is open when it is the whole report ("Check the lead against
+  the body"). See "The report: one card, one scroll area" below.
 - **Not yet validated.** `benchmark/dataset_lead.json` (separate from
   `dataset.json`, like WiCE) is built by `npm run lead:extract`; its labels are
   for people to make.
@@ -557,6 +553,38 @@ Design, prototype numbers and the alternatives rejected:
 - The system prompt contains carefully tuned few-shot examples — changes affect benchmark accuracy
 - Claim extraction uses "between citations" logic by design (not full sentences) for precision
 - `extractClaimText(refElement, { scope })` (`core/claim.js`) supports two claim scopes. `scope: 'paragraph'` (the default, used by `main.js` and the CLI/benchmark) is the full "between citations" span, which can include multiple sentences when the previous citation is more than one sentence back. `scope: 'sentence'` narrows that span to only its final sentence (via `lastSentence()`) — `core/citations.js`'s `collectCitations(root, { claimScope })` threads this through, and `service/claim-extractor.js`'s `processArticle()` defaults `claimScope` to `'sentence'` for the batch pipeline. This matters because in an unattended batch run, a multi-sentence claim where only the first sentence lacks support reads as a false NOT SUPPORTED on the whole span — there's no editor present to notice that only part of the claim is a "citation needed" case, not an "unsupported" one. The interactive userscript defaults to paragraph scope, where a human reads the full claim and isn't misled by that ambiguity — but it also exposes a "Claim scope" setting (Settings panel, persisted to `localStorage` as `verifier_claim_scope`) letting an editor switch to sentence scope for both single-citation checks and "Verify All Citations", for the same false-positive reason batch mode defaults to it.
+
+### The report: one card, one scroll area (read before adding a check or a field to the report)
+
+Verify All's report kept growing a new block per feature: severity added a
+badge and a subclaim list to every card, the lead check a section of its own,
+and the uncited-text check (`claude/article-accuracy-model-checks-6babki`) a
+third. The report is now built from two pieces, and a new check reuses both:
+
+- **One card for every finding** (`findingHtml()`): a head line (the
+  reference, the verdict pill, a few words of qualification such as the
+  reason and the severity label), then the claim on one line and the model's
+  comment on two. Everything else is in its **details**, opened by a click on
+  the card: the full claim and comment, the quote, the failing subclaims,
+  caveats (a truncated source), Edit Section and the feedback controls.
+  Citations, a group (its sources are cards inside it) and lead sentences all
+  use it. **A new field goes in the details, not on every closed card.**
+- **One panel per extra check** (`.sv-check`, a `<details>`), above the
+  citations and closed by default: its name and a status line. The
+  citations themselves keep the summary box, filters and sort they always had.
+
+Rules to keep:
+
+- **The sidebar is the report's only scroll area.** The citation list used to
+  have its own 50vh scrollbar with the lead section under it, so the wheel
+  moved whichever was under the pointer and ran on past the list into the
+  lead section. `tests/styles.test.js` fails if anything in the report scrolls
+  on its own again, a quote in a card included.
+- **Opening a card shows its citation in the article** (as clicking a card
+  always did); closing it doesn't. An open card closes only from its head
+  line, so its text can be read and selected.
+- **Run-wide facts** (revision, tokens) sit under the progress line, not in the
+  citations' summary: they hold for every check.
 
 ### Sentence splitting differs between the batch and the userscript (read before touching `lastSentence`)
 

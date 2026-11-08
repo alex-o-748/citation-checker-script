@@ -236,10 +236,9 @@ test('individual verdicts within a group stay visually secondary', () => {
   assert.match(verdictRule[1], /color:\s*var\(--sv-ink-4\)/);
   assert.match(verdictRule[1], /font-weight:\s*normal/);
 
-  const reasonRule = css.match(/\.verifier-report-group-row \.reason-type-tag\s*\{([^}]*)\}/);
-  assert.ok(reasonRule, 'grouped reason tags should follow the quieter verdict treatment');
-  assert.match(reasonRule[1], /background:\s*transparent/);
-  assert.match(reasonRule[1], /color:\s*var\(--sv-ink-4\)/);
+  const tagRule = css.match(/\.verifier-report-group-row \.sv-finding-tag\s*\{([^}]*)\}/);
+  assert.ok(tagRule, 'grouped qualifiers should follow the quieter verdict treatment');
+  assert.match(tagRule[1], /color:\s*var\(--sv-ink-4\)/);
 });
 
 // #verifier-action-container holds two unrelated things: the full-width
@@ -324,19 +323,18 @@ test('inside the panel, horizontal spacing and borders use logical properties', 
 // The report has one scroll area, the sidebar. The citation list used to be
 // capped at 50vh with a scrollbar of its own, inside the scrolling sidebar:
 // the wheel moved whichever was under the pointer, and ran on past the end of
-// the list into the lead check below it. The tab bar sticks to the top of
-// that one area instead.
-test('the report has one scroll area: nothing in it scrolls on its own, and the tab bar sticks', () => {
+// the list into the lead check below it. Cards and the checks' panels must not
+// bring a scrollbar back either, a quote in a card included.
+test('the report has one scroll area: nothing in it scrolls on its own', () => {
   const css = generateCss();
   const offenders = [];
   for (const m of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
     const selector = m[1].trim();
-    if (!/#verifier-report-(view|summary|results|citations|lead)\b|\.sv-report-panel\b/.test(selector)) continue;
-    if (/overflow(-y)?\s*:\s*(auto|scroll)|max-height\s*:/.test(m[2])) offenders.push(selector);
+    if (!/#verifier-report-(view|summary|results|citations|lead)\b|\.sv-(finding|check)\b/.test(selector)) continue;
+    if (/overflow(-y)?\s*:\s*(auto|scroll)|max-height\s*:(?!\s*none)/.test(m[2])) offenders.push(selector);
   }
   assert.deepEqual(offenders, []);
-  const bar = css.match(/#verifier-report-tabs \{([^{}]*)\}/);
-  assert.ok(bar, 'no rule for the report tab bar');
-  assert.match(bar[1], /position: sticky/);
-  assert.match(bar[1], /background: var\(--sv-bg\)/, 'opaque, or cards show through the stuck bar');
+  const quote = css.match(/\.sv-finding-details \.sv-quote-text \{([^{}]*)\}/);
+  assert.ok(quote, 'the quote box scrolls on its own unless a card lifts its cap');
+  assert.match(quote[1], /max-height: none/);
 });

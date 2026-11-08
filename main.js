@@ -4459,12 +4459,8 @@ function useToolforgeSourceFetcher() {
             '{count} citations du résumé introductif mises de côté',
         'Citations':
             'Citations',
-        'Lead':
-            'Résumé introductif',
-        '{count} lead sentence is not covered in the body, or contradicts it':
-            '{count} phrase du résumé introductif n\'est pas couverte par le corps de l\'article, ou le contredit',
-        '{count} lead sentences are not covered in the body, or contradict it':
-            '{count} phrases du résumé introductif ne sont pas couvertes par le corps de l\'article, ou le contredisent',
+        'Details':
+            'Détails',
         'The lead was not checked: the run was stopped first.':
             'Le résumé introductif n\'a pas été vérifié : la vérification a été arrêtée avant.',
         '{count} lead sentence could not be checked.':
@@ -4576,10 +4572,8 @@ function useToolforgeSourceFetcher() {
             '⚠ Source longue, vérifiée partiellement seulement.',
         '⚠ Combined sources are long, only partially checked.':
             '⚠ Sources combinées longues, vérifiées partiellement seulement.',
-        'Group of {size} · {numbers}': 'Groupe de {size} · {numbers}',
         'Checking combined sources…': 'Vérification des sources combinées…',
         'Individual sources': 'Sources individuelles',
-        'Combined verdict': 'Verdict combiné',
         'All citations are hidden by the current filters. Click a filter above to show them.':
             'Toutes les citations sont masquées par les filtres actuels. Cliquez sur un filtre ci-dessus pour les afficher.',
 
@@ -4834,12 +4828,8 @@ function useToolforgeSourceFetcher() {
             '{count} citas de la introducción apartadas',
         'Citations':
             'Citas',
-        'Lead':
-            'Introducción',
-        '{count} lead sentence is not covered in the body, or contradicts it':
-            '{count} oración de la introducción no está cubierta en el cuerpo del artículo, o lo contradice',
-        '{count} lead sentences are not covered in the body, or contradict it':
-            '{count} oraciones de la introducción no están cubiertas en el cuerpo del artículo, o lo contradicen',
+        'Details':
+            'Detalles',
         'The lead was not checked: the run was stopped first.':
             'La introducción no se comprobó: la verificación se detuvo antes.',
         '{count} lead sentence could not be checked.':
@@ -4951,10 +4941,8 @@ function useToolforgeSourceFetcher() {
             '⚠ La fuente es extensa; solo se ha comprobado parcialmente.',
         '⚠ Combined sources are long, only partially checked.':
             '⚠ Las fuentes combinadas son extensas; solo se han comprobado parcialmente.',
-        'Group of {size} · {numbers}': 'Grupo de {size} · {numbers}',
         'Checking combined sources…': 'Comprobando las fuentes combinadas…',
         'Individual sources': 'Fuentes individuales',
-        'Combined verdict': 'Veredicto combinado',
         'All citations are hidden by the current filters. Click a filter above to show them.':
             'Los filtros actuales ocultan todas las citas. Se puede hacer clic en uno de los filtros de arriba para mostrarlas.',
 
@@ -5205,12 +5193,8 @@ function useToolforgeSourceFetcher() {
             'Отложено сносок в преамбуле: {count}',
         'Citations':
             'Сноски',
-        'Lead':
-            'Преамбула',
-        '{count} lead sentence is not covered in the body, or contradicts it':
-            'Предложений преамбулы, не подтверждённых основным текстом или противоречащих ему: {count}',
-        '{count} lead sentences are not covered in the body, or contradict it':
-            'Предложений преамбулы, не подтверждённых основным текстом или противоречащих ему: {count}',
+        'Details':
+            'Подробности',
         'The lead was not checked: the run was stopped first.':
             'Преамбула не проверена: проверка была остановлена раньше.',
         '{count} lead sentence could not be checked.':
@@ -5322,10 +5306,8 @@ function useToolforgeSourceFetcher() {
             '⚠ Источник большой, проверен только частично.',
         '⚠ Combined sources are long, only partially checked.':
             '⚠ Объединённые источники большие, проверены только частично.',
-        'Group of {size} · {numbers}': 'Группа из {size} · {numbers}',
         'Checking combined sources…': 'Проверка объединённых источников…',
         'Individual sources': 'Отдельные источники',
-        'Combined verdict': 'Совместный вердикт',
         'All citations are hidden by the current filters. Click a filter above to show them.':
             'Все сноски скрыты текущими фильтрами. Нажмите на один из фильтров выше, чтобы показать их.',
 
@@ -5584,12 +5566,8 @@ function useToolforgeSourceFetcher() {
             '{count} הערות שוליים בפתיח הוצגו בנפרד',
         'Citations':
             'הערות שוליים',
-        'Lead':
-            'פתיח',
-        '{count} lead sentence is not covered in the body, or contradicts it':
-            '{count} משפט בפתיח אינו מכוסה בגוף הערך, או סותר אותו',
-        '{count} lead sentences are not covered in the body, or contradict it':
-            '{count} משפטים בפתיח אינם מכוסים בגוף הערך, או סותרים אותו',
+        'Details':
+            'פרטים',
         'The lead was not checked: the run was stopped first.':
             'הפתיח לא נבדק: הבדיקה נעצרה לפני כן.',
         '{count} lead sentence could not be checked.':
@@ -5702,10 +5680,8 @@ function useToolforgeSourceFetcher() {
             '⚠ המקור ארוך ונבדק באופן חלקי בלבד.',
         '⚠ Combined sources are long, only partially checked.':
             '⚠ המקורות המשולבים ארוכים ונבדקו באופן חלקי בלבד.',
-        'Group of {size} · {numbers}': 'קבוצה של {size} · {numbers}',
         'Checking combined sources…': 'בדיקת מקורות משולבים…',
         'Individual sources': 'מקורות בודדים',
-        'Combined verdict': 'קביעה משולבת',
         'All citations are hidden by the current filters. Click a filter above to show them.':
             'כל הערות השוליים מוסתרות על ידי המסננים הנוכחיים. אפשר ללחוץ על אחד המסננים שלמעלה כדי להציג אותן.',
 
@@ -6024,13 +6000,9 @@ function useToolforgeSourceFetcher() {
             this.reportCardEls = new Map();
             this.reportDocOrder = 0;
             this.reportSort = this.loadReportSort();
-            // Lead check state for the current report (see verifyAllCitations),
-            // and the report tab on screen with each tab's scroll position
-            // (see renderReportTabs).
+            // Lead check state for the current report (see verifyAllCitations).
             this.reportLead = null;
             this.reportLeadOnly = false;
-            this.reportTab = 'citations';
-            this.reportTabScroll = {};
 
             this.init();
         }
@@ -6182,15 +6154,13 @@ function useToolforgeSourceFetcher() {
                         </div>
                         <div id="verifier-report-view" style="display:none;">
                             <div id="verifier-report-progress"></div>
-                            <div id="verifier-report-tabs" role="tablist" hidden>
-                                <button type="button" role="tab" class="sv-report-tab" id="verifier-tab-citations" data-tab="citations" aria-controls="verifier-report-citations"><span>${this.t('Citations')}</span></button>
-                                <button type="button" role="tab" class="sv-report-tab" id="verifier-tab-lead" data-tab="lead" aria-controls="verifier-report-lead"><span>${this.t('Lead')}</span><span class="sv-report-tab-badge"></span></button>
-                            </div>
-                            <div id="verifier-report-citations" class="sv-report-panel" data-tab="citations">
+                            <div id="verifier-report-meta"></div>
+                            <div id="verifier-report-lead"></div>
+                            <div id="verifier-report-citations">
+                                <h4>${this.t('Citations')}</h4>
                                 <div id="verifier-report-summary"></div>
                                 <div id="verifier-report-results"></div>
                             </div>
-                            <div id="verifier-report-lead" class="sv-report-panel" data-tab="lead"></div>
                             <div id="verifier-report-actions"></div>
                         </div>
                     </div>
@@ -6374,7 +6344,6 @@ function useToolforgeSourceFetcher() {
                     /* Borders */
                     --sv-border: #ddd;
                     --sv-border-2: #e0e4ea;
-                    --sv-border-3: #cdd5e0;
                     --sv-border-chip: #ccc;
                     --sv-border-chip-hover: #99a;
 
@@ -6459,7 +6428,6 @@ function useToolforgeSourceFetcher() {
 
                     --sv-border: #3a3a4e;
                     --sv-border-2: #3a3a4e;
-                    --sv-border-3: #3a3a4e;
                     --sv-border-chip: #3a3a4e;
                     --sv-border-chip-hover: #5a5a7e;
 
@@ -7006,11 +6974,6 @@ function useToolforgeSourceFetcher() {
                     max-height: 200px;
                     overflow-y: auto;
                 }
-                .verifier-report-card .sv-quote,
-                .verifier-report-group-row .sv-quote,
-                .verifier-report-group-collective .sv-quote {
-                    margin-top: 6px;
-                }
                 #verifier-action-container {
                     margin-top: 10px;
                 }
@@ -7109,8 +7072,17 @@ function useToolforgeSourceFetcher() {
                 #verifier-report-view h4 {
                     margin: 0 0 8px 0;
                     color: var(--sv-accent-fg);
-                    font-size: 14px;
+                    font-size: 13px;
                     font-weight: bold;
+                }
+                /* The run's own facts (revision, tokens), under its progress. */
+                #verifier-report-meta {
+                    margin: -6px 0 12px;
+                    font-size: 12px;
+                    color: var(--sv-ink-4);
+                }
+                #verifier-report-meta:empty {
+                    display: none;
                 }
                 #verifier-report-progress {
                     margin-bottom: 12px;
@@ -7226,33 +7198,122 @@ function useToolforgeSourceFetcher() {
                     font-size: 12px;
                     text-align: center;
                 }
-                .verifier-report-card {
-                    padding: 8px 10px;
+                /* A finding card (findingHtml()): every check's results use it. */
+                .sv-finding {
+                    padding: 6px 10px;
                     border: 1px solid var(--sv-border);
+                    border-inline-start: 3px solid var(--sv-stripe-neutral);
                     border-radius: 4px;
+                    background: var(--sv-bg-card);
                     color: var(--sv-ink);
                     font-size: 12px;
+                    line-height: 1.4;
                     cursor: pointer;
-                    background: var(--sv-bg-card);
-                    border-inline-start: 3px solid var(--sv-stripe-neutral);
                 }
-                .verifier-report-card:hover {
+                .sv-finding:hover {
                     background: var(--sv-bg-hover);
                 }
-                .verifier-report-card.verdict-supported { border-inline-start-color: var(--sv-seg-supported); }
-                .verifier-report-card.verdict-partial { border-inline-start-color: var(--sv-seg-partial); }
-                .verifier-report-card.verdict-not-supported { border-inline-start-color: var(--sv-seg-not-supported); }
-                .verifier-report-card.verdict-unavailable { border-inline-start-color: var(--sv-seg-unavailable); }
-                .verifier-report-card.verdict-error { border-inline-start-color: var(--sv-seg-error); }
-                .verifier-report-card.verdict-skipped { border-inline-start-color: var(--sv-seg-error); border-inline-start-style: dashed; }
-                .report-card-header {
+                /* Open, a card is for reading: only its head still closes it. */
+                .sv-finding.sv-expanded,
+                .sv-finding.sv-expanded:hover {
+                    background: var(--sv-bg-card);
+                    cursor: auto;
+                }
+                .sv-finding.sv-expanded > .sv-finding-head {
+                    cursor: pointer;
+                }
+                .sv-finding.verdict-supported { border-inline-start-color: var(--sv-seg-supported); }
+                .sv-finding.verdict-partial { border-inline-start-color: var(--sv-seg-partial); }
+                .sv-finding.verdict-not-supported { border-inline-start-color: var(--sv-seg-not-supported); }
+                .sv-finding.verdict-unavailable { border-inline-start-color: var(--sv-seg-unavailable); }
+                .sv-finding.verdict-error { border-inline-start-color: var(--sv-seg-error); }
+                .sv-finding.verdict-skipped { border-inline-start-color: var(--sv-seg-error); border-inline-start-style: dashed; }
+                .sv-finding-head {
                     display: flex;
-                    justify-content: space-between;
                     align-items: center;
+                    gap: 6px;
+                }
+                .sv-finding-verdict {
+                    display: flex;
+                    flex-wrap: wrap;
+                    align-items: center;
+                    gap: 2px 6px;
+                    min-width: 0;
+                }
+                .sv-finding-tag {
+                    font-size: 11px;
+                    color: var(--sv-ink-4);
+                }
+                .sv-finding-tag + .sv-finding-tag::before {
+                    content: '· ';
+                }
+                .sv-severity-tag-high { color: var(--sv-err-fg); }
+                .sv-severity-tag-medium { color: var(--sv-warn-fg); }
+                .sv-finding-toggle {
+                    flex-shrink: 0;
+                    align-self: flex-start;
+                    margin-inline-start: auto;
+                    width: 20px;
+                    height: 18px;
+                    padding: 0;
+                    border: none;
+                    border-radius: 3px;
+                    background: none;
+                    font: inherit;
+                    font-size: 12px;
+                    line-height: 18px;
+                    cursor: pointer;
+                }
+                .sv-finding-toggle:focus-visible {
+                    outline: 2px solid var(--sv-accent-fg);
+                }
+                .sv-finding-claim {
+                    margin-top: 2px;
+                    color: var(--sv-ink-2);
+                    white-space: nowrap;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                }
+                .sv-finding-comment {
+                    margin-top: 2px;
+                    font-size: 11px;
+                    font-style: italic;
+                    color: var(--sv-ink-comment);
+                    display: -webkit-box;
+                    -webkit-box-orient: vertical;
+                    -webkit-line-clamp: 2;
+                    overflow: hidden;
+                }
+                .sv-finding.sv-expanded > .sv-finding-claim {
+                    white-space: normal;
+                }
+                .sv-finding.sv-expanded > .sv-finding-comment {
+                    display: block;
+                    overflow: visible;
+                }
+                .sv-finding-details {
+                    margin-top: 6px;
+                }
+                .sv-finding-details[hidden],
+                .sv-finding-actions:empty {
+                    display: none;
+                }
+                .sv-finding-note {
                     margin-bottom: 4px;
+                    font-size: 11px;
+                    color: var(--sv-ink-subtle);
+                }
+                .sv-finding-details .sv-quote {
+                    margin: 0 0 6px;
+                }
+                /* In the report the sidebar is the only thing that scrolls. */
+                .sv-finding-details .sv-quote-text {
+                    max-height: none;
+                    overflow: visible;
                 }
                 .report-card-citation {
                     font-weight: bold;
+                    white-space: nowrap;
                 }
                 a.report-card-citation-link {
                     color: var(--sv-accent-fg);
@@ -7347,171 +7408,72 @@ function useToolforgeSourceFetcher() {
                 #verifier-lead-note:empty {
                     display: none;
                 }
+                /* The checks beside the citations (the lead check; the
+                   uncited-text check is next) are panels above them: closed,
+                   one line with the check's name and status, so their results
+                   arriving never move the citation cards. */
                 #verifier-report-lead {
                     margin-bottom: 12px;
                 }
                 #verifier-report-lead:empty {
                     display: none;
                 }
-                /* Report tabs. A Verify All that ran the lead check holds two
-                   independent checks, each with its own controls (the
-                   filters and the sort are the citations'), so each gets a
-                   tab, in the sidebar's one scroll area. The bar sticks to
-                   the top, so switching is a click away anywhere in a long
-                   report, and it always says which check is on screen. */
-                #verifier-report-tabs {
-                    position: sticky;
-                    /* The sidebar's padding, negated: sticky offsets count
-                       from inside it, and at 0 the cards scrolled past show
-                       in a strip above the stuck bar. */
-                    top: -15px;
-                    z-index: 3;
-                    display: flex;
-                    gap: 4px;
-                    margin-bottom: 12px;
-                    background: var(--sv-bg);
-                    border-bottom: 1px solid var(--sv-border);
-                }
-                #verifier-report-tabs[hidden] {
-                    display: none;
-                }
-                .sv-report-tab {
-                    display: inline-flex;
-                    align-items: center;
-                    gap: 6px;
-                    margin-bottom: -1px;
-                    padding: 8px 12px;
-                    font: inherit;
-                    font-size: 13px;
-                    font-weight: 600;
-                    color: var(--sv-ink-4);
-                    background: none;
-                    border: none;
-                    border-bottom: 2px solid transparent;
-                    cursor: pointer;
-                }
-                .sv-report-tab:hover {
-                    color: var(--sv-ink);
-                }
-                .sv-report-tab[aria-selected="true"] {
-                    color: var(--sv-accent-fg);
-                    border-bottom-color: var(--sv-accent-fg);
-                }
-                .sv-report-tab:focus-visible {
-                    outline: 2px solid var(--sv-accent-fg);
-                    outline-offset: -2px;
-                }
-                .sv-report-tab-badge {
-                    min-width: 18px;
-                    padding: 0 5px;
-                    border-radius: 9px;
-                    font-size: 11px;
-                    line-height: 18px;
-                    text-align: center;
-                    background: var(--sv-na-bg);
-                    color: var(--sv-na-fg);
-                }
-                .sv-report-tab-badge:empty {
-                    display: none;
-                }
-                .sv-report-tab-badge-not-covered { background: var(--sv-warn-bg); color: var(--sv-warn-fg); }
-                .sv-report-tab-badge-contradicted { background: var(--sv-err-bg); color: var(--sv-err-fg); }
-                .sv-report-tabbed .sv-report-panel:not(.sv-report-panel-active) {
-                    display: none;
-                }
-                /* The tab names the lead check; the heading is for a
-                   lead-only report, which has no tabs. */
-                .sv-report-tabbed .sv-lead-check h4 {
-                    display: none;
-                }
-                /* Clear of the sticky tab bar when scrolled to. */
-                .sv-lead-demoted {
-                    scroll-margin-top: 56px;
-                }
-                .sv-set-aside-link {
-                    padding: 0;
-                    font: inherit;
-                    color: var(--sv-accent-fg);
-                    background: none;
-                    border: none;
-                    cursor: pointer;
-                }
-                .sv-set-aside-link:hover {
-                    text-decoration: underline;
-                }
-                .sv-lead-check h4 {
-                    margin: 0 0 4px;
-                    font-size: 13px;
-                    color: var(--sv-accent-fg);
-                }
-                .sv-lead-status {
-                    font-size: 12px;
-                    color: var(--sv-ink-3);
-                    margin-bottom: 6px;
-                }
-                .sv-lead-note {
-                    font-size: 11px;
-                    color: var(--sv-warn-fg);
-                    background: var(--sv-warn-bg);
-                    border: 1px solid var(--sv-warn-bd);
-                    border-radius: 3px;
-                    padding: 2px 6px;
-                    margin-bottom: 6px;
-                }
-                .sv-lead-card {
-                    padding: 8px 10px;
-                    margin-bottom: 6px;
+                .sv-check {
+                    background: var(--sv-bg-2);
                     border: 1px solid var(--sv-border);
-                    border-inline-start: 3px solid var(--sv-seg-partial);
                     border-radius: 4px;
-                    background: var(--sv-bg-card);
-                    color: var(--sv-ink);
-                    font-size: 12px;
-                    cursor: pointer;
                 }
-                .sv-lead-card:hover {
-                    background: var(--sv-bg-hover);
-                }
-                .sv-lead-card.sv-lead-contradicted {
-                    border-inline-start-color: var(--sv-seg-not-supported);
-                }
-                .sv-lead-card-header {
+                .sv-check > summary {
                     display: flex;
-                    flex-wrap: wrap;
-                    align-items: center;
-                    gap: 6px;
-                    margin-bottom: 4px;
+                    align-items: flex-start;
+                    gap: 8px;
+                    padding: 8px 10px;
+                    cursor: pointer;
+                    list-style: none;
                 }
-                .sv-lead-tag {
+                .sv-check-text {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 2px;
+                    flex: 1;
+                    min-width: 0;
+                }
+                .sv-check-title {
+                    font-size: 13px;
                     font-weight: bold;
-                    font-size: 11px;
-                    padding: 1px 6px;
-                    border-radius: 3px;
-                    background: var(--sv-warn-bg);
+                    color: var(--sv-accent-fg);
+                }
+                .sv-check-status {
+                    font-size: 12px;
+                    color: var(--sv-ink-4);
+                }
+                .sv-check-status.sv-check-flagged {
                     color: var(--sv-warn-fg);
                 }
-                .sv-lead-contradicted .sv-lead-tag {
-                    background: var(--sv-err-bg);
-                    color: var(--sv-err-fg);
+                .sv-check-body {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 6px;
+                    padding: 0 10px 10px;
+                }
+                .sv-check-note {
+                    font-size: 11px;
+                    color: var(--sv-warn-fg);
                 }
                 .sv-lead-section {
                     font-size: 11px;
                     color: var(--sv-ink-subtle);
                 }
-                .sv-lead-sentence {
-                    color: var(--sv-ink-2);
-                    margin-bottom: 2px;
-                }
                 .sv-lead-covered,
                 .sv-lead-demoted {
-                    margin-top: 6px;
                     font-size: 12px;
                     color: var(--sv-ink-3);
                 }
-                .sv-lead-covered summary,
-                .sv-lead-demoted summary {
+                .sv-lead-covered > summary,
+                .sv-lead-demoted > summary {
                     cursor: pointer;
                     color: var(--sv-ink-4);
+                    list-style: none;
                 }
                 .sv-lead-covered ul {
                     margin: 4px 0 0;
@@ -7527,15 +7489,36 @@ function useToolforgeSourceFetcher() {
                     flex-direction: column;
                     gap: 6px;
                 }
-                .sv-lead-aside-tag {
-                    display: inline-block;
-                    font-size: 11px;
-                    padding: 1px 6px;
-                    border-radius: 3px;
-                    margin-inline-start: 6px;
-                    background: var(--sv-na-bg);
-                    color: var(--sv-na-fg);
-                    vertical-align: middle;
+                /* Every disclosure in the report (a card, a check's panel, a
+                   folded list) uses the same glyph: closed, open, and closed
+                   in a right-to-left sidebar. */
+                .sv-check > summary::-webkit-details-marker,
+                .sv-lead-covered > summary::-webkit-details-marker,
+                .sv-lead-demoted > summary::-webkit-details-marker {
+                    display: none;
+                }
+                #source-verifier-sidebar .sv-finding-toggle::before,
+                #source-verifier-sidebar .sv-check > summary::after,
+                #source-verifier-sidebar .sv-lead-covered > summary::after,
+                #source-verifier-sidebar .sv-lead-demoted > summary::after {
+                    content: '▸';
+                    color: var(--sv-ink-4);
+                }
+                #source-verifier-sidebar[dir="rtl"] .sv-finding-toggle::before,
+                #source-verifier-sidebar[dir="rtl"] .sv-check > summary::after,
+                #source-verifier-sidebar[dir="rtl"] .sv-lead-covered > summary::after,
+                #source-verifier-sidebar[dir="rtl"] .sv-lead-demoted > summary::after {
+                    content: '◂';
+                }
+                #source-verifier-sidebar .sv-finding.sv-expanded > .sv-finding-head > .sv-finding-toggle::before,
+                #source-verifier-sidebar .sv-check[open] > summary::after,
+                #source-verifier-sidebar .sv-lead-covered[open] > summary::after,
+                #source-verifier-sidebar .sv-lead-demoted[open] > summary::after {
+                    content: '▾';
+                }
+                .sv-lead-covered > summary::after,
+                .sv-lead-demoted > summary::after {
+                    margin-inline-start: 4px;
                 }
                 .verifier-sort {
                     display: flex;
@@ -7566,19 +7549,6 @@ function useToolforgeSourceFetcher() {
                     font-weight: 600;
                     color: var(--sv-accent-fg);
                     border-color: var(--sv-accent-fg);
-                }
-                .report-card-claim {
-                    color: var(--sv-ink-3);
-                    font-size: 11px;
-                    margin-bottom: 2px;
-                    white-space: nowrap;
-                    overflow: hidden;
-                    text-overflow: ellipsis;
-                }
-                .report-card-comment {
-                    color: var(--sv-ink-comment);
-                    font-size: 11px;
-                    font-style: italic;
                 }
                 .report-card-action {
                     margin-top: 4px;
@@ -7698,109 +7668,34 @@ function useToolforgeSourceFetcher() {
                 .verifier-feedback-status.is-error {
                     color: var(--sv-error-fg);
                 }
-                .report-card-header-actions {
-                    display: flex;
-                    align-items: center;
-                    gap: 6px;
-                    min-width: 0;
-                }
-                .report-card-header-actions .oo-ui-buttonElement {
-                    margin: 0;
-                }
-                .report-card-header-actions .oo-ui-buttonElement-button {
-                    font-size: 11px;
-                    padding: 1px 6px;
-                    white-space: nowrap;
-                }
-                .verifier-report-group {
-                    border: 1px solid var(--sv-border-3);
-                    border-inline-start: 3px solid var(--sv-accent-fg);
-                    border-radius: 4px;
-                    background: var(--sv-bg-inset);
-                    padding: 6px 8px;
-                    font-size: 12px;
-                }
-                .verifier-report-group-header {
-                    margin-bottom: 6px;
-                }
-                .verifier-report-group-title {
-                    display: flex;
-                    align-items: center;
-                    gap: 6px;
-                    margin-bottom: 4px;
-                }
-                .verifier-report-group-badge {
-                    font-weight: bold;
-                    font-size: 11px;
-                    color: var(--sv-accent-fg);
-                }
-                .verifier-report-group-claim {
-                    color: var(--sv-ink-2);
-                    font-size: 12px;
-                    line-height: 1.4;
-                    margin-bottom: 4px;
-                }
-                .verifier-report-group-collective {
-                    background: var(--sv-bg);
-                    border: 1px solid var(--sv-border-2);
-                    border-radius: 3px;
-                    color: var(--sv-ink);
-                    padding: 5px 8px;
-                    margin-bottom: 6px;
-                }
-                .verifier-report-group-collective-header {
-                    display: flex;
-                    align-items: center;
-                    gap: 6px;
-                    margin-bottom: 2px;
-                }
-                .verifier-report-group-collective-label {
-                    font-weight: bold;
-                    font-size: 11px;
-                    color: var(--sv-ink-2);
-                }
-                .verifier-report-group-collective-pending {
-                    font-size: 11px;
-                    color: var(--sv-ink-5);
-                    font-style: italic;
+                /* A group card's details: the combined verdict's evidence and
+                   actions, then its sources, each a quieter card of its own. */
+                .verifier-report-group-collective:empty {
+                    display: none;
                 }
                 .verifier-report-group-rows-label {
+                    margin: 8px 0 4px;
                     font-size: 10px;
-                    text-transform: uppercase;
+                    font-weight: 600;
                     letter-spacing: 0.04em;
-                    color: var(--sv-ink-5);
-                    margin-bottom: 3px;
-                }
-                .verifier-report-group-edit {
-                    margin-top: 2px;
-                }
-                .verifier-report-group-edit .oo-ui-buttonElement-button {
-                    font-size: 11px;
-                    padding: 2px 4px;
+                    text-transform: uppercase;
+                    color: var(--sv-ink-subtle);
                 }
                 .verifier-report-group-rows {
                     display: flex;
                     flex-direction: column;
                     gap: 4px;
                 }
-                .verifier-report-group-row {
+                .verifier-report-group-row.sv-finding,
+                .verifier-report-group-row.sv-finding.sv-expanded {
+                    padding: 4px 8px;
                     background: var(--sv-bg);
-                    border: 1px solid var(--sv-border-2);
-                    border-inline-start: 3px solid var(--sv-stripe-neutral);
-                    border-radius: 3px;
-                    color: var(--sv-ink);
-                    padding: 5px 8px;
-                    cursor: pointer;
+                    border-block-color: var(--sv-border-2);
+                    border-inline-end-color: var(--sv-border-2);
                 }
-                .verifier-report-group-row:hover {
+                .verifier-report-group-row.sv-finding:hover {
                     background: var(--sv-bg-hover-inset);
                 }
-                .verifier-report-group-row.verdict-supported { border-inline-start-color: var(--sv-seg-supported); }
-                .verifier-report-group-row.verdict-partial { border-inline-start-color: var(--sv-seg-partial); }
-                .verifier-report-group-row.verdict-not-supported { border-inline-start-color: var(--sv-seg-not-supported); }
-                .verifier-report-group-row.verdict-unavailable { border-inline-start-color: var(--sv-seg-unavailable); }
-                .verifier-report-group-row.verdict-error { border-inline-start-color: var(--sv-seg-error); }
-                .verifier-report-group-row.verdict-skipped { border-inline-start-color: var(--sv-seg-error); border-inline-start-style: dashed; }
                 .verifier-report-group-row .report-card-verdict {
                     background: transparent;
                     color: var(--sv-ink-4);
@@ -7808,18 +7703,9 @@ function useToolforgeSourceFetcher() {
                     font-weight: normal;
                     padding: 0;
                 }
-                .verifier-report-group-row .reason-type-tag {
-                    background: transparent;
+                .verifier-report-group-row .sv-finding-tag {
                     color: var(--sv-ink-4);
                     font-size: 10px;
-                    padding: 0;
-                    margin-inline-start: 4px;
-                }
-                .verifier-report-group-row-header {
-                    display: flex;
-                    justify-content: space-between;
-                    align-items: center;
-                    margin-bottom: 2px;
                 }
                 #verifier-claim-group-indicator {
                     margin-top: 6px;
@@ -8712,14 +8598,10 @@ function useToolforgeSourceFetcher() {
                 });
             }
 
-            const reportTabs = document.getElementById('verifier-report-tabs');
-            if (reportTabs) {
-                reportTabs.addEventListener('click', (e) => {
-                    const tab = e.target.closest('[role="tab"]');
-                    if (tab) this.selectReportTab(tab.dataset.tab);
-                });
-                reportTabs.addEventListener('keydown', (e) => this.handleReportTabKey(e));
-            }
+            // One listener opens and closes every card in the report, however
+            // and whenever it was rendered (see handleFindingClick()).
+            const reportView = document.getElementById('verifier-report-view');
+            if (reportView) reportView.addEventListener('click', (e) => this.handleFindingClick(e));
 
             this.buttons.providerSelect.getMenu().on('select', (item) => {
                 this.currentProvider = item.getData();
@@ -9386,18 +9268,22 @@ function useToolforgeSourceFetcher() {
             const summaryEl = document.getElementById('verifier-report-summary');
             if (!summaryEl) return;
 
-            const tokensLabel = this.reportTokenUsage.input + this.reportTokenUsage.output > 0
-                ? this.t(' · {input} input + {output} output tokens', { input: this.reportTokenUsage.input.toLocaleString(), output: this.reportTokenUsage.output.toLocaleString() })
-                : '';
-            const revisionHtml = this.reportRevisionId
-                ? `<div class="verifier-summary-meta">${this.t('Revision: ')}<a href="${this.escapeHtml(this.getRevisionPermalinkUrl(this.reportRevisionId) || '#')}" target="_blank" rel="noopener">${this.reportRevisionId}</a></div>`
-                : '';
-            // A lead-only report ("Check the lead against the body") has no
-            // citations to count; its findings are in the lead section.
-            if (this.reportLeadOnly) {
-                summaryEl.innerHTML = tokensLabel || revisionHtml
-                    ? `<div class="verifier-summary-meta">${tokensLabel.replace(/^ · /, '')}</div>${revisionHtml}`
+            // The run's own facts, under the progress line rather than in
+            // the citations' summary: they hold for every check in the report.
+            const metaEl = document.getElementById('verifier-report-meta');
+            if (metaEl) {
+                const tokens = this.reportTokenUsage.input + this.reportTokenUsage.output > 0
+                    ? this.escapeHtml(this.t(' · {input} input + {output} output tokens', { input: this.reportTokenUsage.input.toLocaleString(), output: this.reportTokenUsage.output.toLocaleString() }).replace(/^ · /, ''))
                     : '';
+                const revision = this.reportRevisionId
+                    ? `${this.t('Revision: ')}<a href="${this.escapeHtml(this.getRevisionPermalinkUrl(this.reportRevisionId) || '#')}" target="_blank" rel="noopener">${this.reportRevisionId}</a>`
+                    : '';
+                metaEl.innerHTML = [revision, tokens].filter(Boolean).join(' · ');
+            }
+            // A lead-only report ("Check the lead against the body") has no
+            // citations to count.
+            if (this.reportLeadOnly) {
+                summaryEl.innerHTML = '';
                 return;
             }
 
@@ -9447,11 +9333,10 @@ function useToolforgeSourceFetcher() {
             const claimsLabel = citationCount === total
                 ? this.t(total === 1 ? '{count} citation checked' : '{count} citations checked', { count: total })
                 : this.t(total === 1 ? '{citations} citations across {claims} claim' : '{citations} citations across {claims} claims', { citations: citationCount, claims: total });
-            // Set-aside lead citations are in the Lead tab, not this list; the
-            // count links there, so a citation missing here can be found.
+            // Set-aside lead citations are listed in the lead panel, not here.
             const demotedCount = this.getReportUnits().filter(u => u.leadDemoted).length;
             const demotedLabel = demotedCount
-                ? ` · <button type="button" class="sv-set-aside-link">${this.escapeHtml(this.t(demotedCount === 1 ? '{count} lead citation set aside' : '{count} lead citations set aside', { count: demotedCount }))}</button>`
+                ? ` · ${this.escapeHtml(this.t(demotedCount === 1 ? '{count} lead citation set aside' : '{count} lead citations set aside', { count: demotedCount }))}`
                 : '';
 
             summaryEl.innerHTML = `
@@ -9473,9 +9358,8 @@ function useToolforgeSourceFetcher() {
                 </div>
                 ${this.reportSeverity ? this.reportSortHtml() : ''}
                 <div class="verifier-summary-meta">
-                    ${claimsLabel}${demotedLabel}${hiddenCount > 0 ? this.t(' · {count} hidden by filter', { count: hiddenCount }) : ''}${tokensLabel}
+                    ${claimsLabel}${demotedLabel}${hiddenCount > 0 ? this.t(' · {count} hidden by filter', { count: hiddenCount }) : ''}
                 </div>
-                ${revisionHtml}
             `;
 
             summaryEl.querySelectorAll('.verifier-filter-chip').forEach(btn => {
@@ -9490,13 +9374,6 @@ function useToolforgeSourceFetcher() {
                     this.setReportSort(btn.dataset.sort);
                 });
             });
-            const setAsideLink = summaryEl.querySelector('.sv-set-aside-link');
-            if (setAsideLink) {
-                setAsideLink.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    this.showSetAsideLeadCitations();
-                });
-            }
         }
 
         // The reason_type enum itself stays English — it is parsed
@@ -9517,10 +9394,12 @@ function useToolforgeSourceFetcher() {
             }
         }
 
+        // Opening a card shows its citation in the article; closing it leaves
+        // the article where it is.
         attachRefScrollHandler(el, refElement) {
             if (!refElement) return;
             el.addEventListener('click', (e) => {
-                if (e.target.closest('.report-card-action') || e.target.closest('.report-card-header-actions') || e.target.closest('.verifier-report-group-edit') || e.target.closest('.report-card-citation-link')) return;
+                if (!this.isFindingSummaryClick(el, e) || el.classList.contains('sv-expanded')) return;
                 refElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
                 this.clearHighlights();
                 const parentRef = refElement.closest('.reference');
@@ -9565,131 +9444,84 @@ function useToolforgeSourceFetcher() {
         }
 
         buildSoloCard(result) {
-            const { cls: verdictClass, label: verdictLabel } = this.verdictClassFor(result.verdict);
-            const card = document.createElement('div');
-            card.className = `verifier-report-card verdict-${verdictClass}`;
-            const claimExcerpt = result.claimText.length > 80 ? result.claimText.substring(0, 80) + '…' : result.claimText;
-            const truncationHtml = (result.truncated && result.verdict !== 'SUPPORTED')
-                ? `<div class="report-card-truncated">${this.t('⚠ Source is long, only partially checked.')}</div>`
-                : '';
-            const reasonTypeHtml = (result.verdict === 'NOT SUPPORTED' && result.reason_type)
-                ? `<span class="reason-type-tag reason-type-${result.reason_type}">${this.reasonTypeLabel(result.reason_type)}</span>`
-                : '';
-            card.innerHTML = `
-                <div class="report-card-header">
-                    ${result.url
-                        ? `<a class="report-card-citation report-card-citation-link" href="${this.escapeHtml(result.url)}" target="_blank" rel="noopener noreferrer">[${result.citationNumber}]</a>`
-                        : `<span class="report-card-citation">[${result.citationNumber}]</span>`}
-                    <span class="report-card-header-actions">
-                        <span class="report-card-verdict ${verdictClass}">${verdictLabel}</span>${reasonTypeHtml}
-                    </span>
-                </div>
-                <div class="report-card-claim">${this.escapeHtml(claimExcerpt)}</div>
-                ${this.quoteHtml(this.quoteViewOf(result))}
-                ${result.comments ? `<div class="report-card-comment">${this.escapeHtml(result.comments)}</div>` : ''}
-                ${truncationHtml}
-            `;
-
-            this.attachRefScrollHandler(card, result.refElement);
-
-            const actionDiv = document.createElement('div');
-            actionDiv.className = 'report-card-action';
-
+            const { cls: verdictClass } = this.verdictClassFor(result.verdict);
+            const card = this.findingElement({
+                classes: `verifier-report-card verdict-${verdictClass}`,
+                ref: this.citationRefHtml(result),
+                verdictHtml: this.verdictHeadHtml(result),
+                claim: result.claimText,
+                comment: result.comments,
+                details: this.quoteHtml(this.quoteViewOf(result))
+                    + this.truncationNoteHtml(result, this.t('⚠ Source is long, only partially checked.')),
+            });
+            const actions = card.querySelector(':scope > .sv-finding-details > .sv-finding-actions');
             if (result.refElement && (result.verdict === 'NOT SUPPORTED' || result.verdict === 'PARTIALLY SUPPORTED' || result.verdict === 'SOURCE UNAVAILABLE')) {
-                const editBtn = new OO.ui.ButtonWidget({
-                    label: this.t('Edit Section'),
-                    flags: ['progressive'],
-                    icon: 'edit',
-                    href: this.buildEditUrl(result.refElement),
-                    target: '_blank',
-                    framed: false
-                });
-                actionDiv.appendChild(editBtn.$element[0]);
+                const edit = document.createElement('div');
+                edit.className = 'report-card-action';
+                edit.appendChild(this.editSectionButton(result.refElement));
+                actions.appendChild(edit);
             }
-
-            if (actionDiv.children.length) {
-                card.appendChild(actionDiv);
-            }
-
             const feedback = this.buildFeedbackControls(result);
-            if (feedback) card.appendChild(feedback);
+            if (feedback) actions.appendChild(feedback);
+            this.attachRefScrollHandler(card, result.refElement);
             return card;
         }
 
+        // A group of adjacent citations sharing one claim is one card: its
+        // head carries the combined verdict once that check is done, and its
+        // details hold that verdict's evidence and the group's sources, each
+        // a card of its own.
         buildGroupBlock(firstResult) {
-            const groupEl = document.createElement('div');
-            groupEl.className = 'verifier-report-group';
-            groupEl.dataset.groupId = firstResult.groupId;
-            const claimExcerpt = firstResult.claimText.length > 120 ? firstResult.claimText.substring(0, 120) + '…' : firstResult.claimText;
             const numbers = (firstResult.groupCitationNumbers || []).map(n => `[${n}]`).join('');
-            groupEl.innerHTML = `
-                <div class="verifier-report-group-header">
-                    <div class="verifier-report-group-title">
-                        <span class="verifier-report-group-badge">${this.escapeHtml(this.t('Group of {size} · {numbers}', { size: firstResult.groupSize, numbers }))}</span>
-                    </div>
-                    <div class="verifier-report-group-claim">${this.escapeHtml(claimExcerpt)}</div>
-                    <div class="verifier-report-group-collective">
-                        <div class="verifier-report-group-collective-pending">${this.t('Checking combined sources…')}</div>
-                    </div>
-                    <div class="verifier-report-group-edit"></div>
-                </div>
-                <div class="verifier-report-group-rows-label">${this.t('Individual sources')}</div>
-                <div class="verifier-report-group-rows"></div>
-            `;
-            // One shared "Edit Section" button per group: every member is in
-            // the same article section by definition, so a per-row button
-            // would just be repetition. Wire it to the first member's ref.
+            const groupEl = this.findingElement({
+                classes: 'verifier-report-group',
+                // Its numbers say it is a group; its details list the sources.
+                ref: `<span class="report-card-citation">${this.escapeHtml(numbers)}</span>`,
+                verdictHtml: this.findingTagHtml(this.t('Checking combined sources…')),
+                claim: firstResult.claimText,
+                details: `<div class="verifier-report-group-collective"></div>`,
+                detailsAfter: `<div class="verifier-report-group-rows-label">${this.escapeHtml(this.t('Individual sources'))}</div>`
+                    + `<div class="verifier-report-group-rows"></div>`,
+            });
+            groupEl.dataset.groupId = firstResult.groupId;
+            // One "Edit Section" for the group: its members are in one
+            // section by definition.
             if (firstResult.refElement) {
-                const editBtn = new OO.ui.ButtonWidget({
-                    label: this.t('Edit Section'),
-                    flags: ['progressive'],
-                    icon: 'edit',
-                    href: this.buildEditUrl(firstResult.refElement),
-                    target: '_blank',
-                    framed: false
-                });
-                groupEl.querySelector('.verifier-report-group-edit').appendChild(editBtn.$element[0]);
+                const edit = document.createElement('div');
+                edit.className = 'report-card-action';
+                edit.appendChild(this.editSectionButton(firstResult.refElement));
+                groupEl.querySelector(':scope > .sv-finding-details > .sv-finding-actions').appendChild(edit);
             }
+            this.attachRefScrollHandler(groupEl, firstResult.refElement);
             return groupEl;
         }
 
-        // Fills the collective-verdict slot of an already-rendered group block
-        // and tags the block with data-collective-verdict so the filter logic
-        // can show/hide the whole group by its combined verdict.
+        // Fills in a group card's combined verdict, and tags the card with
+        // data-collective-verdict so the filters can show or hide the whole
+        // group by its combined verdict.
         renderGroupCollectiveResult(result) {
             const resultsEl = document.getElementById('verifier-report-results');
             if (!resultsEl) return;
             const groupEl = resultsEl.querySelector(`.verifier-report-group[data-group-id="${CSS.escape(result.groupId)}"]`);
             if (!groupEl) return;
 
-            const { cls: verdictClass, label: verdictLabel } = this.verdictClassFor(result.verdict);
+            const { cls: verdictClass } = this.verdictClassFor(result.verdict);
             groupEl.dataset.collectiveVerdict = verdictClass;
+            groupEl.classList.add(`verdict-${verdictClass}`);
+            groupEl.querySelector(':scope > .sv-finding-head .sv-finding-verdict').innerHTML = this.verdictHeadHtml(result);
+            this.setFindingComment(groupEl, result.comments);
 
             const slot = groupEl.querySelector('.verifier-report-group-collective');
             if (!slot) return;
             this.reportCardEls.set(result, slot);
-
-            const reasonTypeHtml = (result.verdict === 'NOT SUPPORTED' && result.reason_type)
-                ? `<span class="reason-type-tag reason-type-${result.reason_type}">${this.reasonTypeLabel(result.reason_type)}</span>`
-                : '';
-            const truncationHtml = (result.truncated && result.verdict !== 'SUPPORTED')
-                ? `<div class="report-card-truncated">${this.t('⚠ Combined sources are long, only partially checked.')}</div>`
-                : '';
-            slot.innerHTML = `
-                <div class="verifier-report-group-collective-header">
-                    <span class="verifier-report-group-collective-label">${this.t('Combined verdict')}</span>
-                    <span class="report-card-verdict ${verdictClass}">${verdictLabel}</span>${reasonTypeHtml}
-                </div>
-                ${this.quoteHtml(this.quoteViewOf(result))}
-                ${result.comments ? `<div class="report-card-comment">${this.escapeHtml(result.comments)}</div>` : ''}
-                ${truncationHtml}
-            `;
+            slot.innerHTML = this.quoteHtml(this.quoteViewOf(result))
+                + this.truncationNoteHtml(result, this.t('⚠ Combined sources are long, only partially checked.'));
 
             const feedback = this.buildFeedbackControls(result);
-            if (feedback) slot.appendChild(feedback);
+            if (feedback) groupEl.querySelector(':scope > .sv-finding-details > .sv-finding-actions').appendChild(feedback);
 
-            // A set-aside combined verdict takes its whole group block, rows
-            // and all, to the lead section.
+            // A set-aside combined verdict takes its whole group card, sources
+            // and all, to the lead panel.
             const demotedCards = result.leadDemoted ? this.leadDemotedCards() : null;
             if (demotedCards) {
                 demotedCards.appendChild(groupEl);
@@ -9698,8 +9530,9 @@ function useToolforgeSourceFetcher() {
         }
 
         // Called when the collective check is skipped for want of a second
-        // retrievable source. Marks the block so applyReportFilters() knows to
-        // filter it by its members rather than leaving it permanently visible.
+        // retrievable source. Marks the card so applyReportFilters() knows to
+        // filter it by its members rather than leaving it permanently visible,
+        // and puts the members' own verdicts in its head.
         hideGroupCollectiveSlot(groupId) {
             const resultsEl = document.getElementById('verifier-report-results');
             if (!resultsEl) return;
@@ -9708,48 +9541,39 @@ function useToolforgeSourceFetcher() {
             groupEl.dataset.collectiveSkipped = 'true';
             const slot = groupEl.querySelector('.verifier-report-group-collective');
             if (slot) slot.style.display = 'none';
+            const members = this.reportResults.filter(r => r.groupId === groupId);
+            const head = groupEl.querySelector(':scope > .sv-finding-head .sv-finding-verdict');
+            if (head) {
+                head.innerHTML = members.map(r => {
+                    const { cls, label } = this.verdictClassFor(r.verdict);
+                    return this.verdictPillHtml(cls, label);
+                }).join('');
+            }
             // With no combined verdict the members are counted one by one, so
-            // a set-aside member says so on its row. (A set-aside combined
-            // verdict moves the whole block to the lead section instead.)
-            for (const result of this.reportResults) {
-                if (result.groupId !== groupId || !result.leadDemoted) continue;
-                const actions = this.reportCardEls.get(result)?.querySelector('.report-card-header-actions');
-                if (!actions || actions.querySelector('.sv-lead-aside-tag')) continue;
-                const tag = document.createElement('span');
-                tag.className = 'sv-lead-aside-tag';
-                tag.textContent = this.t('Set aside: lead');
-                actions.appendChild(tag);
+            // a set-aside member says so on its own card. (A set-aside
+            // combined verdict moves the whole group to the lead panel.)
+            for (const result of members) {
+                if (!result.leadDemoted) continue;
+                const verdictEl = this.reportCardEls.get(result)?.querySelector(':scope > .sv-finding-head .sv-finding-verdict');
+                if (!verdictEl || verdictEl.querySelector('.sv-lead-aside-tag')) continue;
+                verdictEl.insertAdjacentHTML('beforeend', this.findingTagHtml(this.t('Set aside: lead'), 'sv-lead-aside-tag'));
             }
         }
 
+        // One source of a group: no claim line, since it is the group's.
         buildGroupRow(result) {
-            const { cls: verdictClass, label: verdictLabel } = this.verdictClassFor(result.verdict);
-            const row = document.createElement('div');
-            row.className = `verifier-report-group-row verdict-${verdictClass}`;
-            const truncationHtml = (result.truncated && result.verdict !== 'SUPPORTED')
-                ? `<div class="report-card-truncated">${this.t('⚠ Source is long, only partially checked.')}</div>`
-                : '';
-            const reasonTypeHtml = (result.verdict === 'NOT SUPPORTED' && result.reason_type)
-                ? `<span class="reason-type-tag reason-type-${result.reason_type}">${this.reasonTypeLabel(result.reason_type)}</span>`
-                : '';
-            row.innerHTML = `
-                <div class="verifier-report-group-row-header">
-                    ${result.url
-                        ? `<a class="report-card-citation report-card-citation-link" href="${this.escapeHtml(result.url)}" target="_blank" rel="noopener noreferrer">[${result.citationNumber}]</a>`
-                        : `<span class="report-card-citation">[${result.citationNumber}]</span>`}
-                    <span class="report-card-header-actions">
-                        <span class="report-card-verdict ${verdictClass}">${verdictLabel}</span>${reasonTypeHtml}
-                    </span>
-                </div>
-                ${this.quoteHtml(this.quoteViewOf(result))}
-                ${result.comments ? `<div class="report-card-comment">${this.escapeHtml(result.comments)}</div>` : ''}
-                ${truncationHtml}
-            `;
-            this.attachRefScrollHandler(row, result.refElement);
-
+            const { cls: verdictClass } = this.verdictClassFor(result.verdict);
+            const row = this.findingElement({
+                classes: `verifier-report-group-row verdict-${verdictClass}`,
+                ref: this.citationRefHtml(result),
+                verdictHtml: this.verdictHeadHtml(result),
+                comment: result.comments,
+                details: this.quoteHtml(this.quoteViewOf(result))
+                    + this.truncationNoteHtml(result, this.t('⚠ Source is long, only partially checked.')),
+            });
             const feedback = this.buildFeedbackControls(result);
-            if (feedback) row.appendChild(feedback);
-
+            if (feedback) row.querySelector(':scope > .sv-finding-details > .sv-finding-actions').appendChild(feedback);
+            this.attachRefScrollHandler(row, result.refElement);
             return row;
         }
 
@@ -10090,6 +9914,15 @@ function useToolforgeSourceFetcher() {
         severityHtml(severity) {
             if (!severity) return '';
             const { cls, label } = this.severityLabelFor(severity);
+            const title = !severity.tier && severity.error ? ` title="${this.escapeHtml(severity.error)}"` : '';
+            return `<div class="sv-severity">`
+                + `<span class="sv-severity-label">${this.escapeHtml(this.t('Severity'))}</span>`
+                + `<span class="sv-severity-badge sv-severity-${cls}"${title}>${this.escapeHtml(label)}</span>`
+                + this.severitySubclaimsHtml(severity)
+                + `</div>`;
+        }
+
+        severitySubclaimsHtml(severity) {
             const items = (severity.subclaims || [])
                 .filter(s => s.status !== SUBCLAIM_STATUSES.SUPPORTED)
                 .map(s => `<li class="sv-subclaim sv-subclaim-${s.status}">`
@@ -10098,12 +9931,7 @@ function useToolforgeSourceFetcher() {
                     + (s.central ? '' : ` <span class="sv-subclaim-minor">${this.escapeHtml(this.t('(minor)'))}</span>`)
                     + `</li>`)
                 .join('');
-            const title = !severity.tier && severity.error ? ` title="${this.escapeHtml(severity.error)}"` : '';
-            return `<div class="sv-severity">`
-                + `<span class="sv-severity-label">${this.escapeHtml(this.t('Severity'))}</span>`
-                + `<span class="sv-severity-badge sv-severity-${cls}"${title}>${this.escapeHtml(label)}</span>`
-                + (items ? `<ul class="sv-subclaims">${items}</ul>` : '')
-                + `</div>`;
+            return items ? `<ul class="sv-subclaims">${items}</ul>` : '';
         }
 
         // Second phase of Verify All, when severity ranking is on: one pass
@@ -10150,20 +9978,41 @@ function useToolforgeSourceFetcher() {
             this.applyReportSort();
         }
 
-        // Puts a unit's severity block in its card (solo), its group's
-        // combined-verdict slot, or its row (a member of a group whose
-        // combined check was skipped), and records the tier on the top-level
-        // block applyReportSort() moves.
+        // Puts a unit's severity on its card: what was found, in a few words
+        // in the head line, and the failing subclaims in the details. The
+        // card is a solo citation's; a group's, for its combined verdict
+        // (the subclaims go with that verdict's evidence); or a group
+        // member's, when the group's combined check was skipped and its
+        // members are ranked one by one. Also records the tier on the
+        // top-level card applyReportSort() moves.
         renderReportSeverity(unit) {
             const host = this.reportCardEls.get(unit);
             if (!host || !unit.severity) return;
-            let slot = host.querySelector(':scope > .sv-severity-slot');
-            if (!slot) {
-                slot = document.createElement('div');
-                slot.className = 'sv-severity-slot';
-                host.insertBefore(slot, host.querySelector(':scope > .report-card-action, :scope > .verifier-feedback'));
+            const card = host.classList.contains('sv-finding') ? host : host.closest('.sv-finding');
+            const container = host === card ? host.querySelector(':scope > .sv-finding-details') : host;
+            if (container) {
+                let slot = container.querySelector(':scope > .sv-severity-slot');
+                if (!slot) {
+                    slot = document.createElement('div');
+                    slot.className = 'sv-severity-slot';
+                    container.insertBefore(slot, container.querySelector(':scope > .sv-finding-actions'));
+                }
+                slot.innerHTML = this.severitySubclaimsHtml(unit.severity);
             }
-            slot.innerHTML = this.severityHtml(unit.severity);
+            const verdictEl = card && card.querySelector(':scope > .sv-finding-head .sv-finding-verdict');
+            if (verdictEl) {
+                const { cls, label } = this.severityLabelFor(unit.severity);
+                let tag = verdictEl.querySelector('.sv-severity-tag');
+                if (!tag) {
+                    tag = document.createElement('span');
+                    verdictEl.appendChild(tag);
+                }
+                tag.className = `sv-finding-tag sv-severity-tag sv-severity-tag-${cls}`;
+                tag.textContent = label;
+                // An unranked card carries its error as a tooltip, not as text.
+                if (!unit.severity.tier && unit.severity.error) tag.title = unit.severity.error;
+                else tag.removeAttribute('title');
+            }
 
             const block = host.closest('.verifier-report-card, .verifier-report-group');
             if (!block || !unit.severity.tier) return;
@@ -10454,25 +10303,31 @@ function useToolforgeSourceFetcher() {
             return this.getReportUnits().filter(u => !u.leadDemoted);
         }
 
-        // Builds the report's lead section for a new run: the lead check's
-        // findings, re-rendered as results arrive, and a collapsed list the
-        // set-aside lead citations' cards are moved into (they keep their
-        // buttons and feedback controls, so they are moved, not re-rendered).
+        // The lead check's panel for a new run. Closed, it is one line: the
+        // check's name and its status. Open, it holds the findings, the
+        // covered sentences, and a list the set-aside lead citations' cards
+        // are moved into (they keep their buttons and feedback controls, so
+        // they are moved, not re-rendered). It starts closed in a full
+        // report, where it sits above the citations and so must not push
+        // them about as its results arrive, and open when the lead check is
+        // all there is. Another check (the uncited-text check) gets a panel
+        // of the same shape beside it.
         resetReportLead() {
             const el = document.getElementById('verifier-report-lead');
             if (!el) return;
             el.innerHTML = '';
             if (!this.reportLead) return;
-            const check = document.createElement('div');
-            check.className = 'sv-lead-check';
-            el.appendChild(check);
-            const demoted = document.createElement('details');
-            demoted.className = 'sv-lead-demoted';
-            demoted.style.display = 'none';
-            demoted.innerHTML = `<summary></summary>`
+            const panel = document.createElement('details');
+            panel.className = 'sv-check';
+            panel.open = this.reportLeadOnly;
+            panel.innerHTML = `<summary><span class="sv-check-text">`
+                + `<span class="sv-check-title">${this.escapeHtml(this.t('Lead vs body'))}</span>`
+                + `<span class="sv-check-status"></span></span></summary>`
+                + `<div class="sv-check-body"><div class="sv-lead-check"></div>`
+                + `<details class="sv-lead-demoted" style="display:none"><summary></summary>`
                 + `<div class="sv-lead-demoted-note">${this.escapeHtml(this.t('In the lead, a statement can be supported by the article body instead of its own citation, so a lead citation that backs only part of its claim, or none of it, is not counted as a problem. The lead check above covers what the body says. These are worth a look when the claim is contentious.'))}</div>`
-                + `<div class="sv-lead-demoted-cards"></div>`;
-            el.appendChild(demoted);
+                + `<div class="sv-lead-demoted-cards"></div></details></div>`;
+            el.appendChild(panel);
             this.renderReportLead();
         }
 
@@ -10481,13 +10336,26 @@ function useToolforgeSourceFetcher() {
         }
 
         renderReportLead() {
-            const el = document.querySelector('#verifier-report-lead .sv-lead-check');
-            if (!el || !this.reportLead) return;
-            el.innerHTML = this.leadCheckHtml(this.reportLead);
-            el.querySelectorAll('[data-lead-index]').forEach(card => {
-                card.addEventListener('click', () => this.scrollToLeadSentence(Number(card.dataset.leadIndex)));
+            const panel = document.querySelector('#verifier-report-lead .sv-check');
+            if (!panel || !this.reportLead) return;
+            const status = panel.querySelector('.sv-check-status');
+            status.textContent = this.leadStatusText(this.reportLead);
+            status.classList.toggle('sv-check-flagged', this.leadFindings(this.reportLead).length > 0);
+            const check = panel.querySelector('.sv-lead-check');
+            // Re-rendered as results arrive; a card the editor opened stays open.
+            const open = new Set([...check.querySelectorAll('.sv-finding.sv-expanded')].map(card => card.dataset.leadIndex));
+            check.innerHTML = this.leadCheckHtml(this.reportLead);
+            check.querySelectorAll('.sv-finding[data-lead-index]').forEach(card => {
+                if (open.has(card.dataset.leadIndex)) this.toggleFinding(card, true);
+                // Opening a card shows its sentence in the article, as a
+                // citation's card shows its citation.
+                card.addEventListener('click', (e) => {
+                    if (this.isFindingSummaryClick(card, e) && !card.classList.contains('sv-expanded')) {
+                        this.scrollToLeadSentence(Number(card.dataset.leadIndex));
+                    }
+                });
             });
-            const demoted = document.querySelector('#verifier-report-lead .sv-lead-demoted');
+            const demoted = panel.querySelector('.sv-lead-demoted');
             const cards = this.leadDemotedCards();
             if (demoted && cards) {
                 const count = cards.children.length;
@@ -10495,30 +10363,35 @@ function useToolforgeSourceFetcher() {
                 demoted.querySelector('summary').textContent = this.t(
                     count === 1 ? '{count} lead citation set aside' : '{count} lead citations set aside', { count });
             }
-            this.renderReportTabs();
         }
 
-        // The lead check's part of the report, from its state alone:
-        // { sentences, results, state: 'pending' | 'running' | 'done' | 'stopped', bodyTruncated }.
+        leadFindings(lead) {
+            return (lead.results || []).filter(r => r.outcome === LEAD_OUTCOMES.NOT_COVERED || r.outcome === LEAD_OUTCOMES.CONTRADICTED);
+        }
+
+        // The lead check's state in one line, for its panel's summary, from
+        // { sentences, results, state: 'pending' | 'running' | 'done' | 'stopped' }.
         // 'stopped': the run was stopped before the lead check began.
-        leadCheckHtml(lead) {
+        leadStatusText(lead) {
             const results = lead.results || [];
             const total = lead.sentences.length;
+            if (lead.state === 'stopped') return this.t('The lead was not checked: the run was stopped first.');
+            if (lead.state === 'pending') return this.t('The lead is checked against the body after the citations.');
+            if (lead.state === 'running') {
+                return this.t('Checking the lead against the body… ({done} of {total} sentences)', { done: results.length, total });
+            }
+            const covered = results.filter(r => r.outcome === LEAD_OUTCOMES.COVERED).length;
+            return this.t('{covered} of {total} lead sentences are covered in the body.', { covered, total });
+        }
+
+        // The panel's contents, from the lead check's state alone: its notes,
+        // a card per finding, and the covered sentences folded away.
+        leadCheckHtml(lead) {
+            const results = lead.results || [];
             const covered = results.filter(r => r.outcome === LEAD_OUTCOMES.COVERED);
-            const flagged = results.filter(r => r.outcome === LEAD_OUTCOMES.NOT_COVERED || r.outcome === LEAD_OUTCOMES.CONTRADICTED);
             // Every sentence without a verdict, including any a Stop during
             // the check never reached: those have no result at all.
-            const uncheckedCount = total - results.filter(r => r.verdict).length;
-            let status;
-            if (lead.state === 'stopped') {
-                status = this.t('The lead was not checked: the run was stopped first.');
-            } else if (lead.state === 'pending') {
-                status = this.t('The lead is checked against the body after the citations.');
-            } else if (lead.state === 'running') {
-                status = this.t('Checking the lead against the body… ({done} of {total} sentences)', { done: results.length, total });
-            } else {
-                status = this.t('{covered} of {total} lead sentences are covered in the body.', { covered: covered.length, total });
-            }
+            const uncheckedCount = lead.sentences.length - results.filter(r => r.verdict).length;
             const notes = [];
             if (lead.bodyTruncated) {
                 notes.push(this.t('The body is long, so only the sections closest to the lead were sent. A sentence reported as not covered may be in a section that was left out.'));
@@ -10531,30 +10404,31 @@ function useToolforgeSourceFetcher() {
                     + covered.map(r => `<li>${this.escapeHtml(r.text)}${r.section ? ` <span class="sv-lead-section">(${this.escapeHtml(r.section)})</span>` : ''}</li>`).join('')
                     + `</ul></details>`
                 : '';
-            return `<h4>${this.escapeHtml(this.t('Lead vs body'))}</h4>`
-                + `<div class="sv-lead-status">${this.escapeHtml(status)}</div>`
-                + notes.map(n => `<div class="sv-lead-note">${this.escapeHtml(n)}</div>`).join('')
-                + flagged.map(r => this.leadFindingCardHtml(r)).join('')
+            return notes.map(n => `<div class="sv-check-note">${this.escapeHtml(n)}</div>`).join('')
+                + this.leadFindings(lead).map(r => this.leadFindingCardHtml(r)).join('')
                 + coveredHtml;
         }
 
         leadFindingCardHtml(r) {
             const contradicted = r.outcome === LEAD_OUTCOMES.CONTRADICTED;
-            const tag = contradicted ? this.t('Contradicts the body') : this.t('Not covered in the body');
             // quoteText is core/quote.js's verifiedText: only text located in
             // the body is ever shown.
-            const quoteHtml = r.quoteText
+            const quote = r.quoteText
                 ? `<div class="sv-quote"><span class="sv-quote-label">${this.escapeHtml(this.t('From the body'))}</span>`
                     + `<div class="sv-quote-text">“${this.escapeHtml(r.quoteText)}”</div></div>`
                 : '';
-            return `<div class="sv-lead-card ${contradicted ? 'sv-lead-contradicted' : 'sv-lead-not-covered'}" data-lead-index="${r.index}">`
-                + `<div class="sv-lead-card-header"><span class="sv-lead-tag">${this.escapeHtml(tag)}</span>`
-                + (r.section ? `<span class="sv-lead-section">${this.escapeHtml(this.t('Section: {section}', { section: r.section }))}</span>` : '')
-                + `</div>`
-                + `<div class="sv-lead-sentence">${this.escapeHtml(r.text)}</div>`
-                + quoteHtml
-                + (r.comments ? `<div class="report-card-comment">${this.escapeHtml(r.comments)}</div>` : '')
-                + `</div>`;
+            const section = r.section
+                ? `<div class="sv-finding-note">${this.escapeHtml(this.t('Section: {section}', { section: r.section }))}</div>`
+                : '';
+            return this.findingHtml({
+                classes: `sv-lead-finding verdict-${contradicted ? 'not-supported' : 'partial'}`,
+                attrs: ` data-lead-index="${Number(r.index)}"`,
+                verdictHtml: this.verdictPillHtml(contradicted ? 'not-supported' : 'partial',
+                    contradicted ? this.t('Contradicts the body') : this.t('Not covered in the body')),
+                claim: r.text,
+                comment: r.comments,
+                details: quote + section,
+            });
         }
 
         scrollToLeadSentence(index) {
@@ -10567,142 +10441,142 @@ function useToolforgeSourceFetcher() {
         }
 
         // ========================================
-        // REPORT TABS
+        // FINDING CARDS
         // ========================================
         //
-        // A Verify All that ran the lead check holds two independent checks,
-        // with different units (citations, lead sentences), different
-        // controls (the filters and the sort are the citations') and
-        // different fixes (a better source; content added to the body). Each
-        // gets a tab. They used to be stacked: the lead section under a
-        // citation list with a scrollbar of its own, inside the scrolling
-        // sidebar, so the wheel moved whichever was under the pointer and
-        // ran on past the list into the lead section. Now the sidebar is
-        // the one scroll area, and the tab bar sticks to its top.
-        //
-        // A report with only one check (no lead check, or "Check the lead
-        // against the body" alone) has no tabs: both panels are shown, and
-        // the one with nothing in it is empty.
+        // One card for every check's findings: a citation, a group of
+        // adjacent citations and each of its sources, a lead sentence, and
+        // whatever check comes next. Closed, a card is a head line (the
+        // reference, the verdict and a few words of qualification: the
+        // reason, the severity), the claim on one line and the model's
+        // comment on two. Everything else is in its details, one click away:
+        // the full claim and comment, the quote, the failing subclaims, the
+        // caveats, Edit section and the feedback controls. A report of fifty
+        // citations stays a list that can be read down, and a check that
+        // adds something to say adds it to the details, not to every card.
 
-        isReportTabbed() {
-            return Boolean(this.reportLead) && !this.reportLeadOnly;
+        findingHtml({ classes = '', attrs = '', ref = '', verdictHtml = '', claim = '', comment = '', details = '', detailsAfter = '' }) {
+            const toggleLabel = this.escapeHtml(this.t('Details'));
+            return `<div class="sv-finding ${classes}"${attrs}>`
+                + `<div class="sv-finding-head">${ref}<span class="sv-finding-verdict">${verdictHtml}</span>`
+                + `<button type="button" class="sv-finding-toggle" aria-expanded="false" title="${toggleLabel}" aria-label="${toggleLabel}"></button></div>`
+                + (claim ? `<div class="sv-finding-claim">${this.escapeHtml(claim)}</div>` : '')
+                + (comment ? `<div class="sv-finding-comment">${this.escapeHtml(comment)}</div>` : '')
+                + `<div class="sv-finding-details" hidden>${details}<div class="sv-finding-actions"></div>${detailsAfter}</div>`
+                + `</div>`;
         }
 
-        renderReportTabs() {
-            const view = document.getElementById('verifier-report-view');
-            const bar = document.getElementById('verifier-report-tabs');
-            if (!view || !bar) return;
-            const tabbed = this.isReportTabbed();
-            view.classList.toggle('sv-report-tabbed', tabbed);
-            bar.hidden = !tabbed;
-            bar.querySelectorAll('[role="tab"]').forEach(tab => {
-                const selected = tabbed && tab.dataset.tab === this.reportTab;
-                tab.setAttribute('aria-selected', String(selected));
-                tab.tabIndex = selected ? 0 : -1;
-            });
-            view.querySelectorAll('.sv-report-panel').forEach(panel => {
-                panel.classList.toggle('sv-report-panel-active', !tabbed || panel.dataset.tab === this.reportTab);
-                if (tabbed) {
-                    panel.setAttribute('role', 'tabpanel');
-                    panel.setAttribute('aria-labelledby', `verifier-tab-${panel.dataset.tab}`);
-                } else {
-                    panel.removeAttribute('role');
-                    panel.removeAttribute('aria-labelledby');
-                }
-            });
-            const leadTab = bar.querySelector('[data-tab="lead"]');
-            const badgeEl = leadTab && leadTab.querySelector('.sv-report-tab-badge');
-            if (!badgeEl) return;
-            const badge = tabbed ? this.leadTabBadge(this.reportLead) : null;
-            badgeEl.textContent = badge ? badge.text : '';
-            badgeEl.className = 'sv-report-tab-badge' + (badge ? ` sv-report-tab-badge-${badge.kind}` : '');
-            if (badge) leadTab.title = badge.title;
-            else leadTab.removeAttribute('title');
+        findingElement(options) {
+            const wrap = document.createElement('div');
+            wrap.innerHTML = this.findingHtml(options);
+            return wrap.firstElementChild;
         }
 
-        // What the Lead tab's badge says, from the lead check's state alone:
-        // how many sentences it found a problem with, so the tab says from
-        // the Citations tab whether it is worth opening. Null for nothing to
-        // show: not run yet, stopped, or nothing found.
-        leadTabBadge(lead) {
-            const flagged = (lead.results || []).filter(r => r.outcome === LEAD_OUTCOMES.NOT_COVERED || r.outcome === LEAD_OUTCOMES.CONTRADICTED);
-            if (flagged.length) {
-                return {
-                    text: String(flagged.length),
-                    kind: flagged.some(r => r.outcome === LEAD_OUTCOMES.CONTRADICTED) ? 'contradicted' : 'not-covered',
-                    title: this.t(flagged.length === 1
-                        ? '{count} lead sentence is not covered in the body, or contradicts it'
-                        : '{count} lead sentences are not covered in the body, or contradict it', { count: flagged.length }),
-                };
-            }
-            if (lead.state === 'running') {
-                return { text: '…', kind: 'running', title: this.t('Checking the lead against the body') };
-            }
-            return null;
+        verdictPillHtml(cls, label) {
+            return `<span class="report-card-verdict ${cls}">${this.escapeHtml(label)}</span>`;
         }
 
-        // Each tab keeps its own place: back on Citations from the Lead tab,
-        // the list is where it was left. A tab opened for the first time
-        // starts at its top, just under the bar.
-        selectReportTab(tab, { focus = false, scroll = true } = {}) {
-            if (!this.isReportTabbed()) return;
-            const scroller = document.getElementById('verifier-sidebar-content');
-            const changed = tab !== this.reportTab;
-            if (changed && scroller) this.reportTabScroll[this.reportTab] = scroller.scrollTop;
-            this.reportTab = tab;
-            this.renderReportTabs();
-            if (focus) {
-                const tabEl = document.getElementById(`verifier-tab-${tab}`);
-                if (tabEl) tabEl.focus();
-            }
-            if (!changed || !scroll || !scroller) return;
-            const saved = this.reportTabScroll[tab];
-            if (saved !== undefined) {
-                scroller.scrollTop = saved;
+        // A qualifier in a head line: a few plain words, not another badge.
+        findingTagHtml(text, cls = '') {
+            return `<span class="sv-finding-tag${cls ? ` ${cls}` : ''}">${this.escapeHtml(text)}</span>`;
+        }
+
+        // A citation's (or a group's combined) verdict and its reason.
+        verdictHeadHtml(result) {
+            const { cls, label } = this.verdictClassFor(result.verdict);
+            const reason = result.verdict === 'NOT SUPPORTED' && result.reason_type
+                ? this.findingTagHtml(this.reasonTypeLabel(result.reason_type), `sv-reason-${result.reason_type}`)
+                : '';
+            return this.verdictPillHtml(cls, label) + reason;
+        }
+
+        citationRefHtml(result) {
+            const num = this.escapeHtml(String(result.citationNumber));
+            return result.url
+                ? `<a class="report-card-citation report-card-citation-link" href="${this.escapeHtml(result.url)}" target="_blank" rel="noopener noreferrer">[${num}]</a>`
+                : `<span class="report-card-citation">[${num}]</span>`;
+        }
+
+        truncationNoteHtml(result, text) {
+            return result.truncated && result.verdict !== 'SUPPORTED'
+                ? `<div class="report-card-truncated">${this.escapeHtml(text)}</div>`
+                : '';
+        }
+
+        editSectionButton(refElement) {
+            return new OO.ui.ButtonWidget({
+                label: this.t('Edit Section'),
+                flags: ['progressive'],
+                icon: 'edit',
+                href: this.buildEditUrl(refElement),
+                target: '_blank',
+                framed: false
+            }).$element[0];
+        }
+
+        // The comment line of a card, set once the verdict it explains is in
+        // (a group's comes with its combined check).
+        setFindingComment(card, text) {
+            let el = card.querySelector(':scope > .sv-finding-comment');
+            if (!text) {
+                if (el) el.remove();
                 return;
             }
-            const bar = document.getElementById('verifier-report-tabs');
-            const panel = document.querySelector(`.sv-report-panel[data-tab="${tab}"]`);
-            if (!bar || !panel) return;
-            const panelTop = panel.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop;
-            const barTop = panelTop - (parseFloat(getComputedStyle(bar).marginBottom) || 0) - bar.offsetHeight;
-            if (scroller.scrollTop > barTop) scroller.scrollTop = barTop;
+            if (!el) {
+                el = document.createElement('div');
+                el.className = 'sv-finding-comment';
+                card.insertBefore(el, card.querySelector(':scope > .sv-finding-details'));
+            }
+            el.textContent = text;
         }
 
-        // Arrow keys move between tabs (mirrored in a right-to-left
-        // sidebar), Home and End go to the first and last.
-        handleReportTabKey(e) {
-            const order = ['citations', 'lead'];
-            const i = order.indexOf(this.reportTab);
-            const forward = this.uiDir === 'rtl' ? 'ArrowLeft' : 'ArrowRight';
-            const back = this.uiDir === 'rtl' ? 'ArrowRight' : 'ArrowLeft';
-            let next = null;
-            if (e.key === forward) next = order[(i + 1) % order.length];
-            else if (e.key === back) next = order[(i - 1 + order.length) % order.length];
-            else if (e.key === 'Home') next = order[0];
-            else if (e.key === 'End') next = order[order.length - 1];
-            if (!next) return;
-            e.preventDefault();
-            this.selectReportTab(next, { focus: true });
+        toggleFinding(card, open = !card.classList.contains('sv-expanded')) {
+            const details = card.querySelector(':scope > .sv-finding-details');
+            const toggle = card.querySelector(':scope > .sv-finding-head > .sv-finding-toggle');
+            card.classList.toggle('sv-expanded', open);
+            if (details) details.hidden = !open;
+            if (toggle) toggle.setAttribute('aria-expanded', String(open));
         }
 
-        // A report card asked for from outside its tab (a citation clicked
-        // in the article): its tab is opened, and the set-aside group if it
-        // is in it. The caller scrolls to the card.
-        revealReportCard(card) {
-            const panel = card.closest('.sv-report-panel');
-            if (panel) this.selectReportTab(panel.dataset.tab, { scroll: false });
-            const group = card.closest('details');
-            if (group) group.open = true;
+        // Whether a click on a card landed on its summary: the head, claim
+        // or comment of a closed card, and only the head of an open one,
+        // whose text is there to be read and selected. Never a link or
+        // button, a card nested inside it, or the end of selecting text.
+        isFindingSummaryClick(card, e) {
+            const target = e.target;
+            if (!target || !target.closest) return false;
+            if (target.closest('a, button, input, select, textarea, label, summary, .oo-ui-widget')) return false;
+            if (target.closest('.sv-finding') !== card) return false;
+            const details = target.closest('.sv-finding-details');
+            if (details && card.contains(details)) return false;
+            if (card.classList.contains('sv-expanded')) {
+                const head = target.closest('.sv-finding-head');
+                if (!head || head.parentElement !== card) return false;
+            }
+            const selection = typeof window !== 'undefined' && window.getSelection ? window.getSelection() : null;
+            if (selection && !selection.isCollapsed && card.contains(selection.anchorNode)) return false;
+            return true;
         }
 
-        // The summary's "N lead citations set aside" link.
-        showSetAsideLeadCitations() {
-            const group = document.querySelector('#verifier-report-lead .sv-lead-demoted');
-            if (!group) return;
-            this.selectReportTab('lead', { scroll: false });
-            group.open = true;
-            group.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        // The report's one click listener for cards: its toggle, or a click
+        // on its summary, opens or closes a card.
+        handleFindingClick(e) {
+            const card = e.target && e.target.closest ? e.target.closest('.sv-finding') : null;
+            if (!card) return;
+            const toggle = e.target.closest('.sv-finding-toggle');
+            if ((toggle && toggle.closest('.sv-finding') === card) || this.isFindingSummaryClick(card, e)) {
+                this.toggleFinding(card);
+            }
+        }
+
+        // A card asked for from outside the report (its citation clicked in
+        // the article): opened, and so is whatever holds it (its group, the
+        // lead panel and its set-aside list).
+        revealReportCard(el) {
+            for (let node = el; node; node = node.parentElement) {
+                if (node.tagName === 'DETAILS') node.open = true;
+                if (node.classList && node.classList.contains('sv-finding')) this.toggleFinding(node, true);
+            }
         }
 
         // The lead phase of Verify All (or all of "Check the lead against the
@@ -10868,15 +10742,15 @@ function useToolforgeSourceFetcher() {
                 ? { sentences: lead.sentences, body: lead.body, results: [], state: 'pending', bodyTruncated: lead.body.truncated }
                 : null;
             this.reportLeadOnly = leadOnly;
-            this.reportTab = leadOnly ? 'lead' : 'citations';
-            this.reportTabScroll = {};
 
             this.showReportView();
             document.getElementById('verifier-report-results').innerHTML = '';
             document.getElementById('verifier-report-summary').innerHTML = '';
+            document.getElementById('verifier-report-meta').innerHTML = '';
             document.getElementById('verifier-report-actions').innerHTML = '';
+            // The lead check alone has no citations to show.
+            document.getElementById('verifier-report-citations').hidden = leadOnly;
             this.resetReportLead();
-            this.renderReportTabs();
             this.applyReportFilters();
             this.updateButtonVisibility();
 

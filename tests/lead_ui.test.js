@@ -31,8 +31,12 @@ function harness(bodyHtml = '') {
         'demotesInReport(result) {',
         'getCountedReportUnits() {',
         'getReportUnits() {',
+        'leadFindings(lead) {',
+        'leadStatusText(lead) {',
         'leadCheckHtml(lead) {',
         'leadFindingCardHtml(r) {',
+        'findingHtml({',
+        'verdictPillHtml(cls, label) {',
         'leadReportLines(format) {',
         'escapeHtml(str) {',
         'escapeWikitableCell(str) {',
@@ -110,49 +114,45 @@ const results = [
     { index: 3, text: sentences[3].text, verdict: null, outcome: null, error: 'error' },
 ];
 
-test('the lead section shows its state, a card per finding, and the covered sentences folded away', () => {
+test('the lead panel\'s line says the check\'s state; inside, a card per finding and the covered sentences folded away', () => {
     const { h, doc } = harness();
-    const render = lead => {
-        const el = doc.createElement('div');
-        el.innerHTML = h.leadCheckHtml(lead);
-        return el;
-    };
-    assert.match(render({ sentences, results: [], state: 'pending' }).textContent, /checked against the body after the citations/);
-    assert.match(render({ sentences, results: results.slice(0, 2), state: 'running' }).textContent, /\(2 of 4 sentences\)/);
+    assert.equal(h.leadStatusText({ sentences, results: [], state: 'pending' }), 'The lead is checked against the body after the citations.');
+    assert.equal(h.leadStatusText({ sentences, results: results.slice(0, 2), state: 'running' }), 'Checking the lead against the body… (2 of 4 sentences)');
+    assert.equal(h.leadStatusText({ sentences, results, state: 'done' }), '1 of 4 lead sentences are covered in the body.');
 
-    const done = render({ sentences, results, state: 'done', bodyTruncated: true });
-    assert.match(done.textContent, /1 of 4 lead sentences are covered in the body\./);
+    const done = doc.createElement('div');
+    done.innerHTML = h.leadCheckHtml({ sentences, results, state: 'done', bodyTruncated: true });
     assert.match(done.textContent, /only the sections closest to the lead were sent/);
     assert.match(done.textContent, /1 lead sentence could not be checked\./);
-    const cards = [...done.querySelectorAll('.sv-lead-card')];
-    assert.deepEqual(cards.map(c => [c.dataset.leadIndex, c.querySelector('.sv-lead-tag').textContent]), [
+    const cards = [...done.querySelectorAll('.sv-finding.sv-lead-finding')];
+    assert.deepEqual(cards.map(c => [c.dataset.leadIndex, c.querySelector('.report-card-verdict').textContent]), [
         ['1', 'Not covered in the body'],
         ['2', 'Contradicts the body'],
     ]);
-    assert.ok(cards[1].classList.contains('sv-lead-contradicted'));
-    assert.equal(cards[0].querySelector('.sv-lead-sentence').textContent, 'She founded <b>an</b> institute.', 'escaped, not markup');
+    assert.ok(cards[0].classList.contains('verdict-partial'));
+    assert.ok(cards[1].classList.contains('verdict-not-supported'), 'a contradiction gets the red stripe');
+    assert.equal(cards[0].querySelector('.sv-finding-claim').textContent, 'She founded <b>an</b> institute.', 'escaped, not markup');
+    assert.equal(cards[0].querySelector('.sv-finding-comment').textContent, 'Not in the body.');
     assert.equal(cards[0].querySelector('.sv-quote'), null, 'no located quote, nothing shown');
-    assert.equal(cards[1].querySelector('.sv-quote-text').textContent, '“Maria was born in 1867.”', 'the located text, never the raw quote');
-    assert.match(cards[1].textContent, /Section: Early life/);
+    const details = cards[1].querySelector('.sv-finding-details');
+    assert.equal(details.hidden, true, 'the quote and the section wait in the details');
+    assert.equal(details.querySelector('.sv-quote-text').textContent, '“Maria was born in 1867.”', 'the located text, never the raw quote');
+    assert.match(details.textContent, /Section: Early life/);
     assert.deepEqual([...done.querySelectorAll('.sv-lead-covered li')].map(li => li.textContent), ['Marie Curie was a physicist. (Life)']);
 });
 
 test('a run stopped before the lead check says so, and a Stop during it counts the sentences it never reached', () => {
     const { h, doc } = harness();
-    const render = lead => {
-        const el = doc.createElement('div');
-        el.innerHTML = h.leadCheckHtml(lead);
-        return el;
-    };
-    const stopped = render({ sentences, results: [], state: 'stopped' }).textContent;
-    assert.match(stopped, /The lead was not checked: the run was stopped first\./);
-    assert.doesNotMatch(stopped, /after the citations/, 'not "will be checked": it won\'t be');
+    const stopped = h.leadStatusText({ sentences, results: [], state: 'stopped' });
+    assert.equal(stopped, 'The lead was not checked: the run was stopped first.', 'not "will be checked": it won\'t be');
 
     // Stopped after the first two sentences' call: the other two have no
     // result at all, and are as unchecked as one whose call failed.
-    const partial = render({ sentences, results: results.slice(0, 2), state: 'done' }).textContent;
-    assert.match(partial, /1 of 4 lead sentences are covered in the body\./);
-    assert.match(partial, /2 lead sentences could not be checked\./);
+    const lead = { sentences, results: results.slice(0, 2), state: 'done' };
+    assert.equal(h.leadStatusText(lead), '1 of 4 lead sentences are covered in the body.');
+    const el = doc.createElement('div');
+    el.innerHTML = h.leadCheckHtml(lead);
+    assert.match(el.textContent, /2 lead sentences could not be checked\./);
 });
 
 test('the exports list the lead\'s findings, escaped for a wikitable, and count the set-aside citations', () => {
@@ -173,35 +173,4 @@ test('the exports list the lead\'s findings, escaped for a wikitable, and count 
     assert.equal(h.leadReportLines('wikitext'), '', 'nothing until the check has finished');
     h.reportLead = null;
     assert.equal(h.leadReportLines('wikitext'), '');
-});
-
-test('a set-aside member is tagged only once its group has no combined verdict', () => {
-    const src = fs.readFileSync(MAIN_JS, 'utf8');
-    const method = extractMethod(src, 'hideGroupCollectiveSlot(groupId) {');
-    const dom = new JSDOM('<!DOCTYPE html><body><div id="verifier-report-results">'
-        + '<div class="verifier-report-group" data-group-id="g1"><div class="verifier-report-group-collective"></div>'
-        + '<div class="row" data-n="1"><span class="report-card-header-actions"></span></div>'
-        + '<div class="row" data-n="2"><span class="report-card-header-actions"></span></div></div></div></body>');
-    const doc = dom.window.document;
-    const Harness = new Function('document', 'CSS', `
-        class Harness {
-            constructor() { this.reportResults = []; this.reportCardEls = new Map(); }
-            t(en) { return en; }
-${method}
-        }
-        return Harness;
-    `)(doc, { escape: s => s });
-    const h = new Harness();
-    const row = n => doc.querySelector(`.row[data-n="${n}"]`);
-    h.reportResults = [
-        { groupId: 'g1', leadDemoted: true },
-        { groupId: 'g1', leadDemoted: false },
-    ];
-    h.reportResults.forEach((r, i) => h.reportCardEls.set(r, row(i + 1)));
-    assert.equal(doc.querySelectorAll('.sv-lead-aside-tag').length, 0, 'no tag while the combined verdict may still come');
-    h.hideGroupCollectiveSlot('g1');
-    assert.equal(row(1).querySelector('.sv-lead-aside-tag')?.textContent, 'Set aside: lead');
-    assert.equal(row(2).querySelector('.sv-lead-aside-tag'), null);
-    h.hideGroupCollectiveSlot('g1');
-    assert.equal(doc.querySelectorAll('.sv-lead-aside-tag').length, 1, 'tagged once');
 });
