@@ -570,8 +570,9 @@ third. The report is now built from two pieces, and a new check reuses both:
   Citations, a group (its sources are cards inside it) and lead sentences all
   use it. **A new field goes in the details, not on every closed card.**
 - **One panel per extra check** (`.sv-check`, a `<details>`), above the
-  citations and closed by default: its name and a status line. The
-  citations themselves keep the summary box, filters and sort they always had.
+  citations and closed by default: one line, its name and a few words of
+  status. The citations themselves keep the summary box, filters and sort they
+  always had.
 
 Rules to keep:
 
@@ -583,8 +584,13 @@ Rules to keep:
 - **Opening a card shows its citation in the article** (as clicking a card
   always did); closing it doesn't. An open card closes only from its head
   line, so its text can be read and selected.
-- **Run-wide facts** (revision, tokens) sit under the progress line, not in the
-  citations' summary: they hold for every check.
+- **The space above the first card is kept small** (it was 450px of an
+  800px sidebar): over a report the run buttons are one compact row, a
+  finished run is one line of text instead of a full progress bar, the
+  citations' title and sort order share the summary box's first row, chips
+  with a count of 0 are left out, and the run's revision and tokens sit in the
+  footer above Copy Report. Something new for the top of the report has to
+  earn its row.
 
 ### Sentence splitting differs between the batch and the userscript (read before touching `lastSentence`)
 

@@ -116,9 +116,9 @@ const results = [
 
 test('the lead panel\'s line says the check\'s state; inside, a card per finding and the covered sentences folded away', () => {
     const { h, doc } = harness();
-    assert.equal(h.leadStatusText({ sentences, results: [], state: 'pending' }), 'The lead is checked against the body after the citations.');
-    assert.equal(h.leadStatusText({ sentences, results: results.slice(0, 2), state: 'running' }), 'Checking the lead against the body… (2 of 4 sentences)');
-    assert.equal(h.leadStatusText({ sentences, results, state: 'done' }), '1 of 4 lead sentences are covered in the body.');
+    assert.equal(h.leadStatusText({ sentences, results: [], state: 'pending' }), 'runs after the citations');
+    assert.equal(h.leadStatusText({ sentences, results: results.slice(0, 2), state: 'running' }), 'checking, 2 of 4');
+    assert.equal(h.leadStatusText({ sentences, results, state: 'done' }), '1 of 4 sentences covered');
 
     const done = doc.createElement('div');
     done.innerHTML = h.leadCheckHtml({ sentences, results, state: 'done', bodyTruncated: true });
@@ -144,12 +144,12 @@ test('the lead panel\'s line says the check\'s state; inside, a card per finding
 test('a run stopped before the lead check says so, and a Stop during it counts the sentences it never reached', () => {
     const { h, doc } = harness();
     const stopped = h.leadStatusText({ sentences, results: [], state: 'stopped' });
-    assert.equal(stopped, 'The lead was not checked: the run was stopped first.', 'not "will be checked": it won\'t be');
+    assert.equal(stopped, 'not checked (stopped)', 'not "runs after the citations": it won\'t');
 
     // Stopped after the first two sentences' call: the other two have no
     // result at all, and are as unchecked as one whose call failed.
     const lead = { sentences, results: results.slice(0, 2), state: 'done' };
-    assert.equal(h.leadStatusText(lead), '1 of 4 lead sentences are covered in the body.');
+    assert.equal(h.leadStatusText(lead), '1 of 4 sentences covered');
     const el = doc.createElement('div');
     el.innerHTML = h.leadCheckHtml(lead);
     assert.match(el.textContent, /2 lead sentences could not be checked\./);

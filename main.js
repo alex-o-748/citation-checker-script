@@ -4423,10 +4423,6 @@ function useToolforgeSourceFetcher() {
             'Mise de côté : résumé introductif',
         'In the lead, a statement can be supported by the article body instead of its own citation, so a lead citation that backs only part of its claim, or none of it, is not counted as a problem. The lead check above covers what the body says. These are worth a look when the claim is contentious.':
             'Dans le résumé introductif, une affirmation peut être sourcée par le corps de l\'article plutôt que par sa propre citation : une citation du résumé introductif qui ne soutient qu\'une partie de son affirmation, ou rien de celle-ci, n\'est donc pas comptée comme un problème. La comparaison ci-dessus couvre ce que dit le corps de l\'article. Ces citations méritent un coup d\'œil si l\'affirmation est contestée.',
-        'The lead is checked against the body after the citations.':
-            'Le résumé introductif est comparé au corps de l\'article après les citations.',
-        'Checking the lead against the body… ({done} of {total} sentences)':
-            'Comparaison du résumé introductif au corps de l\'article… ({done} phrases sur {total})',
         '{covered} of {total} lead sentences are covered in the body.':
             '{covered} phrases du résumé introductif sur {total} sont couvertes par le corps de l\'article.',
         'The body is long, so only the sections closest to the lead were sent. A sentence reported as not covered may be in a section that was left out.':
@@ -4461,8 +4457,16 @@ function useToolforgeSourceFetcher() {
             'Citations',
         'Details':
             'Détails',
-        'The lead was not checked: the run was stopped first.':
-            'Le résumé introductif n\'a pas été vérifié : la vérification a été arrêtée avant.',
+        'Check the lead':
+            'Vérifier le résumé introductif',
+        'runs after the citations':
+            'après les citations',
+        'checking, {done} of {total}':
+            'vérification, {done} sur {total}',
+        '{covered} of {total} sentences covered':
+            '{covered} phrases sur {total} couvertes',
+        'not checked (stopped)':
+            'non vérifié (arrêt)',
         '{count} lead sentence could not be checked.':
             '{count} phrase du résumé introductif n\'a pas pu être vérifiée.',
         '{count} lead sentences could not be checked.':
@@ -4792,10 +4796,6 @@ function useToolforgeSourceFetcher() {
             'Apartada: introducción',
         'In the lead, a statement can be supported by the article body instead of its own citation, so a lead citation that backs only part of its claim, or none of it, is not counted as a problem. The lead check above covers what the body says. These are worth a look when the claim is contentious.':
             'En la introducción, una afirmación puede estar respaldada por el cuerpo del artículo en lugar de por su propia cita, así que una cita de la introducción que solo respalda parte de su afirmación, o nada de ella, no se cuenta como un problema. La comparación de arriba cubre lo que dice el cuerpo del artículo. Conviene revisarlas cuando la afirmación es polémica.',
-        'The lead is checked against the body after the citations.':
-            'La introducción se compara con el cuerpo del artículo después de las citas.',
-        'Checking the lead against the body… ({done} of {total} sentences)':
-            'Comparando la introducción con el cuerpo del artículo… ({done} de {total} oraciones)',
         '{covered} of {total} lead sentences are covered in the body.':
             '{covered} de {total} oraciones de la introducción están cubiertas en el cuerpo del artículo.',
         'The body is long, so only the sections closest to the lead were sent. A sentence reported as not covered may be in a section that was left out.':
@@ -4830,8 +4830,16 @@ function useToolforgeSourceFetcher() {
             'Citas',
         'Details':
             'Detalles',
-        'The lead was not checked: the run was stopped first.':
-            'La introducción no se comprobó: la verificación se detuvo antes.',
+        'Check the lead':
+            'Comprobar la introducción',
+        'runs after the citations':
+            'después de las citas',
+        'checking, {done} of {total}':
+            'comprobando, {done} de {total}',
+        '{covered} of {total} sentences covered':
+            '{covered} de {total} oraciones cubiertas',
+        'not checked (stopped)':
+            'sin comprobar (detenido)',
         '{count} lead sentence could not be checked.':
             'No se pudo comprobar {count} oración de la introducción.',
         '{count} lead sentences could not be checked.':
@@ -5157,10 +5165,6 @@ function useToolforgeSourceFetcher() {
             'Отложено: преамбула',
         'In the lead, a statement can be supported by the article body instead of its own citation, so a lead citation that backs only part of its claim, or none of it, is not counted as a problem. The lead check above covers what the body says. These are worth a look when the claim is contentious.':
             'В преамбуле утверждение может подтверждаться основным текстом статьи, а не собственной сноской, поэтому сноска в преамбуле, подтверждающая лишь часть утверждения или ничего из него, не считается проблемой. Сверка выше показывает, что сказано в основном тексте. Эти сноски стоит посмотреть, если утверждение спорное.',
-        'The lead is checked against the body after the citations.':
-            'Преамбула сверяется с основным текстом после сносок.',
-        'Checking the lead against the body… ({done} of {total} sentences)':
-            'Сверка преамбулы с основным текстом… (предложений: {done} из {total})',
         '{covered} of {total} lead sentences are covered in the body.':
             'Основной текст подтверждает предложений преамбулы: {covered} из {total}.',
         'The body is long, so only the sections closest to the lead were sent. A sentence reported as not covered may be in a section that was left out.':
@@ -5195,8 +5199,16 @@ function useToolforgeSourceFetcher() {
             'Сноски',
         'Details':
             'Подробности',
-        'The lead was not checked: the run was stopped first.':
-            'Преамбула не проверена: проверка была остановлена раньше.',
+        'Check the lead':
+            'Проверить преамбулу',
+        'runs after the citations':
+            'после сносок',
+        'checking, {done} of {total}':
+            'проверка: {done} из {total}',
+        '{covered} of {total} sentences covered':
+            'подтверждено: {covered} из {total}',
+        'not checked (stopped)':
+            'не проверена (остановлено)',
         '{count} lead sentence could not be checked.':
             'Не удалось проверить предложений преамбулы: {count}.',
         '{count} lead sentences could not be checked.':
@@ -5530,10 +5542,6 @@ function useToolforgeSourceFetcher() {
             'הוצג בנפרד: פתיח',
         'In the lead, a statement can be supported by the article body instead of its own citation, so a lead citation that backs only part of its claim, or none of it, is not counted as a problem. The lead check above covers what the body says. These are worth a look when the claim is contentious.':
             'בפתיח, טענה יכולה להיות מגובה בגוף הערך במקום בהערת שוליים משלה, ולכן הערת שוליים בפתיח שתומכת רק בחלק מהטענה, או באף חלק ממנה, אינה נספרת כבעיה. ההשוואה שלמעלה מכסה את מה שנאמר בגוף הערך. כדאי לעבור עליהן כשהטענה שנויה במחלוקת.',
-        'The lead is checked against the body after the citations.':
-            'הפתיח מושווה לגוף הערך אחרי הערות השוליים.',
-        'Checking the lead against the body… ({done} of {total} sentences)':
-            'השוואת הפתיח לגוף הערך… ({done} מתוך {total} משפטים)',
         '{covered} of {total} lead sentences are covered in the body.':
             '{covered} מתוך {total} משפטי הפתיח מכוסים בגוף הערך.',
         'The body is long, so only the sections closest to the lead were sent. A sentence reported as not covered may be in a section that was left out.':
@@ -5568,8 +5576,16 @@ function useToolforgeSourceFetcher() {
             'הערות שוליים',
         'Details':
             'פרטים',
-        'The lead was not checked: the run was stopped first.':
-            'הפתיח לא נבדק: הבדיקה נעצרה לפני כן.',
+        'Check the lead':
+            'בדיקת הפתיח',
+        'runs after the citations':
+            'אחרי הערות השוליים',
+        'checking, {done} of {total}':
+            'בבדיקה, {done} מתוך {total}',
+        '{covered} of {total} sentences covered':
+            '{covered} מתוך {total} משפטים מכוסים',
+        'not checked (stopped)':
+            'לא נבדק (הופסק)',
         '{count} lead sentence could not be checked.':
             'לא ניתן היה לבדוק {count} משפט בפתיח.',
         '{count} lead sentences could not be checked.':
@@ -6154,13 +6170,12 @@ function useToolforgeSourceFetcher() {
                         </div>
                         <div id="verifier-report-view" style="display:none;">
                             <div id="verifier-report-progress"></div>
-                            <div id="verifier-report-meta"></div>
                             <div id="verifier-report-lead"></div>
                             <div id="verifier-report-citations">
-                                <h4>${this.t('Citations')}</h4>
                                 <div id="verifier-report-summary"></div>
                                 <div id="verifier-report-results"></div>
                             </div>
+                            <div id="verifier-report-meta"></div>
                             <div id="verifier-report-actions"></div>
                         </div>
                     </div>
@@ -6222,6 +6237,8 @@ function useToolforgeSourceFetcher() {
             show('verifier-settings-view', settings);
             show('verifier-main-view', !settings);
             show('verifier-report-view', report, 'block');
+            const mainView = document.getElementById('verifier-main-view');
+            if (mainView) mainView.classList.toggle('sv-reporting', report);
 
             // Idle is the only state with no claim to talk about, so the claim
             // and source sections stay out of the way entirely.
@@ -6815,6 +6832,26 @@ function useToolforgeSourceFetcher() {
                     width: 100%;
                     justify-content: center;
                 }
+                /* Over a report the run buttons give it the room: one row of
+                   compact buttons instead of a stack of full-width ones. */
+                #verifier-main-view.sv-reporting #verifier-buttons-container {
+                    flex-direction: row;
+                    flex-wrap: wrap;
+                    gap: 6px;
+                }
+                #verifier-main-view.sv-reporting #verifier-buttons-container .oo-ui-buttonElement {
+                    width: auto;
+                }
+                #verifier-main-view.sv-reporting #verifier-buttons-container .oo-ui-buttonElement-button {
+                    width: auto;
+                    min-height: 26px;
+                    padding-top: 2px;
+                    padding-bottom: 2px;
+                    font-size: 12px;
+                }
+                #verifier-main-view.sv-reporting {
+                    gap: 10px;
+                }
                 #verifier-claim-section, #verifier-source-section, #verifier-results {
                     flex-shrink: 0;
                 }
@@ -7077,15 +7114,15 @@ function useToolforgeSourceFetcher() {
                 }
                 /* The run's own facts (revision, tokens), under its progress. */
                 #verifier-report-meta {
-                    margin: -6px 0 12px;
-                    font-size: 12px;
-                    color: var(--sv-ink-4);
+                    margin-bottom: 8px;
+                    font-size: 11px;
+                    color: var(--sv-ink-5);
                 }
                 #verifier-report-meta:empty {
                     display: none;
                 }
                 #verifier-report-progress {
-                    margin-bottom: 12px;
+                    margin-bottom: 8px;
                 }
                 .verifier-progress-bar {
                     width: 100%;
@@ -7106,20 +7143,35 @@ function useToolforgeSourceFetcher() {
                     color: var(--sv-ink-4);
                 }
                 #verifier-report-summary {
-                    padding: 10px;
+                    padding: 6px 8px 8px;
                     background: var(--sv-bg-2);
                     border: 1px solid var(--sv-border);
                     border-radius: 4px;
                     color: var(--sv-ink);
                     font-size: 13px;
-                    margin-bottom: 12px;
+                    margin-bottom: 8px;
+                }
+                #verifier-report-summary:empty {
+                    display: none;
+                }
+                /* The citations' name, as the lead check's panel has its own,
+                   with the sort order beside it. */
+                .verifier-summary-title {
+                    display: flex;
+                    flex-wrap: wrap;
+                    align-items: center;
+                    justify-content: space-between;
+                    gap: 4px 8px;
+                    margin-bottom: 6px;
+                    font-weight: bold;
+                    color: var(--sv-accent-fg);
                 }
                 .verifier-summary-bar {
                     display: flex;
                     height: 6px;
                     border-radius: 3px;
                     overflow: hidden;
-                    margin-bottom: 8px;
+                    margin-bottom: 6px;
                 }
                 .verifier-summary-bar .seg-supported { background: var(--sv-seg-supported); }
                 .verifier-summary-bar .seg-partial { background: var(--sv-seg-partial); }
@@ -7130,7 +7182,7 @@ function useToolforgeSourceFetcher() {
                 .verifier-summary-counts {
                     display: flex;
                     flex-wrap: wrap;
-                    gap: 6px;
+                    gap: 4px;
                     font-size: 12px;
                 }
                 .verifier-summary-counts .dot {
@@ -7143,9 +7195,9 @@ function useToolforgeSourceFetcher() {
                     display: inline-flex;
                     align-items: center;
                     gap: 4px;
-                    padding: 2px 8px;
+                    padding: 1px 7px;
                     font: inherit;
-                    font-size: 12px;
+                    font-size: 11px;
                     color: var(--sv-ink-chip);
                     background: var(--sv-bg-card);
                     border: 1px solid var(--sv-border-chip);
@@ -7165,7 +7217,7 @@ function useToolforgeSourceFetcher() {
                     background: var(--sv-bg-chip-off);
                 }
                 .verifier-summary-meta {
-                    margin-top: 6px;
+                    margin-top: 5px;
                     font-size: 11px;
                     color: var(--sv-ink-5);
                 }
@@ -7413,7 +7465,7 @@ function useToolforgeSourceFetcher() {
                    one line with the check's name and status, so their results
                    arriving never move the citation cards. */
                 #verifier-report-lead {
-                    margin-bottom: 12px;
+                    margin-bottom: 8px;
                 }
                 #verifier-report-lead:empty {
                     display: none;
@@ -7425,25 +7477,21 @@ function useToolforgeSourceFetcher() {
                 }
                 .sv-check > summary {
                     display: flex;
-                    align-items: flex-start;
+                    align-items: baseline;
                     gap: 8px;
-                    padding: 8px 10px;
+                    padding: 6px 8px;
                     cursor: pointer;
                     list-style: none;
                 }
-                .sv-check-text {
-                    display: flex;
-                    flex-direction: column;
-                    gap: 2px;
-                    flex: 1;
-                    min-width: 0;
-                }
                 .sv-check-title {
+                    flex-shrink: 0;
                     font-size: 13px;
                     font-weight: bold;
                     color: var(--sv-accent-fg);
                 }
                 .sv-check-status {
+                    flex: 1;
+                    min-width: 0;
                     font-size: 12px;
                     color: var(--sv-ink-4);
                 }
@@ -7454,7 +7502,7 @@ function useToolforgeSourceFetcher() {
                     display: flex;
                     flex-direction: column;
                     gap: 6px;
-                    padding: 0 10px 10px;
+                    padding: 0 8px 8px;
                 }
                 .sv-check-note {
                     font-size: 11px;
@@ -7521,34 +7569,24 @@ function useToolforgeSourceFetcher() {
                     margin-inline-start: 4px;
                 }
                 .verifier-sort {
-                    display: flex;
-                    flex-wrap: wrap;
+                    display: inline-flex;
                     align-items: center;
-                    gap: 6px;
-                    margin-top: 6px;
-                    font-size: 12px;
+                    gap: 4px;
+                    font-size: 11px;
+                    font-weight: normal;
                 }
                 .verifier-sort-label {
                     color: var(--sv-ink-5);
                 }
-                .verifier-sort-option {
-                    padding: 2px 8px;
+                .verifier-sort-select {
+                    padding: 0 2px;
                     font: inherit;
-                    font-size: 12px;
+                    font-size: 11px;
                     color: var(--sv-ink-chip);
                     background: var(--sv-bg-card);
                     border: 1px solid var(--sv-border-chip);
-                    border-radius: 12px;
+                    border-radius: 3px;
                     cursor: pointer;
-                }
-                .verifier-sort-option:hover {
-                    background: var(--sv-bg-chip-hover);
-                    border-color: var(--sv-border-chip-hover);
-                }
-                .verifier-sort-option.verifier-sort-active {
-                    font-weight: 600;
-                    color: var(--sv-accent-fg);
-                    border-color: var(--sv-accent-fg);
                 }
                 .report-card-action {
                     margin-top: 4px;
@@ -8014,6 +8052,12 @@ function useToolforgeSourceFetcher() {
                     }
                     container.appendChild(this.buttons.verifyAll.$element[0]);
                     if (this.leadCheckEnabled && this.articleLead()) {
+                        // Over a report the button sits in a row beside Verify
+                        // All, with the lead's own panel right below it, so the
+                        // short label says enough.
+                        this.buttons.checkLead.setLabel(this.reportMode
+                            ? this.t('Check the lead')
+                            : this.t('Check the lead against the body'));
                         container.appendChild(this.buttons.checkLead.$element[0]);
                     }
 
@@ -9145,6 +9189,12 @@ function useToolforgeSourceFetcher() {
                 etaStr = this.t(' · ~{duration} remaining', { duration: this.formatDuration(remaining) });
             }
 
+            // A finished run (the last call, after reportRunning is cleared)
+            // gets one line saying how it ended, not a full bar.
+            if (!this.reportRunning) {
+                progressEl.innerHTML = `<div class="verifier-progress-text">${phase} · ${elapsedStr}</div>`;
+                return;
+            }
             progressEl.innerHTML = `
                 <div class="verifier-progress-bar">
                     <div class="verifier-progress-fill" style="width: ${pct}%"></div>
@@ -9339,7 +9389,14 @@ function useToolforgeSourceFetcher() {
                 ? ` · ${this.escapeHtml(this.t(demotedCount === 1 ? '{count} lead citation set aside' : '{count} lead citations set aside', { count: demotedCount }))}`
                 : '';
 
+            // Chips only for verdicts the report has: a "0 unavailable" chip
+            // filters nothing and costs a row in a narrow sidebar.
+            const chipIf = (key, count, label, color) => (count > 0 ? chip(key, count, label, color) : '');
             summaryEl.innerHTML = `
+                <div class="verifier-summary-title">
+                    <span>${this.escapeHtml(this.t('Citations'))}</span>
+                    ${this.reportSeverity ? this.reportSortHtml() : ''}
+                </div>
                 <div class="verifier-summary-bar">
                     ${segHtml(counts.supported, 'seg-supported')}
                     ${segHtml(counts.partial, 'seg-partial')}
@@ -9349,14 +9406,13 @@ function useToolforgeSourceFetcher() {
                     ${segHtml(counts.skipped, 'seg-skipped')}
                 </div>
                 <div class="verifier-summary-counts">
-                    ${chip('supported', counts.supported, 'supported', '#28a745')}
-                    ${chip('partial', counts.partial, 'partial', '#ffc107')}
-                    ${chip('not-supported', counts['not-supported'], 'not supported', '#dc3545')}
-                    ${chip('unavailable', counts.unavailable, 'unavailable', '#6c757d')}
-                    ${counts.error > 0 ? chip('error', counts.error, 'errors', '#adb5bd') : ''}
-                    ${counts.skipped > 0 ? chip('skipped', counts.skipped, 'skipped', '#adb5bd') : ''}
+                    ${chipIf('supported', counts.supported, 'supported', '#28a745')}
+                    ${chipIf('partial', counts.partial, 'partial', '#ffc107')}
+                    ${chipIf('not-supported', counts['not-supported'], 'not supported', '#dc3545')}
+                    ${chipIf('unavailable', counts.unavailable, 'unavailable', '#6c757d')}
+                    ${chipIf('error', counts.error, 'errors', '#adb5bd')}
+                    ${chipIf('skipped', counts.skipped, 'skipped', '#adb5bd')}
                 </div>
-                ${this.reportSeverity ? this.reportSortHtml() : ''}
                 <div class="verifier-summary-meta">
                     ${claimsLabel}${demotedLabel}${hiddenCount > 0 ? this.t(' · {count} hidden by filter', { count: hiddenCount }) : ''}
                 </div>
@@ -9368,12 +9424,8 @@ function useToolforgeSourceFetcher() {
                     this.toggleReportFilter(btn.dataset.filter);
                 });
             });
-            summaryEl.querySelectorAll('.verifier-sort-option').forEach(btn => {
-                btn.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    this.setReportSort(btn.dataset.sort);
-                });
-            });
+            const sortSelect = summaryEl.querySelector('.verifier-sort-select');
+            if (sortSelect) sortSelect.addEventListener('change', () => this.setReportSort(sortSelect.value));
         }
 
         // The reason_type enum itself stays English — it is parsed
@@ -10069,16 +10121,15 @@ function useToolforgeSourceFetcher() {
             for (const el of blocks) resultsEl.insertBefore(el, emptyEl);
         }
 
+        // A dropdown in the summary's title row: two orders don't need a
+        // row of buttons of their own.
         reportSortHtml() {
-            const option = (key, label) => {
-                const active = this.reportSort === key;
-                return `<button type="button" class="verifier-sort-option${active ? ' verifier-sort-active' : ''}" data-sort="${key}" aria-pressed="${active ? 'true' : 'false'}">${this.escapeHtml(label)}</button>`;
-            };
-            return `<div class="verifier-sort" role="group" aria-label="${this.escapeHtml(this.t('Order'))}">`
-                + `<span class="verifier-sort-label">${this.escapeHtml(this.t('Order'))}</span>`
+            const option = (key, label) => `<option value="${key}"${this.reportSort === key ? ' selected' : ''}>${this.escapeHtml(label)}</option>`;
+            return `<label class="verifier-sort"><span class="verifier-sort-label">${this.escapeHtml(this.t('Order'))}</span>`
+                + `<select class="verifier-sort-select">`
                 + option('document', this.t('Article order'))
                 + option('severity', this.t('Most serious first'))
-                + `</div>`;
+                + `</select></label>`;
         }
 
         // Runs the single collective verification for one adjacent-citation
@@ -10320,9 +10371,9 @@ function useToolforgeSourceFetcher() {
             const panel = document.createElement('details');
             panel.className = 'sv-check';
             panel.open = this.reportLeadOnly;
-            panel.innerHTML = `<summary><span class="sv-check-text">`
+            panel.innerHTML = `<summary>`
                 + `<span class="sv-check-title">${this.escapeHtml(this.t('Lead vs body'))}</span>`
-                + `<span class="sv-check-status"></span></span></summary>`
+                + `<span class="sv-check-status"></span></summary>`
                 + `<div class="sv-check-body"><div class="sv-lead-check"></div>`
                 + `<details class="sv-lead-demoted" style="display:none"><summary></summary>`
                 + `<div class="sv-lead-demoted-note">${this.escapeHtml(this.t('In the lead, a statement can be supported by the article body instead of its own citation, so a lead citation that backs only part of its claim, or none of it, is not counted as a problem. The lead check above covers what the body says. These are worth a look when the claim is contentious.'))}</div>`
@@ -10369,19 +10420,18 @@ function useToolforgeSourceFetcher() {
             return (lead.results || []).filter(r => r.outcome === LEAD_OUTCOMES.NOT_COVERED || r.outcome === LEAD_OUTCOMES.CONTRADICTED);
         }
 
-        // The lead check's state in one line, for its panel's summary, from
+        // The lead check's state in a few words, after its name on the
+        // panel's one line, from
         // { sentences, results, state: 'pending' | 'running' | 'done' | 'stopped' }.
         // 'stopped': the run was stopped before the lead check began.
         leadStatusText(lead) {
             const results = lead.results || [];
             const total = lead.sentences.length;
-            if (lead.state === 'stopped') return this.t('The lead was not checked: the run was stopped first.');
-            if (lead.state === 'pending') return this.t('The lead is checked against the body after the citations.');
-            if (lead.state === 'running') {
-                return this.t('Checking the lead against the body… ({done} of {total} sentences)', { done: results.length, total });
-            }
+            if (lead.state === 'stopped') return this.t('not checked (stopped)');
+            if (lead.state === 'pending') return this.t('runs after the citations');
+            if (lead.state === 'running') return this.t('checking, {done} of {total}', { done: results.length, total });
             const covered = results.filter(r => r.outcome === LEAD_OUTCOMES.COVERED).length;
-            return this.t('{covered} of {total} lead sentences are covered in the body.', { covered, total });
+            return this.t('{covered} of {total} sentences covered', { covered, total });
         }
 
         // The panel's contents, from the lead check's state alone: its notes,

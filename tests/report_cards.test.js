@@ -198,7 +198,7 @@ test('the lead check is a one-line panel above the citations: closed in a full r
     const panel = doc.querySelector('#verifier-report-lead details.sv-check');
     assert.equal(panel.open, false);
     assert.equal(panel.querySelector(':scope > summary .sv-check-title').textContent, 'Lead vs body');
-    assert.equal(panel.querySelector('.sv-check-status').textContent, 'The lead is checked against the body after the citations.');
+    assert.equal(panel.querySelector('.sv-check-status').textContent, 'runs after the citations');
 
     h.reportLead.state = 'done';
     h.reportLead.results = [
@@ -208,7 +208,7 @@ test('the lead check is a one-line panel above the citations: closed in a full r
     ];
     h.renderReportLead();
     const status = panel.querySelector('.sv-check-status');
-    assert.equal(status.textContent, '1 of 3 lead sentences are covered in the body.');
+    assert.equal(status.textContent, '1 of 3 sentences covered');
     assert.ok(status.classList.contains('sv-check-flagged'), 'tinted when there is something to open it for');
     assert.equal(panel.open, false, 'results arriving never open it');
     assert.deepEqual([...panel.querySelectorAll('.sv-lead-finding')].map(c => c.dataset.leadIndex), ['1', '2']);
