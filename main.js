@@ -4431,10 +4431,6 @@ function useToolforgeSourceFetcher() {
             'Phrase du résumé introductif : {text}',
         'This article has no body to check the lead against.':
             'Cet article n\'a pas de corps auquel comparer le résumé introductif.',
-        '\n\nThe lead check is on: the {count} lead sentences are also checked against the article body at the end.':
-            '\n\nLa comparaison du résumé introductif est activée : ses {count} phrases sont aussi comparées au corps de l\'article à la fin.',
-        'This will check {count} lead sentences against the article body.\n\nContinue?':
-            'Cette action comparera {count} phrases du résumé introductif au corps de l\'article.\n\nContinuer ?',
         'Lead check complete':
             'Comparaison du résumé introductif terminée',
         '{count} lead citation set aside':
@@ -4455,8 +4451,6 @@ function useToolforgeSourceFetcher() {
             '{count} citations du résumé introductif ont été mises de côté : leurs sources ne soutiennent qu\'une partie de leurs affirmations, et dans le résumé introductif le reste peut être couvert par le corps de l\'article.',
         'Runs one more check on each flagged citation to tell a contradicted key fact from a missing minor detail. Costs one extra model call per flagged citation.':
             'Effectue une vérification supplémentaire sur chaque citation signalée pour distinguer un fait essentiel contredit d’un détail mineur absent. Coûte un appel au modèle de plus par citation signalée.',
-        '\n\nSeverity ranking is on: each flagged citation gets one more check at the end.':
-            '\n\nLe classement par gravité est activé : chaque citation signalée fera l’objet d’une vérification supplémentaire à la fin.',
         'Checking severity…': 'Évaluation de la gravité…',
         'Checking severity of [{num}]': 'Évaluation de la gravité de [{num}]',
         'Severity': 'Gravité',
@@ -4572,14 +4566,10 @@ function useToolforgeSourceFetcher() {
         'Set {name} API Key': 'Définir la clé API {name}',
         'Enter your {name} API Key to enable source verification:':
             'Saisissez votre clé API {name} pour activer la vérification des sources :',
-        'This will verify {citations} citations from {sources} unique sources.{groupNote}\n\nEstimated time: ~{minutes} minutes.\n\nContinue?':
-            'Cette action vérifiera {citations} citations provenant de {sources} sources uniques.{groupNote}\n\nDurée estimée : ~{minutes} minutes.\n\nContinuer ?',
-        'This will verify {citations} citations from {sources} unique sources.{groupNote}\n\nEstimated time: ~{minutes} minute.\n\nContinue?':
-            'Cette action vérifiera {citations} citations provenant de {sources} sources uniques.{groupNote}\n\nDurée estimée : ~{minutes} minute.\n\nContinuer ?',
-        '\n\nThis includes {count} combined-source checks for adjacent citation groups.':
-            '\n\nCela inclut {count} vérifications de sources combinées pour les groupes de citations adjacentes.',
-        '\n\nThis includes {count} combined-source check for adjacent citation groups.':
-            '\n\nCela inclut {count} vérification de sources combinées pour les groupes de citations adjacentes.',
+        'Estimated time: ~{minutes} minutes.\n\nContinue?':
+            'Durée estimée : ~{minutes} minutes.\n\nContinuer ?',
+        'Estimated time: ~{minutes} minute.\n\nContinue?':
+            'Durée estimée : ~{minutes} minute.\n\nContinuer ?',
 
         // Generated result comments
         'No URL found in reference': 'Aucune URL trouvée dans la référence',
@@ -4810,10 +4800,6 @@ function useToolforgeSourceFetcher() {
             'Oración de la introducción: {text}',
         'This article has no body to check the lead against.':
             'Este artículo no tiene cuerpo con el que comparar la introducción.',
-        '\n\nThe lead check is on: the {count} lead sentences are also checked against the article body at the end.':
-            '\n\nLa comparación de la introducción está activada: al final también se comparan sus {count} oraciones con el cuerpo del artículo.',
-        'This will check {count} lead sentences against the article body.\n\nContinue?':
-            'Se compararán {count} oraciones de la introducción con el cuerpo del artículo.\n\n¿Continuar?',
         'Lead check complete':
             'Comparación de la introducción completada',
         '{count} lead citation set aside':
@@ -4834,8 +4820,6 @@ function useToolforgeSourceFetcher() {
             'Se apartaron {count} citas de la introducción: sus fuentes solo respaldan parte de sus afirmaciones, y en la introducción el resto puede estar cubierto por el cuerpo del artículo.',
         'Runs one more check on each flagged citation to tell a contradicted key fact from a missing minor detail. Costs one extra model call per flagged citation.':
             'Hace una comprobación más en cada cita señalada para distinguir un hecho clave contradicho de un detalle menor ausente. Supone una llamada adicional al modelo por cada cita señalada.',
-        '\n\nSeverity ranking is on: each flagged citation gets one more check at the end.':
-            '\n\nLa clasificación por gravedad está activada: cada cita señalada recibirá una comprobación más al final.',
         'Checking severity…': 'Evaluando la gravedad…',
         'Checking severity of [{num}]': 'Evaluando la gravedad de [{num}]',
         'Severity': 'Gravedad',
@@ -4951,14 +4935,10 @@ function useToolforgeSourceFetcher() {
         'Set {name} API Key': 'Configurar la clave API de {name}',
         'Enter your {name} API Key to enable source verification:':
             'Se necesita la clave API de {name} para activar la verificación de fuentes:',
-        'This will verify {citations} citations from {sources} unique sources.{groupNote}\n\nEstimated time: ~{minutes} minutes.\n\nContinue?':
-            'Esto verificará {citations} citas procedentes de {sources} fuentes distintas.{groupNote}\n\nTiempo estimado: ~{minutes} minutos.\n\n¿Continuar?',
-        'This will verify {citations} citations from {sources} unique sources.{groupNote}\n\nEstimated time: ~{minutes} minute.\n\nContinue?':
-            'Esto verificará {citations} citas procedentes de {sources} fuentes distintas.{groupNote}\n\nTiempo estimado: ~{minutes} minuto.\n\n¿Continuar?',
-        '\n\nThis includes {count} combined-source checks for adjacent citation groups.':
-            '\n\nEsto incluye {count} comprobaciones de fuentes combinadas para grupos de citas adyacentes.',
-        '\n\nThis includes {count} combined-source check for adjacent citation groups.':
-            '\n\nEsto incluye {count} comprobación de fuentes combinadas para grupos de citas adyacentes.',
+        'Estimated time: ~{minutes} minutes.\n\nContinue?':
+            'Tiempo estimado: ~{minutes} minutos.\n\n¿Continuar?',
+        'Estimated time: ~{minutes} minute.\n\nContinue?':
+            'Tiempo estimado: ~{minutes} minuto.\n\n¿Continuar?',
 
         // Generated result comments
         'No URL found in reference': 'No se ha encontrado ninguna URL en la referencia',
@@ -5185,10 +5165,6 @@ function useToolforgeSourceFetcher() {
             'Предложение преамбулы: {text}',
         'This article has no body to check the lead against.':
             'В этой статье нет основного текста, с которым можно сверить преамбулу.',
-        '\n\nThe lead check is on: the {count} lead sentences are also checked against the article body at the end.':
-            '\n\nСверка преамбулы включена: в конце предложения преамбулы (всего {count}) также сверяются с основным текстом.',
-        'This will check {count} lead sentences against the article body.\n\nContinue?':
-            'Будет сверено с основным текстом предложений преамбулы: {count}.\n\nПродолжить?',
         'Lead check complete':
             'Сверка преамбулы завершена',
         '{count} lead citation set aside':
@@ -5209,8 +5185,6 @@ function useToolforgeSourceFetcher() {
             'Отложено сносок в преамбуле: {count}. Их источники подтверждают лишь часть утверждений, а в преамбуле остальное может подтверждаться основным текстом.',
         'Runs one more check on each flagged citation to tell a contradicted key fact from a missing minor detail. Costs one extra model call per flagged citation.':
             'Проводит дополнительную проверку каждой проблемной сноски, чтобы отличить опровергнутый ключевой факт от отсутствующей второстепенной детали. Требует одного дополнительного запроса к модели на каждую такую сноску.',
-        '\n\nSeverity ranking is on: each flagged citation gets one more check at the end.':
-            '\n\nОценка серьёзности включена: в конце каждая проблемная сноска пройдёт ещё одну проверку.',
         'Checking severity…': 'Оценка серьёзности…',
         'Checking severity of [{num}]': 'Оценка серьёзности [{num}]',
         'Severity': 'Серьёзность',
@@ -5326,14 +5300,10 @@ function useToolforgeSourceFetcher() {
         'Set {name} API Key': 'Указать ключ API {name}',
         'Enter your {name} API Key to enable source verification:':
             'Введите ключ API {name}, чтобы включить проверку источников:',
-        'This will verify {citations} citations from {sources} unique sources.{groupNote}\n\nEstimated time: ~{minutes} minutes.\n\nContinue?':
-            'Будет проверено {citations} сносок из {sources} уникальных источников.{groupNote}\n\nПримерное время: ~{minutes} мин.\n\nПродолжить?',
-        'This will verify {citations} citations from {sources} unique sources.{groupNote}\n\nEstimated time: ~{minutes} minute.\n\nContinue?':
-            'Будет проверено {citations} сносок из {sources} уникальных источников.{groupNote}\n\nПримерное время: ~{minutes} мин.\n\nПродолжить?',
-        '\n\nThis includes {count} combined-source checks for adjacent citation groups.':
-            '\n\nТакже будет сделано {count} проверок объединённых источников для групп соседних сносок.',
-        '\n\nThis includes {count} combined-source check for adjacent citation groups.':
-            '\n\nТакже будет сделана {count} проверка объединённых источников для групп соседних сносок.',
+        'Estimated time: ~{minutes} minutes.\n\nContinue?':
+            'Примерное время: ~{minutes} мин.\n\nПродолжить?',
+        'Estimated time: ~{minutes} minute.\n\nContinue?':
+            'Примерное время: ~{minutes} мин.\n\nПродолжить?',
 
         // Generated result comments
         'No URL found in reference': 'В сноске не найден URL',
@@ -5568,10 +5538,6 @@ function useToolforgeSourceFetcher() {
             'משפט בפתיח: {text}',
         'This article has no body to check the lead against.':
             'אין בערך הזה גוף שאפשר להשוות אליו את הפתיח.',
-        '\n\nThe lead check is on: the {count} lead sentences are also checked against the article body at the end.':
-            '\n\nהשוואת הפתיח פעילה: בסוף מושווים גם {count} משפטי הפתיח לגוף הערך.',
-        'This will check {count} lead sentences against the article body.\n\nContinue?':
-            'יושוו {count} משפטי פתיח לגוף הערך.\n\nלהמשיך?',
         'Lead check complete':
             'השוואת הפתיח הושלמה',
         '{count} lead citation set aside':
@@ -5592,8 +5558,6 @@ function useToolforgeSourceFetcher() {
             '{count} הערות שוליים בפתיח הוצגו בנפרד: המקורות שלהן תומכים רק בחלק מהטענות, ובפתיח את השאר יכול לכסות גוף הערך.',
         'Runs one more check on each flagged citation to tell a contradicted key fact from a missing minor detail. Costs one extra model call per flagged citation.':
             'בדיקה נוספת לכל הערת שוליים שסומנה, כדי להבחין בין עובדה מרכזית שהמקור סותר לבין פרט שולי שאינו מופיע בו. כרוכה בקריאה נוספת למודל לכל הערה כזו.',
-        '\n\nSeverity ranking is on: each flagged citation gets one more check at the end.':
-            '\n\nדירוג החומרה פעיל: בסוף תתבצע בדיקה נוספת לכל הערת שוליים שסומנה.',
         'Checking severity…': 'בדיקת חומרה…',
         'Checking severity of [{num}]': 'בדיקת חומרה של [{num}]',
         'Severity': 'חומרה',
@@ -5710,14 +5674,10 @@ function useToolforgeSourceFetcher() {
         'Set {name} API Key': 'הגדרת מפתח API של {name}',
         'Enter your {name} API Key to enable source verification:':
             'יש להזין מפתח API של {name} כדי להפעיל את בדיקת המקורות:',
-        'This will verify {citations} citations from {sources} unique sources.{groupNote}\n\nEstimated time: ~{minutes} minutes.\n\nContinue?':
-            'ייבדקו {citations} הערות שוליים מתוך {sources} מקורות ייחודיים.{groupNote}\n\nזמן משוער: כ־{minutes} דקות.\n\nלהמשיך?',
-        'This will verify {citations} citations from {sources} unique sources.{groupNote}\n\nEstimated time: ~{minutes} minute.\n\nContinue?':
-            'ייבדקו {citations} הערות שוליים מתוך {sources} מקורות ייחודיים.{groupNote}\n\nזמן משוער: כ־{minutes} דקה.\n\nלהמשיך?',
-        '\n\nThis includes {count} combined-source checks for adjacent citation groups.':
-            '\n\nכולל {count} בדיקות של מקורות משולבים עבור קבוצות של הערות שוליים סמוכות.',
-        '\n\nThis includes {count} combined-source check for adjacent citation groups.':
-            '\n\nכולל {count} בדיקה של מקורות משולבים עבור קבוצות של הערות שוליים סמוכות.',
+        'Estimated time: ~{minutes} minutes.\n\nContinue?':
+            'זמן משוער: כ־{minutes} דקות.\n\nלהמשיך?',
+        'Estimated time: ~{minutes} minute.\n\nContinue?':
+            'זמן משוער: כ־{minutes} דקה.\n\nלהמשיך?',
 
         // Generated result comments
         'No URL found in reference': 'לא נמצאה כתובת URL בהערת השוליים',
@@ -10551,41 +10511,23 @@ function useToolforgeSourceFetcher() {
             // addition to the per-source calls), so account for those.
             // Skipped citations (claim too short to check) get a row in the
             // report but no fetch or model call, so they stay out of the
-            // estimate and the collective-check count.
+            // estimate and the collective-check count. The lead check sends a
+            // few sentences per call, each with the whole body, so its calls
+            // take about twice a citation's. The severity pass is left out:
+            // how many citations get flagged isn't known until the run ends.
             const checkable = citations.filter(c => !c.skipReason);
-            const uniqueUrls = new Set(checkable.filter(c => c.url).map(c => c.url));
-            const multiGroupIds = new Set(checkable.filter(c => c.groupSize > 1).map(c => c.groupId));
-            const multiGroupCount = multiGroupIds.size;
-            const estimatedSeconds = checkable.length * 7 + multiGroupCount * 8;
-            const estimatedMinutes = Math.ceil(estimatedSeconds / 60);
-            const groupNote = multiGroupCount > 0
-                ? this.t(
-                    multiGroupCount === 1
-                        ? '\n\nThis includes {count} combined-source check for adjacent citation groups.'
-                        : '\n\nThis includes {count} combined-source checks for adjacent citation groups.',
-                    { count: multiGroupCount }
-                  )
-                : '';
-            // How many citations get flagged isn't known until the run ends,
-            // so the extra checks are announced rather than estimated.
-            const severityNote = this.severityEnabled
-                ? this.t('\n\nSeverity ranking is on: each flagged citation gets one more check at the end.')
-                : '';
-            const leadNote = lead
-                ? this.t('\n\nThe lead check is on: the {count} lead sentences are also checked against the article body at the end.', { count: lead.sentences.length })
-                : '';
+            const multiGroupCount = new Set(checkable.filter(c => c.groupSize > 1).map(c => c.groupId)).size;
+            const leadCalls = lead ? Math.ceil(lead.sentences.length / leadChunkSize(this.currentProvider)) : 0;
+            const estimatedSeconds = checkable.length * 7 + multiGroupCount * 8 + leadCalls * 15;
+            const estimatedMinutes = Math.max(1, Math.ceil(estimatedSeconds / 60));
 
             const confirmed = await new Promise(resolve => {
-                OO.ui.confirm(
-                    leadOnly
-                        ? this.t('This will check {count} lead sentences against the article body.\n\nContinue?', { count: lead.sentences.length })
-                        : this.t(
-                            estimatedMinutes > 1
-                                ? 'This will verify {citations} citations from {sources} unique sources.{groupNote}\n\nEstimated time: ~{minutes} minutes.\n\nContinue?'
-                                : 'This will verify {citations} citations from {sources} unique sources.{groupNote}\n\nEstimated time: ~{minutes} minute.\n\nContinue?',
-                            { citations: checkable.length, sources: uniqueUrls.size, groupNote: groupNote + severityNote + leadNote, minutes: estimatedMinutes }
-                        )
-                ).done(result => resolve(result));
+                OO.ui.confirm(this.t(
+                    estimatedMinutes > 1
+                        ? 'Estimated time: ~{minutes} minutes.\n\nContinue?'
+                        : 'Estimated time: ~{minutes} minute.\n\nContinue?',
+                    { minutes: estimatedMinutes }
+                )).done(result => resolve(result));
             });
             if (!confirmed) return;
 
