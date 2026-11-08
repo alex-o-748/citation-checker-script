@@ -137,6 +137,24 @@ test('the lead section shows its state, a card per finding, and the covered sent
     assert.deepEqual([...done.querySelectorAll('.sv-lead-covered li')].map(li => li.textContent), ['Marie Curie was a physicist. (Life)']);
 });
 
+test('a run stopped before the lead check says so, and a Stop during it counts the sentences it never reached', () => {
+    const { h, doc } = harness();
+    const render = lead => {
+        const el = doc.createElement('div');
+        el.innerHTML = h.leadCheckHtml(lead);
+        return el;
+    };
+    const stopped = render({ sentences, results: [], state: 'stopped' }).textContent;
+    assert.match(stopped, /The lead was not checked: the run was stopped first\./);
+    assert.doesNotMatch(stopped, /after the citations/, 'not "will be checked": it won\'t be');
+
+    // Stopped after the first two sentences' call: the other two have no
+    // result at all, and are as unchecked as one whose call failed.
+    const partial = render({ sentences, results: results.slice(0, 2), state: 'done' }).textContent;
+    assert.match(partial, /1 of 4 lead sentences are covered in the body\./);
+    assert.match(partial, /2 lead sentences could not be checked\./);
+});
+
 test('the exports list the lead\'s findings, escaped for a wikitable, and count the set-aside citations', () => {
     const { h } = harness();
     h.reportLead = { sentences, results: [...results, { index: 4, text: 'Pipe | in it.', verdict: 'PARTIALLY SUPPORTED', outcome: LEAD_OUTCOMES.NOT_COVERED, comments: 'a {{b}} c' }], state: 'done' };

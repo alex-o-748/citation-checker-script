@@ -320,3 +320,23 @@ test('inside the panel, horizontal spacing and borders use logical properties', 
     assert.deepEqual(offenders, [], `use *-inline-start / *-inline-end instead:\n${offenders.join('\n')}`);
   }
 });
+
+// The report has one scroll area, the sidebar. The citation list used to be
+// capped at 50vh with a scrollbar of its own, inside the scrolling sidebar:
+// the wheel moved whichever was under the pointer, and ran on past the end of
+// the list into the lead check below it. The tab bar sticks to the top of
+// that one area instead.
+test('the report has one scroll area: nothing in it scrolls on its own, and the tab bar sticks', () => {
+  const css = generateCss();
+  const offenders = [];
+  for (const m of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    const selector = m[1].trim();
+    if (!/#verifier-report-(view|summary|results|citations|lead)\b|\.sv-report-panel\b/.test(selector)) continue;
+    if (/overflow(-y)?\s*:\s*(auto|scroll)|max-height\s*:/.test(m[2])) offenders.push(selector);
+  }
+  assert.deepEqual(offenders, []);
+  const bar = css.match(/#verifier-report-tabs \{([^{}]*)\}/);
+  assert.ok(bar, 'no rule for the report tab bar');
+  assert.match(bar[1], /position: sticky/);
+  assert.match(bar[1], /background: var\(--sv-bg\)/, 'opaque, or cards show through the stuck bar');
+});

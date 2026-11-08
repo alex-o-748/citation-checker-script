@@ -91,6 +91,7 @@ docs/                            # Reference docs + design plans (see docs/READM
 | `assessSeverity()` / `showSingleSeverity()` / `rankReportBySeverity()` | Opt-in severity pass (`core/severity.js`'s `runSeverityPass()`) for a flagged verdict: in the single-check view, and as a second phase of Verify All (see "Severity ranking" below) |
 | `applyReportSort()` / `renderReportSeverity()` | Report order: article order, or "Most serious first" by `compareSeverity()` on a severity-ranked report. Moves whole cards and group blocks; never hides one |
 | `articleLead()` / `runReportLeadCheck()` / `renderReportLead()` | The lead check (`core/lead-check.js`): the last phase of Verify All, or all of "Check the lead against the body"; the report's lead section (see "The lead check" below) |
+| `renderReportTabs()` / `selectReportTab()` | The report's Citations and Lead tabs, when Verify All ran both checks: one panel at a time, each tab keeping its scroll position (see "The lead check" below) |
 | `getCountedReportUnits()` | `getReportUnits()` minus set-aside lead citations: what the summary, the severity ranking and the exports count |
 
 ## Benchmark Suite
@@ -523,6 +524,15 @@ Rules to keep if you touch it:
   costs a few calls per Verify All, not one per citation. Lead results are
   **not logged**: the Worker has no field to tell a lead sentence from a
   citation.
+- **In the report it has a tab of its own.** A Verify All that ran the lead
+  check shows two tabs, Citations and Lead (`renderReportTabs()`); the Lead
+  tab's badge counts sentences with a finding. A report holding one check has
+  no tabs. The sidebar is the report's **one scroll area** and the tab bar
+  sticks to its top: the citation list used to have its own 50vh scrollbar
+  with the lead section under it, so the wheel moved whichever was under the
+  pointer and ran on past the list into the lead section.
+  `tests/styles.test.js` fails if anything in the report scrolls on its own
+  again.
 - **Not yet validated.** `benchmark/dataset_lead.json` (separate from
   `dataset.json`, like WiCE) is built by `npm run lead:extract`; its labels are
   for people to make.

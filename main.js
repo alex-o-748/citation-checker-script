@@ -4457,10 +4457,16 @@ function useToolforgeSourceFetcher() {
             '{count} citation du résumé introductif mise de côté',
         '{count} lead citations set aside':
             '{count} citations du résumé introductif mises de côté',
-        ' · {count} lead citation set aside':
-            ' · {count} citation du résumé introductif mise de côté',
-        ' · {count} lead citations set aside':
-            ' · {count} citations du résumé introductif mises de côté',
+        'Citations':
+            'Citations',
+        'Lead':
+            'Résumé introductif',
+        '{count} lead sentence is not covered in the body, or contradicts it':
+            '{count} phrase du résumé introductif n\'est pas couverte par le corps de l\'article, ou le contredit',
+        '{count} lead sentences are not covered in the body, or contradict it':
+            '{count} phrases du résumé introductif ne sont pas couvertes par le corps de l\'article, ou le contredisent',
+        'The lead was not checked: the run was stopped first.':
+            'Le résumé introductif n\'a pas été vérifié : la vérification a été arrêtée avant.',
         '{count} lead sentence could not be checked.':
             '{count} phrase du résumé introductif n\'a pas pu être vérifiée.',
         '{count} lead sentences could not be checked.':
@@ -4826,10 +4832,16 @@ function useToolforgeSourceFetcher() {
             '{count} cita de la introducción apartada',
         '{count} lead citations set aside':
             '{count} citas de la introducción apartadas',
-        ' · {count} lead citation set aside':
-            ' · {count} cita de la introducción apartada',
-        ' · {count} lead citations set aside':
-            ' · {count} citas de la introducción apartadas',
+        'Citations':
+            'Citas',
+        'Lead':
+            'Introducción',
+        '{count} lead sentence is not covered in the body, or contradicts it':
+            '{count} oración de la introducción no está cubierta en el cuerpo del artículo, o lo contradice',
+        '{count} lead sentences are not covered in the body, or contradict it':
+            '{count} oraciones de la introducción no están cubiertas en el cuerpo del artículo, o lo contradicen',
+        'The lead was not checked: the run was stopped first.':
+            'La introducción no se comprobó: la verificación se detuvo antes.',
         '{count} lead sentence could not be checked.':
             'No se pudo comprobar {count} oración de la introducción.',
         '{count} lead sentences could not be checked.':
@@ -5191,10 +5203,16 @@ function useToolforgeSourceFetcher() {
             'Отложено сносок в преамбуле: {count}',
         '{count} lead citations set aside':
             'Отложено сносок в преамбуле: {count}',
-        ' · {count} lead citation set aside':
-            ' · отложено сносок в преамбуле: {count}',
-        ' · {count} lead citations set aside':
-            ' · отложено сносок в преамбуле: {count}',
+        'Citations':
+            'Сноски',
+        'Lead':
+            'Преамбула',
+        '{count} lead sentence is not covered in the body, or contradicts it':
+            'Предложений преамбулы, не подтверждённых основным текстом или противоречащих ему: {count}',
+        '{count} lead sentences are not covered in the body, or contradict it':
+            'Предложений преамбулы, не подтверждённых основным текстом или противоречащих ему: {count}',
+        'The lead was not checked: the run was stopped first.':
+            'Преамбула не проверена: проверка была остановлена раньше.',
         '{count} lead sentence could not be checked.':
             'Не удалось проверить предложений преамбулы: {count}.',
         '{count} lead sentences could not be checked.':
@@ -5564,10 +5582,16 @@ function useToolforgeSourceFetcher() {
             '{count} הערת שוליים בפתיח הוצגה בנפרד',
         '{count} lead citations set aside':
             '{count} הערות שוליים בפתיח הוצגו בנפרד',
-        ' · {count} lead citation set aside':
-            ' · {count} הערת שוליים בפתיח הוצגה בנפרד',
-        ' · {count} lead citations set aside':
-            ' · {count} הערות שוליים בפתיח הוצגו בנפרד',
+        'Citations':
+            'הערות שוליים',
+        'Lead':
+            'פתיח',
+        '{count} lead sentence is not covered in the body, or contradicts it':
+            '{count} משפט בפתיח אינו מכוסה בגוף הערך, או סותר אותו',
+        '{count} lead sentences are not covered in the body, or contradict it':
+            '{count} משפטים בפתיח אינם מכוסים בגוף הערך, או סותרים אותו',
+        'The lead was not checked: the run was stopped first.':
+            'הפתיח לא נבדק: הבדיקה נעצרה לפני כן.',
         '{count} lead sentence could not be checked.':
             'לא ניתן היה לבדוק {count} משפט בפתיח.',
         '{count} lead sentences could not be checked.':
@@ -6000,6 +6024,13 @@ function useToolforgeSourceFetcher() {
             this.reportCardEls = new Map();
             this.reportDocOrder = 0;
             this.reportSort = this.loadReportSort();
+            // Lead check state for the current report (see verifyAllCitations),
+            // and the report tab on screen with each tab's scroll position
+            // (see renderReportTabs).
+            this.reportLead = null;
+            this.reportLeadOnly = false;
+            this.reportTab = 'citations';
+            this.reportTabScroll = {};
 
             this.init();
         }
@@ -6151,9 +6182,15 @@ function useToolforgeSourceFetcher() {
                         </div>
                         <div id="verifier-report-view" style="display:none;">
                             <div id="verifier-report-progress"></div>
-                            <div id="verifier-report-summary"></div>
-                            <div id="verifier-report-results"></div>
-                            <div id="verifier-report-lead"></div>
+                            <div id="verifier-report-tabs" role="tablist" hidden>
+                                <button type="button" role="tab" class="sv-report-tab" id="verifier-tab-citations" data-tab="citations" aria-controls="verifier-report-citations"><span>${this.t('Citations')}</span></button>
+                                <button type="button" role="tab" class="sv-report-tab" id="verifier-tab-lead" data-tab="lead" aria-controls="verifier-report-lead"><span>${this.t('Lead')}</span><span class="sv-report-tab-badge"></span></button>
+                            </div>
+                            <div id="verifier-report-citations" class="sv-report-panel" data-tab="citations">
+                                <div id="verifier-report-summary"></div>
+                                <div id="verifier-report-results"></div>
+                            </div>
+                            <div id="verifier-report-lead" class="sv-report-panel" data-tab="lead"></div>
                             <div id="verifier-report-actions"></div>
                         </div>
                     </div>
@@ -7160,12 +7197,16 @@ function useToolforgeSourceFetcher() {
                     font-size: 11px;
                     color: var(--sv-ink-5);
                 }
+                /* No height cap and no scrollbar of its own: the sidebar is
+                   the report's one scroll area. A capped, scrolling list
+                   inside the scrolling sidebar sent the wheel to whichever
+                   of the two was under the pointer, and past the list's end
+                   into whatever followed it (the lead check, before it had
+                   a tab of its own). */
                 #verifier-report-results {
                     display: flex;
                     flex-direction: column;
                     gap: 6px;
-                    max-height: 50vh;
-                    overflow-y: auto;
                     margin-bottom: 12px;
                 }
                 #verifier-report-results.filter-hide-supported .verifier-report-card.verdict-supported,
@@ -7311,6 +7352,92 @@ function useToolforgeSourceFetcher() {
                 }
                 #verifier-report-lead:empty {
                     display: none;
+                }
+                /* Report tabs. A Verify All that ran the lead check holds two
+                   independent checks, each with its own controls (the
+                   filters and the sort are the citations'), so each gets a
+                   tab, in the sidebar's one scroll area. The bar sticks to
+                   the top, so switching is a click away anywhere in a long
+                   report, and it always says which check is on screen. */
+                #verifier-report-tabs {
+                    position: sticky;
+                    /* The sidebar's padding, negated: sticky offsets count
+                       from inside it, and at 0 the cards scrolled past show
+                       in a strip above the stuck bar. */
+                    top: -15px;
+                    z-index: 3;
+                    display: flex;
+                    gap: 4px;
+                    margin-bottom: 12px;
+                    background: var(--sv-bg);
+                    border-bottom: 1px solid var(--sv-border);
+                }
+                #verifier-report-tabs[hidden] {
+                    display: none;
+                }
+                .sv-report-tab {
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 6px;
+                    margin-bottom: -1px;
+                    padding: 8px 12px;
+                    font: inherit;
+                    font-size: 13px;
+                    font-weight: 600;
+                    color: var(--sv-ink-4);
+                    background: none;
+                    border: none;
+                    border-bottom: 2px solid transparent;
+                    cursor: pointer;
+                }
+                .sv-report-tab:hover {
+                    color: var(--sv-ink);
+                }
+                .sv-report-tab[aria-selected="true"] {
+                    color: var(--sv-accent-fg);
+                    border-bottom-color: var(--sv-accent-fg);
+                }
+                .sv-report-tab:focus-visible {
+                    outline: 2px solid var(--sv-accent-fg);
+                    outline-offset: -2px;
+                }
+                .sv-report-tab-badge {
+                    min-width: 18px;
+                    padding: 0 5px;
+                    border-radius: 9px;
+                    font-size: 11px;
+                    line-height: 18px;
+                    text-align: center;
+                    background: var(--sv-na-bg);
+                    color: var(--sv-na-fg);
+                }
+                .sv-report-tab-badge:empty {
+                    display: none;
+                }
+                .sv-report-tab-badge-not-covered { background: var(--sv-warn-bg); color: var(--sv-warn-fg); }
+                .sv-report-tab-badge-contradicted { background: var(--sv-err-bg); color: var(--sv-err-fg); }
+                .sv-report-tabbed .sv-report-panel:not(.sv-report-panel-active) {
+                    display: none;
+                }
+                /* The tab names the lead check; the heading is for a
+                   lead-only report, which has no tabs. */
+                .sv-report-tabbed .sv-lead-check h4 {
+                    display: none;
+                }
+                /* Clear of the sticky tab bar when scrolled to. */
+                .sv-lead-demoted {
+                    scroll-margin-top: 56px;
+                }
+                .sv-set-aside-link {
+                    padding: 0;
+                    font: inherit;
+                    color: var(--sv-accent-fg);
+                    background: none;
+                    border: none;
+                    cursor: pointer;
+                }
+                .sv-set-aside-link:hover {
+                    text-decoration: underline;
                 }
                 .sv-lead-check h4 {
                     margin: 0 0 4px;
@@ -8120,6 +8247,7 @@ function useToolforgeSourceFetcher() {
                     if (match) {
                         const card = this.reportCardEls.get(match);
                         if (card) {
+                            this.revealReportCard(card);
                             card.scrollIntoView({ behavior: 'smooth', block: 'center' });
                             card.style.transition = 'box-shadow 0.3s';
                             card.style.boxShadow = '0 0 0 3px #36c';
@@ -8583,7 +8711,16 @@ function useToolforgeSourceFetcher() {
                     this.openSettings();
                 });
             }
-            
+
+            const reportTabs = document.getElementById('verifier-report-tabs');
+            if (reportTabs) {
+                reportTabs.addEventListener('click', (e) => {
+                    const tab = e.target.closest('[role="tab"]');
+                    if (tab) this.selectReportTab(tab.dataset.tab);
+                });
+                reportTabs.addEventListener('keydown', (e) => this.handleReportTabKey(e));
+            }
+
             this.buttons.providerSelect.getMenu().on('select', (item) => {
                 this.currentProvider = item.getData();
                 localStorage.setItem('source_verifier_provider', this.currentProvider);
@@ -9310,9 +9447,11 @@ function useToolforgeSourceFetcher() {
             const claimsLabel = citationCount === total
                 ? this.t(total === 1 ? '{count} citation checked' : '{count} citations checked', { count: total })
                 : this.t(total === 1 ? '{citations} citations across {claims} claim' : '{citations} citations across {claims} claims', { citations: citationCount, claims: total });
+            // Set-aside lead citations are in the Lead tab, not this list; the
+            // count links there, so a citation missing here can be found.
             const demotedCount = this.getReportUnits().filter(u => u.leadDemoted).length;
             const demotedLabel = demotedCount
-                ? this.t(demotedCount === 1 ? ' · {count} lead citation set aside' : ' · {count} lead citations set aside', { count: demotedCount })
+                ? ` · <button type="button" class="sv-set-aside-link">${this.escapeHtml(this.t(demotedCount === 1 ? '{count} lead citation set aside' : '{count} lead citations set aside', { count: demotedCount }))}</button>`
                 : '';
 
             summaryEl.innerHTML = `
@@ -9351,6 +9490,13 @@ function useToolforgeSourceFetcher() {
                     this.setReportSort(btn.dataset.sort);
                 });
             });
+            const setAsideLink = summaryEl.querySelector('.sv-set-aside-link');
+            if (setAsideLink) {
+                setAsideLink.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    this.showSetAsideLeadCitations();
+                });
+            }
         }
 
         // The reason_type enum itself stays English — it is parsed
@@ -10349,18 +10495,24 @@ function useToolforgeSourceFetcher() {
                 demoted.querySelector('summary').textContent = this.t(
                     count === 1 ? '{count} lead citation set aside' : '{count} lead citations set aside', { count });
             }
+            this.renderReportTabs();
         }
 
         // The lead check's part of the report, from its state alone:
-        // { sentences, results, state: 'pending' | 'running' | 'done', bodyTruncated }.
+        // { sentences, results, state: 'pending' | 'running' | 'done' | 'stopped', bodyTruncated }.
+        // 'stopped': the run was stopped before the lead check began.
         leadCheckHtml(lead) {
             const results = lead.results || [];
             const total = lead.sentences.length;
             const covered = results.filter(r => r.outcome === LEAD_OUTCOMES.COVERED);
             const flagged = results.filter(r => r.outcome === LEAD_OUTCOMES.NOT_COVERED || r.outcome === LEAD_OUTCOMES.CONTRADICTED);
-            const unchecked = results.filter(r => !r.verdict);
+            // Every sentence without a verdict, including any a Stop during
+            // the check never reached: those have no result at all.
+            const uncheckedCount = total - results.filter(r => r.verdict).length;
             let status;
-            if (lead.state === 'pending') {
+            if (lead.state === 'stopped') {
+                status = this.t('The lead was not checked: the run was stopped first.');
+            } else if (lead.state === 'pending') {
                 status = this.t('The lead is checked against the body after the citations.');
             } else if (lead.state === 'running') {
                 status = this.t('Checking the lead against the body… ({done} of {total} sentences)', { done: results.length, total });
@@ -10371,8 +10523,8 @@ function useToolforgeSourceFetcher() {
             if (lead.bodyTruncated) {
                 notes.push(this.t('The body is long, so only the sections closest to the lead were sent. A sentence reported as not covered may be in a section that was left out.'));
             }
-            if (lead.state === 'done' && unchecked.length) {
-                notes.push(this.t(unchecked.length === 1 ? '{count} lead sentence could not be checked.' : '{count} lead sentences could not be checked.', { count: unchecked.length }));
+            if (lead.state === 'done' && uncheckedCount > 0) {
+                notes.push(this.t(uncheckedCount === 1 ? '{count} lead sentence could not be checked.' : '{count} lead sentences could not be checked.', { count: uncheckedCount }));
             }
             const coveredHtml = covered.length
                 ? `<details class="sv-lead-covered"><summary>${this.escapeHtml(this.t('Covered in the body ({count})', { count: covered.length }))}</summary><ul>`
@@ -10412,6 +10564,145 @@ function useToolforgeSourceFetcher() {
             block.scrollIntoView({ behavior: 'smooth', block: 'center' });
             this.clearHighlights();
             block.classList.add('claim-highlight');
+        }
+
+        // ========================================
+        // REPORT TABS
+        // ========================================
+        //
+        // A Verify All that ran the lead check holds two independent checks,
+        // with different units (citations, lead sentences), different
+        // controls (the filters and the sort are the citations') and
+        // different fixes (a better source; content added to the body). Each
+        // gets a tab. They used to be stacked: the lead section under a
+        // citation list with a scrollbar of its own, inside the scrolling
+        // sidebar, so the wheel moved whichever was under the pointer and
+        // ran on past the list into the lead section. Now the sidebar is
+        // the one scroll area, and the tab bar sticks to its top.
+        //
+        // A report with only one check (no lead check, or "Check the lead
+        // against the body" alone) has no tabs: both panels are shown, and
+        // the one with nothing in it is empty.
+
+        isReportTabbed() {
+            return Boolean(this.reportLead) && !this.reportLeadOnly;
+        }
+
+        renderReportTabs() {
+            const view = document.getElementById('verifier-report-view');
+            const bar = document.getElementById('verifier-report-tabs');
+            if (!view || !bar) return;
+            const tabbed = this.isReportTabbed();
+            view.classList.toggle('sv-report-tabbed', tabbed);
+            bar.hidden = !tabbed;
+            bar.querySelectorAll('[role="tab"]').forEach(tab => {
+                const selected = tabbed && tab.dataset.tab === this.reportTab;
+                tab.setAttribute('aria-selected', String(selected));
+                tab.tabIndex = selected ? 0 : -1;
+            });
+            view.querySelectorAll('.sv-report-panel').forEach(panel => {
+                panel.classList.toggle('sv-report-panel-active', !tabbed || panel.dataset.tab === this.reportTab);
+                if (tabbed) {
+                    panel.setAttribute('role', 'tabpanel');
+                    panel.setAttribute('aria-labelledby', `verifier-tab-${panel.dataset.tab}`);
+                } else {
+                    panel.removeAttribute('role');
+                    panel.removeAttribute('aria-labelledby');
+                }
+            });
+            const leadTab = bar.querySelector('[data-tab="lead"]');
+            const badgeEl = leadTab && leadTab.querySelector('.sv-report-tab-badge');
+            if (!badgeEl) return;
+            const badge = tabbed ? this.leadTabBadge(this.reportLead) : null;
+            badgeEl.textContent = badge ? badge.text : '';
+            badgeEl.className = 'sv-report-tab-badge' + (badge ? ` sv-report-tab-badge-${badge.kind}` : '');
+            if (badge) leadTab.title = badge.title;
+            else leadTab.removeAttribute('title');
+        }
+
+        // What the Lead tab's badge says, from the lead check's state alone:
+        // how many sentences it found a problem with, so the tab says from
+        // the Citations tab whether it is worth opening. Null for nothing to
+        // show: not run yet, stopped, or nothing found.
+        leadTabBadge(lead) {
+            const flagged = (lead.results || []).filter(r => r.outcome === LEAD_OUTCOMES.NOT_COVERED || r.outcome === LEAD_OUTCOMES.CONTRADICTED);
+            if (flagged.length) {
+                return {
+                    text: String(flagged.length),
+                    kind: flagged.some(r => r.outcome === LEAD_OUTCOMES.CONTRADICTED) ? 'contradicted' : 'not-covered',
+                    title: this.t(flagged.length === 1
+                        ? '{count} lead sentence is not covered in the body, or contradicts it'
+                        : '{count} lead sentences are not covered in the body, or contradict it', { count: flagged.length }),
+                };
+            }
+            if (lead.state === 'running') {
+                return { text: '…', kind: 'running', title: this.t('Checking the lead against the body') };
+            }
+            return null;
+        }
+
+        // Each tab keeps its own place: back on Citations from the Lead tab,
+        // the list is where it was left. A tab opened for the first time
+        // starts at its top, just under the bar.
+        selectReportTab(tab, { focus = false, scroll = true } = {}) {
+            if (!this.isReportTabbed()) return;
+            const scroller = document.getElementById('verifier-sidebar-content');
+            const changed = tab !== this.reportTab;
+            if (changed && scroller) this.reportTabScroll[this.reportTab] = scroller.scrollTop;
+            this.reportTab = tab;
+            this.renderReportTabs();
+            if (focus) {
+                const tabEl = document.getElementById(`verifier-tab-${tab}`);
+                if (tabEl) tabEl.focus();
+            }
+            if (!changed || !scroll || !scroller) return;
+            const saved = this.reportTabScroll[tab];
+            if (saved !== undefined) {
+                scroller.scrollTop = saved;
+                return;
+            }
+            const bar = document.getElementById('verifier-report-tabs');
+            const panel = document.querySelector(`.sv-report-panel[data-tab="${tab}"]`);
+            if (!bar || !panel) return;
+            const panelTop = panel.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop;
+            const barTop = panelTop - (parseFloat(getComputedStyle(bar).marginBottom) || 0) - bar.offsetHeight;
+            if (scroller.scrollTop > barTop) scroller.scrollTop = barTop;
+        }
+
+        // Arrow keys move between tabs (mirrored in a right-to-left
+        // sidebar), Home and End go to the first and last.
+        handleReportTabKey(e) {
+            const order = ['citations', 'lead'];
+            const i = order.indexOf(this.reportTab);
+            const forward = this.uiDir === 'rtl' ? 'ArrowLeft' : 'ArrowRight';
+            const back = this.uiDir === 'rtl' ? 'ArrowRight' : 'ArrowLeft';
+            let next = null;
+            if (e.key === forward) next = order[(i + 1) % order.length];
+            else if (e.key === back) next = order[(i - 1 + order.length) % order.length];
+            else if (e.key === 'Home') next = order[0];
+            else if (e.key === 'End') next = order[order.length - 1];
+            if (!next) return;
+            e.preventDefault();
+            this.selectReportTab(next, { focus: true });
+        }
+
+        // A report card asked for from outside its tab (a citation clicked
+        // in the article): its tab is opened, and the set-aside group if it
+        // is in it. The caller scrolls to the card.
+        revealReportCard(card) {
+            const panel = card.closest('.sv-report-panel');
+            if (panel) this.selectReportTab(panel.dataset.tab, { scroll: false });
+            const group = card.closest('details');
+            if (group) group.open = true;
+        }
+
+        // The summary's "N lead citations set aside" link.
+        showSetAsideLeadCitations() {
+            const group = document.querySelector('#verifier-report-lead .sv-lead-demoted');
+            if (!group) return;
+            this.selectReportTab('lead', { scroll: false });
+            group.open = true;
+            group.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
 
         // The lead phase of Verify All (or all of "Check the lead against the
@@ -10577,12 +10868,15 @@ function useToolforgeSourceFetcher() {
                 ? { sentences: lead.sentences, body: lead.body, results: [], state: 'pending', bodyTruncated: lead.body.truncated }
                 : null;
             this.reportLeadOnly = leadOnly;
+            this.reportTab = leadOnly ? 'lead' : 'citations';
+            this.reportTabScroll = {};
 
             this.showReportView();
             document.getElementById('verifier-report-results').innerHTML = '';
             document.getElementById('verifier-report-summary').innerHTML = '';
             document.getElementById('verifier-report-actions').innerHTML = '';
             this.resetReportLead();
+            this.renderReportTabs();
             this.applyReportFilters();
             this.updateButtonVisibility();
 
@@ -10824,6 +11118,10 @@ function useToolforgeSourceFetcher() {
 
             // Finalize
             this.reportRunning = false;
+            if (this.reportLead && this.reportLead.state === 'pending') {
+                this.reportLead.state = 'stopped';
+                this.renderReportLead();
+            }
             const finalPhase = leadOnly
                 ? this.t('Lead check complete')
                 : cancelledVerdicts
