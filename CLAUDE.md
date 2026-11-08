@@ -200,6 +200,27 @@ back well under any length threshold.
 
 If the Worker's cap changes again, change `WORKER_CONTENT_CAP`.
 
+### Undecodable sources are a failed fetch, never content (read before touching `encodingDamage`)
+
+Until 2026-11-05 both fetchers decoded every page as UTF-8, so a Windows-1251 /
+KOI8-R page — older Russian sites, and Wayback snapshots of them, whose raw
+`id_` endpoint carries no charset header — reached the model as a wall of
+U+FFFD with a 200 and "content retrieved". The model then sometimes said
+SOURCE UNAVAILABLE and sometimes reported a passage that is in the source
+verbatim as "not mentioned" (ru:Еврейские беженцы [62], reported by an editor).
+
+- **The fix is in the fetchers**: `src/charset.js` in `alex-o-748/public-ai-proxy`
+  and in `alex-o-748/tf-source-fetcher` (same rule in both: BOM > header >
+  `<meta>` > valid-UTF-8 > a Windows-1251/KOI8-R/Windows-1252 guess).
+- **`core/worker.js` is the backstop.** `encodingDamage()` flags text that is
+  mostly U+FFFD (or UTF-8-read-as-Latin-1 mojibake), and `fetchViaProxy()`
+  returns it as `{ content: null, error: UNDECODABLE_SOURCE_ERROR }`. It is not
+  retried (same bytes, same result), but `fetchSourceContent()`'s archive → live
+  and live → Wayback fallbacks run, and with nothing readable the check ends as
+  SOURCE UNAVAILABLE. `classifyFetchError()` buckets it as `undecodable`.
+- `service/run-encoding-audit.js` re-fetches every source URL in a findings CSV
+  and counts what still comes back garbled — run it over a regenerated batch.
+
 ### The positive class is the failing citation (read before quoting a TPR/FPR)
 
 **Positive = ground truth is anything but `Supported`** — `Partially supported`,

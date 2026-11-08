@@ -862,3 +862,59 @@ test('classifyFetchError recognises the messages fetchSourceContent really produ
         globalThis.fetch = realFetch;
     }
 });
+
+// --- Undecodable sources (charset decoding failures) ---
+
+// The start of what the Worker returned for the crjs.ru Wayback snapshot cited
+// by ru:Еврейские беженцы [62] (2026-11-05): Windows-1251 decoded as UTF-8.
+const GARBLED_SOURCE = 'XIX ����������� �������� �������������� ��������� ������� � ��������. ������, �������, 25-29 ���� 2010 �. '.repeat(5);
+const CLEAN_SOURCE = 'Вследствие этой репрессивной акции рухнула, правда, и «черта оседлости». '.repeat(5);
+
+test('encodingDamage: wrong-charset text is garbled; clean text and a stray U+FFFD are not', async () => {
+  const { encodingDamage } = await import('../core/worker.js');
+  assert.equal(encodingDamage(GARBLED_SOURCE).garbled, true);
+  assert.equal(encodingDamage(CLEAN_SOURCE).garbled, false);
+  assert.equal(encodingDamage(CLEAN_SOURCE + '�' + CLEAN_SOURCE).garbled, false);
+  assert.equal(encodingDamage(Buffer.from(CLEAN_SOURCE, 'utf8').toString('latin1')).garbled, true, 'UTF-8 read as Latin-1');
+});
+
+test('fetchSourceContent treats undecodable text as a failed fetch, not as content, and does not retry it', async () => {
+  const { UNDECODABLE_SOURCE_ERROR } = await import('../core/worker.js');
+  const mock = mockFetch(async (url) => {
+    if (url.startsWith('https://archive.org/wayback/available')) {
+      return { ok: true, status: 200, json: async () => ({ archived_snapshots: {} }) };
+    }
+    return { ok: true, status: 200, json: async () => ({ content: GARBLED_SOURCE }) };
+  });
+  try {
+    const result = await fetchSourceContent('https://www.crjs.ru/publish/book080a.php', null, { retry: { sleepFn: async () => {} } });
+    assert.equal(result.content, null);
+    assert.equal(result.error, UNDECODABLE_SOURCE_ERROR);
+    assert.equal(result.status, 200);
+    const proxyCalls = mock.calls.filter(c => c.url.includes('?fetch='));
+    assert.equal(proxyCalls.length, 1, 'same bytes would decode the same way; no retry');
+  } finally {
+    mock.restore();
+  }
+});
+
+test('an undecodable archive snapshot falls back to the live page (the lechaim.ru case)', async () => {
+  const mock = mockFetch(async (url) => {
+    const garbled = url.includes(encodeURIComponent('web.archive.org'));
+    return { ok: true, status: 200, json: async () => ({ content: garbled ? GARBLED_SOURCE : CLEAN_SOURCE }) };
+  });
+  try {
+    const result = await fetchSourceContent(
+      'https://web.archive.org/web/20100301035420/http://www.lechaim.ru/ARHIV/103/madievskiy.htm', null);
+    assert.ok(result.content.includes('черта оседлости'));
+    assert.ok(result.content.startsWith('Source URL: http://www.lechaim.ru/ARHIV/103/madievskiy.htm\n'));
+  } finally {
+    mock.restore();
+  }
+});
+
+test('classifyFetchError gives undecodable sources their own bucket', async () => {
+  const { classifyFetchError, isOurFetchFailure, UNDECODABLE_SOURCE_ERROR, FETCH_ERROR_KINDS: K } = await import('../core/worker.js');
+  assert.equal(classifyFetchError(UNDECODABLE_SOURCE_ERROR), K.UNDECODABLE);
+  assert.equal(isOurFetchFailure(K.UNDECODABLE), false);
+});
