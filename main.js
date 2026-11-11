@@ -4453,8 +4453,6 @@ function useToolforgeSourceFetcher() {
             'Citations',
         'Details':
             'Détails',
-        'Source Verifier is loaded twice on this page, for example from common.js and from a gadget or another script. Only the copy loaded first is running.':
-            'Source Verifier est chargé deux fois sur cette page, par exemple depuis common.js et depuis un gadget ou un autre script. Seule la copie chargée en premier fonctionne.',
         'Edit section':
             'Modifier la section',
         'Back':
@@ -4830,8 +4828,6 @@ function useToolforgeSourceFetcher() {
             'Citas',
         'Details':
             'Detalles',
-        'Source Verifier is loaded twice on this page, for example from common.js and from a gadget or another script. Only the copy loaded first is running.':
-            'Source Verifier está cargado dos veces en esta página, por ejemplo desde common.js y desde un gadget u otro script. Solo funciona la copia cargada primero.',
         'Edit section':
             'Editar la sección',
         'Back':
@@ -5203,8 +5199,6 @@ function useToolforgeSourceFetcher() {
             'Сноски',
         'Details':
             'Подробности',
-        'Source Verifier is loaded twice on this page, for example from common.js and from a gadget or another script. Only the copy loaded first is running.':
-            'Source Verifier загружен на этой странице дважды, например из common.js и из гаджета или другого скрипта. Работает только копия, загруженная первой.',
         'Edit section':
             'Редактировать раздел',
         'Back':
@@ -5584,8 +5578,6 @@ function useToolforgeSourceFetcher() {
             'הערות שוליים',
         'Details':
             'פרטים',
-        'Source Verifier is loaded twice on this page, for example from common.js and from a gadget or another script. Only the copy loaded first is running.':
-            'Source Verifier נטען פעמיים בדף זה, למשל מ־common.js וגם מגאדג׳ט או מסקריפט אחר. רק העותק שנטען ראשון פועל.',
         'Edit section':
             'עריכת הפסקה',
         'Back':
@@ -6047,17 +6039,6 @@ function useToolforgeSourceFetcher() {
             if (mw.config.get('wgAction') !== 'view') return;
 
             this.loadOOUI().then(() => {
-                // Two copies of the script on one page (say, common.js
-                // importing a test version on top of the installed one)
-                // build two sidebars with the same element ids, and each
-                // then renders into the other's: duplicated header buttons,
-                // the other copy's styles, a report half in each. The copy
-                // that comes second stands aside and says why.
-                if (document.getElementById('source-verifier-sidebar')) {
-                    console.warn('[Verifier] Another copy of Source Verifier is already running on this page; this one will not start.');
-                    mw.notify(this.t('Source Verifier is loaded twice on this page, for example from common.js and from a gadget or another script. Only the copy loaded first is running.'), { type: 'warn', autoHide: false });
-                    return;
-                }
                 this.createUI();
                 this.attachEventListeners();
                 this.attachReferenceClickHandlers();
@@ -11533,12 +11514,6 @@ function useToolforgeSourceFetcher() {
         }
     }
     
-    // The same copy imported twice (two importScript lines) stops here; a
-    // different copy is caught in init(), once the first has built its sidebar.
-    if (typeof window !== 'undefined') {
-        if (window.sourceVerifierLoaded) return;
-        window.sourceVerifierLoaded = true;
-    }
     if (typeof mw !== 'undefined' && [0, 2, 118].includes(mw.config.get('wgNamespaceNumber'))) {
         mw.loader.using(['mediawiki.util', 'mediawiki.api', 'oojs-ui-core', 'oojs-ui-widgets', 'oojs-ui-windows', 'oojs-ui.styles.icons-interactions']).then(function() {
             $(function() {
