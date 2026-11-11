@@ -148,10 +148,19 @@ export function nowikiWrap(text) {
 // MediaWiki titles cannot contain = < > [ ] { } | # _, so an article title is
 // already safe to drop into a heading; collapsing whitespace is enough. The
 // citation number comes from DOM text, so it gets filtered.
+//
+// No brackets of any kind in the heading. It used to read
+// `Feedback: Foo [12] (check abc)`, and square brackets make a section
+// impossible to wikilink to — `[[Page#Feedback: Foo [12] (check abc)]]` ends
+// the link at the first `]` — so editors had to hand-edit the anchor to
+// point anyone at a report. Parentheses link fine but went too, so the
+// heading is one plain comma-separated phrase (asked for on the talk page's
+// "Open questions" thread).
 export function buildTalkSectionTitle({ articleTitle, citationNumber, checkId } = {}) {
     const title = String(articleTitle ?? '').replace(/\s+/g, ' ').trim() || 'Unknown article';
     const num = String(citationNumber ?? '').replace(/[^\w.,\s-]/g, '').replace(/\s+/g, ' ').trim();
-    return `Feedback: ${title}${num ? ` [${num}]` : ''} (check ${checkId ?? 'unknown'})`;
+    const id = String(checkId ?? 'unknown').replace(/[^\w-]/g, '') || 'unknown';
+    return `Feedback: ${title}${num ? `, citation ${num}` : ''}, check ${id}`;
 }
 
 // Title of the collapsed box holding the tool's own output, and the label
