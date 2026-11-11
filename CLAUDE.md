@@ -90,7 +90,7 @@ docs/                            # Reference docs + design plans (see docs/READM
 | `buildFeedbackControls()` | Yes/No/Comment row under a result; ratings go to Neon, comments to the talk page (see `docs/worker-logging-reference.md`) |
 | `assessSeverity()` / `showSingleSeverity()` / `rankReportBySeverity()` | Opt-in severity pass (`core/severity.js`'s `runSeverityPass()`) for a flagged verdict: in the single-check view, and as a second phase of Verify All (see "Severity ranking" below) |
 | `applyReportSort()` / `renderReportSeverity()` | Report order: article order, or "Most serious first" by `compareSeverity()` on a severity-ranked report. Moves whole cards and group blocks; never hides one |
-| `articleLead()` / `runReportLeadCheck()` / `renderReportLead()` | The lead check (`core/lead-check.js`): the last phase of Verify All, or all of "Check the lead against the body"; the report's lead section (see "The lead check" below) |
+| `articleLead()` / `runReportLeadCheck()` / `renderReportLead()` | The lead check (`core/lead-check.js`): the last phase of Verify All; the report's lead section (see "The lead check" below) |
 | `findingHtml()` / `toggleFinding()` / `handleFindingClick()` | The one row every report finding uses (citations, groups and their sources, lead sentences): head line, claim and comment clamped while closed, everything else in details opened on demand (see "The report view" below) |
 | `renderReportBar()` / `updateReportProgress()` / `renderReportSummary()` | The report's bar (status and Stop while a run is going; Back and Copy report after), and the citations section's status, distribution bar, filter chips and sort order |
 | `getCountedReportUnits()` | `getReportUnits()` minus set-aside lead citations: what the summary, the severity ranking and the exports count |
@@ -528,7 +528,8 @@ Rules to keep if you touch it:
 - **In the report it is a section above the citations**, with the same header
   as theirs, and closed: its results arriving never move the citation rows.
   Open, it holds its rows, the covered sentences and the set-aside citations.
-  It is open when it is the whole report ("Check the lead against the body").
+  It runs only as part of Verify All: the main view's separate "Check the
+  lead against the body" button was removed (2026-11-11).
   See "The report view" below.
 - **Not yet validated.** `benchmark/dataset_lead.json` (separate from
   `dataset.json`, like WiCE) is built by `npm run lead:extract`; its labels are
@@ -566,8 +567,8 @@ from three pieces, and a new check reuses all of them:
 - **The bar** (`#verifier-report-bar`). While a run is going: what it is doing,
   a thin progress line and Stop. After: Back and a Copy report menu (Wikitext,
   Plain text). **The report view holds no run buttons.** Back returns to the
-  main view, where Verify All Citations and "Check the lead against the body"
-  are, with "Back to Report" beside them. (Before this there was no way out of
+  main view, where Verify All Citations is, with "Back to Report" beside
+  it. (Before this there was no way out of
   a report at all: `showSingleCitationView()` was never called.)
 - **One section per check** (`.sv-section`, a `<details>`): a chevron, the
   check's name and a few words of status, then its rows. The citations'

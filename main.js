@@ -4445,8 +4445,8 @@ function useToolforgeSourceFetcher() {
             '« Vérifier toutes les citations » compare aussi chaque phrase du résumé introductif au reste de l\'article, car une affirmation du résumé introductif peut être sourcée dans le corps de l\'article. Une citation du résumé introductif qui ne soutient qu\'une partie de son affirmation est alors mise de côté plutôt que comptée comme un problème. Quelques appels supplémentaires au modèle par article.',
         'Check the lead against the body':
             'Comparer le résumé introductif au corps de l\'article',
-        'This citation is in the lead, where a statement can be supported by the article body instead of its own citation. This verdict may only mean the source backs part of the sentence. "Check the lead against the body" checks it against the body.':
-            'Cette citation se trouve dans le résumé introductif, où une affirmation peut être sourcée par le corps de l\'article plutôt que par sa propre citation. Ce verdict peut seulement signifier que la source ne soutient qu\'une partie de la phrase. « Comparer le résumé introductif au corps de l\'article » la vérifie par rapport au corps de l\'article.',
+        'This citation is in the lead, where a statement can be supported by the article body instead of its own citation. This verdict may only mean the source backs part of the sentence. Verify All Citations also checks the lead against the body.':
+            'Cette citation se trouve dans le résumé introductif, où une affirmation peut être sourcée par le corps de l\'article plutôt que par sa propre citation. Ce verdict peut seulement signifier que la source ne soutient qu\'une partie de la phrase. « Vérifier toutes les citations » compare aussi le résumé introductif au corps de l\'article.',
         'Set aside: lead':
             'Mise de côté : résumé introductif',
         'In the lead, a statement can be supported by the article body instead of its own citation, so a lead citation that backs only part of its claim, or none of it, is not counted as a problem. The lead check above covers what the body says. These are worth a look when the claim is contentious.':
@@ -4820,8 +4820,8 @@ function useToolforgeSourceFetcher() {
             '«Verificar todas las citas» también compara cada oración de la introducción con el resto del artículo, ya que una afirmación de la introducción puede estar referenciada en el cuerpo del artículo. Una cita de la introducción que solo respalda parte de su afirmación se aparta entonces en lugar de contarse como un problema. Supone algunas llamadas adicionales al modelo por artículo.',
         'Check the lead against the body':
             'Comparar la introducción con el cuerpo del artículo',
-        'This citation is in the lead, where a statement can be supported by the article body instead of its own citation. This verdict may only mean the source backs part of the sentence. "Check the lead against the body" checks it against the body.':
-            'Esta cita está en la introducción, donde una afirmación puede estar respaldada por el cuerpo del artículo en lugar de por su propia cita. Este veredicto puede significar solo que la fuente respalda parte de la oración. «Comparar la introducción con el cuerpo del artículo» la contrasta con el cuerpo del artículo.',
+        'This citation is in the lead, where a statement can be supported by the article body instead of its own citation. This verdict may only mean the source backs part of the sentence. Verify All Citations also checks the lead against the body.':
+            'Esta cita está en la introducción, donde una afirmación puede estar respaldada por el cuerpo del artículo en lugar de por su propia cita. Este veredicto puede significar solo que la fuente respalda parte de la oración. «Verificar todas las citas» también compara la introducción con el cuerpo del artículo.',
         'Set aside: lead':
             'Apartada: introducción',
         'In the lead, a statement can be supported by the article body instead of its own citation, so a lead citation that backs only part of its claim, or none of it, is not counted as a problem. The lead check above covers what the body says. These are worth a look when the claim is contentious.':
@@ -5191,8 +5191,8 @@ function useToolforgeSourceFetcher() {
             '«Проверить все сноски» также сверяет каждое предложение преамбулы с остальной статьёй: утверждение в преамбуле может подтверждаться источниками в основном тексте. Сноска в преамбуле, подтверждающая лишь часть утверждения, тогда откладывается, а не считается проблемой. Несколько дополнительных обращений к модели на статью.',
         'Check the lead against the body':
             'Сверить преамбулу с основным текстом',
-        'This citation is in the lead, where a statement can be supported by the article body instead of its own citation. This verdict may only mean the source backs part of the sentence. "Check the lead against the body" checks it against the body.':
-            'Эта сноска стоит в преамбуле, где утверждение может подтверждаться основным текстом статьи, а не собственной сноской. Этот вердикт может означать лишь, что источник подтверждает часть предложения. «Сверить преамбулу с основным текстом» проверит его по основному тексту.',
+        'This citation is in the lead, where a statement can be supported by the article body instead of its own citation. This verdict may only mean the source backs part of the sentence. Verify All Citations also checks the lead against the body.':
+            'Эта сноска стоит в преамбуле, где утверждение может подтверждаться основным текстом статьи, а не собственной сноской. Этот вердикт может означать лишь, что источник подтверждает часть предложения. «Проверить все сноски» также сверяет преамбулу с основным текстом.',
         'Set aside: lead':
             'Отложено: преамбула',
         'In the lead, a statement can be supported by the article body instead of its own citation, so a lead citation that backs only part of its claim, or none of it, is not counted as a problem. The lead check above covers what the body says. These are worth a look when the claim is contentious.':
@@ -5570,8 +5570,8 @@ function useToolforgeSourceFetcher() {
             '״בדיקת כל הערות השוליים״ בודקת גם כל משפט בפתיח מול שאר הערך, כי טענה בפתיח יכולה להיות מגובה במקורות בגוף הערך. הערת שוליים בפתיח שתומכת רק בחלק מהטענה מוצגת אז בנפרד ואינה נספרת כבעיה. כמה קריאות נוספות למודל לכל ערך.',
         'Check the lead against the body':
             'השוואת הפתיח לגוף הערך',
-        'This citation is in the lead, where a statement can be supported by the article body instead of its own citation. This verdict may only mean the source backs part of the sentence. "Check the lead against the body" checks it against the body.':
-            'הערת השוליים הזו נמצאת בפתיח, שבו טענה יכולה להיות מגובה בגוף הערך במקום בהערת שוליים משלה. ייתכן שהקביעה הזו אומרת רק שהמקור תומך בחלק מהמשפט. ״השוואת הפתיח לגוף הערך״ בודקת אותו מול גוף הערך.',
+        'This citation is in the lead, where a statement can be supported by the article body instead of its own citation. This verdict may only mean the source backs part of the sentence. Verify All Citations also checks the lead against the body.':
+            'הערת השוליים הזו נמצאת בפתיח, שבו טענה יכולה להיות מגובה בגוף הערך במקום בהערת שוליים משלה. ייתכן שהקביעה הזו אומרת רק שהמקור תומך בחלק מהמשפט. ״בדיקת כל הערות השוליים״ משווה גם את הפתיח לגוף הערך.',
         'Set aside: lead':
             'הוצג בנפרד: פתיח',
         'In the lead, a statement can be supported by the article body instead of its own citation, so a lead citation that backs only part of its claim, or none of it, is not counted as a problem. The lead check above covers what the body says. These are worth a look when the claim is contentious.':
@@ -8075,13 +8075,6 @@ function useToolforgeSourceFetcher() {
                 icon: 'articles'
             });
 
-            // An uncited lead sentence has no citation to click, so the lead
-            // check also runs on its own.
-            this.buttons.checkLead = new OO.ui.ButtonWidget({
-                label: this.t('Check the lead against the body'),
-                flags: ['progressive']
-            });
-
             this.buttons.stopAll = new OO.ui.ButtonWidget({
                 label: this.t('Stop'),
                 flags: ['destructive'],
@@ -8202,9 +8195,6 @@ function useToolforgeSourceFetcher() {
                         container.appendChild(this.buttons.verify.$element[0]);
                     }
                     container.appendChild(this.buttons.verifyAll.$element[0]);
-                    if (this.leadCheckEnabled && this.articleLead()) {
-                        container.appendChild(this.buttons.checkLead.$element[0]);
-                    }
 
                     if (this.hasReport && !this.reportMode) {
                         container.appendChild(this.buttons.backToReport.$element[0]);
@@ -8959,10 +8949,6 @@ function useToolforgeSourceFetcher() {
                 this.verifyAllCitations();
             });
 
-            this.buttons.checkLead.on('click', () => {
-                this.verifyAllCitations({ leadOnly: true });
-            });
-
             this.buttons.stopAll.on('click', () => {
                 this.reportCancelled = true;
             });
@@ -9208,7 +9194,7 @@ function useToolforgeSourceFetcher() {
                 const leadNoteEl = document.getElementById('verifier-lead-note');
                 if (leadNoteEl) {
                     leadNoteEl.textContent = leadDemoted
-                        ? this.t('This citation is in the lead, where a statement can be supported by the article body instead of its own citation. This verdict may only mean the source backs part of the sentence. "Check the lead against the body" checks it against the body.')
+                        ? this.t('This citation is in the lead, where a statement can be supported by the article body instead of its own citation. This verdict may only mean the source backs part of the sentence. Verify All Citations also checks the lead against the body.')
                         : '';
                 }
 
