@@ -362,3 +362,17 @@ test('splitSentences treats a spaced ellipsis as an elision, not a sentence end'
 test('MAINTENANCE_MARKER_RE strips common ru.wikipedia markers', () => {
   assert.equal('Недавно [когда?] и [нет АИ] тут [источник не указан 100 дней]'.replace(MAINTENANCE_MARKER_RE, ''), 'Недавно  и  тут ');
 });
+
+test('claimBounds() is where extractClaimText() reads its claim: the text between them is the claim', async () => {
+    const { JSDOM } = await import('jsdom');
+    const { claimBounds, textNodesBetween, extractClaimText } = await import('../core/claim.js');
+    const doc = new JSDOM('<p>First.<sup class="reference"><a id="a">[1]</a></sup> Second <style>.x{}</style>claim.'
+        + '<sup class="reference"><a id="b">[2]</a></sup><sup class="reference"><a id="c">[3]</a></sup></p>').window.document;
+    for (const id of ['b', 'c']) {
+        const bounds = claimBounds(doc.getElementById(id));
+        const text = textNodesBetween(bounds.startAfter, bounds.endBefore, bounds.root).map(n => n.data).join('');
+        assert.equal(text.replace(/\[\d+\]/g, '').replace(/\s+/g, ' ').trim(), extractClaimText(doc.getElementById(id)));
+    }
+    assert.equal(extractClaimText(doc.getElementById('c')), 'Second claim.', 'a group shares its claim, and <style> is not prose');
+    assert.equal(claimBounds(doc.createElement('a')), null);
+});

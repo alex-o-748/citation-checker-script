@@ -7,6 +7,7 @@ import { JSDOM } from 'jsdom';
 
 import { LEAD_OUTCOMES } from '../core/lead-check.js';
 import { mergeReportUnits } from '../core/groups.js';
+import { claimBounds, textNodesBetween } from '../core/claim.js';
 
 const MAIN_JS = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'main.js');
 
@@ -35,7 +36,8 @@ const METHODS = [
     'verdictHeadHtml(result) {', 'citationRefHtml(result) {', 'truncationNoteHtml(result, text) {',
     'appendFindingLinks(row, { editRef = null, url = null } = {}) {', 'sourceHost(url) {', 'appendFindingFeedback(row, result) {',
     'setFindingComment(card, text) {', 'toggleFinding(card, open = !card.classList.contains(\'sv-expanded\')) {',
-    'isFindingSummaryClick(card, e) {', 'handleFindingClick(e) {', 'revealReportCard(el) {', 'attachRefScrollHandler(el, refElement) {',
+    'isFindingSummaryClick(card, e) {', 'handleFindingClick(e) {', 'revealReportCard(el) {', 'attachRefScrollHandler(el, refElement, claimText) {', 'showClaimInArticle(refElement, claimText) {',
+    'highlightClaim(refElement, claim) {', 'textRange(nodes, text) {', 'paintHighlight(range) {', 'highlightBlock(block) {',
     'buildSoloCard(result) {', 'buildGroupBlock(firstResult) {', 'renderGroupCollectiveResult(result) {', 'hideGroupCollectiveSlot(groupId) {',
     'buildGroupRow(result) {', 'quoteViewOf(result) {', 'quoteHtml(view) {', 'verdictClassFor(verdict) {', 'reasonTypeLabel(reasonType) {',
     'resetReportLead() {', 'leadDemotedCards() {', 'renderReportLead() {', 'leadFindings(lead) {', 'leadStatusText(lead) {',
@@ -48,11 +50,14 @@ function harness() {
     const src = fs.readFileSync(MAIN_JS, 'utf8');
     const methods = METHODS.map(sig => extractMethod(src, sig)).join('\n');
     const dom = new JSDOM(`<!DOCTYPE html><body><div id="source-verifier-sidebar">${reportMarkup(src)}</div>`
-        + '<p id="article"><sup class="reference"><a id="ref1" href="#n1">[1]</a></sup><sup class="reference"><a id="ref2" href="#n2">[2]</a></sup></p></body>');
+        + '<p id="article">Earlier claim.<sup class="reference"><a id="ref0" href="#n0">[0]</a></sup> The bank reported a solvency ratio of  13.8%, above the 12% statutory minimum, as late as 30 September.'
+        + '<sup class="reference"><a id="ref1" href="#n1">[1]</a></sup><sup class="reference"><a id="ref2" href="#n2">[2]</a></sup></p></body>');
     const { window } = dom;
+    window.Highlight = function (range) { this.range = range; };
     const scrolled = [];
     window.HTMLElement.prototype.scrollIntoView = function () { scrolled.push(this.id || this.className); };
-    const deps = { document: window.document, window, URL: window.URL, CSS: { escape: s => s }, LEAD_OUTCOMES, SKIPPED_VERDICT: 'SKIPPED', mergeReportUnits };
+    const painted = [];
+    const deps = { document: window.document, window, URL: window.URL, CSS: { escape: s => s, highlights: { set: (name, h) => painted.push([name, h.range.toString()]), delete() {} } }, LEAD_OUTCOMES, SKIPPED_VERDICT: 'SKIPPED', mergeReportUnits, claimBounds, textNodesBetween, Highlight: window.Highlight };
     const Harness = new Function(...Object.keys(deps), `
         class Harness {
             constructor() {
@@ -64,7 +69,7 @@ function harness() {
             t(en, params = {}) { return en.replace(/\\{(\\w+)\\}/g, (m, k) => (k in params ? String(params[k]) : m)); }
             buildEditUrl() { return 'https://wiki.example/edit'; }
             getRevisionPermalinkUrl(id) { return 'https://wiki.example/rev/' + id; }
-            clearHighlights() {}
+            clearHighlights() { this.highlighted = null; document.querySelectorAll('.claim-highlight').forEach(el => el.classList.remove('claim-highlight')); }
             scrollToLeadSentence(index) { this.scrolledLead = index; }
             toggleReportFilter() {}
             setReportSort() {}
@@ -82,7 +87,7 @@ ${methods}
     const doc = window.document;
     doc.getElementById('verifier-report-view').addEventListener('click', e => h.handleFindingClick(e));
     const click = el => el.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
-    return { h, doc, click, scrolled };
+    return { h, doc, click, scrolled, painted, window };
 }
 
 const solo = (extra = {}) => ({
@@ -333,4 +338,49 @@ test('totals are said once: the section\'s status, the chips, a note for hidden 
         ['BUTTON', 'Most serious first', 'true'],
     ], 'the order is two pills, like the chips');
     assert.ok(sort[1].classList.contains('sv-chip-selected'));
+});
+
+// --- Highlighting the claim, and one open row ---
+
+test('opening a row highlights exactly its claim in the article, the same words extractClaimText() reads', () => {
+    const { h, doc, click, painted } = harness();
+    const row = h.buildSoloCard(solo({ refElement: doc.getElementById('ref1') }));
+    doc.getElementById('verifier-report-results').appendChild(row);
+    click(row.querySelector('.sv-finding-claim'));
+    assert.deepEqual(painted, [['sv-claim', 'The bank reported a solvency ratio of  13.8%, above the 12% statutory minimum, as late as 30 September.']],
+        'from the previous citation to this one, and not the earlier claim');
+
+    // Sentence scope: the claim is only the last sentence, and only it is painted.
+    const range = h.textRange(textNodesBetween(...Object.values(claimBounds(doc.getElementById('ref1')))), 'as late as 30 September.');
+    assert.equal(range.toString(), 'as late as 30 September.');
+    assert.equal(h.textRange([doc.getElementById('article').firstChild], 'Not in the page'), null);
+});
+
+test('a claim that cannot be found in the page highlights its paragraph instead', () => {
+    const { h, doc, painted } = harness();
+    h.highlightClaim(doc.getElementById('ref1'), 'Words the page does not have');
+    assert.deepEqual(painted, []);
+    assert.ok(doc.getElementById('article').classList.contains('claim-highlight'));
+});
+
+test('one row is open at a time; opening a group\'s source keeps its group open', () => {
+    const { h, doc, click } = harness();
+    const results = doc.getElementById('verifier-report-results');
+    const a = h.buildSoloCard(solo({ citationNumber: '1', refElement: doc.getElementById('ref1') }));
+    const b = h.buildSoloCard(solo({ citationNumber: '2', refElement: doc.getElementById('ref2') }));
+    const member = n => solo({ citationNumber: n, groupId: 'g1', groupSize: 2, groupCitationNumbers: ['1', '2'], refElement: doc.getElementById(`ref${n}`) });
+    const group = h.buildGroupBlock(member('1'));
+    const source = h.buildGroupRow(member('2'));
+    group.querySelector('.verifier-report-group-rows').appendChild(source);
+    results.append(a, b, group);
+    const open = () => [a, b, group, source].map(r => r.classList.contains('sv-expanded'));
+
+    click(a.querySelector('.sv-finding-claim'));
+    click(b.querySelector('.sv-finding-claim'));
+    assert.deepEqual(open(), [false, true, false, false], 'opening b closed a');
+    click(group.querySelector(':scope > .sv-finding-claim'));
+    click(headOf(source).querySelector('.sv-finding-headline'));
+    assert.deepEqual(open(), [false, false, true, true], 'the group stays open around its source');
+    click(a.querySelector('.sv-finding-claim'));
+    assert.deepEqual(open(), [true, false, false, false]);
 });

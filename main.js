@@ -1377,6 +1377,21 @@ function textBetween(startAfter, endBefore, root) {
     return text;
 }
 
+// The text nodes textBetween() reads, in the same order and with the same
+// non-prose rule: for a caller that has to point at the text in the page
+// rather than copy it.
+function textNodesBetween(startAfter, endBefore, root) {
+    let node = startAfter ? followingSkippingSubtree(startAfter, root) : root.firstChild;
+    const nodes = [];
+    while (node && node !== endBefore) {
+        if (node.nodeType === TEXT_NODE) nodes.push(node);
+        node = isNonProse(node) && !node.contains(endBefore)
+            ? followingSkippingSubtree(node, root)
+            : following(node, root);
+    }
+    return nodes;
+}
+
 // True iff the DOM range strictly between two .reference wrapper elements (in
 // document order: refA before refB) contains no non-whitespace text. This is
 // the rule that defines whether two adjacent citations attach to the same
@@ -1556,21 +1571,16 @@ function isClaimTooShort(claimText, minLength = MIN_CLAIM_LENGTH) {
 // language's abbreviations, so "А. С. Пушкин" or "Dr. Smith" isn't cut in two.
 // It is injected rather than imported because sentencex is a native Node
 // module and this file also runs in the browser, inlined into main.js.
-function extractClaimText(refElement, { scope = 'paragraph', splitLastSentence = lastSentence } = {}) {
+// Where a citation's claim lies in the page: the text between `startAfter`
+// (the previous citation that cites something else, or null for the start of
+// the container) and `endBefore` (the citation itself), within `root`. Null
+// when the citation is in no container, or is not in a .reference wrapper.
+// extractClaimText() reads its claim from here, and the userscript highlights
+// the same span, so the two can never disagree about what the claim is.
+function claimBounds(refElement) {
     const container = refElement.closest('p, li, td, div, section');
-    if (!container) {
-        return '';
-    }
-
-    // Get the current reference wrapper element
     const currentRef = refElement.closest('.reference');
-    if (!currentRef) {
-        // Fallback: return container text
-        return container.textContent
-            .replace(/\[\d+\]/g, '')
-            .replace(/\s+/g, ' ')
-            .trim();
-    }
+    if (!container || !currentRef) return null;
 
     // Find all references in the same container
     const refsInContainer = Array.from(container.querySelectorAll('.reference'));
@@ -1592,11 +1602,31 @@ function extractClaimText(refElement, { scope = 'paragraph', splitLastSentence =
         }
     }
 
-    // Extract the text from the boundary to the current reference. With no
-    // previous-ref boundary, that means the whole container up to this point.
-    let claimText = claimStartNode
-        ? textBetween(claimStartNode, currentRef, commonAncestor(claimStartNode, currentRef))
-        : textBetween(null, currentRef, container);
+    // From the boundary to the current reference. With no previous-ref
+    // boundary, that means the whole container up to this point.
+    return claimStartNode
+        ? { startAfter: claimStartNode, endBefore: currentRef, root: commonAncestor(claimStartNode, currentRef) }
+        : { startAfter: null, endBefore: currentRef, root: container };
+}
+
+function extractClaimText(refElement, { scope = 'paragraph', splitLastSentence = lastSentence } = {}) {
+    const container = refElement.closest('p, li, td, div, section');
+    if (!container) {
+        return '';
+    }
+
+    // Get the current reference wrapper element
+    const currentRef = refElement.closest('.reference');
+    if (!currentRef) {
+        // Fallback: return container text
+        return container.textContent
+            .replace(/\[\d+\]/g, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+    }
+
+    const bounds = claimBounds(refElement);
+    let claimText = textBetween(bounds.startAfter, bounds.endBefore, bounds.root);
 
     // Clean up the text. Whitespace must be normalized BEFORE the marker
     // strip (Wikipedia's {{failed verification}} et al. use white-space:nowrap
@@ -7901,6 +7931,10 @@ function useToolforgeSourceFetcher() {
                     background-color: var(--sv-accent);
                     color: white;
                 }
+                ::highlight(sv-claim) {
+                    background-color: var(--sv-warn-bg);
+                    color: inherit;
+                }
                 .claim-highlight {
                     background-color: var(--sv-warn-bg);
                     border-inline-start: 3px solid var(--sv-accent-fg);
@@ -8290,6 +8324,8 @@ function useToolforgeSourceFetcher() {
                         if (card) {
                             this.revealReportCard(card);
                             card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            this.clearHighlights();
+                            this.highlightClaim(refElement, match.claimText);
                             card.classList.add('sv-finding-flash');
                             setTimeout(() => card.classList.remove('sv-finding-flash'), 1500);
                         }
@@ -8610,13 +8646,72 @@ function useToolforgeSourceFetcher() {
             return fetchSourceContent(url, pageNum, overrides);
         }
         
+        // Highlights the claim a citation is checked against: exactly the
+        // words claimBounds() says the claim is (core/claim.js, the same span
+        // extractClaimText() reads), or only its last sentence when that is
+        // the claim scope. Painted with the CSS Custom Highlight API, which
+        // marks text without touching the article's markup. A browser without
+        // it, or a claim that can't be found in the page, gets the whole
+        // paragraph highlighted, as before.
         highlightClaim(refElement, claim) {
-            const parentElement = refElement.closest('p, li, td, div');
-            if (parentElement && !parentElement.classList.contains('claim-highlight')) {
-                parentElement.classList.add('claim-highlight');
-            }
+            const bounds = claimBounds(refElement);
+            const nodes = bounds ? textNodesBetween(bounds.startAfter, bounds.endBefore, bounds.root) : [];
+            if (this.paintHighlight(this.textRange(nodes, claim))) return;
+            this.highlightBlock(refElement.closest('p, li, td, div'));
         }
-        
+
+        // The same for a lead sentence: its words within its paragraph,
+        // leaving out citation markers and other non-prose.
+        highlightSentence(block, text) {
+            const nodes = [];
+            const walker = document.createTreeWalker(block, NodeFilter.SHOW_TEXT, {
+                acceptNode: n => (n.parentElement && n.parentElement.closest('.reference, style, script, .noprint'))
+                    ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT
+            });
+            for (let n = walker.nextNode(); n; n = walker.nextNode()) nodes.push(n);
+            if (this.paintHighlight(this.textRange(nodes, text))) return;
+            this.highlightBlock(block);
+        }
+
+        // A Range over `text` within `nodes`, matched with whitespace
+        // collapsed (as extractClaimText() collapses it), at its last
+        // occurrence, since a claim ends at its citation. With no `text`,
+        // or none found, null.
+        textRange(nodes, text) {
+            const target = String(text || '').replace(/\s+/g, ' ').trim();
+            if (!target || !nodes.length) return null;
+            let flat = '';
+            const at = [];
+            for (const node of nodes) {
+                const data = node.data;
+                for (let i = 0; i < data.length; i++) {
+                    if (/\s/.test(data[i])) {
+                        if (flat && !flat.endsWith(' ')) { flat += ' '; at.push([node, i]); }
+                    } else {
+                        flat += data[i];
+                        at.push([node, i]);
+                    }
+                }
+            }
+            const start = flat.lastIndexOf(target);
+            if (start < 0) return null;
+            const end = at[start + target.length - 1];
+            const range = document.createRange();
+            range.setStart(at[start][0], at[start][1]);
+            range.setEnd(end[0], end[1] + 1);
+            return range;
+        }
+
+        paintHighlight(range) {
+            if (!range || typeof CSS === 'undefined' || !CSS.highlights || typeof Highlight !== 'function') return false;
+            CSS.highlights.set('sv-claim', new Highlight(range));
+            return true;
+        }
+
+        highlightBlock(block) {
+            if (block && !block.classList.contains('claim-highlight')) block.classList.add('claim-highlight');
+        }
+
         clearHighlights() {
             document.querySelectorAll('.reference.verifier-active').forEach(el => {
                 el.classList.remove('verifier-active');
@@ -8625,6 +8720,7 @@ function useToolforgeSourceFetcher() {
             document.querySelectorAll('.claim-highlight').forEach(el => {
                 el.classList.remove('claim-highlight');
             });
+            if (typeof CSS !== 'undefined' && CSS.highlights) CSS.highlights.delete('sv-claim');
         }
         
         makeResizable() {
@@ -9594,17 +9690,22 @@ function useToolforgeSourceFetcher() {
             }
         }
 
-        // Opening a card shows its citation in the article; closing it leaves
-        // the article where it is.
-        attachRefScrollHandler(el, refElement) {
+        // Opening a row shows its citation in the article, with the claim
+        // highlighted; closing it leaves the article where it is.
+        attachRefScrollHandler(el, refElement, claimText) {
             if (!refElement) return;
             el.addEventListener('click', (e) => {
                 if (!this.isFindingSummaryClick(el, e) || el.classList.contains('sv-expanded')) return;
-                refElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                this.clearHighlights();
-                const parentRef = refElement.closest('.reference');
-                if (parentRef) parentRef.classList.add('verifier-active');
+                this.showClaimInArticle(refElement, claimText);
             });
+        }
+
+        showClaimInArticle(refElement, claimText) {
+            refElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            this.clearHighlights();
+            const parentRef = refElement.closest('.reference');
+            if (parentRef) parentRef.classList.add('verifier-active');
+            if (claimText) this.highlightClaim(refElement, claimText);
         }
 
         renderReportCard(result, index) {
@@ -9657,7 +9758,7 @@ function useToolforgeSourceFetcher() {
             const actionable = result.verdict === 'NOT SUPPORTED' || result.verdict === 'PARTIALLY SUPPORTED' || result.verdict === 'SOURCE UNAVAILABLE';
             this.appendFindingLinks(row, { editRef: actionable ? result.refElement : null, url: result.url });
             this.appendFindingFeedback(row, result);
-            this.attachRefScrollHandler(row, result.refElement);
+            this.attachRefScrollHandler(row, result.refElement, result.claimText);
             return row;
         }
 
@@ -9680,7 +9781,7 @@ function useToolforgeSourceFetcher() {
             // One "Edit section" for the group: its members are in one
             // section by definition.
             this.appendFindingLinks(groupEl, { editRef: firstResult.refElement });
-            this.attachRefScrollHandler(groupEl, firstResult.refElement);
+            this.attachRefScrollHandler(groupEl, firstResult.refElement, firstResult.claimText);
             return groupEl;
         }
 
@@ -9754,7 +9855,7 @@ function useToolforgeSourceFetcher() {
             });
             this.appendFindingLinks(row, { url: result.url });
             this.appendFindingFeedback(row, result);
-            this.attachRefScrollHandler(row, result.refElement);
+            this.attachRefScrollHandler(row, result.refElement, result.claimText);
             return row;
         }
 
@@ -10599,7 +10700,7 @@ function useToolforgeSourceFetcher() {
             if (!block || !block.isConnected) return;
             block.scrollIntoView({ behavior: 'smooth', block: 'center' });
             this.clearHighlights();
-            block.classList.add('claim-highlight');
+            this.highlightSentence(block, sentence.text);
         }
 
         // ========================================
@@ -10712,7 +10813,15 @@ function useToolforgeSourceFetcher() {
             el.textContent = text;
         }
 
+        // One row open at a time: opening a row closes any other, except the
+        // group it belongs to (or the sources inside it, if it is a group).
         toggleFinding(card, open = !card.classList.contains('sv-expanded')) {
+            if (open) {
+                const view = card.closest('#verifier-report-view') || document;
+                view.querySelectorAll('.sv-finding.sv-expanded').forEach(other => {
+                    if (other !== card && !other.contains(card) && !card.contains(other)) this.toggleFinding(other, false);
+                });
+            }
             const details = card.querySelector(':scope > .sv-finding-details');
             const toggle = card.querySelector(':scope > .sv-finding-head > .sv-finding-toggle');
             card.classList.toggle('sv-expanded', open);

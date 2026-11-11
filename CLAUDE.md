@@ -602,9 +602,16 @@ Rules to keep:
   moved whichever was under the pointer and ran on past the list into the
   lead section. `tests/styles.test.js` fails if anything in the report scrolls
   on its own again, a quote in a row included.
-- **Opening a row shows its citation in the article** (as clicking a card
-  always did); closing it doesn't. An open row closes only from its head
-  line, so its text can be read and selected.
+- **Opening a row shows its citation in the article**, with exactly the
+  claim's words highlighted; closing it doesn't. An open row closes only from
+  its head line, so its text can be read and selected. **One row is open at a
+  time**: opening one closes any other, except the group it belongs to.
+- **The highlight is the claim, not the paragraph** (`highlightClaim()`, in
+  both views). It paints the span `core/claim.js`'s `claimBounds()` names, the
+  same one `extractClaimText()` reads (narrowed to the last sentence under
+  sentence scope), with the CSS Custom Highlight API, so the article's markup
+  is never touched. Where that API is missing or the words can't be found,
+  the whole paragraph is highlighted, as before.
 - **Shared markup is restyled, not forked.** The quote, the subclaim list and
   the feedback controls are the single check's own (`quoteHtml()`,
   `severitySubclaimsHtml()`, `buildFeedbackControls()`); rules scoped to
