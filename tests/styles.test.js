@@ -374,3 +374,11 @@ test('in the report a verdict\'s colour marks only stripes, the bar and dots', (
   }
   assert.deepEqual(offenders, []);
 });
+
+// A closed row shows three lines of the model's rationale: at two, about 87%
+// of the benchmark's rationales (median 227 characters) were cut mid-sentence.
+test('a closed report row shows three lines of the rationale', () => {
+  const rule = generateCss().match(/\.sv-finding-comment \{([^{}]*)\}/);
+  assert.ok(rule, 'no rule for the comment line');
+  assert.match(rule[1], /-webkit-line-clamp: 3;/);
+});

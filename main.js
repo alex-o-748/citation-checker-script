@@ -7480,7 +7480,7 @@ function useToolforgeSourceFetcher() {
                 .sv-finding-comment {
                     display: -webkit-box;
                     -webkit-box-orient: vertical;
-                    -webkit-line-clamp: 2;
+                    -webkit-line-clamp: 3;
                     margin-top: 2px;
                     overflow: hidden;
                     font-size: 12px;
@@ -10611,7 +10611,7 @@ function useToolforgeSourceFetcher() {
         // whatever check comes next. Closed, a row is three things in three
         // text styles: a head line (the reference and verdict, strong; a few
         // words of qualification such as the reason and the severity, quiet),
-        // the claim on one line, and the model's comment on two, quiet. Its
+        // the claim on one line, and the model's comment on three, quiet. Its
         // verdict's colour is its stripe and nothing else. Everything else is
         // in its details, one click away: the full claim and comment, the
         // quote, the failing subclaims, the caveats, and the links to edit

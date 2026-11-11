@@ -576,7 +576,7 @@ from three pieces, and a new check reuses all of them:
   starts closed, so its results arriving never move the citation rows.
 - **One row per finding** (`findingHtml()`): a head line (reference, verdict,
   then a few quiet words such as the reason and the severity label), the claim
-  on one line and the model's comment on two. Everything else is in its
+  on one line and the model's comment on three. Everything else is in its
   **details**, opened by a click: the full claim and comment, the quote, the
   failing subclaims, caveats (a truncated source), and the links (Edit
   section, the source by its host, Was this right?). A group is one row whose
