@@ -36,7 +36,7 @@ function harness(bodyHtml = '') {
         'leadCheckHtml(lead) {',
         'leadFindingCardHtml(r) {',
         'findingHtml({',
-        'verdictPillHtml(cls, label) {',
+        'verdictLabelHtml(label) {',
         'leadReportLines(format) {',
         'escapeHtml(str) {',
         'escapeWikitableCell(str) {',
@@ -114,7 +114,7 @@ const results = [
     { index: 3, text: sentences[3].text, verdict: null, outcome: null, error: 'error' },
 ];
 
-test('the lead panel\'s line says the check\'s state; inside, a card per finding and the covered sentences folded away', () => {
+test('the lead section\'s status says the check\'s state; inside, a row per finding and the covered sentences folded away', () => {
     const { h, doc } = harness();
     assert.equal(h.leadStatusText({ sentences, results: [], state: 'pending' }), 'runs after the citations');
     assert.equal(h.leadStatusText({ sentences, results: results.slice(0, 2), state: 'running' }), 'checking, 2 of 4');
@@ -125,12 +125,13 @@ test('the lead panel\'s line says the check\'s state; inside, a card per finding
     assert.match(done.textContent, /only the sections closest to the lead were sent/);
     assert.match(done.textContent, /1 lead sentence could not be checked\./);
     const cards = [...done.querySelectorAll('.sv-finding.sv-lead-finding')];
-    assert.deepEqual(cards.map(c => [c.dataset.leadIndex, c.querySelector('.report-card-verdict').textContent]), [
+    assert.deepEqual(cards.map(c => [c.dataset.leadIndex, c.querySelector('.sv-verdict').textContent]), [
         ['1', 'Not covered in the body'],
         ['2', 'Contradicts the body'],
     ]);
     assert.ok(cards[0].classList.contains('verdict-partial'));
     assert.ok(cards[1].classList.contains('verdict-not-supported'), 'a contradiction gets the red stripe');
+    assert.equal(done.querySelector('.sv-rows').children.length, 2, 'the rows are one list');
     assert.equal(cards[0].querySelector('.sv-finding-claim').textContent, 'She founded <b>an</b> institute.', 'escaped, not markup');
     assert.equal(cards[0].querySelector('.sv-finding-comment').textContent, 'Not in the body.');
     assert.equal(cards[0].querySelector('.sv-quote'), null, 'no located quote, nothing shown');

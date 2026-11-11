@@ -4394,8 +4394,6 @@ function useToolforgeSourceFetcher() {
         'Could not record that, sorry.': 'Impossible d’enregistrer, désolé.',
         'Comment': 'Commenter',
         'Edit Section': 'Modifier la section',
-        'Copy Report (Wikitext)': 'Copier le rapport (wikicode)',
-        'Copy Report (Plain Text)': 'Copier le rapport (texte brut)',
 
         // Provider info
         '✓ Using your {name} API key': '✓ Utilisation de votre clé API {name}',
@@ -4447,8 +4445,6 @@ function useToolforgeSourceFetcher() {
             'Phrase du résumé introductif : {text}',
         'This article has no body to check the lead against.':
             'Cet article n\'a pas de corps auquel comparer le résumé introductif.',
-        'Lead check complete':
-            'Comparaison du résumé introductif terminée',
         '{count} lead citation set aside':
             '{count} citation du résumé introductif mise de côté',
         '{count} lead citations set aside':
@@ -4457,8 +4453,18 @@ function useToolforgeSourceFetcher() {
             'Citations',
         'Details':
             'Détails',
-        'Check the lead':
-            'Vérifier le résumé introductif',
+        'Edit section':
+            'Modifier la section',
+        'Back':
+            'Retour',
+        'Copy report':
+            'Copier le rapport',
+        'Wikitext':
+            'Wikicode',
+        'Plain text':
+            'Texte brut',
+        '{count} hidden by filter':
+            '{count} masquées par le filtre',
         'runs after the citations':
             'après les citations',
         'checking, {done} of {total}':
@@ -4544,8 +4550,6 @@ function useToolforgeSourceFetcher() {
         'Rate limited, retrying in {secs}s...':
             'Limite de débit atteinte, nouvelle tentative dans {secs} s…',
         'Checking combined sources {token}': 'Vérification des sources combinées {token}',
-        'Completed: {count} citations checked': 'Terminé : {count} citations vérifiées',
-        'Completed: {count} citation checked': 'Terminé : {count} citation vérifiée',
         'Cancelled after {done} of {total} citations': 'Annulé après {done} sur {total} citations',
         'Cancelled after {done} of {total} citation': 'Annulé après {done} sur {total} citation',
         ' · ~{duration} remaining': ' · ~{duration} restant(e)(s)',
@@ -4566,7 +4570,6 @@ function useToolforgeSourceFetcher() {
             '{citations} citations réparties sur {claims} affirmations',
         '{citations} citations across {claims} claim':
             '{citations} citations réparties sur {claims} affirmation',
-        ' · {count} hidden by filter': ' · {count} masquées par le filtre',
         ' · {input} input + {output} output tokens':
             ' · {input} jetons d’entrée + {output} jetons de sortie',
         'Revision: ': 'Révision : ',
@@ -4577,7 +4580,6 @@ function useToolforgeSourceFetcher() {
         '⚠ Combined sources are long, only partially checked.':
             '⚠ Sources combinées longues, vérifiées partiellement seulement.',
         'Checking combined sources…': 'Vérification des sources combinées…',
-        'Individual sources': 'Sources individuelles',
         'All citations are hidden by the current filters. Click a filter above to show them.':
             'Toutes les citations sont masquées par les filtres actuels. Cliquez sur un filtre ci-dessus pour les afficher.',
 
@@ -4767,8 +4769,6 @@ function useToolforgeSourceFetcher() {
         'Could not record that, sorry.': 'No se ha podido registrar. Disculpas.',
         'Comment': 'Comentario',
         'Edit Section': 'Editar la sección',
-        'Copy Report (Wikitext)': 'Copiar el informe (wikitexto)',
-        'Copy Report (Plain Text)': 'Copiar el informe (texto plano)',
 
         // Provider info
         '✓ Using your {name} API key': '✓ Usando la clave API de {name}',
@@ -4820,8 +4820,6 @@ function useToolforgeSourceFetcher() {
             'Oración de la introducción: {text}',
         'This article has no body to check the lead against.':
             'Este artículo no tiene cuerpo con el que comparar la introducción.',
-        'Lead check complete':
-            'Comparación de la introducción completada',
         '{count} lead citation set aside':
             '{count} cita de la introducción apartada',
         '{count} lead citations set aside':
@@ -4830,8 +4828,18 @@ function useToolforgeSourceFetcher() {
             'Citas',
         'Details':
             'Detalles',
-        'Check the lead':
-            'Comprobar la introducción',
+        'Edit section':
+            'Editar la sección',
+        'Back':
+            'Volver',
+        'Copy report':
+            'Copiar el informe',
+        'Wikitext':
+            'Wikitexto',
+        'Plain text':
+            'Texto sin formato',
+        '{count} hidden by filter':
+            '{count} ocultas por el filtro',
         'runs after the citations':
             'después de las citas',
         'checking, {done} of {total}':
@@ -4917,8 +4925,6 @@ function useToolforgeSourceFetcher() {
         'Rate limited, retrying in {secs}s...':
             'Límite de solicitudes alcanzado, reintentando en {secs} s…',
         'Checking combined sources {token}': 'Comprobando las fuentes combinadas {token}',
-        'Completed: {count} citations checked': 'Completado: {count} citas comprobadas',
-        'Completed: {count} citation checked': 'Completado: {count} cita comprobada',
         'Cancelled after {done} of {total} citations': 'Cancelado tras {done} de {total} citas',
         'Cancelled after {done} of {total} citation': 'Cancelado tras {done} de {total} cita',
         ' · ~{duration} remaining': ' · ~{duration} restante',
@@ -4939,7 +4945,6 @@ function useToolforgeSourceFetcher() {
             '{citations} citas repartidas en {claims} afirmaciones',
         '{citations} citations across {claims} claim':
             '{citations} citas repartidas en {claims} afirmación',
-        ' · {count} hidden by filter': ' · {count} ocultas por el filtro',
         ' · {input} input + {output} output tokens':
             ' · {input} tokens de entrada + {output} de salida',
         'Revision: ': 'Revisión: ',
@@ -4950,7 +4955,6 @@ function useToolforgeSourceFetcher() {
         '⚠ Combined sources are long, only partially checked.':
             '⚠ Las fuentes combinadas son extensas; solo se han comprobado parcialmente.',
         'Checking combined sources…': 'Comprobando las fuentes combinadas…',
-        'Individual sources': 'Fuentes individuales',
         'All citations are hidden by the current filters. Click a filter above to show them.':
             'Los filtros actuales ocultan todas las citas. Se puede hacer clic en uno de los filtros de arriba para mostrarlas.',
 
@@ -5136,8 +5140,6 @@ function useToolforgeSourceFetcher() {
         'Could not record that, sorry.': 'Не удалось это записать, извините.',
         'Comment': 'Комментарий',
         'Edit Section': 'Редактировать раздел',
-        'Copy Report (Wikitext)': 'Скопировать отчёт (вики-разметка)',
-        'Copy Report (Plain Text)': 'Скопировать отчёт (обычный текст)',
 
         // Provider info
         '✓ Using your {name} API key': '✓ Используется ваш ключ API {name}',
@@ -5189,8 +5191,6 @@ function useToolforgeSourceFetcher() {
             'Предложение преамбулы: {text}',
         'This article has no body to check the lead against.':
             'В этой статье нет основного текста, с которым можно сверить преамбулу.',
-        'Lead check complete':
-            'Сверка преамбулы завершена',
         '{count} lead citation set aside':
             'Отложено сносок в преамбуле: {count}',
         '{count} lead citations set aside':
@@ -5199,8 +5199,18 @@ function useToolforgeSourceFetcher() {
             'Сноски',
         'Details':
             'Подробности',
-        'Check the lead':
-            'Проверить преамбулу',
+        'Edit section':
+            'Редактировать раздел',
+        'Back':
+            'Назад',
+        'Copy report':
+            'Скопировать отчёт',
+        'Wikitext':
+            'Викитекст',
+        'Plain text':
+            'Обычный текст',
+        '{count} hidden by filter':
+            'Скрыто фильтром: {count}',
         'runs after the citations':
             'после сносок',
         'checking, {done} of {total}':
@@ -5286,8 +5296,6 @@ function useToolforgeSourceFetcher() {
         'Rate limited, retrying in {secs}s...':
             'Превышен лимит запросов, повтор через {secs} с…',
         'Checking combined sources {token}': 'Проверка объединённых источников {token}',
-        'Completed: {count} citations checked': 'Готово: проверено сносок — {count}',
-        'Completed: {count} citation checked': 'Готово: проверена {count} сноска',
         'Cancelled after {done} of {total} citations': 'Отменено после проверки {done} из {total} сносок',
         'Cancelled after {done} of {total} citation': 'Отменено после проверки {done} из {total} сноски',
         ' · ~{duration} remaining': ' · осталось ~{duration}',
@@ -5308,7 +5316,6 @@ function useToolforgeSourceFetcher() {
             '{citations} сносок в {claims} утверждениях',
         '{citations} citations across {claims} claim':
             '{citations} сносок в {claims} утверждении',
-        ' · {count} hidden by filter': ' · {count} скрыто фильтром',
         ' · {input} input + {output} output tokens':
             ' · {input} токенов на входе + {output} на выходе',
         'Revision: ': 'Версия: ',
@@ -5319,7 +5326,6 @@ function useToolforgeSourceFetcher() {
         '⚠ Combined sources are long, only partially checked.':
             '⚠ Объединённые источники большие, проверены только частично.',
         'Checking combined sources…': 'Проверка объединённых источников…',
-        'Individual sources': 'Отдельные источники',
         'All citations are hidden by the current filters. Click a filter above to show them.':
             'Все сноски скрыты текущими фильтрами. Нажмите на один из фильтров выше, чтобы показать их.',
 
@@ -5513,8 +5519,6 @@ function useToolforgeSourceFetcher() {
         'Could not record that, sorry.': 'מצטערים, לא ניתן היה לרשום זאת.',
         'Comment': 'הערה',
         'Edit Section': 'עריכת הפסקה',
-        'Copy Report (Wikitext)': 'העתקת הדוח (קוד ויקי)',
-        'Copy Report (Plain Text)': 'העתקת הדוח (טקסט פשוט)',
 
         // Provider info
         '✓ Using your {name} API key': '✓ נעשה שימוש במפתח ה־API האישי עבור {name}',
@@ -5566,8 +5570,6 @@ function useToolforgeSourceFetcher() {
             'משפט בפתיח: {text}',
         'This article has no body to check the lead against.':
             'אין בערך הזה גוף שאפשר להשוות אליו את הפתיח.',
-        'Lead check complete':
-            'השוואת הפתיח הושלמה',
         '{count} lead citation set aside':
             '{count} הערת שוליים בפתיח הוצגה בנפרד',
         '{count} lead citations set aside':
@@ -5576,8 +5578,18 @@ function useToolforgeSourceFetcher() {
             'הערות שוליים',
         'Details':
             'פרטים',
-        'Check the lead':
-            'בדיקת הפתיח',
+        'Edit section':
+            'עריכת הפסקה',
+        'Back':
+            'חזרה',
+        'Copy report':
+            'העתקת הדוח',
+        'Wikitext':
+            'קוד ויקי',
+        'Plain text':
+            'טקסט פשוט',
+        '{count} hidden by filter':
+            '{count} מוסתרות על ידי המסנן',
         'runs after the citations':
             'אחרי הערות השוליים',
         'checking, {done} of {total}':
@@ -5664,8 +5676,6 @@ function useToolforgeSourceFetcher() {
         'Rate limited, retrying in {secs}s...':
             'חריגה ממגבלת הבקשות, ניסיון חוזר בעוד {secs} שניות…',
         'Checking combined sources {token}': 'בדיקת מקורות משולבים {token}',
-        'Completed: {count} citations checked': 'הושלם: נבדקו {count} הערות שוליים',
-        'Completed: {count} citation checked': 'הושלם: נבדקה {count} הערת שוליים',
         'Cancelled after {done} of {total} citations': 'בוטל לאחר {done} מתוך {total} הערות שוליים',
         'Cancelled after {done} of {total} citation': 'בוטל לאחר {done} מתוך {total} הערת שוליים',
         ' · ~{duration} remaining': ' · נותרו כ־{duration}',
@@ -5686,7 +5696,6 @@ function useToolforgeSourceFetcher() {
             '{citations} הערות שוליים ב־{claims} טענות',
         '{citations} citations across {claims} claim':
             '{citations} הערות שוליים ב־{claims} טענה',
-        ' · {count} hidden by filter': ' · {count} מוסתרות על ידי המסנן',
         ' · {input} input + {output} output tokens':
             ' · {input} טוקני קלט + {output} טוקני פלט',
         'Revision: ': 'גרסה: ',
@@ -5697,7 +5706,6 @@ function useToolforgeSourceFetcher() {
         '⚠ Combined sources are long, only partially checked.':
             '⚠ המקורות המשולבים ארוכים ונבדקו באופן חלקי בלבד.',
         'Checking combined sources…': 'בדיקת מקורות משולבים…',
-        'Individual sources': 'מקורות בודדים',
         'All citations are hidden by the current filters. Click a filter above to show them.':
             'כל הערות השוליים מוסתרות על ידי המסננים הנוכחיים. אפשר ללחוץ על אחד המסננים שלמעלה כדי להציג אותן.',
 
@@ -6016,9 +6024,13 @@ function useToolforgeSourceFetcher() {
             this.reportCardEls = new Map();
             this.reportDocOrder = 0;
             this.reportSort = this.loadReportSort();
-            // Lead check state for the current report (see verifyAllCitations).
+            // Lead check state for the current report (see verifyAllCitations),
+            // and how the last run ended: where it was stopped, if it was,
+            // and how long it took.
             this.reportLead = null;
             this.reportLeadOnly = false;
+            this.reportStopped = null;
+            this.reportDurationMs = 0;
 
             this.init();
         }
@@ -6169,14 +6181,29 @@ function useToolforgeSourceFetcher() {
                             <div id="verifier-buttons-container"></div>
                         </div>
                         <div id="verifier-report-view" style="display:none;">
-                            <div id="verifier-report-progress"></div>
-                            <div id="verifier-report-lead"></div>
-                            <div id="verifier-report-citations">
-                                <div id="verifier-report-summary"></div>
-                                <div id="verifier-report-results"></div>
+                            <div id="verifier-report-bar">
+                                <button type="button" id="verifier-report-back" class="sv-btn sv-btn-quiet"><span class="sv-chevron"></span>${this.t('Back')}</button>
+                                <span id="verifier-report-phase"></span>
+                                <button type="button" id="verifier-report-stop" class="sv-btn">${this.t('Stop')}</button>
+                                <details id="verifier-report-copy" class="sv-menu">
+                                    <summary class="sv-btn">${this.t('Copy report')}<span class="sv-chevron"></span></summary>
+                                    <div class="sv-menu-list">
+                                        <button type="button" data-format="wikitext">${this.t('Wikitext')}</button>
+                                        <button type="button" data-format="plaintext">${this.t('Plain text')}</button>
+                                    </div>
+                                </details>
                             </div>
+                            <div id="verifier-report-progress"><div class="verifier-progress-fill"></div></div>
+                            <div id="verifier-report-lead"></div>
+                            <details id="verifier-report-citations" class="sv-section" open>
+                                <summary><span class="sv-chevron"></span><span class="sv-section-title">${this.t('Citations')}</span><span class="sv-section-status"></span></summary>
+                                <div class="sv-section-body">
+                                    <div id="verifier-report-summary"></div>
+                                    <div id="verifier-report-results"></div>
+                                    <div id="verifier-report-hidden-note"></div>
+                                </div>
+                            </details>
                             <div id="verifier-report-meta"></div>
-                            <div id="verifier-report-actions"></div>
                         </div>
                     </div>
                 </div>
@@ -6237,8 +6264,6 @@ function useToolforgeSourceFetcher() {
             show('verifier-settings-view', settings);
             show('verifier-main-view', !settings);
             show('verifier-report-view', report, 'block');
-            const mainView = document.getElementById('verifier-main-view');
-            if (mainView) mainView.classList.toggle('sv-reporting', report);
 
             // Idle is the only state with no claim to talk about, so the claim
             // and source sections stay out of the way entirely.
@@ -6246,7 +6271,9 @@ function useToolforgeSourceFetcher() {
             show('verifier-claim-section', main && hasClaim);
             show('verifier-source-section', main && hasClaim);
             show('verifier-results', main && this.hasResult);
-            show('verifier-controls', main || report);
+            // The report view is the report alone. Its own bar stops a run,
+            // copies the report and leads back here, where the run buttons are.
+            show('verifier-controls', main);
 
             this.updateStatusStrip();
         }
@@ -6340,12 +6367,10 @@ function useToolforgeSourceFetcher() {
                     --sv-ink-hint: #888;
                     --sv-ink-chip: #333;
                     --sv-ink-chip-off: #333;
-                    --sv-ink-comment: #666;
                     --sv-ink-subtle: #72777d;
 
                     /* Surfaces */
                     --sv-bg: #fff;
-                    --sv-bg-card: #fff;
                     /* Hover wash for the header controls: a white veil over the
                        accent, so it is the same in both themes. */
                     --sv-header-hover: rgba(255,255,255,0.18);
@@ -6353,7 +6378,6 @@ function useToolforgeSourceFetcher() {
                     --sv-bg-3: #fafafa;
                     --sv-bg-inset: #f6f8fb;
                     --sv-bg-hover: #f0f4ff;
-                    --sv-bg-hover-inset: #f0f4ff;
                     --sv-bg-chip-hover: #eef2ff;
                     --sv-bg-chip-off: #f0f0f0;
                     --sv-track: #e0e0e0;
@@ -6428,17 +6452,14 @@ function useToolforgeSourceFetcher() {
                     --sv-ink-hint: #888;
                     --sv-ink-chip: #e0e0e0;
                     --sv-ink-chip-off: #8a8a9e;
-                    --sv-ink-comment: #a0a0b0;
                     --sv-ink-subtle: #a0a0a8;
 
                     --sv-bg: #1a1a2e;
-                    --sv-bg-card: #2a2a3e;
                     --sv-header-hover: rgba(255,255,255,0.18);
                     --sv-bg-2: #2a2a3e;
                     --sv-bg-3: #2a2a3e;
                     --sv-bg-inset: #232336;
                     --sv-bg-hover: #3a3a5e;
-                    --sv-bg-hover-inset: #232336;
                     --sv-bg-chip-hover: #3a3a5e;
                     --sv-bg-chip-off: #1f1f2e;
                     --sv-track: #3a3a4e;
@@ -6832,26 +6853,6 @@ function useToolforgeSourceFetcher() {
                     width: 100%;
                     justify-content: center;
                 }
-                /* Over a report the run buttons give it the room: one row of
-                   compact buttons instead of a stack of full-width ones. */
-                #verifier-main-view.sv-reporting #verifier-buttons-container {
-                    flex-direction: row;
-                    flex-wrap: wrap;
-                    gap: 6px;
-                }
-                #verifier-main-view.sv-reporting #verifier-buttons-container .oo-ui-buttonElement {
-                    width: auto;
-                }
-                #verifier-main-view.sv-reporting #verifier-buttons-container .oo-ui-buttonElement-button {
-                    width: auto;
-                    min-height: 26px;
-                    padding-top: 2px;
-                    padding-bottom: 2px;
-                    font-size: 12px;
-                }
-                #verifier-main-view.sv-reporting {
-                    gap: 10px;
-                }
                 #verifier-claim-section, #verifier-source-section, #verifier-results {
                     flex-shrink: 0;
                 }
@@ -7082,15 +7083,6 @@ function useToolforgeSourceFetcher() {
                     border: 1px solid var(--sv-warn-bd);
                     border-radius: 4px;
                 }
-                .report-card-truncated {
-                    margin-top: 4px;
-                    font-size: 11px;
-                    color: var(--sv-warn-fg);
-                    background: var(--sv-warn-bg);
-                    border: 1px solid var(--sv-warn-bd);
-                    border-radius: 3px;
-                    padding: 2px 6px;
-                }
                 body.verifier-sidebar-hidden {
                     margin-${dock}: 0 !important;
                 }
@@ -7105,73 +7097,252 @@ function useToolforgeSourceFetcher() {
                 #mw-teleport-target {
                     z-index: 10002 !important;
                 }
-                /* Report view styles */
-                #verifier-report-view h4 {
-                    margin: 0 0 8px 0;
-                    color: var(--sv-accent-fg);
+                /* ===== The report (Verify All) =====
+                   One type scale for the whole report: 13px ink for what a row
+                   is about, 12px muted for everything said about it, semibold
+                   only for a reference, a verdict and a section's name. The
+                   accent colour marks what can be clicked. A verdict's colour
+                   appears once per row, as its stripe, and in the distribution
+                   bar and the chips that are its legend. No tinted pills, no
+                   italics, no small capitals: each of those was one more kind
+                   of text for the eye to sort out. */
+                #verifier-report-view {
                     font-size: 13px;
-                    font-weight: bold;
+                    line-height: 1.45;
+                    color: var(--sv-ink);
                 }
-                /* The run's own facts (revision, tokens), under its progress. */
-                #verifier-report-meta {
-                    margin-bottom: 8px;
-                    font-size: 11px;
-                    color: var(--sv-ink-5);
+                #verifier-report-view button {
+                    margin: 0;
+                    padding: 0;
+                    font: inherit;
+                    color: inherit;
+                    background: none;
+                    border: none;
+                    cursor: pointer;
                 }
-                #verifier-report-meta:empty {
+                #verifier-report-view summary {
+                    list-style: none;
+                    cursor: pointer;
+                }
+                #verifier-report-view summary::-webkit-details-marker {
                     display: none;
                 }
-                #verifier-report-progress {
+                #verifier-report-view button:focus-visible,
+                #verifier-report-view summary:focus-visible {
+                    outline: 2px solid var(--sv-accent-fg);
+                    outline-offset: 1px;
+                }
+
+                /* Every disclosure in the report (a section, a row, a folded
+                   list, the Copy menu) uses this chevron: it points along the
+                   text while closed and down while open. */
+                #verifier-report-view .sv-chevron {
+                    display: inline-block;
+                    flex-shrink: 0;
+                    width: 5px;
+                    height: 5px;
+                    border: solid currentColor;
+                    border-width: 0 1.5px 1.5px 0;
+                    transform: rotate(-45deg);
+                    transition: transform 0.12s;
+                }
+                #source-verifier-sidebar[dir="rtl"] #verifier-report-view .sv-chevron {
+                    transform: rotate(135deg);
+                }
+                #source-verifier-sidebar #verifier-report-back .sv-chevron {
+                    transform: rotate(135deg);
+                }
+                #source-verifier-sidebar[dir="rtl"] #verifier-report-back .sv-chevron {
+                    transform: rotate(-45deg);
+                }
+                #source-verifier-sidebar #verifier-report-view details[open] > summary > .sv-chevron,
+                #source-verifier-sidebar #verifier-report-view .sv-menu > summary > .sv-chevron,
+                #source-verifier-sidebar #verifier-report-view .sv-finding.sv-expanded > .sv-finding-head .sv-chevron {
+                    margin-block-start: -3px;
+                    transform: rotate(45deg);
+                }
+
+                /* The bar: what a run is doing and Stop while it runs; Back
+                   and Copy report once it is over. */
+                #verifier-report-bar {
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                    min-height: 26px;
                     margin-bottom: 8px;
                 }
-                .verifier-progress-bar {
-                    width: 100%;
-                    height: 8px;
-                    background: var(--sv-track);
-                    border-radius: 4px;
-                    overflow: hidden;
-                    margin-bottom: 6px;
-                }
-                .verifier-progress-fill {
-                    height: 100%;
-                    background: var(--sv-accent-fg);
-                    transition: width 0.3s ease;
-                    border-radius: 4px;
-                }
-                .verifier-progress-text {
+                #verifier-report-phase {
+                    flex: 1;
+                    min-width: 0;
                     font-size: 12px;
                     color: var(--sv-ink-4);
                 }
-                #verifier-report-summary {
-                    padding: 6px 8px 8px;
-                    background: var(--sv-bg-2);
-                    border: 1px solid var(--sv-border);
-                    border-radius: 4px;
-                    color: var(--sv-ink);
-                    font-size: 13px;
-                    margin-bottom: 8px;
+                #verifier-report-copy {
+                    margin-inline-start: auto;
                 }
-                #verifier-report-summary:empty {
+                #verifier-report-view:not(.sv-running) #verifier-report-phase,
+                #verifier-report-view:not(.sv-running) #verifier-report-stop,
+                #verifier-report-view:not(.sv-running) #verifier-report-progress,
+                #verifier-report-view.sv-running #verifier-report-back,
+                #verifier-report-view.sv-running #verifier-report-copy {
                     display: none;
                 }
-                /* The citations' name, as the lead check's panel has its own,
-                   with the sort order beside it. */
-                .verifier-summary-title {
-                    display: flex;
-                    flex-wrap: wrap;
+                #verifier-report-progress {
+                    height: 3px;
+                    margin-bottom: 12px;
+                    background: var(--sv-track);
+                    border-radius: 2px;
+                    overflow: hidden;
+                }
+                .verifier-progress-fill {
+                    width: 0;
+                    height: 100%;
+                    background: var(--sv-accent-fg);
+                    transition: width 0.3s ease;
+                }
+
+                /* One pill for every small control: the bar's buttons, the
+                   filter chips, the sort order. */
+                #verifier-report-view .sv-btn,
+                #verifier-report-view .sv-chip {
+                    display: inline-flex;
                     align-items: center;
-                    justify-content: space-between;
-                    gap: 4px 8px;
-                    margin-bottom: 6px;
-                    font-weight: bold;
+                    gap: 6px;
+                    padding: 2px 10px;
+                    font-size: 12px;
+                    line-height: 20px;
+                    white-space: nowrap;
+                    color: var(--sv-ink);
+                    background: var(--sv-bg);
+                    border: 1px solid var(--sv-border-chip);
+                    border-radius: 13px;
+                }
+                #verifier-report-view .sv-btn:hover,
+                #verifier-report-view .sv-chip:hover {
+                    border-color: var(--sv-border-chip-hover);
+                }
+                #verifier-report-view .sv-btn:disabled {
+                    opacity: 0.5;
+                    cursor: default;
+                }
+                #verifier-report-view .sv-btn-quiet,
+                #verifier-report-view .sv-btn-quiet:hover {
+                    padding-inline: 4px;
                     color: var(--sv-accent-fg);
+                    background: none;
+                    border-color: transparent;
+                }
+                #verifier-report-view .sv-btn-quiet:hover {
+                    text-decoration: underline;
+                }
+                #verifier-report-view .sv-chip-selected,
+                #verifier-report-view .sv-chip-selected:hover {
+                    color: var(--sv-accent-fg);
+                    border-color: var(--sv-accent-fg);
+                }
+                #verifier-report-view .verifier-chip-off {
+                    color: var(--sv-ink-4);
+                    border-style: dashed;
+                }
+                .sv-dot {
+                    box-sizing: border-box;
+                    width: 8px;
+                    height: 8px;
+                    border: 1.5px solid var(--sv-seg-error);
+                    border-radius: 50%;
+                    background: var(--sv-seg-error);
+                }
+                .sv-dot-supported { border-color: var(--sv-seg-supported); background: var(--sv-seg-supported); }
+                .sv-dot-partial { border-color: var(--sv-seg-partial); background: var(--sv-seg-partial); }
+                .sv-dot-not-supported { border-color: var(--sv-seg-not-supported); background: var(--sv-seg-not-supported); }
+                .sv-dot-unavailable { border-color: var(--sv-seg-unavailable); background: var(--sv-seg-unavailable); }
+                #verifier-report-view .verifier-chip-off .sv-dot {
+                    background: transparent;
+                }
+
+                /* The Copy report menu: a <details> whose list floats under
+                   its button. */
+                #verifier-report-view .sv-menu {
+                    position: relative;
+                }
+                #verifier-report-view .sv-menu-list {
+                    position: absolute;
+                    inset-block-start: calc(100% + 4px);
+                    inset-inline-end: 0;
+                    z-index: 5;
+                    display: flex;
+                    flex-direction: column;
+                    min-width: 100%;
+                    padding: 4px 0;
+                    background: var(--sv-bg);
+                    border: 1px solid var(--sv-border-chip);
+                    border-radius: 6px;
+                    box-shadow: 0 2px 8px var(--sv-shadow);
+                }
+                #verifier-report-view .sv-menu-list button {
+                    padding: 5px 12px;
+                    font-size: 12px;
+                    text-align: start;
+                    white-space: nowrap;
+                }
+                #verifier-report-view .sv-menu-list button:hover,
+                #verifier-report-view .sv-menu-list button:focus-visible {
+                    background: var(--sv-bg-2);
+                    outline: none;
+                }
+
+                /* Sections: one per check, all alike. A header (chevron,
+                   name, a few words of status) that opens and closes it. */
+                #verifier-report-lead:empty {
+                    display: none;
+                }
+                #verifier-report-view .sv-section {
+                    border-top: 1px solid var(--sv-border);
+                }
+                #verifier-report-view .sv-section > summary {
+                    display: flex;
+                    align-items: baseline;
+                    gap: 10px;
+                    padding: 10px 0;
+                }
+                #verifier-report-view .sv-section > summary > .sv-chevron,
+                #verifier-report-view .sv-sublist > summary > .sv-chevron {
+                    align-self: center;
+                    margin-inline-start: 2px;
+                    color: var(--sv-ink-4);
+                }
+                .sv-section-title {
+                    font-weight: 600;
+                }
+                .sv-section-status {
+                    margin-inline-start: auto;
+                    font-size: 12px;
+                    color: var(--sv-ink-4);
+                    text-align: end;
+                }
+                .sv-section-body {
+                    padding-bottom: 6px;
+                }
+                .sv-section-note {
+                    margin-bottom: 8px;
+                    font-size: 12px;
+                    color: var(--sv-ink-4);
+                }
+
+                /* The citations' toolbar: how the verdicts are distributed,
+                   and the chips that count, name and filter them. */
+                #verifier-report-summary:empty,
+                #verifier-report-hidden-note:empty,
+                #verifier-report-meta:empty {
+                    display: none;
                 }
                 .verifier-summary-bar {
                     display: flex;
-                    height: 6px;
-                    border-radius: 3px;
+                    height: 4px;
+                    margin-bottom: 10px;
+                    border-radius: 2px;
                     overflow: hidden;
-                    margin-bottom: 6px;
+                    background: var(--sv-track);
                 }
                 .verifier-summary-bar .seg-supported { background: var(--sv-seg-supported); }
                 .verifier-summary-bar .seg-partial { background: var(--sv-seg-partial); }
@@ -7179,59 +7350,36 @@ function useToolforgeSourceFetcher() {
                 .verifier-summary-bar .seg-unavailable { background: var(--sv-seg-unavailable); }
                 .verifier-summary-bar .seg-error { background: var(--sv-seg-error); }
                 .verifier-summary-bar .seg-skipped { background: var(--sv-seg-error); }
-                .verifier-summary-counts {
+                #verifier-report-view .sv-chips {
                     display: flex;
                     flex-wrap: wrap;
-                    gap: 4px;
-                    font-size: 12px;
-                }
-                .verifier-summary-counts .dot {
-                    width: 8px;
-                    height: 8px;
-                    border-radius: 50%;
-                    display: inline-block;
-                }
-                .verifier-filter-chip {
-                    display: inline-flex;
                     align-items: center;
-                    gap: 4px;
-                    padding: 1px 7px;
-                    font: inherit;
-                    font-size: 11px;
-                    color: var(--sv-ink-chip);
-                    background: var(--sv-bg-card);
-                    border: 1px solid var(--sv-border-chip);
-                    border-radius: 12px;
-                    cursor: pointer;
-                    user-select: none;
-                    transition: opacity 0.15s, background 0.15s;
+                    gap: 6px;
+                    margin-bottom: 8px;
                 }
-                .verifier-filter-chip:hover {
-                    background: var(--sv-bg-chip-hover);
-                    border-color: var(--sv-border-chip-hover);
+                #verifier-report-summary > .sv-chips:last-child {
+                    margin-bottom: 12px;
                 }
-                .verifier-filter-chip.verifier-chip-off {
-                    opacity: 0.5;
-                    text-decoration: line-through;
-                    color: var(--sv-ink-chip-off);
-                    background: var(--sv-bg-chip-off);
+                .verifier-sort-label {
+                    margin-inline-end: 2px;
+                    font-size: 12px;
+                    color: var(--sv-ink-4);
                 }
-                .verifier-summary-meta {
-                    margin-top: 5px;
-                    font-size: 11px;
-                    color: var(--sv-ink-5);
-                }
-                /* No height cap and no scrollbar of its own: the sidebar is
-                   the report's one scroll area. A capped, scrolling list
-                   inside the scrolling sidebar sent the wheel to whichever
-                   of the two was under the pointer, and past the list's end
-                   into whatever followed it (the lead check, before it had
-                   a tab of its own). */
-                #verifier-report-results {
+
+                /* Rows. No height cap and no scrollbar of its own: the sidebar
+                   is the report's one scroll area. A capped, scrolling list
+                   inside the scrolling sidebar sent the wheel to whichever of
+                   the two was under the pointer, and past the list's end into
+                   whatever followed it. */
+                #verifier-report-results,
+                #verifier-report-view .sv-rows {
                     display: flex;
                     flex-direction: column;
-                    gap: 6px;
-                    margin-bottom: 12px;
+                    border-top: 1px solid var(--sv-border-2);
+                }
+                #verifier-report-results:empty,
+                #verifier-report-view .sv-rows:empty {
+                    display: none;
                 }
                 #verifier-report-results.filter-hide-supported .verifier-report-card.verdict-supported,
                 #verifier-report-results.filter-hide-partial .verifier-report-card.verdict-partial,
@@ -7241,101 +7389,104 @@ function useToolforgeSourceFetcher() {
                 #verifier-report-results.filter-hide-skipped .verifier-report-card.verdict-skipped {
                     display: none;
                 }
-                .verifier-filter-empty {
-                    padding: 12px;
-                    background: var(--sv-bg-2);
-                    border: 1px dashed var(--sv-border-chip);
-                    border-radius: 4px;
+                .verifier-filter-empty,
+                #verifier-report-hidden-note {
+                    padding: 8px 0 2px;
+                    font-size: 12px;
                     color: var(--sv-ink-4);
-                    font-size: 12px;
-                    text-align: center;
                 }
-                /* A finding card (findingHtml()): every check's results use it. */
                 .sv-finding {
-                    padding: 6px 10px;
-                    border: 1px solid var(--sv-border);
-                    border-inline-start: 3px solid var(--sv-stripe-neutral);
-                    border-radius: 4px;
-                    background: var(--sv-bg-card);
-                    color: var(--sv-ink);
-                    font-size: 12px;
-                    line-height: 1.4;
+                    position: relative;
+                    padding-block: 8px;
+                    padding-inline: 12px 4px;
+                    border-bottom: 1px solid var(--sv-border-2);
                     cursor: pointer;
                 }
-                .sv-finding:hover {
-                    background: var(--sv-bg-hover);
+                /* The verdict's colour, once: a stripe down the row. */
+                .sv-finding::before {
+                    content: '';
+                    position: absolute;
+                    inset-block: 0;
+                    inset-inline-start: 0;
+                    width: 3px;
+                    background: var(--sv-stripe-neutral);
                 }
-                /* Open, a card is for reading: only its head still closes it. */
-                .sv-finding.sv-expanded,
-                .sv-finding.sv-expanded:hover {
-                    background: var(--sv-bg-card);
+                .sv-finding.verdict-supported::before { background: var(--sv-seg-supported); }
+                .sv-finding.verdict-partial::before { background: var(--sv-seg-partial); }
+                .sv-finding.verdict-not-supported::before { background: var(--sv-seg-not-supported); }
+                .sv-finding.verdict-unavailable::before { background: var(--sv-seg-unavailable); }
+                .sv-finding.verdict-error::before { background: var(--sv-seg-error); }
+                .sv-finding.verdict-skipped::before {
+                    background: repeating-linear-gradient(to bottom, var(--sv-seg-error) 0 4px, transparent 4px 8px);
+                }
+                .sv-finding:hover {
+                    background: var(--sv-bg-2);
+                }
+                /* Open, a row is for reading: only its head still closes it. */
+                .sv-finding.sv-expanded {
+                    background: var(--sv-bg-2);
                     cursor: auto;
                 }
                 .sv-finding.sv-expanded > .sv-finding-head {
                     cursor: pointer;
                 }
-                .sv-finding.verdict-supported { border-inline-start-color: var(--sv-seg-supported); }
-                .sv-finding.verdict-partial { border-inline-start-color: var(--sv-seg-partial); }
-                .sv-finding.verdict-not-supported { border-inline-start-color: var(--sv-seg-not-supported); }
-                .sv-finding.verdict-unavailable { border-inline-start-color: var(--sv-seg-unavailable); }
-                .sv-finding.verdict-error { border-inline-start-color: var(--sv-seg-error); }
-                .sv-finding.verdict-skipped { border-inline-start-color: var(--sv-seg-error); border-inline-start-style: dashed; }
+                .sv-finding-flash {
+                    box-shadow: inset 0 0 0 2px var(--sv-accent-fg);
+                }
                 .sv-finding-head {
                     display: flex;
                     align-items: center;
-                    gap: 6px;
+                    gap: 8px;
                 }
-                .sv-finding-verdict {
-                    display: flex;
-                    flex-wrap: wrap;
-                    align-items: center;
-                    gap: 2px 6px;
+                .sv-finding-headline {
+                    flex: 1;
                     min-width: 0;
+                    white-space: nowrap;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                }
+                .sv-finding-ref {
+                    margin-inline-end: 6px;
+                    font-weight: 600;
+                }
+                .sv-verdict {
+                    font-weight: 600;
                 }
                 .sv-finding-tag {
-                    font-size: 11px;
+                    font-size: 12px;
                     color: var(--sv-ink-4);
                 }
-                .sv-finding-tag + .sv-finding-tag::before {
-                    content: '· ';
+                .sv-finding-verdict > * + *::before {
+                    content: ' · ';
+                    font-weight: 400;
+                    color: var(--sv-ink-4);
                 }
-                .sv-severity-tag-high { color: var(--sv-err-fg); }
-                .sv-severity-tag-medium { color: var(--sv-warn-fg); }
-                .sv-finding-toggle {
+                #verifier-report-view .sv-finding-toggle {
+                    display: inline-flex;
                     flex-shrink: 0;
-                    align-self: flex-start;
-                    margin-inline-start: auto;
+                    align-items: center;
+                    justify-content: center;
                     width: 20px;
-                    height: 18px;
-                    padding: 0;
-                    border: none;
+                    height: 20px;
                     border-radius: 3px;
-                    background: none;
-                    font: inherit;
-                    font-size: 12px;
-                    line-height: 18px;
-                    cursor: pointer;
-                }
-                .sv-finding-toggle:focus-visible {
-                    outline: 2px solid var(--sv-accent-fg);
+                    color: var(--sv-ink-4);
                 }
                 .sv-finding-claim {
                     margin-top: 2px;
-                    color: var(--sv-ink-2);
                     white-space: nowrap;
                     overflow: hidden;
                     text-overflow: ellipsis;
                 }
                 .sv-finding-comment {
-                    margin-top: 2px;
-                    font-size: 11px;
-                    font-style: italic;
-                    color: var(--sv-ink-comment);
                     display: -webkit-box;
                     -webkit-box-orient: vertical;
                     -webkit-line-clamp: 2;
+                    margin-top: 2px;
                     overflow: hidden;
+                    font-size: 12px;
+                    color: var(--sv-ink-4);
                 }
+                .sv-finding.sv-expanded > .sv-finding-head > .sv-finding-headline,
                 .sv-finding.sv-expanded > .sv-finding-claim {
                     white-space: normal;
                 }
@@ -7343,49 +7494,201 @@ function useToolforgeSourceFetcher() {
                     display: block;
                     overflow: visible;
                 }
+
+                /* A row's details: the evidence, the caveats, what to do. */
+                .sv-finding-details,
+                .verifier-report-group-collective {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 8px;
+                    font-size: 12px;
+                }
                 .sv-finding-details {
-                    margin-top: 6px;
+                    margin-top: 8px;
                 }
                 .sv-finding-details[hidden],
-                .sv-finding-actions:empty {
+                .sv-finding-details > :empty,
+                .verifier-report-group-collective > :empty,
+                .sv-finding-links:empty {
                     display: none;
                 }
                 .sv-finding-note {
-                    margin-bottom: 4px;
-                    font-size: 11px;
-                    color: var(--sv-ink-subtle);
+                    color: var(--sv-ink-4);
                 }
-                .sv-finding-details .sv-quote {
-                    margin: 0 0 6px;
+                /* The quote and the subclaims are shared with the single
+                   check's view, which styles them its own way. Here they
+                   follow the report's type scale. */
+                #verifier-report-view .sv-quote {
+                    margin: 0;
+                    padding: 0;
+                    padding-inline-start: 10px;
+                    background: none;
+                    border-radius: 0;
+                    border-inline-start: 2px solid var(--sv-border-chip);
                 }
-                /* In the report the sidebar is the only thing that scrolls. */
-                .sv-finding-details .sv-quote-text {
+                #verifier-report-view .sv-quote-label {
+                    margin: 0;
+                    font-size: 12px;
+                    font-weight: 400;
+                    letter-spacing: 0;
+                    text-transform: none;
+                    color: var(--sv-ink-4);
+                }
+                #verifier-report-view .sv-quote-text {
                     max-height: none;
                     overflow: visible;
+                    font-size: 12px;
+                    font-style: normal;
+                    line-height: inherit;
+                    color: var(--sv-ink);
                 }
-                .report-card-citation {
-                    font-weight: bold;
-                    white-space: nowrap;
+                #verifier-report-view .sv-subclaims {
+                    display: grid;
+                    grid-template-columns: max-content 1fr;
+                    gap: 2px 10px;
+                    margin: 0;
+                    padding: 0;
+                    list-style: none;
+                    color: var(--sv-ink);
                 }
-                a.report-card-citation-link {
+                #verifier-report-view .sv-subclaim {
+                    display: contents;
+                }
+                #verifier-report-view .sv-subclaim-status {
+                    font-weight: 400;
+                    color: var(--sv-ink-4);
+                }
+                #verifier-report-view .sv-subclaim-minor {
+                    color: var(--sv-ink-4);
+                }
+                .sv-finding-actions {
+                    display: flex;
+                    flex-wrap: wrap;
+                    align-items: baseline;
+                    justify-content: space-between;
+                    gap: 4px 14px;
+                }
+                .sv-finding-links {
+                    display: inline-flex;
+                    flex-wrap: wrap;
+                    gap: 4px 14px;
+                }
+                #verifier-report-view .sv-link,
+                #verifier-report-meta a {
                     color: var(--sv-accent-fg);
                     text-decoration: none;
                 }
-                a.report-card-citation-link:hover {
+                #verifier-report-view .sv-link:hover,
+                #verifier-report-meta a:hover {
                     text-decoration: underline;
                 }
-                .report-card-verdict {
-                    font-weight: bold;
-                    font-size: 11px;
-                    padding: 1px 6px;
-                    border-radius: 3px;
+                /* "Was this right?" in a row: the same controls as under a
+                   single check, as quiet text links. */
+                #verifier-report-view .verifier-feedback {
+                    margin: 0;
+                    padding: 0;
+                    border: none;
                 }
-                .report-card-verdict.supported { background: var(--sv-ok-bg); color: var(--sv-ok-fg); }
-                .report-card-verdict.partial { background: var(--sv-warn-bg); color: var(--sv-warn-fg); }
-                .report-card-verdict.not-supported { background: var(--sv-err-bg); color: var(--sv-err-fg); }
-                .report-card-verdict.unavailable { background: var(--sv-na-bg); color: var(--sv-na-fg); }
-                .report-card-verdict.error { background: var(--sv-na-bg); color: var(--sv-na-fg); }
-                .report-card-verdict.skipped { background: var(--sv-na-bg); color: var(--sv-na-fg); }
+                #verifier-report-view .verifier-feedback-row {
+                    gap: 2px 4px;
+                }
+                #verifier-report-view .verifier-feedback-prompt {
+                    margin-inline-end: 4px;
+                    font-size: 12px;
+                    color: var(--sv-ink-4);
+                }
+                #source-verifier-sidebar #verifier-report-view .verifier-feedback-row .oo-ui-buttonElement-button {
+                    min-width: 0;
+                    min-height: 0;
+                    padding: 1px 5px;
+                    font-size: 12px;
+                    font-weight: 400;
+                    color: var(--sv-accent-fg);
+                }
+                #source-verifier-sidebar #verifier-report-view .verifier-feedback-row .oo-ui-iconElement-icon {
+                    display: none;
+                }
+                #source-verifier-sidebar #verifier-report-view .verifier-feedback-row .oo-ui-labelElement-label {
+                    margin: 0;
+                    color: inherit;
+                }
+                #verifier-report-view .verifier-feedback-status {
+                    font-size: 12px;
+                }
+                #verifier-report-view .verifier-feedback-status.is-done {
+                    color: var(--sv-ink);
+                }
+                /* After a No, the chips asking what the verdict should have
+                   been: the same pill as the filters. Their labels are the
+                   verdict constants, in capitals; here they read like the
+                   verdicts in the rows. */
+                #source-verifier-sidebar #verifier-report-view .verifier-feedback-chip .oo-ui-buttonElement-button {
+                    padding: 2px 10px;
+                    font-size: 12px;
+                    font-weight: 400;
+                    color: var(--sv-ink);
+                    background: var(--sv-bg);
+                    border: 1px solid var(--sv-border-chip);
+                    border-radius: 13px;
+                }
+                #source-verifier-sidebar #verifier-report-view .verifier-feedback-chip .oo-ui-labelElement-label {
+                    display: inline-block;
+                    color: inherit;
+                    text-transform: lowercase;
+                }
+                #source-verifier-sidebar #verifier-report-view .verifier-feedback-chip .oo-ui-labelElement-label::first-letter {
+                    text-transform: uppercase;
+                }
+
+                /* A group's sources: rows inside its open row. */
+                #verifier-report-view .sv-finding .sv-finding {
+                    padding-block: 6px;
+                }
+                #verifier-report-view .sv-finding .sv-finding:last-child {
+                    border-bottom: none;
+                }
+                #verifier-report-view .sv-finding .sv-finding:hover,
+                #verifier-report-view .sv-finding .sv-finding.sv-expanded {
+                    background: var(--sv-bg);
+                }
+                /* Individual verdicts within a group stay secondary to its
+                   combined one. */
+                .verifier-report-group-row .sv-verdict {
+                    font-weight: 400;
+                }
+
+                /* Folded lists inside a section: the covered lead sentences,
+                   the set-aside lead citations. */
+                #verifier-report-view .sv-sublist > summary {
+                    display: flex;
+                    align-items: center;
+                    gap: 10px;
+                    padding: 8px 0;
+                    font-size: 12px;
+                    color: var(--sv-ink-4);
+                }
+                .sv-sublist ul {
+                    margin: 0 0 8px;
+                    padding-inline-start: 30px;
+                    font-size: 12px;
+                }
+                .sv-sublist-note {
+                    margin: 0 0 8px;
+                    padding-inline-start: 17px;
+                    font-size: 12px;
+                    color: var(--sv-ink-4);
+                }
+                .sv-lead-section {
+                    color: var(--sv-ink-4);
+                }
+
+                /* The run's own facts, at the foot of the report. */
+                #verifier-report-meta {
+                    padding-top: 10px;
+                    border-top: 1px solid var(--sv-border);
+                    font-size: 12px;
+                    color: var(--sv-ink-4);
+                }
                 .reason-type-tag {
                     display: inline-block;
                     font-size: 11px;
@@ -7459,141 +7762,6 @@ function useToolforgeSourceFetcher() {
                 }
                 #verifier-lead-note:empty {
                     display: none;
-                }
-                /* The checks beside the citations (the lead check; the
-                   uncited-text check is next) are panels above them: closed,
-                   one line with the check's name and status, so their results
-                   arriving never move the citation cards. */
-                #verifier-report-lead {
-                    margin-bottom: 8px;
-                }
-                #verifier-report-lead:empty {
-                    display: none;
-                }
-                .sv-check {
-                    background: var(--sv-bg-2);
-                    border: 1px solid var(--sv-border);
-                    border-radius: 4px;
-                }
-                .sv-check > summary {
-                    display: flex;
-                    align-items: baseline;
-                    gap: 8px;
-                    padding: 6px 8px;
-                    cursor: pointer;
-                    list-style: none;
-                }
-                .sv-check-title {
-                    flex-shrink: 0;
-                    font-size: 13px;
-                    font-weight: bold;
-                    color: var(--sv-accent-fg);
-                }
-                .sv-check-status {
-                    flex: 1;
-                    min-width: 0;
-                    font-size: 12px;
-                    color: var(--sv-ink-4);
-                }
-                .sv-check-status.sv-check-flagged {
-                    color: var(--sv-warn-fg);
-                }
-                .sv-check-body {
-                    display: flex;
-                    flex-direction: column;
-                    gap: 6px;
-                    padding: 0 8px 8px;
-                }
-                .sv-check-note {
-                    font-size: 11px;
-                    color: var(--sv-warn-fg);
-                }
-                .sv-lead-section {
-                    font-size: 11px;
-                    color: var(--sv-ink-subtle);
-                }
-                .sv-lead-covered,
-                .sv-lead-demoted {
-                    font-size: 12px;
-                    color: var(--sv-ink-3);
-                }
-                .sv-lead-covered > summary,
-                .sv-lead-demoted > summary {
-                    cursor: pointer;
-                    color: var(--sv-ink-4);
-                    list-style: none;
-                }
-                .sv-lead-covered ul {
-                    margin: 4px 0 0;
-                    padding-inline-start: 16px;
-                }
-                .sv-lead-demoted-note {
-                    margin: 4px 0 6px;
-                    font-size: 11px;
-                    color: var(--sv-ink-4);
-                }
-                .sv-lead-demoted-cards {
-                    display: flex;
-                    flex-direction: column;
-                    gap: 6px;
-                }
-                /* Every disclosure in the report (a card, a check's panel, a
-                   folded list) uses the same glyph: closed, open, and closed
-                   in a right-to-left sidebar. */
-                .sv-check > summary::-webkit-details-marker,
-                .sv-lead-covered > summary::-webkit-details-marker,
-                .sv-lead-demoted > summary::-webkit-details-marker {
-                    display: none;
-                }
-                #source-verifier-sidebar .sv-finding-toggle::before,
-                #source-verifier-sidebar .sv-check > summary::after,
-                #source-verifier-sidebar .sv-lead-covered > summary::after,
-                #source-verifier-sidebar .sv-lead-demoted > summary::after {
-                    content: '▸';
-                    color: var(--sv-ink-4);
-                }
-                #source-verifier-sidebar[dir="rtl"] .sv-finding-toggle::before,
-                #source-verifier-sidebar[dir="rtl"] .sv-check > summary::after,
-                #source-verifier-sidebar[dir="rtl"] .sv-lead-covered > summary::after,
-                #source-verifier-sidebar[dir="rtl"] .sv-lead-demoted > summary::after {
-                    content: '◂';
-                }
-                #source-verifier-sidebar .sv-finding.sv-expanded > .sv-finding-head > .sv-finding-toggle::before,
-                #source-verifier-sidebar .sv-check[open] > summary::after,
-                #source-verifier-sidebar .sv-lead-covered[open] > summary::after,
-                #source-verifier-sidebar .sv-lead-demoted[open] > summary::after {
-                    content: '▾';
-                }
-                .sv-lead-covered > summary::after,
-                .sv-lead-demoted > summary::after {
-                    margin-inline-start: 4px;
-                }
-                .verifier-sort {
-                    display: inline-flex;
-                    align-items: center;
-                    gap: 4px;
-                    font-size: 11px;
-                    font-weight: normal;
-                }
-                .verifier-sort-label {
-                    color: var(--sv-ink-5);
-                }
-                .verifier-sort-select {
-                    padding: 0 2px;
-                    font: inherit;
-                    font-size: 11px;
-                    color: var(--sv-ink-chip);
-                    background: var(--sv-bg-card);
-                    border: 1px solid var(--sv-border-chip);
-                    border-radius: 3px;
-                    cursor: pointer;
-                }
-                .report-card-action {
-                    margin-top: 4px;
-                }
-                .report-card-action .oo-ui-buttonElement-button {
-                    font-size: 11px;
-                    padding: 2px 4px;
                 }
                 .verifier-feedback {
                     margin-top: 6px;
@@ -7706,45 +7874,6 @@ function useToolforgeSourceFetcher() {
                 .verifier-feedback-status.is-error {
                     color: var(--sv-error-fg);
                 }
-                /* A group card's details: the combined verdict's evidence and
-                   actions, then its sources, each a quieter card of its own. */
-                .verifier-report-group-collective:empty {
-                    display: none;
-                }
-                .verifier-report-group-rows-label {
-                    margin: 8px 0 4px;
-                    font-size: 10px;
-                    font-weight: 600;
-                    letter-spacing: 0.04em;
-                    text-transform: uppercase;
-                    color: var(--sv-ink-subtle);
-                }
-                .verifier-report-group-rows {
-                    display: flex;
-                    flex-direction: column;
-                    gap: 4px;
-                }
-                .verifier-report-group-row.sv-finding,
-                .verifier-report-group-row.sv-finding.sv-expanded {
-                    padding: 4px 8px;
-                    background: var(--sv-bg);
-                    border-block-color: var(--sv-border-2);
-                    border-inline-end-color: var(--sv-border-2);
-                }
-                .verifier-report-group-row.sv-finding:hover {
-                    background: var(--sv-bg-hover-inset);
-                }
-                .verifier-report-group-row .report-card-verdict {
-                    background: transparent;
-                    color: var(--sv-ink-4);
-                    font-size: 10px;
-                    font-weight: normal;
-                    padding: 0;
-                }
-                .verifier-report-group-row .sv-finding-tag {
-                    color: var(--sv-ink-4);
-                    font-size: 10px;
-                }
                 #verifier-claim-group-indicator {
                     margin-top: 6px;
                     font-size: 11px;
@@ -7762,18 +7891,6 @@ function useToolforgeSourceFetcher() {
                    carries .oo-ui-iconElement when an icon was really set. */
                 #source-verifier-sidebar .oo-ui-iconElement .oo-ui-iconElement-icon + .oo-ui-labelElement-label {
                     margin-inline-start: 4px;
-                }
-                #verifier-report-actions {
-                    display: flex;
-                    flex-direction: column;
-                    gap: 8px;
-                }
-                #verifier-report-actions .oo-ui-buttonElement {
-                    width: 100%;
-                }
-                #verifier-report-actions .oo-ui-buttonElement-button {
-                    width: 100%;
-                    justify-content: center;
                 }
 
                 .reference:hover {
@@ -8052,12 +8169,6 @@ function useToolforgeSourceFetcher() {
                     }
                     container.appendChild(this.buttons.verifyAll.$element[0]);
                     if (this.leadCheckEnabled && this.articleLead()) {
-                        // Over a report the button sits in a row beside Verify
-                        // All, with the lead's own panel right below it, so the
-                        // short label says enough.
-                        this.buttons.checkLead.setLabel(this.reportMode
-                            ? this.t('Check the lead')
-                            : this.t('Check the lead against the body'));
                         container.appendChild(this.buttons.checkLead.$element[0]);
                     }
 
@@ -8179,9 +8290,8 @@ function useToolforgeSourceFetcher() {
                         if (card) {
                             this.revealReportCard(card);
                             card.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                            card.style.transition = 'box-shadow 0.3s';
-                            card.style.boxShadow = '0 0 0 3px #36c';
-                            setTimeout(() => { card.style.boxShadow = ''; }, 1500);
+                            card.classList.add('sv-finding-flash');
+                            setTimeout(() => card.classList.remove('sv-finding-flash'), 1500);
                         }
                     }
                     return;
@@ -8642,10 +8752,39 @@ function useToolforgeSourceFetcher() {
                 });
             }
 
-            // One listener opens and closes every card in the report, however
+            // One listener opens and closes every row in the report, however
             // and whenever it was rendered (see handleFindingClick()).
             const reportView = document.getElementById('verifier-report-view');
             if (reportView) reportView.addEventListener('click', (e) => this.handleFindingClick(e));
+
+            // The report's bar: Back to the main view (the run buttons are
+            // there), Stop while a run is going, and the Copy report menu.
+            const backBtn = document.getElementById('verifier-report-back');
+            if (backBtn) backBtn.addEventListener('click', () => this.showSingleCitationView());
+            const stopBtn = document.getElementById('verifier-report-stop');
+            if (stopBtn) {
+                stopBtn.addEventListener('click', () => {
+                    this.reportCancelled = true;
+                    stopBtn.disabled = true;
+                });
+            }
+            const copyMenu = document.getElementById('verifier-report-copy');
+            if (copyMenu) {
+                copyMenu.addEventListener('click', (e) => {
+                    const item = e.target.closest('[data-format]');
+                    if (!item) return;
+                    copyMenu.open = false;
+                    this.copyReportToClipboard(item.dataset.format);
+                });
+                copyMenu.addEventListener('keydown', (e) => {
+                    if (e.key !== 'Escape' || !copyMenu.open) return;
+                    copyMenu.open = false;
+                    copyMenu.querySelector('summary').focus();
+                });
+                document.addEventListener('click', (e) => {
+                    if (copyMenu.open && !copyMenu.contains(e.target)) copyMenu.open = false;
+                });
+            }
 
             this.buttons.providerSelect.getMenu().on('select', (item) => {
                 this.currentProvider = item.getData();
@@ -9176,33 +9315,33 @@ function useToolforgeSourceFetcher() {
             this.updateButtonVisibility();
         }
 
+        // While a run is going, the report's bar says what it is doing and
+        // how far along it is. A finished run says nothing here: what it
+        // found is in the sections below, and totals are shown once.
         updateReportProgress(current, total, phase, startTime) {
-            const progressEl = document.getElementById('verifier-report-progress');
-            if (!progressEl) return;
-
+            const phaseEl = document.getElementById('verifier-report-phase');
+            const fillEl = document.querySelector('#verifier-report-progress .verifier-progress-fill');
+            if (!phaseEl || !fillEl) return;
             const pct = total > 0 ? Math.round((current / total) * 100) : 0;
-            const elapsed = Date.now() - startTime;
-            const elapsedStr = this.formatDuration(elapsed);
             let etaStr = '';
-            if (current > 0) {
-                const remaining = ((elapsed / current) * (total - current));
+            if (current > 0 && current < total) {
+                const remaining = ((Date.now() - startTime) / current) * (total - current);
                 etaStr = this.t(' · ~{duration} remaining', { duration: this.formatDuration(remaining) });
             }
+            phaseEl.textContent = `${phase} (${current}/${total})${etaStr}`;
+            fillEl.style.width = `${pct}%`;
+        }
 
-            // A finished run (the last call, after reportRunning is cleared)
-            // gets one line saying how it ended, not a full bar.
-            if (!this.reportRunning) {
-                progressEl.innerHTML = `<div class="verifier-progress-text">${phase} · ${elapsedStr}</div>`;
-                return;
-            }
-            progressEl.innerHTML = `
-                <div class="verifier-progress-bar">
-                    <div class="verifier-progress-fill" style="width: ${pct}%"></div>
-                </div>
-                <div class="verifier-progress-text">
-                    ${phase} (${current}/${total}) · ${elapsedStr}${etaStr}
-                </div>
-            `;
+        // Which of the bar's controls show: Stop and the status line while a
+        // run is going, Back and Copy report once it is over.
+        renderReportBar() {
+            const view = document.getElementById('verifier-report-view');
+            if (!view) return;
+            view.classList.toggle('sv-running', Boolean(this.reportRunning));
+            const stop = document.getElementById('verifier-report-stop');
+            if (stop) stop.disabled = Boolean(this.reportCancelled);
+            const copy = document.getElementById('verifier-report-copy');
+            if (copy) copy.open = false;
         }
 
         formatDuration(ms) {
@@ -9317,23 +9456,14 @@ function useToolforgeSourceFetcher() {
         renderReportSummary() {
             const summaryEl = document.getElementById('verifier-report-summary');
             if (!summaryEl) return;
-
-            // The run's own facts, under the progress line rather than in
-            // the citations' summary: they hold for every check in the report.
-            const metaEl = document.getElementById('verifier-report-meta');
-            if (metaEl) {
-                const tokens = this.reportTokenUsage.input + this.reportTokenUsage.output > 0
-                    ? this.escapeHtml(this.t(' · {input} input + {output} output tokens', { input: this.reportTokenUsage.input.toLocaleString(), output: this.reportTokenUsage.output.toLocaleString() }).replace(/^ · /, ''))
-                    : '';
-                const revision = this.reportRevisionId
-                    ? `${this.t('Revision: ')}<a href="${this.escapeHtml(this.getRevisionPermalinkUrl(this.reportRevisionId) || '#')}" target="_blank" rel="noopener">${this.reportRevisionId}</a>`
-                    : '';
-                metaEl.innerHTML = [revision, tokens].filter(Boolean).join(' · ');
-            }
+            this.renderReportMeta();
+            const statusEl = document.querySelector('#verifier-report-citations > summary .sv-section-status');
+            const noteEl = document.getElementById('verifier-report-hidden-note');
             // A lead-only report ("Check the lead against the body") has no
             // citations to count.
             if (this.reportLeadOnly) {
                 summaryEl.innerHTML = '';
+                if (noteEl) noteEl.textContent = '';
                 return;
             }
 
@@ -9355,18 +9485,21 @@ function useToolforgeSourceFetcher() {
 
             const segHtml = (count, cls) => (count > 0 && total > 0) ? `<div class="${cls}" style="width:${(count/total)*100}%"></div>` : '';
 
-            const chip = (key, count, label, color) => {
+            // A chip is the legend for its colour, the count for its verdict
+            // and the filter for its rows. Off, its dot is hollow.
+            const chip = (key, count, label) => {
+                if (count <= 0) return '';
                 const hidden = !!this.reportFilters[key];
                 const localizedLabel = this.t(label);
                 const titleText = hidden
                     ? this.t('Show {label} citations', { label: localizedLabel })
                     : this.t('Hide {label} citations', { label: localizedLabel });
                 return `<button type="button"
-                    class="verifier-filter-chip${hidden ? ' verifier-chip-off' : ''}"
+                    class="sv-chip verifier-filter-chip${hidden ? ' verifier-chip-off' : ''}"
                     data-filter="${key}"
                     title="${this.escapeHtml(titleText)}"
                     aria-pressed="${hidden ? 'false' : 'true'}">
-                    <span class="dot" style="background:${color}"></span>${count} ${this.escapeHtml(localizedLabel)}
+                    <span class="sv-dot sv-dot-${key}"></span>${count} ${this.escapeHtml(localizedLabel)}
                 </button>`;
             };
 
@@ -9383,20 +9516,18 @@ function useToolforgeSourceFetcher() {
             const claimsLabel = citationCount === total
                 ? this.t(total === 1 ? '{count} citation checked' : '{count} citations checked', { count: total })
                 : this.t(total === 1 ? '{citations} citations across {claims} claim' : '{citations} citations across {claims} claims', { citations: citationCount, claims: total });
-            // Set-aside lead citations are listed in the lead panel, not here.
-            const demotedCount = this.getReportUnits().filter(u => u.leadDemoted).length;
-            const demotedLabel = demotedCount
-                ? ` · ${this.escapeHtml(this.t(demotedCount === 1 ? '{count} lead citation set aside' : '{count} lead citations set aside', { count: demotedCount }))}`
-                : '';
+            // The section's one line of totals. A stopped run says where it
+            // stopped; set-aside lead citations are counted in the lead's
+            // section, and hidden rows at the end of the list.
+            if (statusEl) {
+                statusEl.textContent = this.reportStopped
+                    ? this.t(this.reportStopped.total === 1 ? 'Cancelled after {done} of {total} citation' : 'Cancelled after {done} of {total} citations', this.reportStopped)
+                    : (total === 0 ? '' : claimsLabel);
+            }
+            // (With every row hidden, the list's own empty message says so.)
+            if (noteEl) noteEl.textContent = hiddenCount > 0 && hiddenCount < total ? this.t('{count} hidden by filter', { count: hiddenCount }) : '';
 
-            // Chips only for verdicts the report has: a "0 unavailable" chip
-            // filters nothing and costs a row in a narrow sidebar.
-            const chipIf = (key, count, label, color) => (count > 0 ? chip(key, count, label, color) : '');
-            summaryEl.innerHTML = `
-                <div class="verifier-summary-title">
-                    <span>${this.escapeHtml(this.t('Citations'))}</span>
-                    ${this.reportSeverity ? this.reportSortHtml() : ''}
-                </div>
+            summaryEl.innerHTML = total === 0 ? '' : `
                 <div class="verifier-summary-bar">
                     ${segHtml(counts.supported, 'seg-supported')}
                     ${segHtml(counts.partial, 'seg-partial')}
@@ -9405,17 +9536,15 @@ function useToolforgeSourceFetcher() {
                     ${segHtml(counts.error, 'seg-error')}
                     ${segHtml(counts.skipped, 'seg-skipped')}
                 </div>
-                <div class="verifier-summary-counts">
-                    ${chipIf('supported', counts.supported, 'supported', '#28a745')}
-                    ${chipIf('partial', counts.partial, 'partial', '#ffc107')}
-                    ${chipIf('not-supported', counts['not-supported'], 'not supported', '#dc3545')}
-                    ${chipIf('unavailable', counts.unavailable, 'unavailable', '#6c757d')}
-                    ${chipIf('error', counts.error, 'errors', '#adb5bd')}
-                    ${chipIf('skipped', counts.skipped, 'skipped', '#adb5bd')}
+                <div class="sv-chips">
+                    ${chip('supported', counts.supported, 'supported')}
+                    ${chip('partial', counts.partial, 'partial')}
+                    ${chip('not-supported', counts['not-supported'], 'not supported')}
+                    ${chip('unavailable', counts.unavailable, 'unavailable')}
+                    ${chip('error', counts.error, 'errors')}
+                    ${chip('skipped', counts.skipped, 'skipped')}
                 </div>
-                <div class="verifier-summary-meta">
-                    ${claimsLabel}${demotedLabel}${hiddenCount > 0 ? this.t(' · {count} hidden by filter', { count: hiddenCount }) : ''}
-                </div>
+                ${this.reportSeverity ? this.reportSortHtml() : ''}
             `;
 
             summaryEl.querySelectorAll('.verifier-filter-chip').forEach(btn => {
@@ -9424,8 +9553,27 @@ function useToolforgeSourceFetcher() {
                     this.toggleReportFilter(btn.dataset.filter);
                 });
             });
-            const sortSelect = summaryEl.querySelector('.verifier-sort-select');
-            if (sortSelect) sortSelect.addEventListener('change', () => this.setReportSort(sortSelect.value));
+            summaryEl.querySelectorAll('.verifier-sort-option').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    this.setReportSort(btn.dataset.sort);
+                });
+            });
+        }
+
+        // The run's own facts, at the foot of the report: the revision
+        // checked, what it cost, how long it took.
+        renderReportMeta() {
+            const metaEl = document.getElementById('verifier-report-meta');
+            if (!metaEl) return;
+            const revision = this.reportRevisionId
+                ? `${this.t('Revision: ')}<a href="${this.escapeHtml(this.getRevisionPermalinkUrl(this.reportRevisionId) || '#')}" target="_blank" rel="noopener">${this.reportRevisionId}</a>`
+                : '';
+            const tokens = this.reportTokenUsage.input + this.reportTokenUsage.output > 0
+                ? this.escapeHtml(this.t(' · {input} input + {output} output tokens', { input: this.reportTokenUsage.input.toLocaleString(), output: this.reportTokenUsage.output.toLocaleString() }).replace(/^ · /, ''))
+                : '';
+            const took = !this.reportRunning && this.reportDurationMs ? this.escapeHtml(this.formatDuration(this.reportDurationMs)) : '';
+            metaEl.innerHTML = [revision, tokens, took].filter(Boolean).join(' · ');
         }
 
         // The reason_type enum itself stays English — it is parsed
@@ -9497,7 +9645,7 @@ function useToolforgeSourceFetcher() {
 
         buildSoloCard(result) {
             const { cls: verdictClass } = this.verdictClassFor(result.verdict);
-            const card = this.findingElement({
+            const row = this.findingElement({
                 classes: `verifier-report-card verdict-${verdictClass}`,
                 ref: this.citationRefHtml(result),
                 verdictHtml: this.verdictHeadHtml(result),
@@ -9506,49 +9654,37 @@ function useToolforgeSourceFetcher() {
                 details: this.quoteHtml(this.quoteViewOf(result))
                     + this.truncationNoteHtml(result, this.t('⚠ Source is long, only partially checked.')),
             });
-            const actions = card.querySelector(':scope > .sv-finding-details > .sv-finding-actions');
-            if (result.refElement && (result.verdict === 'NOT SUPPORTED' || result.verdict === 'PARTIALLY SUPPORTED' || result.verdict === 'SOURCE UNAVAILABLE')) {
-                const edit = document.createElement('div');
-                edit.className = 'report-card-action';
-                edit.appendChild(this.editSectionButton(result.refElement));
-                actions.appendChild(edit);
-            }
-            const feedback = this.buildFeedbackControls(result);
-            if (feedback) actions.appendChild(feedback);
-            this.attachRefScrollHandler(card, result.refElement);
-            return card;
+            const actionable = result.verdict === 'NOT SUPPORTED' || result.verdict === 'PARTIALLY SUPPORTED' || result.verdict === 'SOURCE UNAVAILABLE';
+            this.appendFindingLinks(row, { editRef: actionable ? result.refElement : null, url: result.url });
+            this.appendFindingFeedback(row, result);
+            this.attachRefScrollHandler(row, result.refElement);
+            return row;
         }
 
-        // A group of adjacent citations sharing one claim is one card: its
+        // A group of adjacent citations sharing one claim is one row: its
         // head carries the combined verdict once that check is done, and its
         // details hold that verdict's evidence and the group's sources, each
-        // a card of its own.
+        // a row of its own.
         buildGroupBlock(firstResult) {
             const numbers = (firstResult.groupCitationNumbers || []).map(n => `[${n}]`).join('');
             const groupEl = this.findingElement({
                 classes: 'verifier-report-group',
                 // Its numbers say it is a group; its details list the sources.
-                ref: `<span class="report-card-citation">${this.escapeHtml(numbers)}</span>`,
-                verdictHtml: this.findingTagHtml(this.t('Checking combined sources…')),
+                ref: `<span class="sv-finding-ref">${this.escapeHtml(numbers)}</span>`,
+                verdictHtml: this.findingTagHtml(this.t('Checking combined sources…'), 'sv-finding-pending'),
                 claim: firstResult.claimText,
                 details: `<div class="verifier-report-group-collective"></div>`,
-                detailsAfter: `<div class="verifier-report-group-rows-label">${this.escapeHtml(this.t('Individual sources'))}</div>`
-                    + `<div class="verifier-report-group-rows"></div>`,
+                detailsAfter: `<div class="verifier-report-group-rows sv-rows"></div>`,
             });
             groupEl.dataset.groupId = firstResult.groupId;
-            // One "Edit Section" for the group: its members are in one
+            // One "Edit section" for the group: its members are in one
             // section by definition.
-            if (firstResult.refElement) {
-                const edit = document.createElement('div');
-                edit.className = 'report-card-action';
-                edit.appendChild(this.editSectionButton(firstResult.refElement));
-                groupEl.querySelector(':scope > .sv-finding-details > .sv-finding-actions').appendChild(edit);
-            }
+            this.appendFindingLinks(groupEl, { editRef: firstResult.refElement });
             this.attachRefScrollHandler(groupEl, firstResult.refElement);
             return groupEl;
         }
 
-        // Fills in a group card's combined verdict, and tags the card with
+        // Fills in a group row's combined verdict, and tags the row with
         // data-collective-verdict so the filters can show or hide the whole
         // group by its combined verdict.
         renderGroupCollectiveResult(result) {
@@ -9568,12 +9704,10 @@ function useToolforgeSourceFetcher() {
             this.reportCardEls.set(result, slot);
             slot.innerHTML = this.quoteHtml(this.quoteViewOf(result))
                 + this.truncationNoteHtml(result, this.t('⚠ Combined sources are long, only partially checked.'));
+            this.appendFindingFeedback(groupEl, result);
 
-            const feedback = this.buildFeedbackControls(result);
-            if (feedback) groupEl.querySelector(':scope > .sv-finding-details > .sv-finding-actions').appendChild(feedback);
-
-            // A set-aside combined verdict takes its whole group card, sources
-            // and all, to the lead panel.
+            // A set-aside combined verdict takes its whole group row, sources
+            // and all, to the lead section.
             const demotedCards = result.leadDemoted ? this.leadDemotedCards() : null;
             if (demotedCards) {
                 demotedCards.appendChild(groupEl);
@@ -9582,7 +9716,7 @@ function useToolforgeSourceFetcher() {
         }
 
         // Called when the collective check is skipped for want of a second
-        // retrievable source. Marks the card so applyReportFilters() knows to
+        // retrievable source. Marks the row so applyReportFilters() knows to
         // filter it by its members rather than leaving it permanently visible,
         // and puts the members' own verdicts in its head.
         hideGroupCollectiveSlot(groupId) {
@@ -9595,15 +9729,10 @@ function useToolforgeSourceFetcher() {
             if (slot) slot.style.display = 'none';
             const members = this.reportResults.filter(r => r.groupId === groupId);
             const head = groupEl.querySelector(':scope > .sv-finding-head .sv-finding-verdict');
-            if (head) {
-                head.innerHTML = members.map(r => {
-                    const { cls, label } = this.verdictClassFor(r.verdict);
-                    return this.verdictPillHtml(cls, label);
-                }).join('');
-            }
+            if (head) head.innerHTML = members.map(r => this.verdictLabelHtml(this.verdictClassFor(r.verdict).label)).join('');
             // With no combined verdict the members are counted one by one, so
-            // a set-aside member says so on its own card. (A set-aside
-            // combined verdict moves the whole group to the lead panel.)
+            // a set-aside member says so on its own row. (A set-aside
+            // combined verdict moves the whole group to the lead section.)
             for (const result of members) {
                 if (!result.leadDemoted) continue;
                 const verdictEl = this.reportCardEls.get(result)?.querySelector(':scope > .sv-finding-head .sv-finding-verdict');
@@ -9623,8 +9752,8 @@ function useToolforgeSourceFetcher() {
                 details: this.quoteHtml(this.quoteViewOf(result))
                     + this.truncationNoteHtml(result, this.t('⚠ Source is long, only partially checked.')),
             });
-            const feedback = this.buildFeedbackControls(result);
-            if (feedback) row.querySelector(':scope > .sv-finding-details > .sv-finding-actions').appendChild(feedback);
+            this.appendFindingLinks(row, { url: result.url });
+            this.appendFindingFeedback(row, result);
             this.attachRefScrollHandler(row, result.refElement);
             return row;
         }
@@ -9644,28 +9773,6 @@ function useToolforgeSourceFetcher() {
             const div = document.createElement('div');
             div.textContent = str;
             return div.innerHTML;
-        }
-
-        renderReportActions() {
-            const actionsEl = document.getElementById('verifier-report-actions');
-            if (!actionsEl) return;
-            actionsEl.innerHTML = '';
-
-            const copyWikiBtn = new OO.ui.ButtonWidget({
-                label: this.t('Copy Report (Wikitext)'),
-                flags: ['progressive'],
-                icon: 'copy'
-            });
-            copyWikiBtn.on('click', () => this.copyReportToClipboard('wikitext'));
-            actionsEl.appendChild(copyWikiBtn.$element[0]);
-
-            const copyTextBtn = new OO.ui.ButtonWidget({
-                label: this.t('Copy Report (Plain Text)'),
-                flags: ['safe'],
-                icon: 'copy'
-            });
-            copyTextBtn.on('click', () => this.copyReportToClipboard('plaintext'));
-            actionsEl.appendChild(copyTextBtn.$element[0]);
         }
 
         // The revision the check ran against, recorded so a logged verdict or
@@ -9979,9 +10086,9 @@ function useToolforgeSourceFetcher() {
                 .filter(s => s.status !== SUBCLAIM_STATUSES.SUPPORTED)
                 .map(s => `<li class="sv-subclaim sv-subclaim-${s.status}">`
                     + `<span class="sv-subclaim-status">${this.escapeHtml(s.status === SUBCLAIM_STATUSES.CONTRADICTED ? this.t('Contradicted') : this.t('Not in source'))}</span> `
-                    + this.escapeHtml(s.text)
+                    + `<span class="sv-subclaim-text">${this.escapeHtml(s.text)}`
                     + (s.central ? '' : ` <span class="sv-subclaim-minor">${this.escapeHtml(this.t('(minor)'))}</span>`)
-                    + `</li>`)
+                    + `</span></li>`)
                 .join('');
             return items ? `<ul class="sv-subclaims">${items}</ul>` : '';
         }
@@ -10059,7 +10166,8 @@ function useToolforgeSourceFetcher() {
                     tag = document.createElement('span');
                     verdictEl.appendChild(tag);
                 }
-                tag.className = `sv-finding-tag sv-severity-tag sv-severity-tag-${cls}`;
+                tag.className = 'sv-finding-tag sv-severity-tag';
+                tag.dataset.level = cls;
                 tag.textContent = label;
                 // An unranked card carries its error as a tooltip, not as text.
                 if (!unit.severity.tier && unit.severity.error) tag.title = unit.severity.error;
@@ -10121,15 +10229,18 @@ function useToolforgeSourceFetcher() {
             for (const el of blocks) resultsEl.insertBefore(el, emptyEl);
         }
 
-        // A dropdown in the summary's title row: two orders don't need a
-        // row of buttons of their own.
+        // Two pills, like the filter chips above them: the chosen order is
+        // outlined in the accent colour.
         reportSortHtml() {
-            const option = (key, label) => `<option value="${key}"${this.reportSort === key ? ' selected' : ''}>${this.escapeHtml(label)}</option>`;
-            return `<label class="verifier-sort"><span class="verifier-sort-label">${this.escapeHtml(this.t('Order'))}</span>`
-                + `<select class="verifier-sort-select">`
+            const option = (key, label) => {
+                const active = this.reportSort === key;
+                return `<button type="button" class="sv-chip verifier-sort-option${active ? ' sv-chip-selected' : ''}" data-sort="${key}" aria-pressed="${active ? 'true' : 'false'}">${this.escapeHtml(label)}</button>`;
+            };
+            return `<div class="sv-chips verifier-sort" role="group" aria-label="${this.escapeHtml(this.t('Order'))}">`
+                + `<span class="verifier-sort-label">${this.escapeHtml(this.t('Order'))}</span>`
                 + option('document', this.t('Article order'))
                 + option('severity', this.t('Most serious first'))
-                + `</select></label>`;
+                + `</div>`;
         }
 
         // Runs the single collective verification for one adjacent-citation
@@ -10354,31 +10465,30 @@ function useToolforgeSourceFetcher() {
             return this.getReportUnits().filter(u => !u.leadDemoted);
         }
 
-        // The lead check's panel for a new run. Closed, it is one line: the
-        // check's name and its status. Open, it holds the findings, the
-        // covered sentences, and a list the set-aside lead citations' cards
-        // are moved into (they keep their buttons and feedback controls, so
-        // they are moved, not re-rendered). It starts closed in a full
-        // report, where it sits above the citations and so must not push
-        // them about as its results arrive, and open when the lead check is
-        // all there is. Another check (the uncited-text check) gets a panel
-        // of the same shape beside it.
+        // The lead check's section for a new run: the same header as the
+        // citations' (chevron, name, status) over its findings, the covered
+        // sentences, and a list the set-aside lead citations' rows are moved
+        // into (they keep their feedback controls, so they are moved, not
+        // re-rendered). It starts closed in a full report, where it sits
+        // above the citations and so must not push them about as its results
+        // arrive, and open when the lead check is all there is. Another check
+        // (the uncited-text check) gets a section of the same shape.
         resetReportLead() {
             const el = document.getElementById('verifier-report-lead');
             if (!el) return;
             el.innerHTML = '';
             if (!this.reportLead) return;
-            const panel = document.createElement('details');
-            panel.className = 'sv-check';
-            panel.open = this.reportLeadOnly;
-            panel.innerHTML = `<summary>`
-                + `<span class="sv-check-title">${this.escapeHtml(this.t('Lead vs body'))}</span>`
-                + `<span class="sv-check-status"></span></summary>`
-                + `<div class="sv-check-body"><div class="sv-lead-check"></div>`
-                + `<details class="sv-lead-demoted" style="display:none"><summary></summary>`
-                + `<div class="sv-lead-demoted-note">${this.escapeHtml(this.t('In the lead, a statement can be supported by the article body instead of its own citation, so a lead citation that backs only part of its claim, or none of it, is not counted as a problem. The lead check above covers what the body says. These are worth a look when the claim is contentious.'))}</div>`
-                + `<div class="sv-lead-demoted-cards"></div></details></div>`;
-            el.appendChild(panel);
+            const section = document.createElement('details');
+            section.className = 'sv-section';
+            section.open = this.reportLeadOnly;
+            section.innerHTML = `<summary><span class="sv-chevron"></span>`
+                + `<span class="sv-section-title">${this.escapeHtml(this.t('Lead vs body'))}</span>`
+                + `<span class="sv-section-status"></span></summary>`
+                + `<div class="sv-section-body"><div class="sv-lead-check"></div>`
+                + `<details class="sv-sublist sv-lead-demoted" style="display:none"><summary><span class="sv-chevron"></span><span class="sv-sublist-title"></span></summary>`
+                + `<div class="sv-sublist-note">${this.escapeHtml(this.t('In the lead, a statement can be supported by the article body instead of its own citation, so a lead citation that backs only part of its claim, or none of it, is not counted as a problem. The lead check above covers what the body says. These are worth a look when the claim is contentious.'))}</div>`
+                + `<div class="sv-lead-demoted-cards sv-rows"></div></details></div>`;
+            el.appendChild(section);
             this.renderReportLead();
         }
 
@@ -10387,31 +10497,33 @@ function useToolforgeSourceFetcher() {
         }
 
         renderReportLead() {
-            const panel = document.querySelector('#verifier-report-lead .sv-check');
-            if (!panel || !this.reportLead) return;
-            const status = panel.querySelector('.sv-check-status');
-            status.textContent = this.leadStatusText(this.reportLead);
-            status.classList.toggle('sv-check-flagged', this.leadFindings(this.reportLead).length > 0);
-            const check = panel.querySelector('.sv-lead-check');
-            // Re-rendered as results arrive; a card the editor opened stays open.
-            const open = new Set([...check.querySelectorAll('.sv-finding.sv-expanded')].map(card => card.dataset.leadIndex));
+            const section = document.querySelector('#verifier-report-lead .sv-section');
+            if (!section || !this.reportLead) return;
+            section.querySelector(':scope > summary .sv-section-status').textContent = this.leadStatusText(this.reportLead);
+            const check = section.querySelector('.sv-lead-check');
+            // Re-rendered as results arrive; a row the editor opened stays
+            // open, and so does the list of covered sentences.
+            const open = new Set([...check.querySelectorAll('.sv-finding.sv-expanded')].map(row => row.dataset.leadIndex));
+            const coveredOpen = Boolean(check.querySelector('.sv-lead-covered[open]'));
             check.innerHTML = this.leadCheckHtml(this.reportLead);
-            check.querySelectorAll('.sv-finding[data-lead-index]').forEach(card => {
-                if (open.has(card.dataset.leadIndex)) this.toggleFinding(card, true);
-                // Opening a card shows its sentence in the article, as a
-                // citation's card shows its citation.
-                card.addEventListener('click', (e) => {
-                    if (this.isFindingSummaryClick(card, e) && !card.classList.contains('sv-expanded')) {
-                        this.scrollToLeadSentence(Number(card.dataset.leadIndex));
+            const covered = check.querySelector('.sv-lead-covered');
+            if (covered) covered.open = coveredOpen;
+            check.querySelectorAll('.sv-finding[data-lead-index]').forEach(row => {
+                if (open.has(row.dataset.leadIndex)) this.toggleFinding(row, true);
+                // Opening a row shows its sentence in the article, as a
+                // citation's row shows its citation.
+                row.addEventListener('click', (e) => {
+                    if (this.isFindingSummaryClick(row, e) && !row.classList.contains('sv-expanded')) {
+                        this.scrollToLeadSentence(Number(row.dataset.leadIndex));
                     }
                 });
             });
-            const demoted = panel.querySelector('.sv-lead-demoted');
+            const demoted = section.querySelector('.sv-lead-demoted');
             const cards = this.leadDemotedCards();
             if (demoted && cards) {
                 const count = cards.children.length;
                 demoted.style.display = count ? '' : 'none';
-                demoted.querySelector('summary').textContent = this.t(
+                demoted.querySelector('.sv-sublist-title').textContent = this.t(
                     count === 1 ? '{count} lead citation set aside' : '{count} lead citations set aside', { count });
             }
         }
@@ -10420,8 +10532,8 @@ function useToolforgeSourceFetcher() {
             return (lead.results || []).filter(r => r.outcome === LEAD_OUTCOMES.NOT_COVERED || r.outcome === LEAD_OUTCOMES.CONTRADICTED);
         }
 
-        // The lead check's state in a few words, after its name on the
-        // panel's one line, from
+        // The lead check's state in a few words, beside its name in its
+        // section's header, from
         // { sentences, results, state: 'pending' | 'running' | 'done' | 'stopped' }.
         // 'stopped': the run was stopped before the lead check began.
         leadStatusText(lead) {
@@ -10434,8 +10546,8 @@ function useToolforgeSourceFetcher() {
             return this.t('{covered} of {total} sentences covered', { covered, total });
         }
 
-        // The panel's contents, from the lead check's state alone: its notes,
-        // a card per finding, and the covered sentences folded away.
+        // The section's contents, from the lead check's state alone: its
+        // notes, a row per finding, and the covered sentences folded away.
         leadCheckHtml(lead) {
             const results = lead.results || [];
             const covered = results.filter(r => r.outcome === LEAD_OUTCOMES.COVERED);
@@ -10449,13 +10561,14 @@ function useToolforgeSourceFetcher() {
             if (lead.state === 'done' && uncheckedCount > 0) {
                 notes.push(this.t(uncheckedCount === 1 ? '{count} lead sentence could not be checked.' : '{count} lead sentences could not be checked.', { count: uncheckedCount }));
             }
+            const findings = this.leadFindings(lead);
             const coveredHtml = covered.length
-                ? `<details class="sv-lead-covered"><summary>${this.escapeHtml(this.t('Covered in the body ({count})', { count: covered.length }))}</summary><ul>`
+                ? `<details class="sv-sublist sv-lead-covered"><summary><span class="sv-chevron"></span><span class="sv-sublist-title">${this.escapeHtml(this.t('Covered in the body ({count})', { count: covered.length }))}</span></summary><ul>`
                     + covered.map(r => `<li>${this.escapeHtml(r.text)}${r.section ? ` <span class="sv-lead-section">(${this.escapeHtml(r.section)})</span>` : ''}</li>`).join('')
                     + `</ul></details>`
                 : '';
-            return notes.map(n => `<div class="sv-check-note">${this.escapeHtml(n)}</div>`).join('')
-                + this.leadFindings(lead).map(r => this.leadFindingCardHtml(r)).join('')
+            return notes.map(n => `<div class="sv-section-note">${this.escapeHtml(n)}</div>`).join('')
+                + (findings.length ? `<div class="sv-rows">${findings.map(r => this.leadFindingCardHtml(r)).join('')}</div>` : '')
                 + coveredHtml;
         }
 
@@ -10473,8 +10586,7 @@ function useToolforgeSourceFetcher() {
             return this.findingHtml({
                 classes: `sv-lead-finding verdict-${contradicted ? 'not-supported' : 'partial'}`,
                 attrs: ` data-lead-index="${Number(r.index)}"`,
-                verdictHtml: this.verdictPillHtml(contradicted ? 'not-supported' : 'partial',
-                    contradicted ? this.t('Contradicts the body') : this.t('Not covered in the body')),
+                verdictHtml: this.verdictLabelHtml(contradicted ? this.t('Contradicts the body') : this.t('Not covered in the body')),
                 claim: r.text,
                 comment: r.comments,
                 details: quote + section,
@@ -10491,28 +10603,31 @@ function useToolforgeSourceFetcher() {
         }
 
         // ========================================
-        // FINDING CARDS
+        // REPORT ROWS
         // ========================================
         //
-        // One card for every check's findings: a citation, a group of
+        // One row for every check's findings: a citation, a group of
         // adjacent citations and each of its sources, a lead sentence, and
-        // whatever check comes next. Closed, a card is a head line (the
-        // reference, the verdict and a few words of qualification: the
-        // reason, the severity), the claim on one line and the model's
-        // comment on two. Everything else is in its details, one click away:
-        // the full claim and comment, the quote, the failing subclaims, the
-        // caveats, Edit section and the feedback controls. A report of fifty
-        // citations stays a list that can be read down, and a check that
-        // adds something to say adds it to the details, not to every card.
+        // whatever check comes next. Closed, a row is three things in three
+        // text styles: a head line (the reference and verdict, strong; a few
+        // words of qualification such as the reason and the severity, quiet),
+        // the claim on one line, and the model's comment on two, quiet. Its
+        // verdict's colour is its stripe and nothing else. Everything else is
+        // in its details, one click away: the full claim and comment, the
+        // quote, the failing subclaims, the caveats, and the links to edit
+        // the section, open the source and say whether the verdict was right.
+        // A report of fifty citations stays a list that can be read down, and
+        // a check that has more to say adds it to the details, not to every
+        // row.
 
         findingHtml({ classes = '', attrs = '', ref = '', verdictHtml = '', claim = '', comment = '', details = '', detailsAfter = '' }) {
             const toggleLabel = this.escapeHtml(this.t('Details'));
             return `<div class="sv-finding ${classes}"${attrs}>`
-                + `<div class="sv-finding-head">${ref}<span class="sv-finding-verdict">${verdictHtml}</span>`
-                + `<button type="button" class="sv-finding-toggle" aria-expanded="false" title="${toggleLabel}" aria-label="${toggleLabel}"></button></div>`
+                + `<div class="sv-finding-head"><div class="sv-finding-headline">${ref}<span class="sv-finding-verdict">${verdictHtml}</span></div>`
+                + `<button type="button" class="sv-finding-toggle" aria-expanded="false" title="${toggleLabel}" aria-label="${toggleLabel}"><span class="sv-chevron"></span></button></div>`
                 + (claim ? `<div class="sv-finding-claim">${this.escapeHtml(claim)}</div>` : '')
                 + (comment ? `<div class="sv-finding-comment">${this.escapeHtml(comment)}</div>` : '')
-                + `<div class="sv-finding-details" hidden>${details}<div class="sv-finding-actions"></div>${detailsAfter}</div>`
+                + `<div class="sv-finding-details" hidden>${details}<div class="sv-finding-actions"><span class="sv-finding-links"></span></div>${detailsAfter}</div>`
                 + `</div>`;
         }
 
@@ -10522,46 +10637,63 @@ function useToolforgeSourceFetcher() {
             return wrap.firstElementChild;
         }
 
-        verdictPillHtml(cls, label) {
-            return `<span class="report-card-verdict ${cls}">${this.escapeHtml(label)}</span>`;
+        verdictLabelHtml(label) {
+            return `<span class="sv-verdict">${this.escapeHtml(label)}</span>`;
         }
 
-        // A qualifier in a head line: a few plain words, not another badge.
+        // A qualifier in a head line: a few quiet words after the verdict.
         findingTagHtml(text, cls = '') {
             return `<span class="sv-finding-tag${cls ? ` ${cls}` : ''}">${this.escapeHtml(text)}</span>`;
         }
 
         // A citation's (or a group's combined) verdict and its reason.
         verdictHeadHtml(result) {
-            const { cls, label } = this.verdictClassFor(result.verdict);
             const reason = result.verdict === 'NOT SUPPORTED' && result.reason_type
-                ? this.findingTagHtml(this.reasonTypeLabel(result.reason_type), `sv-reason-${result.reason_type}`)
+                ? this.findingTagHtml(this.reasonTypeLabel(result.reason_type))
                 : '';
-            return this.verdictPillHtml(cls, label) + reason;
+            return this.verdictLabelHtml(this.verdictClassFor(result.verdict).label) + reason;
         }
 
         citationRefHtml(result) {
-            const num = this.escapeHtml(String(result.citationNumber));
-            return result.url
-                ? `<a class="report-card-citation report-card-citation-link" href="${this.escapeHtml(result.url)}" target="_blank" rel="noopener noreferrer">[${num}]</a>`
-                : `<span class="report-card-citation">[${num}]</span>`;
+            return `<span class="sv-finding-ref">[${this.escapeHtml(String(result.citationNumber))}]</span>`;
         }
 
         truncationNoteHtml(result, text) {
             return result.truncated && result.verdict !== 'SUPPORTED'
-                ? `<div class="report-card-truncated">${this.escapeHtml(text)}</div>`
+                ? `<div class="sv-finding-note">${this.escapeHtml(text)}</div>`
                 : '';
         }
 
-        editSectionButton(refElement) {
-            return new OO.ui.ButtonWidget({
-                label: this.t('Edit Section'),
-                flags: ['progressive'],
-                icon: 'edit',
-                href: this.buildEditUrl(refElement),
-                target: '_blank',
-                framed: false
-            }).$element[0];
+        // The links of a row's details: Edit section for a verdict there is
+        // something to do about, and the source itself, named by its host.
+        appendFindingLinks(row, { editRef = null, url = null } = {}) {
+            const links = row.querySelector(':scope > .sv-finding-details > .sv-finding-actions > .sv-finding-links');
+            if (!links) return;
+            const add = (href, text, cls) => {
+                const a = document.createElement('a');
+                a.className = cls;
+                a.href = href;
+                a.target = '_blank';
+                a.rel = 'noopener noreferrer';
+                a.textContent = text;
+                links.appendChild(a);
+            };
+            if (editRef) add(this.buildEditUrl(editRef), this.t('Edit section'), 'sv-link sv-edit-link');
+            const host = url ? this.sourceHost(url) : '';
+            if (host) add(url, `${host} ↗`, 'sv-link sv-source-link');
+        }
+
+        sourceHost(url) {
+            try {
+                return new URL(url).hostname.replace(/^www\./, '');
+            } catch (e) {
+                return '';
+            }
+        }
+
+        appendFindingFeedback(row, result) {
+            const feedback = this.buildFeedbackControls(result);
+            if (feedback) row.querySelector(':scope > .sv-finding-details > .sv-finding-actions').appendChild(feedback);
         }
 
         // The comment line of a card, set once the verdict it explains is in
@@ -10794,12 +10926,17 @@ function useToolforgeSourceFetcher() {
             this.reportLeadOnly = leadOnly;
 
             this.showReportView();
+            this.reportStopped = null;
+            this.reportDurationMs = 0;
             document.getElementById('verifier-report-results').innerHTML = '';
             document.getElementById('verifier-report-summary').innerHTML = '';
             document.getElementById('verifier-report-meta').innerHTML = '';
-            document.getElementById('verifier-report-actions').innerHTML = '';
+            document.getElementById('verifier-report-phase').textContent = '';
             // The lead check alone has no citations to show.
-            document.getElementById('verifier-report-citations').hidden = leadOnly;
+            const citationsSection = document.getElementById('verifier-report-citations');
+            citationsSection.hidden = leadOnly;
+            citationsSection.open = true;
+            this.renderReportBar();
             this.resetReportLead();
             this.applyReportFilters();
             this.updateButtonVisibility();
@@ -11046,19 +11183,15 @@ function useToolforgeSourceFetcher() {
                 this.reportLead.state = 'stopped';
                 this.renderReportLead();
             }
-            const finalPhase = leadOnly
-                ? this.t('Lead check complete')
-                : cancelledVerdicts
-                ? this.t(citations.length === 1 ? 'Cancelled after {done} of {total} citation' : 'Cancelled after {done} of {total} citations', { done: this.reportResults.length, total: citations.length })
-                : this.t(this.reportResults.length === 1 ? 'Completed: {count} citation checked' : 'Completed: {count} citations checked', { count: this.reportResults.length });
-            if (leadOnly) {
-                const n = this.reportLead.sentences.length;
-                this.updateReportProgress(n, n, finalPhase, startTime);
-            } else {
-                this.updateReportProgress(completed, progressTotal, finalPhase, startTime);
-            }
+            // What the run was, for the report to say once: where a stopped
+            // run stopped (the citations' section), how long it took (the
+            // footer).
+            this.reportStopped = cancelledVerdicts && !leadOnly
+                ? { done: this.reportResults.length, total: citations.length }
+                : null;
+            this.reportDurationMs = Date.now() - startTime;
+            this.renderReportBar();
             this.renderReportSummary();
-            this.renderReportActions();
             this.updateButtonVisibility();
         }
 

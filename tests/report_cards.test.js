@@ -6,13 +6,14 @@ import { fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
 
 import { LEAD_OUTCOMES } from '../core/lead-check.js';
+import { mergeReportUnits } from '../core/groups.js';
 
 const MAIN_JS = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'main.js');
 
-// The report's cards and the lead check's panel, lifted out of main.js and
-// run against the report markup createUI() ships (also lifted out), so
-// neither can drift from what is tested. OOUI and the feedback controls are
-// stubbed: they have tests of their own.
+// The report view (its bar, sections and rows), lifted out of main.js and run
+// against the report markup createUI() ships (also lifted out), so neither
+// can drift from what is tested. The feedback controls are stubbed: they have
+// tests of their own.
 function extractMethod(src, signature) {
     const start = src.indexOf(`        ${signature}`);
     assert.ok(start !== -1, `method not found in main.js: ${signature}`);
@@ -23,21 +24,24 @@ function extractMethod(src, signature) {
 
 function reportMarkup(src) {
     const start = src.indexOf('<div id="verifier-report-view"');
-    const endMarker = '<div id="verifier-report-actions"></div>';
+    const endMarker = '<div id="verifier-report-meta"></div>';
     const end = src.indexOf(endMarker, start);
     assert.ok(start !== -1 && end !== -1, 'report view markup not found in createUI()');
     return src.slice(start, end + endMarker.length).replace(/\$\{this\.t\('([^']*)'\)\}/g, '$1') + '</div>';
 }
 
 const METHODS = [
-    'findingHtml({', 'findingElement(options) {', 'verdictPillHtml(cls, label) {', "findingTagHtml(text, cls = '') {",
-    'verdictHeadHtml(result) {', 'citationRefHtml(result) {', 'truncationNoteHtml(result, text) {', 'editSectionButton(refElement) {',
+    'findingHtml({', 'findingElement(options) {', 'verdictLabelHtml(label) {', "findingTagHtml(text, cls = '') {",
+    'verdictHeadHtml(result) {', 'citationRefHtml(result) {', 'truncationNoteHtml(result, text) {',
+    'appendFindingLinks(row, { editRef = null, url = null } = {}) {', 'sourceHost(url) {', 'appendFindingFeedback(row, result) {',
     'setFindingComment(card, text) {', 'toggleFinding(card, open = !card.classList.contains(\'sv-expanded\')) {',
     'isFindingSummaryClick(card, e) {', 'handleFindingClick(e) {', 'revealReportCard(el) {', 'attachRefScrollHandler(el, refElement) {',
     'buildSoloCard(result) {', 'buildGroupBlock(firstResult) {', 'renderGroupCollectiveResult(result) {', 'hideGroupCollectiveSlot(groupId) {',
     'buildGroupRow(result) {', 'quoteViewOf(result) {', 'quoteHtml(view) {', 'verdictClassFor(verdict) {', 'reasonTypeLabel(reasonType) {',
     'resetReportLead() {', 'leadDemotedCards() {', 'renderReportLead() {', 'leadFindings(lead) {', 'leadStatusText(lead) {',
     'leadCheckHtml(lead) {', 'leadFindingCardHtml(r) {', 'escapeHtml(str) {',
+    'updateReportProgress(current, total, phase, startTime) {', 'renderReportBar() {', 'formatDuration(ms) {',
+    'renderReportSummary() {', 'renderReportMeta() {', 'reportSortHtml() {', 'getCountedReportUnits() {', 'getReportUnits() {',
 ];
 
 function harness() {
@@ -48,20 +52,22 @@ function harness() {
     const { window } = dom;
     const scrolled = [];
     window.HTMLElement.prototype.scrollIntoView = function () { scrolled.push(this.id || this.className); };
-    const OO = { ui: { ButtonWidget: function (config) {
-        const a = window.document.createElement('a');
-        a.className = 'oo-ui-widget oo-ui-buttonElement';
-        a.textContent = config.label;
-        this.$element = [a];
-    } } };
-    const deps = { document: window.document, window, OO, CSS: { escape: s => s }, LEAD_OUTCOMES, SKIPPED_VERDICT: 'SKIPPED' };
+    const deps = { document: window.document, window, URL: window.URL, CSS: { escape: s => s }, LEAD_OUTCOMES, SKIPPED_VERDICT: 'SKIPPED', mergeReportUnits };
     const Harness = new Function(...Object.keys(deps), `
         class Harness {
-            constructor() { this.reportCardEls = new Map(); this.reportResults = []; this.reportLead = null; this.reportLeadOnly = false; }
+            constructor() {
+                this.reportCardEls = new Map(); this.reportResults = []; this.reportGroupResults = new Map();
+                this.reportLead = null; this.reportLeadOnly = false; this.reportRunning = false; this.reportCancelled = false;
+                this.reportStopped = null; this.reportDurationMs = 0; this.reportSeverity = false; this.reportSort = 'document';
+                this.reportFilters = { supported: true }; this.reportTokenUsage = { input: 0, output: 0 }; this.reportRevisionId = null;
+            }
             t(en, params = {}) { return en.replace(/\\{(\\w+)\\}/g, (m, k) => (k in params ? String(params[k]) : m)); }
-            buildEditUrl() { return '#edit'; }
+            buildEditUrl() { return 'https://wiki.example/edit'; }
+            getRevisionPermalinkUrl(id) { return 'https://wiki.example/rev/' + id; }
             clearHighlights() {}
             scrollToLeadSentence(index) { this.scrolledLead = index; }
+            toggleReportFilter() {}
+            setReportSort() {}
             buildFeedbackControls(result) {
                 if (!result.checkId) return null;
                 const el = document.createElement('div');
@@ -81,67 +87,75 @@ ${methods}
 
 const solo = (extra = {}) => ({
     citationNumber: '1', claimText: 'The bank reported a solvency ratio of 13.8%, above the 12% statutory minimum, as late as 30 September.',
-    url: 'https://example.org/s1', verdict: 'NOT SUPPORTED', reason_type: 'omission',
+    url: 'https://www.example.org/s1', verdict: 'NOT SUPPORTED', reason_type: 'omission',
     comments: 'The source is a headline about a rating downgrade.', sourceQuote: 'Rating cut', quoteDisplay: 'Rating cut',
     quoteVerified: true, quoteStatus: 'exact', truncated: true, checkId: 'c1', ...extra,
 });
+// The row's own head line: jsdom's querySelectorAll(':scope > ...') also matches nested rows' heads.
+const headOf = row => row.querySelector(':scope > .sv-finding-head');
+const texts = (el, selector) => [...el.querySelectorAll(selector)].map(e => e.textContent);
 
-test('a card shows its verdict, claim and comment; the evidence, caveats and actions wait in its details', () => {
+// --- Rows ---
+
+test('a closed row is a head line, the claim and the comment; the evidence, caveats and links wait in its details', () => {
     const { h, doc } = harness();
-    doc.getElementById('ref1');
-    const card = h.buildSoloCard(solo({ refElement: doc.getElementById('ref1') }));
-    assert.ok(card.classList.contains('verifier-report-card') && card.classList.contains('verdict-not-supported'), 'the classes the filters and the sort key on');
-    const head = card.querySelector(':scope > .sv-finding-head');
-    assert.equal(head.querySelector('a.report-card-citation-link').getAttribute('href'), 'https://example.org/s1', '[N] still opens the source');
-    assert.deepEqual([...head.querySelectorAll('.report-card-verdict, .sv-finding-tag')].map(e => e.textContent), ['Not Supported', 'Omission']);
-    assert.equal(card.querySelector(':scope > .sv-finding-claim').textContent, solo().claimText, 'the whole claim, clamped by CSS, not cut');
-    assert.equal(card.querySelector(':scope > .sv-finding-comment').textContent, solo().comments);
+    const row = h.buildSoloCard(solo({ refElement: doc.getElementById('ref1') }));
+    assert.ok(row.classList.contains('verifier-report-card') && row.classList.contains('verdict-not-supported'), 'the classes the filters, the sort and the stripe key on');
+    const head = headOf(row);
+    assert.equal(head.querySelector('.sv-finding-ref').textContent, '[1]');
+    assert.equal(head.querySelector('a'), null, 'the head is text: the source link is in the details');
+    assert.deepEqual(texts(head, '.sv-verdict, .sv-finding-tag'), ['Not Supported', 'Omission']);
+    assert.equal(row.querySelector(':scope > .sv-finding-claim').textContent, solo().claimText, 'the whole claim, clamped by CSS, not cut');
+    assert.equal(row.querySelector(':scope > .sv-finding-comment').textContent, solo().comments);
 
-    const details = card.querySelector(':scope > .sv-finding-details');
+    const details = row.querySelector(':scope > .sv-finding-details');
     assert.equal(details.hidden, true);
-    assert.deepEqual([...details.children].map(c => c.className), ['sv-quote', 'report-card-truncated', 'sv-finding-actions']);
-    assert.deepEqual([...details.querySelector('.sv-finding-actions').children].map(c => c.className), ['report-card-action', 'verifier-feedback']);
+    assert.deepEqual([...details.children].map(c => c.className), ['sv-quote', 'sv-finding-note', 'sv-finding-actions']);
+    const links = [...details.querySelectorAll('.sv-finding-links a')];
+    assert.deepEqual(links.map(a => [a.textContent, a.getAttribute('href')]), [
+        ['Edit section', 'https://wiki.example/edit'],
+        ['example.org ↗', 'https://www.example.org/s1'],
+    ], 'the source is named by its host');
+    assert.ok(details.querySelector('.sv-finding-actions > .verifier-feedback'));
 
     const fine = h.buildSoloCard(solo({ verdict: 'SUPPORTED', reason_type: null, refElement: doc.getElementById('ref1') }));
-    assert.equal(fine.querySelector('.report-card-action'), null, 'no Edit section for a supported citation');
-    assert.equal(fine.querySelector('.report-card-truncated'), null, 'nor a truncation caveat');
+    assert.deepEqual(texts(fine, '.sv-finding-links a'), ['example.org ↗'], 'no Edit section for a supported citation');
+    assert.equal(fine.querySelector('.sv-finding-note'), null, 'nor a truncation caveat');
 });
 
-test('a click on a closed card opens it and shows its citation; only its head closes it again', () => {
+test('a click on a closed row opens it and shows its citation; only its head closes it again', () => {
     const { h, doc, click, scrolled } = harness();
-    const card = h.buildSoloCard(solo({ refElement: doc.getElementById('ref1') }));
-    doc.getElementById('verifier-report-results').appendChild(card);
-    const details = card.querySelector('.sv-finding-details');
-    const toggle = card.querySelector('.sv-finding-toggle');
+    const row = h.buildSoloCard(solo({ refElement: doc.getElementById('ref1') }));
+    doc.getElementById('verifier-report-results').appendChild(row);
+    const details = row.querySelector('.sv-finding-details');
+    const toggle = row.querySelector('.sv-finding-toggle');
 
-    click(card.querySelector('.sv-finding-claim'));
+    click(row.querySelector('.sv-finding-claim'));
     assert.equal(details.hidden, false);
     assert.equal(toggle.getAttribute('aria-expanded'), 'true');
     assert.deepEqual(scrolled, ['ref1'], 'opening shows the citation in the article');
 
-    click(card.querySelector('.sv-finding-claim'));
+    click(row.querySelector('.sv-finding-claim'));
     click(details.querySelector('.sv-quote'));
-    assert.equal(details.hidden, false, 'an open card\'s text is for reading and selecting');
+    click(details.querySelector('.sv-finding-links a'));
+    assert.equal(details.hidden, false, 'an open row\'s text is for reading, selecting and following');
 
-    click(card.querySelector('.sv-finding-head'));
+    click(row.querySelector('.sv-finding-headline'));
     assert.equal(details.hidden, true);
     assert.deepEqual(scrolled, ['ref1'], 'closing leaves the article where it is');
 
     click(toggle);
     assert.equal(details.hidden, false, 'the toggle button works for the keyboard');
-    click(toggle);
-    click(card.querySelector('a.report-card-citation-link'));
-    assert.equal(details.hidden, true, 'the [N] link opens the source, not the card');
 });
 
-test('a group is one card: pending, then its combined verdict in the head; its sources are cards inside it', () => {
+test('a group is one row: pending, then its combined verdict in the head; its sources are rows inside it', () => {
     const { h, doc, click } = harness();
     const member = (n, verdict, extra = {}) => solo({ citationNumber: n, groupId: 'g1', groupSize: 2, groupCitationNumbers: ['1', '2'], verdict, refElement: doc.getElementById(`ref${n}`), checkId: `c${n}`, ...extra });
     const results = doc.getElementById('verifier-report-results');
     const group = h.buildGroupBlock(member('1', 'SUPPORTED'));
     results.appendChild(group);
-    assert.equal(group.querySelector('.report-card-citation').textContent, '[1][2]');
-    assert.equal(group.querySelector('.sv-finding-verdict').textContent, 'Checking combined sources…');
+    assert.equal(headOf(group).querySelector('.sv-finding-ref').textContent, '[1][2]');
+    assert.equal(headOf(group).querySelector('.sv-finding-verdict').textContent, 'Checking combined sources…');
     const rows = group.querySelector('.verifier-report-group-rows');
     rows.appendChild(h.buildGroupRow(member('1', 'SUPPORTED', { reason_type: null })));
     rows.appendChild(h.buildGroupRow(member('2', 'NOT SUPPORTED')));
@@ -149,17 +163,19 @@ test('a group is one card: pending, then its combined verdict in the head; its s
 
     h.renderGroupCollectiveResult({ groupId: 'g1', verdict: 'PARTIALLY SUPPORTED', comments: 'One source backs it.', checkId: 'cg' });
     assert.equal(group.dataset.collectiveVerdict, 'partial', 'what the filters hide the group by');
-    assert.ok(group.classList.contains('verdict-partial'));
-    assert.equal(group.querySelector(':scope > .sv-finding-head .report-card-verdict').textContent, 'Partial');
+    assert.ok(group.classList.contains('verdict-partial'), 'and its stripe');
+    assert.deepEqual(texts(headOf(group), '.sv-verdict'), ['Partial']);
     assert.equal(group.querySelector(':scope > .sv-finding-comment').textContent, 'One source backs it.');
     const actions = group.querySelector(':scope > .sv-finding-details > .sv-finding-actions');
-    assert.deepEqual([...actions.children].map(c => c.className), ['report-card-action', 'verifier-feedback'], 'one Edit section, and feedback on the combined verdict');
+    assert.deepEqual(texts(actions, '.sv-finding-links a'), ['Edit section'], 'one Edit section for the group');
+    assert.ok(actions.querySelector(':scope > .verifier-feedback'), 'feedback on the combined verdict');
 
     click(group.querySelector('.sv-finding-claim'));
     const second = rows.children[1];
-    click(second.querySelector('.sv-finding-head'));
+    click(headOf(second).querySelector('.sv-finding-headline'));
     assert.equal(second.querySelector('.sv-finding-details').hidden, false, 'a source opens on its own');
     assert.equal(group.querySelector(':scope > .sv-finding-details').hidden, false, 'without closing its group');
+    assert.deepEqual(texts(second, '.sv-finding-links a'), ['example.org ↗']);
 });
 
 test('a group whose combined check was skipped shows its sources\' verdicts, and tags a set-aside source once', () => {
@@ -176,8 +192,7 @@ test('a group whose combined check was skipped shows its sources\' verdicts, and
     assert.equal(doc.querySelectorAll('.sv-lead-aside-tag').length, 0, 'no tag while the combined verdict may still come');
     h.hideGroupCollectiveSlot('g1');
     assert.equal(group.dataset.collectiveSkipped, 'true');
-    // (Not querySelectorAll(':scope > ...'): jsdom's matches nested cards' heads too.)
-    assert.deepEqual([...group.querySelector(':scope > .sv-finding-head').querySelectorAll('.report-card-verdict')].map(e => e.textContent), ['Partial', 'Unavailable']);
+    assert.deepEqual(texts(headOf(group), '.sv-verdict'), ['Partial', 'Unavailable']);
     const rows = group.querySelectorAll('.verifier-report-group-row');
     assert.equal(rows[0].querySelector('.sv-lead-aside-tag').textContent, 'Set aside: lead');
     assert.equal(rows[1].querySelector('.sv-lead-aside-tag'), null);
@@ -185,61 +200,137 @@ test('a group whose combined check was skipped shows its sources\' verdicts, and
     assert.equal(doc.querySelectorAll('.sv-lead-aside-tag').length, 1, 'tagged once');
 });
 
+// --- Sections ---
+
 const sentences = [0, 1, 2].map(index => ({ index, text: `Sentence ${index}.` }));
-
-test('the lead check is a one-line panel above the citations: closed in a full report, open when it is all there is', () => {
-    const { h, doc } = harness();
-    const view = doc.getElementById('verifier-report-view');
-    const ids = [...view.children].map(c => c.id);
-    assert.ok(ids.indexOf('verifier-report-lead') < ids.indexOf('verifier-report-citations'), 'above, so its results never move the citation cards');
-
-    h.reportLead = { sentences, results: [], state: 'pending' };
-    h.resetReportLead();
-    const panel = doc.querySelector('#verifier-report-lead details.sv-check');
-    assert.equal(panel.open, false);
-    assert.equal(panel.querySelector(':scope > summary .sv-check-title').textContent, 'Lead vs body');
-    assert.equal(panel.querySelector('.sv-check-status').textContent, 'runs after the citations');
-
-    h.reportLead.state = 'done';
-    h.reportLead.results = [
+const leadDone = () => ({
+    sentences, state: 'done', results: [
         { index: 0, text: 'Sentence 0.', verdict: 'SUPPORTED', outcome: LEAD_OUTCOMES.COVERED },
         { index: 1, text: 'Sentence 1.', verdict: 'NOT SUPPORTED', outcome: LEAD_OUTCOMES.NOT_COVERED, comments: 'Not in the body.' },
         { index: 2, text: 'Sentence 2.', verdict: 'NOT SUPPORTED', outcome: LEAD_OUTCOMES.CONTRADICTED },
-    ];
+    ],
+});
+
+test('every check is a section of the same shape: a header with a chevron, a name and a status, that opens and closes', () => {
+    const { h, doc } = harness();
+    h.reportLead = { sentences, results: [], state: 'pending' };
+    h.resetReportLead();
+    const lead = doc.querySelector('#verifier-report-lead > details');
+    const citations = doc.getElementById('verifier-report-citations');
+    const shape = section => [section.tagName, section.className, ...[...section.querySelector(':scope > summary').children].map(c => c.className)];
+    assert.deepEqual(shape(lead), ['DETAILS', 'sv-section', 'sv-chevron', 'sv-section-title', 'sv-section-status']);
+    assert.deepEqual(shape(citations), shape(lead), 'the citations are a section like the lead check');
+    assert.equal(lead.querySelector('.sv-section-title').textContent, 'Lead vs body');
+    assert.equal(citations.querySelector('.sv-section-title').textContent, 'Citations');
+
+    const ids = [...doc.getElementById('verifier-report-view').children].map(c => c.id);
+    assert.ok(ids.indexOf('verifier-report-lead') < ids.indexOf('verifier-report-citations'), 'the lead comes first, as in the article');
+    assert.equal(lead.open, false, 'closed, so its results arriving never move the citation rows');
+    assert.equal(citations.open, true);
+    assert.equal(lead.querySelector('.sv-section-status').textContent, 'runs after the citations');
+
+    h.reportLead = leadDone();
     h.renderReportLead();
-    const status = panel.querySelector('.sv-check-status');
-    assert.equal(status.textContent, '1 of 3 sentences covered');
-    assert.ok(status.classList.contains('sv-check-flagged'), 'tinted when there is something to open it for');
-    assert.equal(panel.open, false, 'results arriving never open it');
-    assert.deepEqual([...panel.querySelectorAll('.sv-lead-finding')].map(c => c.dataset.leadIndex), ['1', '2']);
+    assert.equal(lead.querySelector('.sv-section-status').textContent, '1 of 3 sentences covered');
+    assert.equal(lead.open, false, 'results arriving never open it');
+    assert.deepEqual([...lead.querySelectorAll('.sv-lead-finding')].map(c => c.dataset.leadIndex), ['1', '2']);
 
     const leadOnly = harness();
     leadOnly.h.reportLead = { sentences, results: [], state: 'pending' };
     leadOnly.h.reportLeadOnly = true;
     leadOnly.h.resetReportLead();
-    assert.equal(leadOnly.doc.querySelector('#verifier-report-lead details.sv-check').open, true);
+    assert.equal(leadOnly.doc.querySelector('#verifier-report-lead > details').open, true, 'open when it is all there is');
 });
 
-test('a lead card the editor opened stays open as later results re-render the panel', () => {
+test('a lead row the editor opened stays open as later results re-render the section, and so does the covered list', () => {
     const { h, doc, click } = harness();
-    h.reportLead = { sentences, results: [{ index: 1, text: 'Sentence 1.', verdict: 'NOT SUPPORTED', outcome: LEAD_OUTCOMES.NOT_COVERED }], state: 'running' };
+    h.reportLead = { sentences, state: 'running', results: [
+        { index: 0, text: 'Sentence 0.', verdict: 'SUPPORTED', outcome: LEAD_OUTCOMES.COVERED },
+        { index: 1, text: 'Sentence 1.', verdict: 'NOT SUPPORTED', outcome: LEAD_OUTCOMES.NOT_COVERED },
+    ] };
     h.resetReportLead();
     click(doc.querySelector('.sv-lead-finding .sv-finding-claim'));
+    assert.equal(h.scrolledLead, 1, 'opening a lead row shows its sentence in the article');
+    doc.querySelector('.sv-lead-covered').open = true;
     h.reportLead.results.push({ index: 2, text: 'Sentence 2.', verdict: 'NOT SUPPORTED', outcome: LEAD_OUTCOMES.NOT_COVERED });
     h.renderReportLead();
-    const cards = [...doc.querySelectorAll('.sv-lead-finding')];
-    assert.deepEqual(cards.map(c => c.classList.contains('sv-expanded')), [true, false]);
+    assert.deepEqual([...doc.querySelectorAll('.sv-lead-finding')].map(c => c.classList.contains('sv-expanded')), [true, false]);
+    assert.equal(doc.querySelector('.sv-lead-covered').open, true);
 });
 
-test('a citation clicked in the article opens its card and whatever holds it', () => {
+test('a citation clicked in the article opens its row and whatever holds it', () => {
     const { h, doc } = harness();
     h.reportLead = { sentences, results: [], state: 'done' };
     h.resetReportLead();
-    const card = h.buildSoloCard(solo({ verdict: 'PARTIALLY SUPPORTED', reason_type: null, refElement: doc.getElementById('ref1') }));
-    h.leadDemotedCards().appendChild(card);
+    const row = h.buildSoloCard(solo({ verdict: 'PARTIALLY SUPPORTED', reason_type: null, refElement: doc.getElementById('ref1') }));
+    h.leadDemotedCards().appendChild(row);
     h.renderReportLead();
-    h.revealReportCard(card);
-    assert.equal(doc.querySelector('#verifier-report-lead details.sv-check').open, true);
+    assert.equal(doc.querySelector('.sv-lead-demoted .sv-sublist-title').textContent, '1 lead citation set aside');
+    h.revealReportCard(row);
+    assert.equal(doc.querySelector('#verifier-report-lead > details').open, true);
     assert.equal(doc.querySelector('.sv-lead-demoted').open, true);
-    assert.equal(card.querySelector('.sv-finding-details').hidden, false);
+    assert.equal(row.querySelector('.sv-finding-details').hidden, false);
+});
+
+// --- The bar and the totals ---
+
+test('the report view holds no run buttons: its bar stops a run, then leads back and copies the report', () => {
+    const { h, doc } = harness();
+    const view = doc.getElementById('verifier-report-view');
+    assert.deepEqual([...doc.getElementById('verifier-report-bar').children].map(c => c.id),
+        ['verifier-report-back', 'verifier-report-phase', 'verifier-report-stop', 'verifier-report-copy']);
+    assert.deepEqual(texts(doc.getElementById('verifier-report-copy'), '[data-format]'), ['Wikitext', 'Plain text']);
+    assert.doesNotMatch(view.textContent, /Verify All Citations|Check the lead/, 'those are in the main view, one Back away');
+
+    h.reportRunning = true;
+    h.renderReportBar();
+    assert.ok(view.classList.contains('sv-running'), 'the stylesheet shows the status line and Stop, and hides Back and Copy');
+    h.updateReportProgress(12, 48, 'Checking citation [13]', Date.now() - 12000);
+    assert.match(doc.getElementById('verifier-report-phase').textContent, /^Checking citation \[13\] \(12\/48\) · ~\d+s remaining$/);
+    assert.equal(doc.querySelector('#verifier-report-progress .verifier-progress-fill').style.width, '25%');
+
+    h.reportCancelled = true;
+    h.renderReportBar();
+    assert.equal(doc.getElementById('verifier-report-stop').disabled, true, 'a Stop that was heard says so');
+
+    h.reportRunning = false;
+    h.reportCancelled = false;
+    doc.getElementById('verifier-report-copy').open = true;
+    h.renderReportBar();
+    assert.equal(view.classList.contains('sv-running'), false);
+    assert.equal(doc.getElementById('verifier-report-copy').open, false);
+});
+
+test('totals are said once: the section\'s status, the chips, a note for hidden rows, and the run\'s facts in the footer', () => {
+    const { h, doc } = harness();
+    const unit = (n, verdict, extra = {}) => ({ citationNumber: String(n), verdict, groupSize: 1, ...extra });
+    h.reportResults = [unit(1, 'SUPPORTED'), unit(2, 'SUPPORTED'), unit(3, 'PARTIALLY SUPPORTED'), unit(4, 'NOT SUPPORTED'), unit(5, 'NOT SUPPORTED'),
+        unit(6, 'PARTIALLY SUPPORTED', { leadDemoted: true })];
+    h.reportRevisionId = 123;
+    h.reportTokenUsage = { input: 1000, output: 200 };
+    h.reportDurationMs = 65000;
+    h.renderReportSummary();
+
+    const status = doc.querySelector('#verifier-report-citations .sv-section-status');
+    assert.equal(status.textContent, '5 citations checked', 'set-aside lead citations are the lead section\'s to count');
+    const chips = [...doc.querySelectorAll('#verifier-report-summary .verifier-filter-chip')];
+    assert.deepEqual(chips.map(c => c.textContent.trim()), ['2 supported', '1 partial', '2 not supported'], 'no chip for a verdict the report has none of');
+    assert.deepEqual(chips.map(c => c.classList.contains('verifier-chip-off')), [true, false, false], 'a filtered-out verdict\'s chip is hollow');
+    assert.ok(chips[0].querySelector('.sv-dot.sv-dot-supported'));
+    assert.equal(doc.getElementById('verifier-report-hidden-note').textContent, '2 hidden by filter');
+    assert.equal(doc.querySelector('#verifier-report-summary .verifier-sort'), null, 'no order to choose unless the report was ranked');
+    assert.equal(doc.getElementById('verifier-report-meta').textContent, 'Revision: 123 · 1,000 input + 200 output tokens · 1m 5s');
+    assert.doesNotMatch(doc.getElementById('verifier-report-view').textContent, /Completed/, 'no second line of totals');
+
+    h.reportSeverity = true;
+    h.reportSort = 'severity';
+    h.reportStopped = { done: 5, total: 20 };
+    h.renderReportSummary();
+    assert.equal(status.textContent, 'Cancelled after 5 of 20 citations');
+    const sort = [...doc.querySelectorAll('#verifier-report-summary .verifier-sort-option')];
+    assert.deepEqual(sort.map(b => [b.tagName, b.textContent, b.getAttribute('aria-pressed')]), [
+        ['BUTTON', 'Article order', 'false'],
+        ['BUTTON', 'Most serious first', 'true'],
+    ], 'the order is two pills, like the chips');
+    assert.ok(sort[1].classList.contains('sv-chip-selected'));
 });

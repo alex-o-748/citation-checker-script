@@ -44,7 +44,7 @@ ${methods}
 }
 
 // The card anatomy findingHtml() builds: a head line, then details.
-const head = '<div class="sv-finding-head"><span class="sv-finding-verdict"><span class="report-card-verdict">Partial</span></span></div>';
+const head = '<div class="sv-finding-head"><div class="sv-finding-headline"><span class="sv-finding-verdict"><span class="sv-verdict">Partial</span></span></div></div>';
 const card = (id, order) => `<div class="verifier-report-card sv-finding" data-id="${id}" data-doc-order="${order}">${head}`
   + '<div class="sv-finding-details" hidden><div class="sv-quote"></div><div class="sv-finding-actions"><div class="verifier-feedback"></div></div></div></div>';
 const group = (id, order, rows) => `<div class="verifier-report-group sv-finding" data-id="${id}" data-doc-order="${order}">${head}`
@@ -113,7 +113,8 @@ test('on a card, what was found goes in the head line and the failing subclaims 
   const el = doc.querySelector('[data-id="a"]');
   const tags = [...el.querySelector(':scope > .sv-finding-head').querySelectorAll('.sv-severity-tag')];
   assert.deepEqual(tags.map((t) => t.textContent), ['Key fact contradicted'], 'replaced, not stacked, on re-render');
-  assert.ok(tags[0].classList.contains('sv-severity-tag-high'));
+  assert.ok(tags[0].classList.contains('sv-finding-tag'), 'a few quiet words, like the reason beside it');
+  assert.equal(tags[0].dataset.level, 'high', 'the level is kept, though no longer a colour');
   assert.deepEqual([...el.querySelector('.sv-finding-details').children].map((c) => c.className), ['sv-quote', 'sv-severity-slot', 'sv-finding-actions']);
   assert.match(el.querySelector('.sv-severity-slot').textContent, /Contradicted opened in 1998/);
 });
@@ -152,7 +153,7 @@ test('the block lists only failing subclaims, marks peripheral ones, and escapes
   assert.match(html, /Key fact contradicted/);
   assert.match(html, /opened in &lt;b&gt;1998&lt;\/b&gt;/);
   assert.doesNotMatch(html, /designed by Holt/);
-  assert.match(html, /<li class="sv-subclaim sv-subclaim-absent">.*Holt is an engineer <span class="sv-subclaim-minor">\(minor\)<\/span><\/li>/);
+  assert.match(html, /<li class="sv-subclaim sv-subclaim-absent">.*<span class="sv-subclaim-text">Holt is an engineer <span class="sv-subclaim-minor">\(minor\)<\/span><\/span><\/li>/);
 });
 
 test('badge labels say what was found; T2 tells a contradicted detail from a missing key fact', () => {

@@ -91,7 +91,8 @@ docs/                            # Reference docs + design plans (see docs/READM
 | `assessSeverity()` / `showSingleSeverity()` / `rankReportBySeverity()` | Opt-in severity pass (`core/severity.js`'s `runSeverityPass()`) for a flagged verdict: in the single-check view, and as a second phase of Verify All (see "Severity ranking" below) |
 | `applyReportSort()` / `renderReportSeverity()` | Report order: article order, or "Most serious first" by `compareSeverity()` on a severity-ranked report. Moves whole cards and group blocks; never hides one |
 | `articleLead()` / `runReportLeadCheck()` / `renderReportLead()` | The lead check (`core/lead-check.js`): the last phase of Verify All, or all of "Check the lead against the body"; the report's lead section (see "The lead check" below) |
-| `findingHtml()` / `toggleFinding()` / `handleFindingClick()` | The one card every report finding uses (citations, groups and their sources, lead sentences): head line, claim and comment clamped while closed, everything else in details opened on demand (see "The report: one card, one scroll area" below) |
+| `findingHtml()` / `toggleFinding()` / `handleFindingClick()` | The one row every report finding uses (citations, groups and their sources, lead sentences): head line, claim and comment clamped while closed, everything else in details opened on demand (see "The report view" below) |
+| `renderReportBar()` / `updateReportProgress()` / `renderReportSummary()` | The report's bar (status and Stop while a run is going; Back and Copy report after), and the citations section's status, distribution bar, filter chips and sort order |
 | `getCountedReportUnits()` | `getReportUnits()` minus set-aside lead citations: what the summary, the severity ranking and the exports count |
 
 ## Benchmark Suite
@@ -524,11 +525,11 @@ Rules to keep if you touch it:
   costs a few calls per Verify All, not one per citation. Lead results are
   **not logged**: the Worker has no field to tell a lead sentence from a
   citation.
-- **In the report it is a panel above the citations**, closed: one line with
-  its name and status, so its results arriving never move the citation cards.
-  Open, it holds its finding cards, the covered sentences and the set-aside
-  citations. It is open when it is the whole report ("Check the lead against
-  the body"). See "The report: one card, one scroll area" below.
+- **In the report it is a section above the citations**, with the same header
+  as theirs, and closed: its results arriving never move the citation rows.
+  Open, it holds its rows, the covered sentences and the set-aside citations.
+  It is open when it is the whole report ("Check the lead against the body").
+  See "The report view" below.
 - **Not yet validated.** `benchmark/dataset_lead.json` (separate from
   `dataset.json`, like WiCE) is built by `npm run lead:extract`; its labels are
   for people to make.
@@ -554,43 +555,62 @@ Design, prototype numbers and the alternatives rejected:
 - Claim extraction uses "between citations" logic by design (not full sentences) for precision
 - `extractClaimText(refElement, { scope })` (`core/claim.js`) supports two claim scopes. `scope: 'paragraph'` (the default, used by `main.js` and the CLI/benchmark) is the full "between citations" span, which can include multiple sentences when the previous citation is more than one sentence back. `scope: 'sentence'` narrows that span to only its final sentence (via `lastSentence()`) — `core/citations.js`'s `collectCitations(root, { claimScope })` threads this through, and `service/claim-extractor.js`'s `processArticle()` defaults `claimScope` to `'sentence'` for the batch pipeline. This matters because in an unattended batch run, a multi-sentence claim where only the first sentence lacks support reads as a false NOT SUPPORTED on the whole span — there's no editor present to notice that only part of the claim is a "citation needed" case, not an "unsupported" one. The interactive userscript defaults to paragraph scope, where a human reads the full claim and isn't misled by that ambiguity — but it also exposes a "Claim scope" setting (Settings panel, persisted to `localStorage` as `verifier_claim_scope`) letting an editor switch to sentence scope for both single-citation checks and "Verify All Citations", for the same false-positive reason batch mode defaults to it.
 
-### The report: one card, one scroll area (read before adding a check or a field to the report)
+### The report view (read before adding a check, a field or a style to the report)
 
 Verify All's report kept growing a new block per feature: severity added a
 badge and a subclaim list to every card, the lead check a section of its own,
 and the uncited-text check (`claude/article-accuracy-model-checks-6babki`) a
-third. The report is now built from two pieces, and a new check reuses both:
+third, each with its own text styles and colours. It was rebuilt (2026-11-10)
+from three pieces, and a new check reuses all of them:
 
-- **One card for every finding** (`findingHtml()`): a head line (the
-  reference, the verdict pill, a few words of qualification such as the
-  reason and the severity label), then the claim on one line and the model's
-  comment on two. Everything else is in its **details**, opened by a click on
-  the card: the full claim and comment, the quote, the failing subclaims,
-  caveats (a truncated source), Edit Section and the feedback controls.
-  Citations, a group (its sources are cards inside it) and lead sentences all
-  use it. **A new field goes in the details, not on every closed card.**
-- **One panel per extra check** (`.sv-check`, a `<details>`), above the
-  citations and closed by default: one line, its name and a few words of
-  status. The citations themselves keep the summary box, filters and sort they
-  always had.
+- **The bar** (`#verifier-report-bar`). While a run is going: what it is doing,
+  a thin progress line and Stop. After: Back and a Copy report menu (Wikitext,
+  Plain text). **The report view holds no run buttons.** Back returns to the
+  main view, where Verify All Citations and "Check the lead against the body"
+  are, with "Back to Report" beside them. (Before this there was no way out of
+  a report at all: `showSingleCitationView()` was never called.)
+- **One section per check** (`.sv-section`, a `<details>`): a chevron, the
+  check's name and a few words of status, then its rows. The citations'
+  section also holds the distribution bar, the filter chips and, on a
+  severity-ranked report, the sort order. The lead's section sits above it and
+  starts closed, so its results arriving never move the citation rows.
+- **One row per finding** (`findingHtml()`): a head line (reference, verdict,
+  then a few quiet words such as the reason and the severity label), the claim
+  on one line and the model's comment on two. Everything else is in its
+  **details**, opened by a click: the full claim and comment, the quote, the
+  failing subclaims, caveats (a truncated source), and the links (Edit
+  section, the source by its host, Was this right?). A group is one row whose
+  details list its sources as rows. **A new field goes in the details, not on
+  every closed row.**
 
 Rules to keep:
 
+- **One type scale.** In the report: 13px and 12px, weights 400 and 600,
+  upright, and three text colours (ink, `--sv-ink-4` for everything
+  secondary, the accent for what can be clicked). No italics, small capitals
+  or third size. `tests/styles.test.js` fails on any other value.
+- **A verdict's colour appears once per row**, as its stripe, plus the
+  distribution bar and the chips' dots that are its legend. Not a tinted pill,
+  coloured text or a coloured border as well: that is what made the report
+  look like it had more colours than it does. Also tested.
+- **Totals are said once.** A finished run has no "Completed" line: the
+  section's status says what was checked (or where a stopped run stopped), the
+  chips count the verdicts, a note at the end of the list counts the rows the
+  filters hide, and the footer has the revision, tokens and time taken.
 - **The sidebar is the report's only scroll area.** The citation list used to
   have its own 50vh scrollbar with the lead section under it, so the wheel
   moved whichever was under the pointer and ran on past the list into the
   lead section. `tests/styles.test.js` fails if anything in the report scrolls
-  on its own again, a quote in a card included.
-- **Opening a card shows its citation in the article** (as clicking a card
-  always did); closing it doesn't. An open card closes only from its head
+  on its own again, a quote in a row included.
+- **Opening a row shows its citation in the article** (as clicking a card
+  always did); closing it doesn't. An open row closes only from its head
   line, so its text can be read and selected.
-- **The space above the first card is kept small** (it was 450px of an
-  800px sidebar): over a report the run buttons are one compact row, a
-  finished run is one line of text instead of a full progress bar, the
-  citations' title and sort order share the summary box's first row, chips
-  with a count of 0 are left out, and the run's revision and tokens sit in the
-  footer above Copy Report. Something new for the top of the report has to
-  earn its row.
+- **Shared markup is restyled, not forked.** The quote, the subclaim list and
+  the feedback controls are the single check's own (`quoteHtml()`,
+  `severitySubclaimsHtml()`, `buildFeedbackControls()`); rules scoped to
+  `#verifier-report-view` bring them onto the report's type scale.
+
+The single-check view (a citation clicked in the article) is unchanged.
 
 ### Sentence splitting differs between the batch and the userscript (read before touching `lastSentence`)
 
