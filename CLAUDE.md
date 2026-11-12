@@ -17,6 +17,7 @@ core/                            # Shared logic, imported by benchmark/, cli/, s
   claim.js, feedback.js, parsing.js, prompts.js, providers.js, quote.js, urls.js, worker.js
   models.js                      # Provider/model registry — the one place a model id is named
   pipeline.js                    # verifyCitation(): fetch -> prompt -> model -> parse -> quote, in one call
+  lead.js, lead-check.js         # The lead check: lead sentences and body, and every lead sentence against the body (see "The lead check" below)
 cli/verify.js                    # Node CLI front-end (verify a single citation from the command line)
 bin/ccs                          # Executable shim for the CLI
 scripts/sync-main.js             # Inlines core/ modules into main.js for the userscript build
@@ -89,6 +90,10 @@ docs/                            # Reference docs + design plans (see docs/READM
 | `buildFeedbackControls()` | Yes/No/Comment row under a result; ratings go to Neon, comments to the talk page (see `docs/worker-logging-reference.md`) |
 | `assessSeverity()` / `showSingleSeverity()` / `rankReportBySeverity()` | Opt-in severity pass (`core/severity.js`'s `runSeverityPass()`) for a flagged verdict: in the single-check view, and as a second phase of Verify All (see "Severity ranking" below) |
 | `applyReportSort()` / `renderReportSeverity()` | Report order: article order, or "Most serious first" by `compareSeverity()` on a severity-ranked report. Moves whole cards and group blocks; never hides one |
+| `articleLead()` / `runReportLeadCheck()` / `renderReportLead()` | The lead check (`core/lead-check.js`): the last phase of Verify All; the report's lead section (see "The lead check" below) |
+| `findingHtml()` / `toggleFinding()` / `handleFindingClick()` | The one row every report finding uses (citations, groups and their sources, lead sentences): head line, claim and comment clamped while closed, everything else in details opened on demand (see "The report view" below) |
+| `renderReportBar()` / `updateReportProgress()` / `renderReportSummary()` | The report's bar (status and Stop while a run is going; Back and Copy report after), and the citations section's status, distribution bar, filter chips and sort order |
+| `getCountedReportUnits()` | `getReportUnits()` minus set-aside lead citations: what the summary, the severity ranking and the exports count |
 
 ## Benchmark Suite
 
@@ -122,6 +127,11 @@ npm run wice:convert          # Fetch + convert WiCE dev+test -> dataset_wice.js
 npm run wice:benchmark        # Run providers against dataset_wice.json
 npm run wice:analyze          # Metrics for the WiCE run
 npm run wice:analyze:unanimous  # Score only rows whose label isn't a projection artifact
+
+# Lead check — lead sentences labeled against their article body (see "The lead check")
+npm run lead:extract -- --titles-file <path> --wiki enwiki  # -> dataset_lead.json (keeps existing labels)
+npm run lead:benchmark -- --providers=hf-gpt-oss-20b         # -> results_lead.json
+npm run lead:analyze                                         # Score labeled sentences
 ```
 
 `run_benchmark.js` and `analyze_results.js` both take `--dataset` / `--results` (and the analyzer `--analysis`), which is what lets an alternate corpus run without touching `dataset.json` / `results.json`.
@@ -305,7 +315,7 @@ Since 2026-10 `run-sweep.js` stores every finding in ToolsDB by default, and `ru
 
 - **The CSV is still the record; the store follows it.** A failed ToolsDB write is counted and reported, never fatal to the sweep, and the summary prints the `run-import-findings.js` command that backfills it. Halting a day-long batch over a database hiccup costs more than the row.
 - **The pick fails if it can't read ToolsDB**, rather than continuing without the filter: silently re-picking checked articles is the failure the filter exists to prevent.
-- **Apply migrations 003, 004 and 005 (`service/migrations/`) before the first store.** 003 (citation_number INT → text) had never been applied to the live table when storing became the default; the first backfill lost ~10% of rows to `Incorrect integer value: 'a'` / `'2, 3'` until it was. 005 makes it TEXT, since a collective row joins every member's number and overflowed 64 characters. 004 widens `reason_type` (the pipeline writes 23-byte reasons into a 16-byte column) and `group_id` (Cyrillic ref names), and makes `provider` `NOT NULL DEFAULT ''`: it is part of the unique key, and MariaDB never matches NULLs there, so every re-store of a no-model row (SOURCE UNAVAILABLE, SKIPPED) used to insert a duplicate. `buildUpsertQuery()` writes `''` for "no model ran" to match.
+- **Apply migrations 003, 004 and 005 (`service/migrations/`) before the first store**, and 006 before the first store or import of any kind once the lead check is deployed, not only a `--lead-check` sweep: it adds `check_kind` and `lead_demoted`, and `buildUpsertQuery()` names both on every row, so without it every write fails with an unknown column (the sweep still finishes and writes its CSV; backfill with `run-import-findings.js` after migrating). 003 (citation_number INT → text) had never been applied to the live table when storing became the default; the first backfill lost ~10% of rows to `Incorrect integer value: 'a'` / `'2, 3'` until it was. 005 makes it TEXT, since a collective row joins every member's number and overflowed 64 characters. 004 widens `reason_type` (the pipeline writes 23-byte reasons into a 16-byte column) and `group_id` (Cyrillic ref names), and makes `provider` `NOT NULL DEFAULT ''`: it is part of the unique key, and MariaDB never matches NULLs there, so every re-store of a no-model row (SOURCE UNAVAILABLE, SKIPPED) used to insert a duplicate. `buildUpsertQuery()` writes `''` for "no model ran" to match.
 
 ### Post-run checks (`service/sweep-checks.js`, read before adding a halt-or-record decision)
 
@@ -458,6 +468,76 @@ The wikitext/plain-text exports and the worker log are unchanged: tiers go
 nowhere public until they are validated, and logging them needs the Worker to
 accept new fields.
 
+### The lead check (`core/lead.js`, `core/lead-check.js`; `run-sweep.js --lead-check`, userscript setting)
+
+A lead summarizes the body, so per WP:LEADCITE a lead statement needs no
+citation of its own when the body covers it. The tool treated lead citations
+like any other: a lead citation got credited with the uncited summary around
+it (a false PARTIALLY / NOT SUPPORTED), and uncited lead text was never checked.
+Now there are two independent checks and one presentation rule:
+
+- **Citation checks are unchanged**, in the lead too, at the user's claim scope.
+- **The lead check**: every lead sentence (lead-prose `<p>`s, not the infobox)
+  against the article body (`articleBody()`: later sections, minus reference
+  lists, navigation and appendix sections, under `== Heading ==` lines). A few
+  sentences per call, the body sent with each. Its own prompt with a
+  hash-pinned `LEAD_PROMPT_VERSION`; the verdict vocabulary is the same, and
+  `omission` means "not covered in the body". A sentence failing both checks
+  is reported by both, on purpose: the fixes differ (a better source; content
+  added to the body).
+- **Demotion**: in lead prose, a citation's PARTIALLY SUPPORTED or NOT
+  SUPPORTED / omission verdict is set aside (`isLeadDemotedVerdict()`).
+  Crediting a citation with the summary around it always comes back as one of
+  those, never as a contradiction. Set-aside verdicts are kept and shown
+  apart: out of the userscript's counts, filters, severity ranking and exports;
+  in the batch, `lead_demoted = 1`, left out of the clean CSV and the severity
+  pass, never published.
+
+Rules to keep if you touch it:
+
+- **The lead is never part of the body text.** Every lead sentence would
+  support itself. `tests/lead.test.js` pins it.
+- **Demotion only where a lead check runs.** An article with no headings has
+  no body, so it gets neither. Demoting without a lead check hides a real
+  failure with nothing to report it instead.
+- **A contradiction is never demoted**, the same rule as truncation in the
+  severity pass.
+- **A footnote list never makes a section an appendix.** Short articles put
+  `{{reflist}}` under their last content section; the first version dropped
+  such sections and reported their facts as missing from the body. Only the
+  heading names (`LEAD_APPENDIX_HEADINGS`, five languages) and a bibliography
+  (`.refbegin`) holding nearly all of a section do.
+- **`runLeadCheck()` absorbs two failures itself**, because both depend on how
+  much is asked at once: an answer that ran out of output budget is retried
+  as two calls of half the sentences (it happens on reasoning models at 4 per
+  call), and a prompt too long for the model is retried with the body halved
+  (`body_truncated`: absence discounted, contradiction not). Everything else
+  goes to the caller's `onChunkError`: the sweep's transient-failure policy, or
+  "record and carry on" in the userscript.
+- **Batch rows**: `check_kind = lead_body`, the sentence as `claim_text`,
+  `source_url` = `index.php?curid=<page_id>` (by page, so a re-sweep updates
+  in place, and never colliding with a citation row in `uniq_finding`), and
+  `body_section`; citation rows get `in_lead` and `lead_demoted`. The post-run
+  checks key lead rows by sentence, keep them out of the fetch statistics and
+  the severity expectation, and sample them (and demoted citations) in strata
+  of their own.
+- **In the userscript it is on by default** (`verifier_lead_check`), because it
+  costs a few calls per Verify All, not one per citation. Lead results are
+  **not logged**: the Worker has no field to tell a lead sentence from a
+  citation.
+- **In the report it is a section above the citations**, with the same header
+  as theirs, and closed: its results arriving never move the citation rows.
+  Open, it holds its rows, the covered sentences and the set-aside citations.
+  It runs only as part of Verify All: the main view's separate "Check the
+  lead against the body" button was removed (2026-11-11).
+  See "The report view" below.
+- **Not yet validated.** `benchmark/dataset_lead.json` (separate from
+  `dataset.json`, like WiCE) is built by `npm run lead:extract`; its labels are
+  for people to make.
+
+Design, prototype numbers and the alternatives rejected:
+`docs/design-plans/2026-10-22-lead-checks.md`.
+
 ## Development Workflow
 
 - **Tests:** `node --test` via `npm test` from the repo root, runs everything in `tests/**/*.test.js`. New helpers should get a sibling `*.test.js` file. Behavioral validation also goes through the benchmark suite against the human-labeled citation dataset.
@@ -476,12 +556,76 @@ accept new fields.
 - Claim extraction uses "between citations" logic by design (not full sentences) for precision
 - `extractClaimText(refElement, { scope })` (`core/claim.js`) supports two claim scopes. `scope: 'paragraph'` (the default, used by `main.js` and the CLI/benchmark) is the full "between citations" span, which can include multiple sentences when the previous citation is more than one sentence back. `scope: 'sentence'` narrows that span to only its final sentence (via `lastSentence()`) — `core/citations.js`'s `collectCitations(root, { claimScope })` threads this through, and `service/claim-extractor.js`'s `processArticle()` defaults `claimScope` to `'sentence'` for the batch pipeline. This matters because in an unattended batch run, a multi-sentence claim where only the first sentence lacks support reads as a false NOT SUPPORTED on the whole span — there's no editor present to notice that only part of the claim is a "citation needed" case, not an "unsupported" one. The interactive userscript defaults to paragraph scope, where a human reads the full claim and isn't misled by that ambiguity — but it also exposes a "Claim scope" setting (Settings panel, persisted to `localStorage` as `verifier_claim_scope`) letting an editor switch to sentence scope for both single-citation checks and "Verify All Citations", for the same false-positive reason batch mode defaults to it.
 
+### The report view (read before adding a check, a field or a style to the report)
+
+Verify All's report kept growing a new block per feature: severity added a
+badge and a subclaim list to every card, the lead check a section of its own,
+and the uncited-text check (`claude/article-accuracy-model-checks-6babki`) a
+third, each with its own text styles and colours. It was rebuilt (2026-11-10)
+from three pieces, and a new check reuses all of them:
+
+- **The bar** (`#verifier-report-bar`). While a run is going: what it is doing,
+  a thin progress line and Stop. After: Back and a Copy report menu (Wikitext,
+  Plain text). **The report view holds no run buttons.** Back returns to the
+  main view, where Verify All Citations is, with "Back to Report" beside
+  it. (Before this there was no way out of
+  a report at all: `showSingleCitationView()` was never called.)
+- **One section per check** (`.sv-section`, a `<details>`): a chevron, the
+  check's name and a few words of status, then its rows. The citations'
+  section also holds the distribution bar, the filter chips and, on a
+  severity-ranked report, the sort order. The lead's section sits above it and
+  starts closed, so its results arriving never move the citation rows.
+- **One row per finding** (`findingHtml()`): a head line (reference, verdict,
+  then a few quiet words such as the reason and the severity label), the claim
+  on one line and the model's comment on three. Everything else is in its
+  **details**, opened by a click: the full claim and comment, the quote, the
+  failing subclaims, caveats (a truncated source), and the links (Edit
+  section, the source by its host, Was this right?). A group is one row whose
+  details list its sources as rows. **A new field goes in the details, not on
+  every closed row.**
+
+Rules to keep:
+
+- **One type scale.** In the report: 13px and 12px, weights 400 and 600,
+  upright, and three text colours (ink, `--sv-ink-4` for everything
+  secondary, the accent for what can be clicked). No italics, small capitals
+  or third size. `tests/styles.test.js` fails on any other value.
+- **A verdict's colour appears once per row**, as its stripe, plus the
+  distribution bar and the chips' dots that are its legend. Not a tinted pill,
+  coloured text or a coloured border as well: that is what made the report
+  look like it had more colours than it does. Also tested.
+- **Totals are said once.** A finished run has no "Completed" line: the
+  section's status says what was checked (or where a stopped run stopped), the
+  chips count the verdicts, a note at the end of the list counts the rows the
+  filters hide, and the footer has the revision, tokens and time taken.
+- **The sidebar is the report's only scroll area.** The citation list used to
+  have its own 50vh scrollbar with the lead section under it, so the wheel
+  moved whichever was under the pointer and ran on past the list into the
+  lead section. `tests/styles.test.js` fails if anything in the report scrolls
+  on its own again, a quote in a row included.
+- **Opening a row shows its citation in the article**, with exactly the
+  claim's words highlighted; closing it doesn't. An open row closes only from
+  its head line, so its text can be read and selected. **One row is open at a
+  time**: opening one closes any other, except the group it belongs to.
+- **The highlight is the claim, not the paragraph** (`highlightClaim()`, in
+  both views). It paints the span `core/claim.js`'s `claimBounds()` names, the
+  same one `extractClaimText()` reads (narrowed to the last sentence under
+  sentence scope), with the CSS Custom Highlight API, so the article's markup
+  is never touched. Where that API is missing or the words can't be found,
+  the whole paragraph is highlighted, as before.
+- **Shared markup is restyled, not forked.** The quote, the subclaim list and
+  the feedback controls are the single check's own (`quoteHtml()`,
+  `severitySubclaimsHtml()`, `buildFeedbackControls()`); rules scoped to
+  `#verifier-report-view` bring them onto the report's type scale.
+
+The single-check view (a citation clicked in the article) is unchanged.
+
 ### Sentence splitting differs between the batch and the userscript (read before touching `lastSentence`)
 
 Sentence scope narrows a claim to its last sentence, and "where does a sentence start" is decided differently per front end, on purpose:
 
 - **Batch pipeline** — `service/sentences.js` wraps [sentencex](https://github.com/wikimedia/sentencex) (Wikimedia's MIT segmenter, per-language abbreviation lists for ~244 languages), injected via `processArticle({ langCode })` → `collectCitations({ splitLastSentence })` → `extractClaimText({ splitLastSentence })`. The runners pass `langCodeForWiki(opts.wiki)`. It keeps `А. С. Пушкин`, `в 1837 г. Пушкин`, `ул. Ленина` and `Dr. Smith` whole.
-- **Userscript / CLI / benchmark** — `core/claim.js`'s `lastSentence()` regex: split after `.!?…` when the next character is any uppercase letter (`\p{Lu}`, so Cyrillic and Greek count) or an opening quote. It **does** cut at abbreviations and initials; that is accepted because sentence scope is opt-in there and an editor reads the claim. `tests/sentences.test.js` pins that gap.
+- **Userscript / CLI / benchmark** — `core/claim.js`'s `splitSentences()` (and `lastSentence()`, built on it): split after `.!?…` (and any closing quotes or brackets) when the next character is any uppercase letter (`\p{Lu}`, so Cyrillic and Greek count), a digit or an opening quote — except after an initial or any single letter (`J. R. R. Tolkien`, `А. С. Пушкин`, `г.`), a dotted run (`U.S.`, `e.g.`, `J.-C.`), a listed abbreviation for the five sidebar languages (`SENTENCE_ABBREVIATIONS`: `Dr.`, `No.`, `v.`, `ул.`…), a spaced elision (` ... `), or inside a quotation that closes. Until 2026-10-23 it had none of those exceptions; measured against sentencex on 2,175 enwiki claims, that cut 87 last sentences short, often losing the claim's subject or speaker. With them it cuts none short, and the 10 remaining disagreements are mostly sentencex's own errors. The exceptions err toward joining two sentences, never toward a sentence without its subject. sentencex stays in the batch because its lists cover ~244 languages, not five.
 
 sentencex is a native Node module and cannot go into `core/` (which is inlined into `main.js`), which is why it is injected rather than imported. Its `package.json` says Node ≥ 20; it has been run on Node 18.20 (Toolforge's `node18` image) and passes, with only an `EBADENGINE` warning at install.
 

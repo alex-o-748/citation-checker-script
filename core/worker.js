@@ -127,6 +127,26 @@ export function encodingDamage(text) {
     };
 }
 
+// --- Too little visible text to be a source ---
+//
+// A fetch counts as content only above MIN_SOURCE_CONTENT_CHARS, but measured
+// in *visible* characters: whitespace and invisible format characters (\p{Cf}:
+// zero-width space/joiners, soft hyphen, bidi marks, BOM; plus U+034F) are
+// not counted. Some pages pad their markup with runs of them (the email
+// "preheader" trick). Counting them raw let an S&P Global Ratings page that the
+// fetcher reduced to its <title> (about 90 visible characters, then 77
+// U+200C each followed by a space: 263 in all) pass as content (2026-11-08,
+// en:2026 Paraguay banking crisis [8]). The model was then given a headline,
+// treated it as a usable source, and reported the claim as an omission when
+// the right answer was SOURCE UNAVAILABLE. The content itself is passed on
+// unchanged; this only decides whether there is any.
+export const MIN_SOURCE_CONTENT_CHARS = 100;
+const INVISIBLE_CHARS = /[\s\p{Cf}͏]/gu;
+
+export function visibleLength(text) {
+    return typeof text === 'string' ? text.replace(INVISIBLE_CHARS, '').length : 0;
+}
+
 // `onRequest`, when supplied, is called once per outbound HTTP call this
 // function makes — `{ kind: 'source-fetch', url, status, ok, error, latencyMs,
 // bytes }` — regardless of success or failure. It exists for the Internet
@@ -176,7 +196,7 @@ async function fetchViaProxy(fetchUrl, pageNum, workerBase, sourceUrl, onRequest
                 : { content: null, error: data.error, status };
         }
 
-        if (data.content && data.content.length > 100) {
+        if (visibleLength(data.content) > MIN_SOURCE_CONTENT_CHARS) {
             // Not retryable (a 200): the same bytes would decode the same way.
             // Returned as a failure so fetchSourceContent's fallbacks run.
             if (encodingDamage(data.content).garbled) {

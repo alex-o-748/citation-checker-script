@@ -24,11 +24,13 @@ const CORE_ORDER = [
   'claim.js',
   'citations.js',
   'article-context.js',
+  'lead.js',
   'groups.js',
   'providers.js',
   'worker.js',
   'feedback.js',
   'severity.js',
+  'lead-check.js',
 ];
 
 function stripEsm(source) {

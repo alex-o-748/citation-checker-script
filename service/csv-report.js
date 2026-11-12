@@ -68,6 +68,15 @@ const COLUMNS = [
     ['severity_subclaims', f => (f.severitySubclaims ? JSON.stringify(f.severitySubclaims) : null)],
     ['severity_error', f => f.severityError],
     ['severity_prompt_version', f => f.severityPromptVersion],
+    // The lead check (core/lead-check.js). check_kind is "citation" or
+    // "lead_body"; in_lead marks a citation in lead prose; lead_demoted, a
+    // lead citation's partial or omission verdict in an article that got a
+    // lead check (left out of the clean CSV); body_section, the section a
+    // lead row's quote was found in.
+    ['check_kind', f => f.checkKind ?? 'citation'],
+    ['in_lead', f => (f.inLead ? 1 : 0)],
+    ['lead_demoted', f => (f.leadDemoted ? 1 : 0)],
+    ['body_section', f => f.bodySection],
     // Last, not first, despite being the row's identifier — csvPageTitles()
     // below reads the FIRST field of every record as the page title, which is
     // what --resume skips on. Moving check_id to column 1 would silently make
@@ -126,7 +135,7 @@ export function cleanCsvPath(path) {
 }
 
 /**
- * Three independent rules, so none depends on what another removed:
+ * Four independent rules, so none depends on what another removed:
  *
  * 1. A finding on a truncated source is kept only if it is SUPPORTED or NOT
  *    SUPPORTED / contradiction — verdicts resting on a passage the model
@@ -134,7 +143,7 @@ export function cleanCsvPath(path) {
  *    a truncated source (omission above all: "not mentioned" may just mean
  *    "past the cutoff") is dropped.
  * 2. Once an adjacent-citation group has a collective finding, its individual
- *    findings are never shown — even when rule 1 or 3 dropped the collective
+ *    findings are never shown — even when rule 1, 3 or 4 dropped the collective
  *    itself. Falling back to the members there would surface one source's
  *    partial view of a claim several sources back.
  * 3. In a group where any source is SOURCE UNAVAILABLE, the group's verdict
@@ -147,6 +156,12 @@ export function cleanCsvPath(path) {
  *    members once a collective exists, so this applies to every row in the
  *    group. It is the cleaner's half of what core/groups.js's
  *    hasUnreadSource() does for the severity pass.
+ * 4. A demoted lead citation (lead_demoted) is not shown: in the lead, "the
+ *    source doesn't mention it" is the lead check's question, answered on its
+ *    own row. Skipped for a CSV from before that column existed.
+ *
+ * Lead-check rows need no rule of their own: a body cut to fit is marked
+ * source_truncated, so rule 1 keeps only what survives truncation there too.
  *
  * Group IDs are only meaningful within an article revision, so the key
  * includes page identity.
@@ -184,6 +199,7 @@ export function cleanCsvText(text) {
         if (truthy(row[indexes.source_truncated] || '') && !survivesTruncation(row)) return false;
         if (row[indexes.group_id] && !isCollective(row) && collectiveGroups.has(groupKey(row))) return false;
         if (row[indexes.group_id] && incompleteGroups.has(groupKey(row)) && undoneByUnreadSource(row)) return false;
+        if (indexes.lead_demoted !== undefined && truthy(row[indexes.lead_demoted] || '')) return false;
         return true;
     });
     return [header, ...cleanRows]

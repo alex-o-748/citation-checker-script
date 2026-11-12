@@ -17,6 +17,12 @@
 
 import { segment } from 'sentencex';
 
+// Every sentence of `text`, for splitting lead paragraphs (core/lead.js's
+// leadSentences(), which takes the splitter as an option).
+export function sentencexSplitSentences(langCode = 'en') {
+    return text => (text ? segment(langCode, text).map(s => s.trim()).filter(Boolean) : []);
+}
+
 export function sentencexLastSentence(langCode = 'en') {
     return text => {
         if (!text) return text;

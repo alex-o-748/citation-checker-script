@@ -230,16 +230,9 @@ test('the corrected-verdict chips stay collapsed while [hidden] is set', () => {
 
 test('individual verdicts within a group stay visually secondary', () => {
   const css = generateCss();
-  const verdictRule = css.match(/\.verifier-report-group-row \.report-card-verdict\s*\{([^}]*)\}/);
+  const verdictRule = css.match(/\.verifier-report-group-row \.sv-verdict\s*\{([^}]*)\}/);
   assert.ok(verdictRule, 'grouped verdicts need a scoped style distinct from the combined verdict');
-  assert.match(verdictRule[1], /background:\s*transparent/);
-  assert.match(verdictRule[1], /color:\s*var\(--sv-ink-4\)/);
-  assert.match(verdictRule[1], /font-weight:\s*normal/);
-
-  const reasonRule = css.match(/\.verifier-report-group-row \.reason-type-tag\s*\{([^}]*)\}/);
-  assert.ok(reasonRule, 'grouped reason tags should follow the quieter verdict treatment');
-  assert.match(reasonRule[1], /background:\s*transparent/);
-  assert.match(reasonRule[1], /color:\s*var\(--sv-ink-4\)/);
+  assert.match(verdictRule[1], /font-weight:\s*400/);
 });
 
 // #verifier-action-container holds two unrelated things: the full-width
@@ -319,4 +312,73 @@ test('inside the panel, horizontal spacing and borders use logical properties', 
     }
     assert.deepEqual(offenders, [], `use *-inline-start / *-inline-end instead:\n${offenders.join('\n')}`);
   }
+});
+
+// The report has one scroll area, the sidebar. The citation list used to be
+// capped at 50vh with a scrollbar of its own, inside the scrolling sidebar:
+// the wheel moved whichever was under the pointer, and ran on past the end of
+// the list into the lead check below it. Rows and sections must not bring a
+// scrollbar back either, a quote in a row included.
+test('the report has one scroll area: nothing in it scrolls on its own', () => {
+  const css = generateCss();
+  const offenders = [];
+  for (const m of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    const selector = m[1].trim();
+    if (!/#verifier-report-|\.sv-(finding|section|sublist|rows|menu)\b/.test(selector)) continue;
+    if (/overflow(-y)?\s*:\s*(auto|scroll)|max-height\s*:(?!\s*none)/.test(m[2])) offenders.push(selector);
+  }
+  assert.deepEqual(offenders, []);
+  const quote = css.match(/#verifier-report-view \.sv-quote-text \{([^{}]*)\}/);
+  assert.ok(quote, 'the quote box scrolls on its own unless the report lifts its cap');
+  assert.match(quote[1], /max-height: none/);
+});
+
+// The report's rules, from the first to the last of them.
+function reportCss(css) {
+  const start = css.indexOf('#verifier-report-view {');
+  const end = css.indexOf('}', css.indexOf('#verifier-report-meta {', start));
+  assert.ok(start !== -1 && end > start, 'the report\'s rules were not found');
+  return css.slice(start, end + 1);
+}
+
+// "Too many kinds of text" was the complaint that led to this: 10, 11, 12 and
+// 13px, bold and italic, small capitals, and five greys. The report now has
+// two sizes, two weights, upright text, and three text colours: ink, one
+// muted grey, and the accent for what can be clicked.
+test('the report keeps to one type scale', () => {
+  const css = reportCss(generateCss());
+  const values = (property) => [...new Set([...css.matchAll(new RegExp(`(?:^|[\\s;{])${property}:\\s*([^;}]+)`, 'g'))].map((m) => m[1].trim()))].sort();
+  assert.deepEqual(values('font-size'), ['12px', '13px']);
+  assert.deepEqual(values('font-weight'), ['400', '600']);
+  assert.deepEqual(values('font-style'), ['normal'], 'no italics');
+  // The one exception: the feedback chips' labels are verdict constants, in
+  // capitals, and are brought down to sentence case.
+  const capitals = [...css.matchAll(/([^{}]+)\{([^{}]*text-transform:\s*(?:uppercase|lowercase)[^{}]*)\}/g)].map((m) => m[1].trim().split('\n').pop().trim());
+  assert.ok(capitals.every((selector) => selector.includes('.verifier-feedback-chip')), `small capitals outside the feedback chips: ${capitals.join(', ')}`);
+  assert.deepEqual(values('text-transform').filter((v) => v !== 'lowercase' && v !== 'uppercase'), ['none'], 'no small capitals');
+  assert.deepEqual(values('color'), ['inherit', 'var(--sv-accent-fg)', 'var(--sv-ink)', 'var(--sv-ink-4)']);
+});
+
+// A verdict's colour is its row's stripe, the distribution bar and the chips'
+// dots. It is not a tinted pill, coloured text or a coloured border as well:
+// those were what made the report look like it had more colours than it does.
+test('in the report a verdict\'s colour marks only stripes, the bar and dots', () => {
+  const css = reportCss(generateCss());
+  const offenders = [];
+  for (const m of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    const selector = m[1].trim().split('\n').pop().trim();
+    const usesVerdictColour = /var\(--sv-(seg|ok|warn|err|na)-/.test(m[2]);
+    if (!usesVerdictColour) continue;
+    if (/\.sv-finding[^ ]*::before|\.verifier-summary-bar |\.sv-dot/.test(selector)) continue;
+    offenders.push(selector);
+  }
+  assert.deepEqual(offenders, []);
+});
+
+// A closed row shows three lines of the model's rationale: at two, about 87%
+// of the benchmark's rationales (median 227 characters) were cut mid-sentence.
+test('a closed report row shows three lines of the rationale', () => {
+  const rule = generateCss().match(/\.sv-finding-comment \{([^{}]*)\}/);
+  assert.ok(rule, 'no rule for the comment line');
+  assert.match(rule[1], /-webkit-line-clamp: 3;/);
 });
