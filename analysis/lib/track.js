@@ -6,7 +6,7 @@
 // suggestion went live — never to the revision the batch checked. Edits between
 // the check and go-live happened before anyone could see the suggestion.
 
-import { parseFootnotes, precedingProse, flagsAfter, wikitextToPlain } from './wikitext.js';
+import { parseFootnotes, precedingProse, flagsAfter, wikitextToPlain, footnoteCluster, footnoteKey } from './wikitext.js';
 import { tokenize, alignSuffix, locateAnywhere, similarity, urlKeys, normalizeForUrlSearch } from './match.js';
 
 // Anchor scores are Dice overlaps between the claim and the prose before a
@@ -25,6 +25,8 @@ export const CHANGE_KINDS = Object.freeze({
     SENTENCE_AND_FOOTNOTE_REMOVED: 'sentence_and_footnote_removed',
     SOURCE_REPLACED: 'source_replaced',
     FLAG_ADDED: 'flag_added',
+    FLAG_REMOVED: 'flag_removed',
+    FOOTNOTE_ADDED: 'footnote_added',
 });
 
 /** Prepares a batch row for tracking. */
@@ -62,7 +64,8 @@ export function prepareRevision(wikitext, wiki = 'enwiki') {
             if (!pageTokens) pageTokens = tokenize(wikitextToPlain(parsed.text));
             return pageTokens;
         },
-        flags(index) { return flagsAfter(parsed, index, wiki); },
+        cluster(index) { return footnoteCluster(parsed, index); },
+        flags(index) { return flagsAfter(parsed, footnoteCluster(parsed, index)[0], wiki); },
     };
 }
 
@@ -132,8 +135,10 @@ export function stateAt(rev, target, anchor) {
     const best = bestAnchor(rev, target, ids);
     if (!best) return { footnotePresent: false, sourcePresent: sourcePresent(rev, target) };
     const prose = rev.prose(best.index);
+    const cluster = rev.cluster(best.index);
     return {
         footnotePresent: true,
+        clusterKeys: cluster.map(i => footnoteKey(rev.markers[i])),
         footnoteIndex: best.index,
         footnoteRaw: rev.markers[best.index].raw,
         score: best.score,
@@ -182,10 +187,20 @@ export function compareStates(baseline, current) {
         detail.similarity = round(similarity(region, now));
     }
     if (baseline.sourcePresent === true && current.sourcePresent === false) kinds.push(CHANGE_KINDS.SOURCE_REPLACED);
+    const newFootnotes = subtractMultiset(current.clusterKeys, baseline.clusterKeys);
+    if (newFootnotes.length) {
+        kinds.push(CHANGE_KINDS.FOOTNOTE_ADDED);
+        detail.footnotes_added = newFootnotes;
+    }
     const added = subtractMultiset(current.flags, baseline.flags);
     if (added.length) {
         kinds.push(CHANGE_KINDS.FLAG_ADDED);
         detail.flags = added;
+    }
+    const removed = subtractMultiset(baseline.flags, current.flags);
+    if (removed.length) {
+        kinds.push(CHANGE_KINDS.FLAG_REMOVED);
+        detail.flags_removed = removed;
     }
     return { kinds, detail };
 }

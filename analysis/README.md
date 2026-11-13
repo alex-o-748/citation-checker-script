@@ -94,10 +94,12 @@ node analysis/run-edit-impact.js --wiki enwiki --batches ~/batch-export --source
    | `sentence_and_footnote_removed` | Both are gone |
    | `source_replaced` | A named ref is kept, but its definition no longer contains the source URL |
    | `flag_added` | `{{failed verification}}` or a relative (`{{better source needed}}`, `{{dubious}}`, `{{citation needed}}`, …) is newly attached to the footnote |
+   | `flag_removed` | Such a template that was attached in the baseline is gone. `flags_at_baseline` lists them: some flagged claims were already tagged by editors before the batch ran |
+   | `footnote_added` | A new source is cited alongside the footnote, in the run of footnotes right after the claim. Editors often fix a citation this way rather than by touching it |
 
    A citation bot adding `access-date` or `archive-url` is *not* a change: the
-   comparison looks at prose, the source URL and attached flag templates, never
-   at the formatting of the citation.
+   comparison looks at prose, source URLs, which footnotes sit together and the
+   attached flag templates, never at the formatting of a citation.
 
    A reverted change still counts as the first change. `first_change_reverted`
    records that it was reverted, and `changed_at_end` records whether the claim

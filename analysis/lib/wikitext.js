@@ -223,3 +223,50 @@ export function flagsAfter(parsed, index, wiki = 'enwiki') {
     }
     return found;
 }
+
+/**
+ * The footnotes cited together with marker `index`: the run of markers around
+ * it separated only by whitespace and templates ({{failed verification}},
+ * {{rp|…}}, …). An editor fixing a citation often adds a second source next
+ * to the first rather than touching it; this is how that shows up.
+ */
+export function footnoteCluster(parsed, index) {
+    const { text, markers } = parsed;
+    const joins = (a, b) => isGlue(text.slice(markers[a].end, markers[b].start));
+    let first = index;
+    while (first > 0 && joins(first - 1, first)) first--;
+    let last = index;
+    while (last < markers.length - 1 && joins(last, last + 1)) last++;
+    const out = [];
+    for (let i = first; i <= last; i++) out.push(i);
+    return out;
+}
+
+function isGlue(between) {
+    let i = 0;
+    while (i < between.length) {
+        if (/\s/.test(between[i]) && between[i] !== '\n') { i++; continue; }
+        if (between.startsWith('{{', i)) { i = skipBalancedTemplate(between, i); continue; }
+        return false;
+    }
+    return true;
+}
+
+const ARCHIVE_HOSTS = /^(?:web\.archive\.org|archive\.(?:org|today|is|ph|li|vn|fo|md)|webcitation\.org|ghostarchive\.org)/i;
+
+/**
+ * What a footnote cites, stable under the edits bots make to citations
+ * (adding access-date, archive-url, url-status, reformatting): its ref name;
+ * else the non-archive URLs it contains; else its text without those fields.
+ */
+export function footnoteKey(marker) {
+    if (marker.name) return `name:${marker.name}`;
+    const body = decodeEntities(marker.body || marker.raw);
+    const urls = (body.match(/https?:\/\/[^\s|\]}<]+/gi) ?? [])
+        .map(u => u.replace(/^https?:\/\/(?:www\.)?/i, '').replace(/[/.,]+$/, '').toLowerCase())
+        .filter(u => !ARCHIVE_HOSTS.test(u));
+    if (urls.length) return `url:${[...new Set(urls)].sort().join(' ')}`;
+    return `text:${body
+        .replace(/\|\s*(?:access-?date|archive-?url|archive-?date|url-?status|df|mode)\s*=[^|}]*/gi, '')
+        .replace(/\s+/g, ' ').trim().toLowerCase()}`;
+}

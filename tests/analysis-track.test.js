@@ -168,3 +168,23 @@ test('a claim with no identifiable footnote is anchored on the footnote it prece
     ]);
     assert.deepEqual(r.first.kinds, [CHANGE_KINDS.FOOTNOTE_REMOVED]);
 });
+
+test('adding a second source next to the footnote is footnote_added; a bot archiving a neighbour is not', () => {
+    const added = track(supportedRow, [BASE.replace('dubin-v-united-states/ |title=Docket}}</ref>', 'dubin-v-united-states/ |title=Docket}}</ref><ref>{{cite web|url=https://www.oyez.org/cases/2022/22-10}}</ref>')]);
+    assert.deepEqual(added.first.kinds, [CHANGE_KINDS.FOOTNOTE_ADDED]);
+    assert.deepEqual(added.first.detail.footnotes_added, ['url:oyez.org/cases/2022/22-10']);
+    const withNeighbour = BASE.replace('dubin-v-united-states/ |title=Docket}}</ref>', 'dubin-v-united-states/ |title=Docket}}</ref><ref>{{cite web|url=https://www.oyez.org/cases/2022/22-10}}</ref>');
+    const r = trackSuggestion(makeTarget(supportedRow), prepareRevision(withNeighbour), [{
+        meta: meta(101),
+        rev: prepareRevision(withNeighbour.replace('22-10}}</ref>', '22-10 |archive-url=https://web.archive.org/web/2026/https://www.oyez.org/cases/2022/22-10 |access-date=2026-11-06}}</ref>')),
+    }]);
+    assert.equal(r.first, null);
+});
+
+test('removing a {{failed verification}} that was there before go-live is flag_removed (the Dubin v. United States fix)', () => {
+    const tagged = BASE.replace('Justices weigh}}</ref>', 'Justices weigh}}</ref>{{failed verification|date=May 2024}}');
+    const fixed = BASE.replace('Justices weigh}}</ref>', 'Justices weigh}}</ref><ref>{{Cite web |title=Supreme Court Cautions |url=https://www.jdsupra.com/legalnews/x-3547744/ |website=JD Supra}}</ref>');
+    const r = trackSuggestion(makeTarget(flaggedRow), prepareRevision(tagged), [{ meta: meta(101), rev: prepareRevision(fixed) }]);
+    assert.deepEqual(r.located.flags, ['failed verification']);
+    assert.deepEqual(r.first.kinds, [CHANGE_KINDS.FOOTNOTE_ADDED, CHANGE_KINDS.FLAG_REMOVED]);
+});

@@ -55,7 +55,7 @@ export function toCsv(columns, rows) {
 export const SUGGESTION_COLUMNS = [
     'wiki', 'batch_id', 'check_id', 'group', 'verdict', 'reason_type', 'page_id', 'page_title',
     'checked_revision_id', 'baseline_revision_id', 'citation_number', 'ref_name', 'is_collective',
-    'source_url', 'claim_text', 'located', 'locate_method', 'locate_score',
+    'source_url', 'claim_text', 'located', 'locate_method', 'locate_score', 'flags_at_baseline',
     'revisions_after', 'seen_revisions_after', 'text_unavailable_revisions',
     'changed', 'first_change_rev_id', 'first_change_timestamp', 'first_change_kinds', 'first_change_detail',
     'first_change_user', 'first_change_editor_type', 'first_change_is_bot', 'first_change_seen',
@@ -95,6 +95,7 @@ export function suggestionRecord(s, result, { baselineRevId, revisions, wiki }) 
         locate_method: result.located?.method ?? '',
         locate_score: result.located?.score !== undefined ? round(result.located.score)
             : (result.located?.pageScore !== undefined ? round(result.located.pageScore) : ''),
+        flags_at_baseline: result.located?.flags?.join('|') ?? '',
         revisions_after: revisions.length,
         seen_revisions_after: revisions.filter(r => revisionFlags(r).seen).length,
         text_unavailable_revisions: result.skipped,
