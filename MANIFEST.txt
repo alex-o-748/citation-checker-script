@@ -1,0 +1,7 @@
+-rw-r--r-- 1 tools.source-verifier tools.source-verifier 10647700 2026-11-01T22:05:02 batch3-evergreen-clean-after.csv
+-rw-r--r-- 1 tools.source-verifier tools.source-verifier 58207321 2026-11-01T21:56:42 en-evergreen-500-clean-after.csv
+-rw-r--r-- 1 tools.source-verifier tools.source-verifier 14754859 2026-10-30T21:16:10 isaac-clean-after.csv
+-rw-r--r-- 1 tools.source-verifier tools.source-verifier 10104442 2026-11-02T22:04:37 ru-batch2-clean-after.csv
+-rw-r--r-- 1 tools.source-verifier tools.source-verifier 26174480 2026-11-02T22:04:57 ru-batch3-clean-after.csv
+-rw-r--r-- 1 tools.source-verifier tools.source-verifier 29679687 2026-11-02T22:05:25 ru-batch4-clean-after.csv
+-rw-r--r-- 1 tools.source-verifier tools.source-verifier 10586095 2026-11-02T22:05:39 ru-batch5-clean-after.csv
