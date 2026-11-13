@@ -25,6 +25,7 @@ export function createApiClient({
     minIntervalMs = 1000,
     maxRetries = 6,
     timeoutMs = 60000,
+    maxWaitMs = 300000,
     fetchImpl = fetch,
     sleepFn = sleep,
     now = () => Date.now(),
@@ -48,7 +49,7 @@ export function createApiClient({
                 const timer = setTimeout(() => controller.abort(), timeoutMs);
                 try {
                     response = await fetchImpl(`${endpoint}?${query}`, {
-                        headers: { 'User-Agent': userAgent, 'Api-User-Agent': userAgent, 'Accept-Encoding': 'gzip' },
+                        headers: { 'User-Agent': userAgent, 'Api-User-Agent': userAgent },
                         signal: controller.signal,
                     });
                     if (response.ok) body = await response.json();
@@ -56,15 +57,20 @@ export function createApiClient({
                     clearTimeout(timer);
                 }
             } catch (error) {
-                if (attempt >= maxRetries) throw new Error(`MediaWiki API: ${error.message}`);
-                await sleepFn(backoff(attempt));
+                const reason = error.name === 'AbortError' ? `no response in ${Math.round(timeoutMs / 1000)}s` : error.message;
+                if (attempt >= maxRetries) throw new Error(`MediaWiki API: ${reason}, after ${attempt + 1} attempts`);
+                const delay = backoff(attempt);
+                // Logged, so a slow stretch never looks like a hang.
+                log(`api: ${reason}; retry ${attempt + 1}/${maxRetries} in ${Math.round(delay / 1000)}s`);
+                await sleepFn(delay);
                 continue;
             }
             const lagged = body?.error?.code === 'maxlag';
             if (response.status === 429 || response.status >= 500 || lagged) {
                 if (attempt >= maxRetries) throw new Error(`MediaWiki API: gave up after ${attempt + 1} attempts (HTTP ${response.status}${lagged ? ', maxlag' : ''})`);
                 const retryAfter = Number(response.headers?.get?.('retry-after'));
-                const delay = Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : backoff(attempt);
+                // Honour Retry-After, but never sleep longer than maxWaitMs on one call.
+                const delay = Math.min(maxWaitMs, Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : backoff(attempt));
                 log(`api: HTTP ${response.status}${lagged ? ' maxlag' : ''}, waiting ${Math.round(delay / 1000)}s`);
                 await sleepFn(delay);
                 continue;
@@ -144,18 +150,33 @@ export async function baselineRevision(client, pageId, at) {
     return { meta: toMeta(page.pageid, rev), text: rev.slots?.main?.content ?? null };
 }
 
-/** Text of many revisions by id, `batchSize` per request. Map rev_id → text|null. */
-export async function revisionTexts(client, revIds, { batchSize = 20 } = {}) {
+/**
+ * Text of many revisions by id. Map rev_id → text|null.
+ *
+ * Batched by count and, when `sizes` (rev_id → bytes) is given, by total size
+ * too: twenty revisions of a 400 KB article is an 8 MB response, slow enough
+ * to look like a hang and pointless to hold in memory at once.
+ */
+export async function revisionTexts(client, revIds, { batchSize = 20, maxBytes = 3_000_000, sizes = null } = {}) {
     const texts = new Map();
-    for (let i = 0; i < revIds.length; i += batchSize) {
-        const chunk = revIds.slice(i, i + batchSize);
+    const chunks = [];
+    let chunk = [];
+    let bytes = 0;
+    for (const id of revIds) {
+        const size = sizes?.get(id) ?? 0;
+        if (chunk.length && (chunk.length >= batchSize || bytes + size > maxBytes)) { chunks.push(chunk); chunk = []; bytes = 0; }
+        chunk.push(id);
+        bytes += size;
+    }
+    if (chunk.length) chunks.push(chunk);
+    for (const ids of chunks) {
         const body = await client.call({
-            action: 'query', prop: 'revisions', revids: chunk.join('|'), rvprop: 'ids|content', rvslots: 'main',
+            action: 'query', prop: 'revisions', revids: ids.join('|'), rvprop: 'ids|content', rvslots: 'main',
         });
         for (const page of body.query?.pages ?? []) {
             for (const rev of page.revisions ?? []) texts.set(rev.revid, rev.slots?.main?.content ?? null);
         }
-        for (const id of chunk) if (!texts.has(id)) texts.set(id, null);
+        for (const id of ids) if (!texts.has(id)) texts.set(id, null);
     }
     return texts;
 }

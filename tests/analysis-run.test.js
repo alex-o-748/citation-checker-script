@@ -200,3 +200,24 @@ test('pagesMarkdown lists revisions, changed claims and pages without a suggesti
     assert.match(md, /Colette Kress\n\nNo Source Verification suggestion/);
     assert.match(md, /\| 1\/0 \|/);
 });
+
+test('the API client logs a timed-out request before retrying, and caps a long Retry-After', async () => {
+    const logs = [];
+    const sleeps = [];
+    const responses = [
+        () => { const e = new Error('aborted'); e.name = 'AbortError'; throw e; },
+        () => fakeResponse(429, null, { 'retry-after': '3600' }),
+        () => fakeResponse(200, { ok: 1 }),
+    ];
+    const client = createApiClient({ minIntervalMs: 0, maxWaitMs: 300000, sleepFn: async ms => { sleeps.push(ms); }, log: m => logs.push(m), fetchImpl: async () => responses.shift()() });
+    assert.deepEqual(await client.call({}), { ok: 1 });
+    assert.match(logs[0], /no response in 60s; retry 1\/6/);
+    assert.ok(sleeps.includes(300000) && !sleeps.includes(3600000));
+});
+
+test('revisionTexts splits a request by total size', async () => {
+    const asked = [];
+    const client = createApiClient({ minIntervalMs: 0, sleepFn: async () => {}, fetchImpl: async url => { asked.push(new URL(url).searchParams.get('revids')); return fakeResponse(200, { query: { pages: [] } }); } });
+    await revisionTexts(client, [1, 2, 3], { maxBytes: 1000, sizes: new Map([[1, 600], [2, 600], [3, 100]]) });
+    assert.deepEqual(asked, ['1', '2|3']);
+});

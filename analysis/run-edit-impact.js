@@ -111,7 +111,8 @@ export async function analyzePage({ wiki, pageId, pageTitle, suggestions, window
         if (m.sha1) bySha.set(m.sha1, m.rev_id);
         toFetch.push(m.rev_id);
     }
-    const texts = toFetch.length ? await source.texts(toFetch) : new Map();
+    const sizes = new Map(metas.map(m => [m.rev_id, m.size ?? 0]));
+    const texts = toFetch.length ? await source.texts(toFetch, sizes) : new Map();
     const prepared = new Map();
     const revFor = m => {
         if (m.text_hidden) return null;
@@ -159,7 +160,7 @@ function apiSource(client, log) {
             for (const m of metas) m.is_bot = Boolean(m.user && botCache.get(m.user));
             return metas;
         },
-        async texts(ids) { return revisionTexts(client, ids); },
+        async texts(ids, sizes) { return revisionTexts(client, ids, { sizes }); },
         log,
     };
 }
@@ -180,7 +181,7 @@ async function replicasSource(client, pageIds, window, log) {
                 return { meta: { rev_id: id }, text: texts.get(id) ?? null };
             },
             async revisions(pageId) { return byPage.get(pageId) ?? []; },
-            async texts(ids) { return revisionTexts(client, ids); },
+            async texts(ids, sizes) { return revisionTexts(client, ids, { sizes }); },
         };
     } finally {
         await connection.end();
