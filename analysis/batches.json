@@ -1,0 +1,82 @@
+{
+  "_comment": "The batch files whose flagged rows were shown in Suggestion Mode, as llmSourceVerification. Files live on the data/batches branch (gzipped; MANIFEST.txt and SHA256SUMS beside them). generated_at is the file's modification time on the Toolforge bastion. live_from is the wiki's config change that turned the suggestion type on; live_until is null while the batch is still being shown. See docs/batch-files.md.",
+  "batches": [
+    {
+      "batch_id": "en-evergreen-500",
+      "wiki": "enwiki",
+      "file": "en-evergreen-500-clean-after.csv",
+      "uploaded_as": "en-evergreen-500-findings-clean-2026-11-01.csv",
+      "generated_at": "2026-11-01T21:56:42Z",
+      "rows": 80756,
+      "sha256": "4eee38356bba31f6769bbdee6df99efc6163db01bcfa602f8e630298453161b5",
+      "live_from": "2026-11-05T00:33:00Z",
+      "live_until": null
+    },
+    {
+      "batch_id": "batch3-evergreen",
+      "wiki": "enwiki",
+      "file": "batch3-evergreen-clean-after.csv",
+      "uploaded_as": "batch3-evergreen-clean-after.csv",
+      "generated_at": "2026-11-01T22:05:02Z",
+      "rows": 13896,
+      "sha256": "d01b4ae90efdcb9d48c84784514bedb115dd2996144771d9c0e2c4e9867ad700",
+      "live_from": "2026-11-05T00:33:00Z",
+      "live_until": null
+    },
+    {
+      "batch_id": "isaac-400",
+      "wiki": "enwiki",
+      "file": "isaac-clean-after.csv",
+      "uploaded_as": "isaac-400-findings-clean-oct30fix.csv",
+      "generated_at": "2026-10-30T21:16:10Z",
+      "rows": 26002,
+      "sha256": "f6c984ebfec1e643963d7a3462b421fe19fafd7c55d31efa0edbe7107394dc7b",
+      "live_from": "2026-11-05T00:33:00Z",
+      "live_until": null
+    },
+    {
+      "batch_id": "ru-batch2",
+      "wiki": "ruwiki",
+      "file": "ru-batch2-clean-after.csv",
+      "uploaded_as": "ru-batch2-findings-clean-2026-11-02.csv",
+      "generated_at": "2026-11-02T22:04:37Z",
+      "rows": 11758,
+      "sha256": "f62852267ae04bb89f58f2fe3fa9ab2b0802561ec0130f90e67a1987cdf96226",
+      "live_from": "2026-11-05T10:58:00Z",
+      "live_until": null
+    },
+    {
+      "batch_id": "ru-batch3",
+      "wiki": "ruwiki",
+      "file": "ru-batch3-clean-after.csv",
+      "uploaded_as": "ru-batch3-findings-clean-2026-11-02.csv",
+      "generated_at": "2026-11-02T22:04:57Z",
+      "rows": 29190,
+      "sha256": "2f56061ae62a87e65a5444e1cfb1b08b5425b875c71f304312ece7fc6c641c1c",
+      "live_from": "2026-11-05T10:58:00Z",
+      "live_until": null
+    },
+    {
+      "batch_id": "ru-batch4",
+      "wiki": "ruwiki",
+      "file": "ru-batch4-clean-after.csv",
+      "uploaded_as": "ru-batch4-findings-clean-2026-11-02.csv",
+      "generated_at": "2026-11-02T22:05:25Z",
+      "rows": 32917,
+      "sha256": "65ff23cdeac6e668309963c06c4737386a996d1ed8dcd25079ca0581779126c7",
+      "live_from": "2026-11-05T10:58:00Z",
+      "live_until": null
+    },
+    {
+      "batch_id": "ru-batch5",
+      "wiki": "ruwiki",
+      "file": "ru-batch5-clean-after.csv",
+      "uploaded_as": "ru-batch5-findings-clean-2026-11-02.csv",
+      "generated_at": "2026-11-02T22:05:39Z",
+      "rows": 10650,
+      "sha256": "728e5181a0bc50b8e3db6cc5f07b7ea835a158cbc094d974465b7715b1ce1acf",
+      "live_from": "2026-11-05T10:58:00Z",
+      "live_until": null
+    }
+  ]
+}

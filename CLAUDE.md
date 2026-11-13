@@ -43,6 +43,7 @@ benchmark/
 Benchmarking_data_Citations.csv  # Source ground truth data (Dataset version + WMF override columns)
 service/                         # Toolforge batch pipeline: select -> extract -> fetch -> verify -> store (see Batch Pipeline below)
 .github/workflows/               # Scheduled talk-page scraper (not test/build CI)
+analysis/                        # Edit-impact analysis of Suggestion Mode suggestions (run-edit-impact.js; see analysis/README.md); batches.json indexes the batch files on the data/batches branch (docs/batch-files.md)
 docs/                            # Reference docs + design plans (see docs/README.md)
 ```
 

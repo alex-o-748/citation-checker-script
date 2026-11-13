@@ -1,0 +1,292 @@
+#!/usr/bin/env node
+// Did editors act on Source Verification suggestions without pressing the
+// button? Measured from page histories. Method and limits: analysis/README.md.
+//
+// Usage (Toolforge, all of enwiki — metadata from the Wiki Replicas, text from the API):
+//   node analysis/run-edit-impact.js --wiki enwiki --batches ~/batch-export --source replicas --out ~/edit-impact
+// A handful of pages, from anywhere with API access:
+//   node analysis/run-edit-impact.js --wiki enwiki --batches ./batches --source api \
+//       --titles "Beef clod|OpenAI" --out ./edit-impact
+//
+// Output, in <out>/<wiki>/:
+//   suggestions.csv  one row per flagged or supported claim
+//   revisions.csv    every revision after go-live on those pages
+//   summary.md/.json the per-wiki summary
+//   sample.md/.csv   ~30 random flagged claims that changed, for a person to judge
+//   pages.jsonl      per-page results as they complete; a re-run resumes from it
+//   run.json         the parameters, so a resume can't silently mix windows
+
+import { parseArgs } from 'node:util';
+import { mkdir, readFile, writeFile, appendFile, rm } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import { loadManifest, loadSuggestions } from './lib/batches.js';
+import {
+    createApiClient, listRevisions, baselineRevision, revisionTexts, botUsers, pageIdsForTitles, DEFAULT_USER_AGENT,
+} from './lib/mwapi.js';
+import { listRevisionsReplicas, baselineIdsReplicas } from './lib/replicas.js';
+import { makeTarget, prepareRevision, trackSuggestion } from './lib/track.js';
+import {
+    suggestionRecord, revisionRecord, summarize, summaryMarkdown, sampleChanged, sampleMarkdown, toCsv,
+    SUGGESTION_COLUMNS, REVISION_COLUMNS, SAMPLE_COLUMNS,
+} from './lib/report.js';
+
+export const HELP = `usage: node analysis/run-edit-impact.js --wiki <db> --batches <dir> [options]
+
+  --wiki <db>          enwiki or ruwiki (must appear in analysis/batches.json)
+  --batches <dir>      folder holding the batch files (.csv or .csv.gz, as on the
+                       data/batches branch)
+  --source <name>      replicas (Toolforge; revision metadata from the Wiki
+                       Replicas) or api (default; everything from api.php)
+  --titles <a|b|…>     only these pages. Titles with no suggestion are still
+                       listed in revisions.csv (and reported), for validation
+  --until <iso>        end of the window (default: now, fixed at the first run)
+  --delay-ms <n>       minimum gap between API requests (default 1000)
+  --contact <text>     appended to the User-Agent, e.g. a wiki username
+  --sample <n>         size of the review sample (default 30)
+  --seed <n>           sample seed (default 1)
+  --out <dir>          output folder (default ./edit-impact)
+  --fresh              discard a previous run's pages.jsonl instead of resuming
+`;
+
+export function parseCli(argv) {
+    const { values } = parseArgs({
+        args: argv.slice(2),
+        options: {
+            wiki: { type: 'string' }, batches: { type: 'string' }, source: { type: 'string', default: 'api' },
+            titles: { type: 'string' }, until: { type: 'string' }, 'delay-ms': { type: 'string', default: '1000' },
+            contact: { type: 'string' }, sample: { type: 'string', default: '30' }, seed: { type: 'string', default: '1' },
+            out: { type: 'string', default: 'edit-impact' }, fresh: { type: 'boolean', default: false },
+            help: { type: 'boolean', short: 'h', default: false },
+        },
+        strict: true,
+    });
+    return {
+        help: values.help,
+        wiki: values.wiki,
+        batches: values.batches,
+        source: values.source,
+        titles: values.titles ? values.titles.split('|').map(t => t.trim()).filter(Boolean) : null,
+        until: values.until ?? null,
+        delayMs: Number(values['delay-ms']),
+        contact: values.contact ?? null,
+        sample: Number(values.sample),
+        seed: Number(values.seed),
+        out: values.out,
+        fresh: values.fresh,
+    };
+}
+
+const secondsBefore = (iso, s) => new Date(Date.parse(iso) - s * 1000).toISOString().replace('.000Z', 'Z');
+
+/**
+ * One page: baseline text, later revisions with text, every suggestion
+ * tracked across them. `source` hides where metadata and text come from.
+ */
+export async function analyzePage({ wiki, pageId, pageTitle, suggestions, window, source }) {
+    const baseline = await source.baseline(pageId, secondsBefore(window.from, 1));
+    const metas = await source.revisions(pageId, window);
+    if (!baseline || baseline.text === null) {
+        return {
+            page_id: pageId,
+            page_title: pageTitle,
+            error: baseline ? 'baseline text unavailable' : 'page or baseline revision not found',
+            revisions: metas.map(m => revisionRecord(m, { wiki, pageTitle })),
+            suggestions: suggestions.map(s => suggestionRecord(s, { located: null, first: null, end: null, skipped: 0 },
+                { baselineRevId: baseline?.meta?.rev_id ?? '', revisions: metas, wiki })),
+        };
+    }
+
+    // One fetch per distinct text: a revert restores an earlier sha1 exactly.
+    const bySha = new Map();
+    const toFetch = [];
+    for (const m of metas) {
+        if (m.text_hidden) continue;
+        if (m.sha1 && bySha.has(m.sha1)) continue;
+        if (m.sha1) bySha.set(m.sha1, m.rev_id);
+        toFetch.push(m.rev_id);
+    }
+    const texts = toFetch.length ? await source.texts(toFetch) : new Map();
+    const prepared = new Map();
+    const revFor = m => {
+        if (m.text_hidden) return null;
+        const id = m.sha1 && bySha.has(m.sha1) ? bySha.get(m.sha1) : m.rev_id;
+        if (!prepared.has(id)) {
+            const text = texts.get(id);
+            prepared.set(id, text === null || text === undefined ? null : prepareRevision(text, wiki));
+        }
+        return prepared.get(id);
+    };
+    const baseRev = prepareRevision(baseline.text, wiki);
+    const sequence = metas.map(meta => ({ meta, rev: revFor(meta) }));
+
+    const firstChanges = new Map();
+    const suggestionRows = suggestions.map(s => {
+        const result = trackSuggestion(makeTarget(s), baseRev, sequence);
+        if (result.first) {
+            const counts = firstChanges.get(result.first.meta.rev_id) ?? { flagged: 0, supported: 0 };
+            counts[s.group]++;
+            firstChanges.set(result.first.meta.rev_id, counts);
+        }
+        return suggestionRecord(s, result, { baselineRevId: baseline.meta.rev_id, revisions: metas, wiki });
+    });
+    return {
+        page_id: pageId,
+        page_title: pageTitle,
+        baseline_revision_id: baseline.meta.rev_id,
+        revisions: metas.map(m => revisionRecord(m, { wiki, pageTitle, firstChanges: firstChanges.get(m.rev_id) })),
+        suggestions: suggestionRows,
+    };
+}
+
+function apiSource(client, log) {
+    const botCache = new Map();
+    return {
+        async baseline(pageId, at) { return baselineRevision(client, pageId, at); },
+        async revisions(pageId, window) {
+            const metas = await listRevisions(client, pageId, window);
+            const unknown = [...new Set(metas.filter(m => m.user && !m.anon && !m.temp).map(m => m.user))]
+                .filter(u => !botCache.has(u));
+            if (unknown.length) {
+                const bots = await botUsers(client, unknown);
+                for (const u of unknown) botCache.set(u, bots.has(u));
+            }
+            for (const m of metas) m.is_bot = Boolean(m.user && botCache.get(m.user));
+            return metas;
+        },
+        async texts(ids) { return revisionTexts(client, ids); },
+        log,
+    };
+}
+
+async function replicasSource(client, pageIds, window, log) {
+    const { openReplicaConnection, makeQueryFn } = await import('../service/replicas.js');
+    const connection = await openReplicaConnection({ wikiDb: window.wiki });
+    try {
+        const query = makeQueryFn(connection);
+        log(`replicas: revision metadata for ${pageIds.length} pages`);
+        const byPage = await listRevisionsReplicas(query, pageIds, window);
+        const baselines = await baselineIdsReplicas(query, pageIds, secondsBefore(window.from, 1));
+        return {
+            async baseline(pageId) {
+                const id = baselines.get(pageId);
+                if (!id) return null;
+                const texts = await revisionTexts(client, [id]);
+                return { meta: { rev_id: id }, text: texts.get(id) ?? null };
+            },
+            async revisions(pageId) { return byPage.get(pageId) ?? []; },
+            async texts(ids) { return revisionTexts(client, ids); },
+        };
+    } finally {
+        await connection.end();
+    }
+}
+
+async function readJsonl(path) {
+    if (!existsSync(path)) return [];
+    const text = await readFile(path, 'utf8');
+    return text.split('\n').filter(Boolean).map(line => JSON.parse(line));
+}
+
+export async function main(argv = process.argv, { stdout = process.stdout, stderr = process.stderr } = {}) {
+    const opts = parseCli(argv);
+    if (opts.help) { stdout.write(HELP); return 0; }
+    if (!opts.wiki || !opts.batches) { stderr.write(HELP); return 2; }
+    if (!['api', 'replicas'].includes(opts.source)) { stderr.write(`--source must be api or replicas\n`); return 2; }
+    const log = msg => stderr.write(`${msg}\n`);
+
+    const manifest = await loadManifest();
+    const { suggestions, batches, missing } = await loadSuggestions({ dir: opts.batches, wiki: opts.wiki, titles: opts.titles, manifest });
+    if (missing.length) log(`warning: no file in ${opts.batches} for batch(es): ${missing.join(', ')} — they are left out`);
+    if (!batches.length) { log(`no ${opts.wiki} batch files found in ${opts.batches}`); return 1; }
+
+    const outDir = join(opts.out, opts.wiki);
+    await mkdir(outDir, { recursive: true });
+    const jsonlPath = join(outDir, 'pages.jsonl');
+    const runPath = join(outDir, 'run.json');
+    if (opts.fresh) { await rm(jsonlPath, { force: true }); await rm(runPath, { force: true }); }
+
+    const from = batches.map(b => b.live_from).sort()[0];
+    const untilCandidates = [opts.until, ...batches.map(b => b.live_until)].filter(Boolean).sort();
+    let run = {
+        wiki: opts.wiki, from, until: untilCandidates[0] ?? new Date().toISOString().replace(/\.\d{3}Z$/, 'Z'),
+        batches: batches.map(b => b.batch_id), titles: opts.titles, source: opts.source,
+    };
+    if (existsSync(runPath)) {
+        const previous = JSON.parse(await readFile(runPath, 'utf8'));
+        const same = ['wiki', 'from', 'batches', 'titles'].every(k => JSON.stringify(previous[k]) === JSON.stringify(run[k]))
+            && (!opts.until || previous.until === run.until);
+        if (!same) { log(`${runPath} is from a different run; pass --fresh to start over`); return 2; }
+        run = { ...run, until: previous.until };
+        log(`resuming the run started for window ${run.from} → ${run.until}`);
+    }
+    await writeFile(runPath, `${JSON.stringify(run, null, 2)}\n`);
+    const window = { wiki: opts.wiki, from: run.from, until: run.until };
+
+    const userAgent = opts.contact ? `${DEFAULT_USER_AGENT} ${opts.contact}` : DEFAULT_USER_AGENT;
+    const client = createApiClient({ wiki: opts.wiki, userAgent, minIntervalMs: opts.delayMs, log });
+
+    // Pages with suggestions, plus requested titles that have none.
+    const pages = new Map();
+    for (const s of suggestions) {
+        if (!pages.has(s.page_id)) pages.set(s.page_id, { title: s.page_title, suggestions: [] });
+        pages.get(s.page_id).suggestions.push(s);
+    }
+    const unbatched = opts.titles ? opts.titles.filter(t => ![...pages.values()].some(p => p.title === t)) : [];
+    if (unbatched.length) {
+        log(`not in any ${opts.wiki} batch (no Source Verification suggestion): ${unbatched.join('; ')}`);
+        const ids = await pageIdsForTitles(client, unbatched);
+        for (const [title, id] of ids) if (!pages.has(id)) pages.set(id, { title, suggestions: [] });
+    }
+
+    const done = new Set((await readJsonl(jsonlPath)).map(p => p.page_id));
+    const pageIds = [...pages.keys()];
+    const source = opts.source === 'replicas'
+        ? await replicasSource(client, pageIds.filter(id => !done.has(id)), window, log)
+        : apiSource(client, log);
+
+    let n = done.size;
+    for (const pageId of pageIds) {
+        if (done.has(pageId)) continue;
+        const page = pages.get(pageId);
+        const result = await analyzePage({ wiki: opts.wiki, pageId, pageTitle: page.title, suggestions: page.suggestions, window, source });
+        await appendFile(jsonlPath, `${JSON.stringify(result)}\n`);
+        n++;
+        log(`[${n}/${pageIds.length}] ${page.title}: ${result.revisions.length} revisions, ${result.suggestions.length} claims`
+            + `${result.error ? ` (${result.error})` : ''} — ${client.requests} API requests so far`);
+    }
+
+    const results = await readJsonl(jsonlPath);
+    const suggestionRows = results.flatMap(r => r.suggestions);
+    const revisionRows = results.flatMap(r => r.revisions);
+    await writeFile(join(outDir, 'suggestions.csv'), toCsv(SUGGESTION_COLUMNS, suggestionRows));
+    await writeFile(join(outDir, 'revisions.csv'), toCsv(REVISION_COLUMNS, revisionRows));
+
+    const summary = summarize({
+        wiki: opts.wiki, window, suggestions: suggestionRows,
+        revisions: revisionRows.filter(r => pages.get(Number(r.page_id))?.suggestions.length),
+        pagesWithSuggestions: [...pages.values()].filter(p => p.suggestions.length).length,
+    });
+    summary.unbatched_titles = unbatched;
+    summary.page_errors = results.filter(r => r.error).map(r => ({ page_title: r.page_title, error: r.error }));
+    let md = summaryMarkdown(summary);
+    if (unbatched.length) md += `\nRequested but carrying no Source Verification suggestion (revisions listed, nothing to measure): ${unbatched.join('; ')}.\n`;
+    if (summary.page_errors.length) md += `\nPages that could not be measured: ${summary.page_errors.map(e => `${e.page_title} (${e.error})`).join('; ')}.\n`;
+    await writeFile(join(outDir, 'summary.json'), `${JSON.stringify(summary, null, 2)}\n`);
+    await writeFile(join(outDir, 'summary.md'), md);
+
+    const pool = suggestionRows.filter(r => r.group === 'flagged' && Number(r.changed) === 1);
+    const sample = sampleChanged(suggestionRows, { size: opts.sample, seed: opts.seed });
+    await writeFile(join(outDir, 'sample.md'), sampleMarkdown(opts.wiki, sample, { seed: opts.seed, poolSize: pool.length }));
+    await writeFile(join(outDir, 'sample.csv'), toCsv(SAMPLE_COLUMNS, sample.map(r => ({ ...r, addressed_flag: '', reviewer_notes: '' }))));
+
+    stdout.write(md);
+    log(`wrote ${outDir}/ (${suggestionRows.length} claims, ${revisionRows.length} revisions, ${client.requests} API requests)`);
+    return 0;
+}
+
+if (process.argv[1] && process.argv[1] === fileURLToPath(import.meta.url)) {
+    process.exitCode = await main();
+}
