@@ -7,7 +7,7 @@
 // the check and go-live happened before anyone could see the suggestion.
 
 import { parseFootnotes, precedingProse, flagsAfter, wikitextToPlain, footnoteCluster, footnoteKey } from './wikitext.js';
-import { tokenize, alignSuffix, locateAnywhere, similarity, urlKeys, normalizeForUrlSearch } from './match.js';
+import { tokenize, alignSuffix, locateAnywhere, similarity, urlKeys, normalizeForUrlSearch, citedUrls, normalizeUrl } from './match.js';
 
 // Anchor scores are Dice overlaps between the claim and the prose before a
 // footnote (analysis/lib/match.js's alignSuffix). Rendered text keeps what
@@ -27,6 +27,7 @@ export const CHANGE_KINDS = Object.freeze({
     FLAG_ADDED: 'flag_added',
     FLAG_REMOVED: 'flag_removed',
     FOOTNOTE_ADDED: 'footnote_added',
+    SOURCE_REMOVED: 'source_removed',
 });
 
 /** Prepares a batch row for tracking. */
@@ -36,6 +37,9 @@ export function makeTarget(row) {
         claimTokens: tokenize(row.claim_text),
         refName: row.ref_name ? String(row.ref_name).trim() : null,
         urlKeys: urls.flatMap(urlKeys),
+        // Exact forms, for "is this source still cited?" — a substring test
+        // would call haifuriusa.com present after it became haifuriusa.com/ships.
+        sourceUrls: [...new Set(urls.flatMap(u => [...citedUrls(u)].concat(normalizeUrl(u))))],
     };
 }
 
@@ -44,6 +48,7 @@ export function prepareRevision(wikitext, wiki = 'enwiki') {
     const parsed = parseFootnotes(wikitext ?? '');
     const proseCache = new Map();
     const defCache = new Map();
+    let pageUrls = null;
     let pageTokens = null;
     return {
         wiki,
@@ -65,6 +70,13 @@ export function prepareRevision(wikitext, wiki = 'enwiki') {
             return pageTokens;
         },
         cluster(index) { return footnoteCluster(parsed, index); },
+        citedUrls() {
+            if (!pageUrls) {
+                pageUrls = new Set();
+                for (const marker of parsed.markers) for (const u of citedUrls(marker.definition)) pageUrls.add(u);
+            }
+            return pageUrls;
+        },
         flags(index) { return flagsAfter(parsed, footnoteCluster(parsed, index)[0], wiki); },
     };
 }
@@ -92,8 +104,9 @@ function bestAnchor(rev, target, indexes) {
 }
 
 function sourcePresent(rev, target) {
-    if (!target.urlKeys.length) return null;
-    return rev.markers.some((_, index) => target.urlKeys.some(key => rev.definitionText(index).includes(key)));
+    if (!target.sourceUrls.length) return null;
+    const cited = rev.citedUrls();
+    return target.sourceUrls.some(u => cited.has(u));
 }
 
 /**
@@ -138,7 +151,7 @@ export function stateAt(rev, target, anchor) {
     const cluster = rev.cluster(best.index);
     return {
         footnotePresent: true,
-        clusterKeys: cluster.map(i => footnoteKey(rev.markers[i])),
+        clusterKeys: cluster.map(i => footnoteKey(rev.markers[i], citedUrls)),
         footnoteIndex: best.index,
         footnoteRaw: rev.markers[best.index].raw,
         score: best.score,
@@ -186,12 +199,25 @@ export function compareStates(baseline, current) {
         kinds.push(CHANGE_KINDS.SENTENCE_EDITED);
         detail.similarity = round(similarity(region, now));
     }
-    if (baseline.sourcePresent === true && current.sourcePresent === false) kinds.push(CHANGE_KINDS.SOURCE_REPLACED);
-    const newFootnotes = subtractMultiset(current.clusterKeys, baseline.clusterKeys);
-    if (newFootnotes.length) {
+    // What the claim's run of footnotes cites, before and after. More
+    // sources than before is an added footnote; the same number with
+    // different ones is a replaced source (a bot fixing a moved URL looks like
+    // this too, and is_bot says so); fewer is a source removed beside it.
+    const gained = subtractMultiset(current.clusterKeys, baseline.clusterKeys);
+    const lost = subtractMultiset(baseline.clusterKeys, current.clusterKeys);
+    const ownSourceGone = baseline.sourcePresent === true && current.sourcePresent === false;
+    if (gained.length > lost.length) {
         kinds.push(CHANGE_KINDS.FOOTNOTE_ADDED);
-        detail.footnotes_added = newFootnotes;
+    } else if (gained.length && gained.length === lost.length) {
+        kinds.push(CHANGE_KINDS.SOURCE_REPLACED);
+    } else if (lost.length > gained.length) {
+        kinds.push(CHANGE_KINDS.SOURCE_REMOVED);
     }
+    if (ownSourceGone && !kinds.includes(CHANGE_KINDS.SOURCE_REPLACED) && !kinds.includes(CHANGE_KINDS.SOURCE_REMOVED)) {
+        kinds.push(CHANGE_KINDS.SOURCE_REPLACED);
+    }
+    if (gained.length) detail.sources_added = gained;
+    if (lost.length) detail.sources_removed = lost;
     const added = subtractMultiset(current.flags, baseline.flags);
     if (added.length) {
         kinds.push(CHANGE_KINDS.FLAG_ADDED);

@@ -172,7 +172,7 @@ test('a claim with no identifiable footnote is anchored on the footnote it prece
 test('adding a second source next to the footnote is footnote_added; a bot archiving a neighbour is not', () => {
     const added = track(supportedRow, [BASE.replace('dubin-v-united-states/ |title=Docket}}</ref>', 'dubin-v-united-states/ |title=Docket}}</ref><ref>{{cite web|url=https://www.oyez.org/cases/2022/22-10}}</ref>')]);
     assert.deepEqual(added.first.kinds, [CHANGE_KINDS.FOOTNOTE_ADDED]);
-    assert.deepEqual(added.first.detail.footnotes_added, ['url:oyez.org/cases/2022/22-10']);
+    assert.deepEqual(added.first.detail.sources_added, ['url:oyez.org/cases/2022/22-10']);
     const withNeighbour = BASE.replace('dubin-v-united-states/ |title=Docket}}</ref>', 'dubin-v-united-states/ |title=Docket}}</ref><ref>{{cite web|url=https://www.oyez.org/cases/2022/22-10}}</ref>');
     const r = trackSuggestion(makeTarget(supportedRow), prepareRevision(withNeighbour), [{
         meta: meta(101),
@@ -187,4 +187,23 @@ test('removing a {{failed verification}} that was there before go-live is flag_r
     const r = trackSuggestion(makeTarget(flaggedRow), prepareRevision(tagged), [{ meta: meta(101), rev: prepareRevision(fixed) }]);
     assert.deepEqual(r.located.flags, ['failed verification']);
     assert.deepEqual(r.first.kinds, [CHANGE_KINDS.FOOTNOTE_ADDED, CHANGE_KINDS.FLAG_REMOVED]);
+});
+
+test('a URL swapped inside a neighbouring footnote is source_replaced, not footnote_added (GreenC bot on OpenAI)', () => {
+    const two = BASE.replace('dubin-v-united-states/ |title=Docket}}</ref>', 'dubin-v-united-states/ |title=Docket}}</ref><ref>{{cite web|url=https://venturebeat.com/2021/01/05/openai-debuts}}</ref>');
+    const moved = two.replace('venturebeat.com/2021/01/05/openai-debuts', 'venturebeat.com/business/openai-debuts');
+    const r = trackSuggestion(makeTarget(supportedRow), prepareRevision(two), [{ meta: meta(101), rev: prepareRevision(moved) }]);
+    assert.deepEqual(r.first.kinds, [CHANGE_KINDS.SOURCE_REPLACED]);
+    const dropped = trackSuggestion(makeTarget(supportedRow), prepareRevision(two), [{ meta: meta(101), rev: prepareRevision(BASE) }]);
+    assert.deepEqual(dropped.first.kinds, [CHANGE_KINDS.SOURCE_REMOVED]);
+});
+
+test('a URL changed inside a kept named ref is source_replaced (List of fictional ships, ref ":8")', () => {
+    const page = 'Intro.\n\n* Musashi – High School Fleet<ref name=":8">{{Cite web |title=Ships |url=http://www.haifuriusa.com/ |access-date=2026-08-22}}</ref>\n* Harekaze – High School Fleet<ref name=":8" />\n';
+    const fixed = page.replace('http://www.haifuriusa.com/ |access-date=2026-08-22', 'https://haifuriusa.com/ships/ |access-date=2026-11-04');
+    for (const claim of ['Musashi – High School Fleet', 'Harekaze – High School Fleet']) {
+        const target = makeTarget({ claim_text: claim, ref_name: ':8', source_url: 'http://www.haifuriusa.com/' });
+        const r = trackSuggestion(target, prepareRevision(page), [{ meta: meta(101), rev: prepareRevision(fixed) }]);
+        assert.deepEqual(r.first?.kinds, [CHANGE_KINDS.SOURCE_REPLACED], claim);
+    }
 });

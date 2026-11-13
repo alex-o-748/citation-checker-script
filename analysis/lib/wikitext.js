@@ -252,20 +252,19 @@ function isGlue(between) {
     return true;
 }
 
-const ARCHIVE_HOSTS = /^(?:web\.archive\.org|archive\.(?:org|today|is|ph|li|vn|fo|md)|webcitation\.org|ghostarchive\.org)/i;
-
 /**
  * What a footnote cites, stable under the edits bots make to citations
- * (adding access-date, archive-url, url-status, reformatting): its ref name;
- * else the non-archive URLs it contains; else its text without those fields.
+ * (access-date, archive-url, url-status, reformatting): its ref name together
+ * with the URLs its definition cites, so a named ref whose URL is swapped
+ * reads as a different source; for a ref with no URL, its text without those
+ * fields.
  */
-export function footnoteKey(marker) {
-    if (marker.name) return `name:${marker.name}`;
-    const body = decodeEntities(marker.body || marker.raw);
-    const urls = (body.match(/https?:\/\/[^\s|\]}<]+/gi) ?? [])
-        .map(u => u.replace(/^https?:\/\/(?:www\.)?/i, '').replace(/[/.,]+$/, '').toLowerCase())
-        .filter(u => !ARCHIVE_HOSTS.test(u));
-    if (urls.length) return `url:${[...new Set(urls)].sort().join(' ')}`;
+export function footnoteKey(marker, citedUrls) {
+    const body = decodeEntities(marker.definition || marker.body || marker.raw);
+    const urls = [...citedUrls(body)].sort();
+    const name = marker.name ? `name:${marker.name}` : '';
+    if (urls.length) return `${name}${name ? ' ' : ''}url:${urls.join(' ')}`;
+    if (name) return name;
     return `text:${body
         .replace(/\|\s*(?:access-?date|archive-?url|archive-?date|url-?status|df|mode)\s*=[^|}]*/gi, '')
         .replace(/\s+/g, ' ').trim().toLowerCase()}`;

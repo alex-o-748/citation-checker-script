@@ -92,10 +92,11 @@ node analysis/run-edit-impact.js --wiki enwiki --batches ~/batch-export --source
    | `sentence_removed` | The footnote remains, but the claim is no longer in front of it |
    | `footnote_removed` | The footnote is gone and the sentence is still on the page |
    | `sentence_and_footnote_removed` | Both are gone |
-   | `source_replaced` | A named ref is kept, but its definition no longer contains the source URL |
+   | `source_replaced` | The footnotes after the claim cite a different source in place of one they cited: the row's own URL is gone from a kept named ref, or a URL in the run was swapped. A bot fixing a moved link shows up here, marked as a bot edit |
+   | `source_removed` | A source cited alongside the claim's footnote was removed, the footnote itself kept |
    | `flag_added` | `{{failed verification}}` or a relative (`{{better source needed}}`, `{{dubious}}`, `{{citation needed}}`, …) is newly attached to the footnote |
    | `flag_removed` | Such a template that was attached in the baseline is gone. `flags_at_baseline` lists them: some flagged claims were already tagged by editors before the batch ran |
-   | `footnote_added` | A new source is cited alongside the footnote, in the run of footnotes right after the claim. Editors often fix a citation this way rather than by touching it |
+   | `footnote_added` | The run of footnotes right after the claim now cites more sources than before. Editors often fix a citation this way rather than by touching it |
 
    A citation bot adding `access-date` or `archive-url` is *not* a change: the
    comparison looks at prose, source URLs, which footnotes sit together and the

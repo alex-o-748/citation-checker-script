@@ -155,3 +155,30 @@ export function normalizeForUrlSearch(text) {
     try { s = decodeURI(s); } catch { /* leave as is */ }
     return s.replace(/(?:https?:)?\/\/(?:www\.)?/gi, '').toLowerCase();
 }
+
+/** One URL in the form urlKeys() produces, for exact comparison. */
+export function normalizeUrl(url) {
+    let s = String(url).trim().replace(/&amp;/g, '&');
+    try { s = decodeURI(s); } catch { /* leave as is */ }
+    return s.replace(/^(?:https?:)?\/\//i, '').replace(/^www\./i, '').replace(/[/#.,]+$/, '').toLowerCase();
+}
+
+const ARCHIVE_HOSTS = /^(?:web\.archive\.org|archive\.(?:org|today|is|ph|li|vn|fo|md)|webcitation\.org|ghostarchive\.org)\//i;
+
+/**
+ * Every URL a piece of wikitext cites, normalised, with archive copies
+ * replaced by the original they archive — so a bot adding archive-url adds
+ * nothing new, and a Wayback source_url still compares equal.
+ */
+export function citedUrls(text) {
+    const out = new Set();
+    for (const raw of String(text ?? '').match(/(?:https?:)?\/\/[^\s|\]}<>"]+/gi) ?? []) {
+        const url = normalizeUrl(raw);
+        const wayback = /^web\.archive\.org\/web\/[^/]+\/(.+)$/i.exec(url);
+        if (wayback) {
+            const original = normalizeUrl(wayback[1]);
+            if (/^[^/\s]+\.[a-z]{2,}/i.test(original)) out.add(original);
+        } else if (!ARCHIVE_HOSTS.test(url)) out.add(url);
+    }
+    return out;
+}
