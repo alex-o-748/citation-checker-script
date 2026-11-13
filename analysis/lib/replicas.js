@@ -8,6 +8,8 @@
 // `actor_revision` and `comment_revision` are the replicas' views for joining
 // from `revision` — the plain `actor` / `comment` views are much slower there
 // (https://wikitech.wikimedia.org/wiki/News/Actor_storage_changes_on_the_Wiki_Replicas).
+// No rev_sha1: MediaWiki has dropped that column (confirmed on enwiki_p,
+// 2026-11-13: "Unknown column 'r.rev_sha1'").
 // Bot status is the editor's *current* `bot` group membership: the replicas
 // keep no history of group changes that this query could use.
 
@@ -26,7 +28,7 @@ export function buildRevisionsQuery(pageIds, { from, until }) {
     const placeholders = pageIds.map(() => '?').join(', ');
     const sql = `
 SELECT r.rev_id, r.rev_page, r.rev_parent_id, r.rev_timestamp, r.rev_len, r.rev_minor_edit,
-       r.rev_deleted, r.rev_sha1, a.actor_name, a.actor_user, c.comment_text,
+       r.rev_deleted, a.actor_name, a.actor_user, c.comment_text,
        (SELECT GROUP_CONCAT(ctd.ctd_name SEPARATOR '|')
           FROM change_tag ct JOIN change_tag_def ctd ON ctd.ctd_id = ct.ct_tag_id
          WHERE ct.ct_rev_id = r.rev_id) AS tags,
@@ -71,7 +73,10 @@ export function rowToMeta(row) {
         size: row.rev_len === null ? null : Number(row.rev_len),
         minor: Boolean(Number(row.rev_minor_edit)),
         comment: deleted & 2 ? null : (text(row.comment_text) ?? ''),
-        sha1: text(row.rev_sha1),
+        // revision.rev_sha1 is gone from the replicas (MediaWiki dropped the
+        // column). Without it, identical texts after a revert are fetched
+        // twice rather than once; results are unaffected.
+        sha1: null,
         text_hidden: Boolean(deleted & 1),
         is_bot: Boolean(Number(row.is_bot)),
     };

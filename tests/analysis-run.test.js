@@ -83,10 +83,11 @@ test('replica queries bind every value and use the actor/comment views', () => {
     assert.match(sql, /comment_revision/);
     assert.match(sql, /change_tag_def/);
     assert.deepEqual(params, [1, 2, '20261105003300', '20261113000000']);
+    assert.doesNotMatch(sql, /rev_sha1/, 'dropped from the replicas');
     assert.equal(buildBaselineQuery([3], '2026-11-05T00:32:59Z').params.at(-1), '20261105003259');
     assert.equal(toMwTimestamp('2026-11-05T00:33:00Z'), '20261105003300');
     const meta = rowToMeta({ rev_id: 7, rev_page: 3, rev_parent_id: 6, rev_timestamp: Buffer.from('20261106120000'), rev_len: 10,
-        rev_minor_edit: 0, rev_deleted: 0, rev_sha1: 'abc', actor_name: Buffer.from('Bot'), actor_user: 4,
+        rev_minor_edit: 0, rev_deleted: 0, actor_name: Buffer.from('Bot'), actor_user: 4,
         comment_text: 'c', tags: Buffer.from('mw-reverted|visualeditor'), is_bot: 1 });
     assert.equal(meta.timestamp, '2026-11-06T12:00:00Z');
     assert.deepEqual(meta.tags, ['mw-reverted', 'visualeditor']);
