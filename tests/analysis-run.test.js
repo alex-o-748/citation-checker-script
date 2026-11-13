@@ -221,3 +221,24 @@ test('revisionTexts splits a request by total size', async () => {
     await revisionTexts(client, [1, 2, 3], { maxBytes: 1000, sizes: new Map([[1, 600], [2, 600], [3, 100]]) });
     assert.deepEqual(asked, ['1', '2|3']);
 });
+
+test('list-changes groups changed claims by the edit that changed them, without breaking the table', async () => {
+    const { collectChanges, changesMarkdown } = await import('../analysis/list-changes.js');
+    const files = {
+        'revisions.csv': [{ rev_id: '11', page_title: 'Dubin', timestamp: '2026-11-05T08:29:18Z', user: 'Ed', comment: 'Add citation | fix', diff: 'd', is_bot: '0', mw_reverted: '0', seen: '1', used: '1' }],
+        'suggestions.csv': [
+            { group: 'flagged', changed: '1', first_change_rev_id: '11', first_change_kinds: 'footnote_added|flag_removed', citation_number: '1', claim_text: 'claim one' },
+            { group: 'flagged', changed: '1', first_change_rev_id: '11', first_change_kinds: 'sentence_edited', citation_number: '2', claim_text: 'claim two' },
+            { group: 'supported', changed: '1', first_change_rev_id: '11', first_change_kinds: 'sentence_edited', citation_number: '3', claim_text: 'x' },
+        ],
+    };
+    const stream = async (path, { onRow }) => { for (const row of files[path.split('/').pop()]) onRow(row); };
+    const result = await collectChanges('dir', 'flagged', { stream });
+    assert.equal(result.totalClaims, 2);
+    assert.equal(result.edits.length, 1);
+    const md = changesMarkdown(result);
+    const row = md.split('\n').find(l => l.startsWith('| 1 |'));
+    assert.equal(row.split(/(?<!\\)\|/).length - 2, 8, 'eight cells');
+    assert.match(row, /footnote_added \+ flag_removed/);
+    assert.match(row, /Add citation \\\| fix/);
+});
