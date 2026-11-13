@@ -13,6 +13,7 @@
 //   revisions.csv    every revision after go-live on those pages
 //   summary.md/.json the per-wiki summary
 //   sample.md/.csv   ~30 random flagged claims that changed, for a person to judge
+//   pages.md         with --titles only: every revision and changed claim, page by page
 //   pages.jsonl      per-page results as they complete; a re-run resumes from it
 //   run.json         the parameters, so a resume can't silently mix windows
 
@@ -29,7 +30,7 @@ import {
 import { listRevisionsReplicas, baselineIdsReplicas } from './lib/replicas.js';
 import { makeTarget, prepareRevision, trackSuggestion } from './lib/track.js';
 import {
-    suggestionRecord, revisionRecord, summarize, summaryMarkdown, sampleChanged, sampleMarkdown, toCsv,
+    suggestionRecord, revisionRecord, summarize, summaryMarkdown, sampleChanged, sampleMarkdown, pagesMarkdown, toCsv,
     SUGGESTION_COLUMNS, REVISION_COLUMNS, SAMPLE_COLUMNS,
 } from './lib/report.js';
 
@@ -283,6 +284,11 @@ export async function main(argv = process.argv, { stdout = process.stdout, stder
     await writeFile(join(outDir, 'sample.csv'), toCsv(SAMPLE_COLUMNS, sample.map(r => ({ ...r, addressed_flag: '', reviewer_notes: '' }))));
 
     stdout.write(md);
+    if (opts.titles) {
+        const pagesMd = pagesMarkdown(opts.wiki, results);
+        await writeFile(join(outDir, 'pages.md'), pagesMd);
+        stdout.write(`\n${pagesMd}`);
+    }
     log(`wrote ${outDir}/ (${suggestionRows.length} claims, ${revisionRows.length} revisions, ${client.requests} API requests)`);
     return 0;
 }

@@ -343,3 +343,47 @@ export function sampleMarkdown(wiki, sample, { seed, poolSize }) {
     });
     return lines.join('\n');
 }
+
+/**
+ * Per-page detail for a validation run (--titles): every revision after
+ * go-live with its tags, and every claim that changed. Small enough to read,
+ * or paste, in full.
+ */
+export function pagesMarkdown(wiki, results) {
+    const lines = [`# Per-page detail — ${wiki}`, ''];
+    for (const page of results) {
+        const flagged = page.suggestions.filter(s => s.group === 'flagged');
+        const supported = page.suggestions.filter(s => s.group === 'supported');
+        lines.push(`## ${page.page_title}`, '');
+        if (!page.suggestions.length) lines.push('No Source Verification suggestion on this page (not in any batch).', '');
+        else {
+            const located = rows => rows.filter(s => yes(s.located)).length;
+            lines.push(`Baseline r${page.baseline_revision_id ?? '?'}. Flagged: ${flagged.length} (${located(flagged)} located).`
+                + ` Supported: ${supported.length} (${located(supported)} located).${page.error ? ` **${page.error}**` : ''}`, '');
+        }
+        lines.push('| Revision | Time | Editor | Bot | seen | used | VE | reverted | First changes (flagged/supported) |', '|---|---|---|---|---|---|---|---|---|');
+        for (const r of page.revisions) {
+            lines.push(`| [${r.rev_id}](${r.diff}) | ${r.timestamp} | ${r.user ?? '(hidden)'} (${r.editor_type}) | ${yes(r.is_bot) ? 'yes' : ''}`
+                + ` | ${yes(r.seen) ? 'yes' : ''} | ${yes(r.used) ? 'yes' : ''} | ${yes(r.visualeditor) ? 'yes' : ''} | ${yes(r.mw_reverted) ? 'yes' : ''}`
+                + ` | ${r.first_changes_flagged ?? 0}/${r.first_changes_supported ?? 0} |`);
+        }
+        if (!page.revisions.length) lines.push('| (no revisions after go-live) | | | | | | | | |');
+        lines.push('');
+        const changed = page.suggestions.filter(s => yes(s.changed));
+        if (changed.length) {
+            lines.push('Changed claims:', '');
+            for (const s of changed) {
+                lines.push(`- **${s.group}** ${s.verdict} [${s.citation_number}] “${String(s.claim_text).slice(0, 140)}” — ${s.first_change_kinds}`
+                    + ` in r${s.first_change_rev_id} by ${s.first_change_user || '(hidden)'}${yes(s.first_change_seen) ? ' (seen)' : ''}${yes(s.first_change_used) ? ' (used)' : ''}`);
+            }
+            lines.push('');
+        }
+        const notLocated = page.suggestions.filter(s => s.group === 'flagged' && !yes(s.located));
+        if (notLocated.length) {
+            lines.push('Flagged claims not located in the baseline:', '');
+            for (const s of notLocated) lines.push(`- [${s.citation_number}] “${String(s.claim_text).slice(0, 140)}”`);
+            lines.push('');
+        }
+    }
+    return lines.join('\n');
+}

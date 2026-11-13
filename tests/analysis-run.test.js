@@ -186,3 +186,16 @@ test('parseCli splits --titles on pipes', () => {
     assert.deepEqual(o.titles, ['Beef clod', 'OpenAI']);
     assert.equal(o.source, 'api');
 });
+
+test('pagesMarkdown lists revisions, changed claims and pages without a suggestion', async () => {
+    const { pagesMarkdown } = await import('../analysis/lib/report.js');
+    const md = pagesMarkdown('enwiki', [
+        { page_title: 'Beef clod', baseline_revision_id: 9, suggestions: [
+            { group: 'flagged', verdict: 'NOT SUPPORTED', located: 1, changed: 1, citation_number: '6, 7', claim_text: 'bistro filet', first_change_kinds: 'sentence_edited', first_change_rev_id: 11, first_change_user: 'Dreamyshade', first_change_used: 1 },
+        ], revisions: [{ rev_id: 11, diff: 'd', timestamp: 't', user: 'Dreamyshade', editor_type: 'registered', used: 1, first_changes_flagged: 1 }] },
+        { page_title: 'Colette Kress', suggestions: [], revisions: [] },
+    ]);
+    assert.match(md, /Dreamyshade \(used\)/);
+    assert.match(md, /Colette Kress\n\nNo Source Verification suggestion/);
+    assert.match(md, /\| 1\/0 \|/);
+});
