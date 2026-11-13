@@ -46,6 +46,10 @@ function cell(value) {
     return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
+export function csvLine(columns, row) {
+    return `${columns.map(c => cell(row[c])).join(',')}\n`;
+}
+
 export function toCsv(columns, rows) {
     const lines = [columns.map(cell).join(',')];
     for (const row of rows) lines.push(columns.map(c => cell(row[c])).join(','));

@@ -19,7 +19,9 @@
 
 import { parseArgs } from 'node:util';
 import { mkdir, readFile, writeFile, appendFile, rm } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
+import { existsSync, createReadStream, createWriteStream } from 'node:fs';
+import { createInterface } from 'node:readline';
+import { once } from 'node:events';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -30,7 +32,7 @@ import {
 import { listRevisionsReplicas, baselineIdsReplicas } from './lib/replicas.js';
 import { makeTarget, prepareRevision, trackSuggestion } from './lib/track.js';
 import {
-    suggestionRecord, revisionRecord, summarize, summaryMarkdown, sampleChanged, sampleMarkdown, pagesMarkdown, toCsv,
+    suggestionRecord, revisionRecord, summarize, summaryMarkdown, sampleChanged, sampleMarkdown, pagesMarkdown, toCsv, csvLine,
     SUGGESTION_COLUMNS, REVISION_COLUMNS, SAMPLE_COLUMNS,
 } from './lib/report.js';
 
@@ -185,11 +187,24 @@ async function replicasSource(client, pageIds, window, log) {
     }
 }
 
-async function readJsonl(path) {
-    if (!existsSync(path)) return [];
-    const text = await readFile(path, 'utf8');
-    return text.split('\n').filter(Boolean).map(line => JSON.parse(line));
+/** Calls `fn` for each page result in pages.jsonl, one line at a time. */
+async function eachJsonl(path, fn) {
+    if (!existsSync(path)) return;
+    const lines = createInterface({ input: createReadStream(path, { encoding: 'utf8' }), crlfDelay: Infinity });
+    for await (const line of lines) if (line) fn(JSON.parse(line));
 }
+
+async function write(stream, text) {
+    if (!stream.write(text)) await once(stream, 'drain');
+}
+
+// What summarize() reads from each row. The full rows go straight to the CSVs;
+// holding ~60,000 of them, with their prose, is what made a 512 MB Toolforge
+// job run out of memory.
+const SUMMARY_SUGGESTION_FIELDS = ['group', 'located', 'changed', 'revisions_after', 'first_change_kinds', 'first_change_is_bot',
+    'first_change_reverted', 'first_change_seen', 'first_change_used', 'changed_at_end', 'check_id'];
+const SUMMARY_REVISION_FIELDS = ['page_id', 'page_title', 'is_bot', 'seen', 'used', 'mw_reverted', 'visualeditor'];
+const pick = (row, fields) => Object.fromEntries(fields.map(f => [f, row[f]]));
 
 export async function main(argv = process.argv, { stdout = process.stdout, stderr = process.stderr } = {}) {
     const opts = parseCli(argv);
@@ -242,7 +257,8 @@ export async function main(argv = process.argv, { stdout = process.stdout, stder
         for (const [title, id] of ids) if (!pages.has(id)) pages.set(id, { title, suggestions: [] });
     }
 
-    const done = new Set((await readJsonl(jsonlPath)).map(p => p.page_id));
+    const done = new Set();
+    await eachJsonl(jsonlPath, p => done.add(p.page_id));
     const pageIds = [...pages.keys()];
     const source = opts.source === 'replicas'
         ? await replicasSource(client, pageIds.filter(id => !done.has(id)), window, log)
@@ -259,37 +275,66 @@ export async function main(argv = process.argv, { stdout = process.stdout, stder
             + `${result.error ? ` (${result.error})` : ''} — ${client.requests} API requests so far`);
     }
 
-    const results = await readJsonl(jsonlPath);
-    const suggestionRows = results.flatMap(r => r.suggestions);
-    const revisionRows = results.flatMap(r => r.revisions);
-    await writeFile(join(outDir, 'suggestions.csv'), toCsv(SUGGESTION_COLUMNS, suggestionRows));
-    await writeFile(join(outDir, 'revisions.csv'), toCsv(REVISION_COLUMNS, revisionRows));
+    // Output: stream pages.jsonl once, writing the CSVs as it goes and keeping
+    // only what the summary, the sample and (for --titles) pages.md need.
+    const suggestionsCsv = createWriteStream(join(outDir, 'suggestions.csv'));
+    const revisionsCsv = createWriteStream(join(outDir, 'revisions.csv'));
+    await write(suggestionsCsv, toCsv(SUGGESTION_COLUMNS, []));
+    await write(revisionsCsv, toCsv(REVISION_COLUMNS, []));
+    const slimSuggestions = [];
+    const slimRevisions = [];
+    const changedFlagged = [];
+    const pageErrors = [];
+    const fullResults = [];
+    let suggestionCount = 0;
+    let revisionCount = 0;
+    const lines = createInterface({ input: createReadStream(jsonlPath, { encoding: 'utf8' }), crlfDelay: Infinity });
+    for await (const line of lines) {
+        if (!line) continue;
+        const result = JSON.parse(line);
+        const measured = Boolean(pages.get(Number(result.page_id))?.suggestions.length);
+        for (const row of result.suggestions) {
+            await write(suggestionsCsv, csvLine(SUGGESTION_COLUMNS, row));
+            slimSuggestions.push(pick(row, SUMMARY_SUGGESTION_FIELDS));
+            if (row.group === 'flagged' && Number(row.changed) === 1) changedFlagged.push(row);
+        }
+        for (const row of result.revisions) {
+            await write(revisionsCsv, csvLine(REVISION_COLUMNS, row));
+            if (measured) slimRevisions.push(pick(row, SUMMARY_REVISION_FIELDS));
+        }
+        suggestionCount += result.suggestions.length;
+        revisionCount += result.revisions.length;
+        if (result.error) pageErrors.push({ page_title: result.page_title, error: result.error });
+        if (opts.titles) fullResults.push(result);
+    }
+    suggestionsCsv.end();
+    revisionsCsv.end();
+    await Promise.all([once(suggestionsCsv, 'finish'), once(revisionsCsv, 'finish')]);
 
     const summary = summarize({
-        wiki: opts.wiki, window, suggestions: suggestionRows,
-        revisions: revisionRows.filter(r => pages.get(Number(r.page_id))?.suggestions.length),
+        wiki: opts.wiki, window, suggestions: slimSuggestions,
+        revisions: slimRevisions,
         pagesWithSuggestions: [...pages.values()].filter(p => p.suggestions.length).length,
     });
     summary.unbatched_titles = unbatched;
-    summary.page_errors = results.filter(r => r.error).map(r => ({ page_title: r.page_title, error: r.error }));
+    summary.page_errors = pageErrors;
     let md = summaryMarkdown(summary);
     if (unbatched.length) md += `\nRequested but carrying no Source Verification suggestion (revisions listed, nothing to measure): ${unbatched.join('; ')}.\n`;
     if (summary.page_errors.length) md += `\nPages that could not be measured: ${summary.page_errors.map(e => `${e.page_title} (${e.error})`).join('; ')}.\n`;
     await writeFile(join(outDir, 'summary.json'), `${JSON.stringify(summary, null, 2)}\n`);
     await writeFile(join(outDir, 'summary.md'), md);
 
-    const pool = suggestionRows.filter(r => r.group === 'flagged' && Number(r.changed) === 1);
-    const sample = sampleChanged(suggestionRows, { size: opts.sample, seed: opts.seed });
-    await writeFile(join(outDir, 'sample.md'), sampleMarkdown(opts.wiki, sample, { seed: opts.seed, poolSize: pool.length }));
+    const sample = sampleChanged(changedFlagged, { size: opts.sample, seed: opts.seed });
+    await writeFile(join(outDir, 'sample.md'), sampleMarkdown(opts.wiki, sample, { seed: opts.seed, poolSize: changedFlagged.length }));
     await writeFile(join(outDir, 'sample.csv'), toCsv(SAMPLE_COLUMNS, sample.map(r => ({ ...r, addressed_flag: '', reviewer_notes: '' }))));
 
     stdout.write(md);
     if (opts.titles) {
-        const pagesMd = pagesMarkdown(opts.wiki, results);
+        const pagesMd = pagesMarkdown(opts.wiki, fullResults);
         await writeFile(join(outDir, 'pages.md'), pagesMd);
         stdout.write(`\n${pagesMd}`);
     }
-    log(`wrote ${outDir}/ (${suggestionRows.length} claims, ${revisionRows.length} revisions, ${client.requests} API requests)`);
+    log(`wrote ${outDir}/ (${suggestionCount} claims, ${revisionCount} revisions, ${client.requests} API requests)`);
     return 0;
 }
 

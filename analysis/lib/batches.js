@@ -39,6 +39,13 @@ export function batchFilePath(dir, batch) {
     return null;
 }
 
+// service/csv-stream.js builds each field a character at a time, which V8
+// keeps as a chain of tiny string fragments. Harmless for rows that are read
+// and dropped; for the ~60,000 rows this keeps, it was 1.1 GB, and a Toolforge
+// job (512 MB by default) was killed before it printed a line. Copying each
+// kept value once makes it one flat string.
+const flat = value => (value ? Buffer.from(value, 'utf8').toString('utf8') : '');
+
 async function streamRows(path, onRow) {
     let header = null;
     const parser = createCsvParser(fields => {
@@ -81,19 +88,19 @@ export async function loadSuggestions({ dir, wiki, titles = null, manifest }) {
                 live_from: batch.live_from,
                 live_until: batch.live_until,
                 group,
-                check_id: row.check_id,
+                check_id: flat(row.check_id),
                 page_id: Number(row.page_id),
-                page_title: row.page_title,
+                page_title: flat(row.page_title),
                 checked_revision_id: Number(row.revision_id),
-                citation_number: row.citation_number,
-                ref_name: row.ref_name,
+                citation_number: flat(row.citation_number),
+                ref_name: flat(row.ref_name),
                 is_collective: row.is_collective === '1',
-                group_id: row.group_id,
-                verdict: row.verdict,
-                reason_type: row.reason_type,
-                rationale: row.rationale,
-                claim_text: row.claim_text,
-                source_url: row.source_url,
+                group_id: flat(row.group_id),
+                verdict: flat(row.verdict),
+                reason_type: flat(row.reason_type),
+                rationale: flat(row.rationale),
+                claim_text: flat(row.claim_text),
+                source_url: flat(row.source_url),
             });
         });
     }
