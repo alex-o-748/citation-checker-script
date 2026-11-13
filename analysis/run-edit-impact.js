@@ -273,7 +273,8 @@ export async function main(argv = process.argv, { stdout = process.stdout, stder
         await appendFile(jsonlPath, `${JSON.stringify(result)}\n`);
         n++;
         log(`[${n}/${pageIds.length}] ${page.title}: ${result.revisions.length} revisions, ${result.suggestions.length} claims`
-            + `${result.error ? ` (${result.error})` : ''} — ${client.requests} API requests so far`);
+            + `${result.error ? ` (${result.error})` : ''} — ${client.requests} API requests so far,`
+            + ` ${Math.round(process.memoryUsage().rss / 1e6)} MB in use`);
     }
 
     // Output: stream pages.jsonl once, writing the CSVs as it goes and keeping

@@ -30,6 +30,26 @@ node analysis/run-edit-impact.js --wiki enwiki --batches ~/batch-export --source
 node analysis/run-edit-impact.js --wiki enwiki --batches ~/batch-export --source replicas --out ~/edit-impact
 ```
 
+As a Toolforge job, put the command in a script: a job's command isn't run
+through a shell, so `cd … && node …` fails at once. Start Node with
+`--max-old-space-size` below the job's `--mem`. Node 18 doesn't see the
+container's memory limit, so without the flag it lets garbage accumulate past
+it, and the job is killed between two pages with nothing in its log. Each
+progress line reports memory in use.
+
+```bash
+#!/bin/bash
+set -e
+cd /data/project/source-verifier/edit-impact-code
+exec node --max-old-space-size=1200 analysis/run-edit-impact.js --wiki enwiki \
+  --batches /data/project/source-verifier/batch-export --source replicas \
+  --until 2026-11-13T00:00:00Z --out /data/project/source-verifier/edit-impact
+```
+
+```bash
+toolforge jobs run edit-impact --image node18 --command ~/run-edit-impact.sh --mem 2Gi --filelog
+```
+
 - `--batches` is the folder holding the batch files, as `.csv` or `.csv.gz`.
   They live on the `data/batches` branch; see `docs/batch-files.md`.
 - `--until` fixes the end of the window. Without it, the first run fixes it at
