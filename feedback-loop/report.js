@@ -106,9 +106,11 @@ function hintTable(results) {
     return ['| Hint | Pattern | Cases |', '|---|---|---|', ...rows].join('\n');
 }
 
-function summaryLine({ results, failures, skipped, deferred }) {
+function summaryLine({ results, failures, skipped, deferred, dryRun }) {
     const agreed = results.filter(r => r.label?.labelStatus === 'agreed').length;
-    const parts = [`**${results.length}** cases triaged: **${agreed}** agreed, **${results.length - agreed}** need your decision.`];
+    const parts = [dryRun
+        ? `**${results.length}** cases fetched and tagged; a dry run proposes no labels.`
+        : `**${results.length}** cases triaged: **${agreed}** agreed, **${results.length - agreed}** need your decision.`];
     if (failures.length) parts.push(`${failures.length} could not be triaged (retried next run).`);
     if (skipped.length) parts.push(`${skipped.length} skipped.`);
     if (deferred.length) parts.push(`${deferred.length} deferred to the next run.`);
@@ -138,7 +140,7 @@ export function renderTriageReport(run) {
     const needsOwner = results.filter(r => r.label?.labelStatus !== 'agreed');
     const agreed = results.filter(r => r.label?.labelStatus === 'agreed');
     const out = [`# Feedback triage — ${date}${dryRun ? ' (dry run: no model calls)' : ''}`, ''];
-    out.push(summaryLine({ results, failures, skipped, deferred }));
+    out.push(summaryLine({ results, failures, skipped, deferred, dryRun }));
     if (fieldSummary) {
         out.push('', `Field set after this run: ${fieldSummary.rows} rows, ${fieldSummary.scoreable} scoreable, ${fieldSummary.needs_owner} awaiting a decision, ${fieldSummary.excluded} excluded.`);
     }
@@ -146,7 +148,7 @@ export function renderTriageReport(run) {
 
     if (!dryRun) out.push('', '### Pattern hints', '', hintTable(results));
 
-    out.push('', `## Needs your decision (${needsOwner.length})`, '');
+    out.push('', dryRun ? `## Cases (${needsOwner.length})` : `## Needs your decision (${needsOwner.length})`, '');
     out.push(needsOwner.length ? needsOwner.map(caseBlock).join('\n\n') : '_None._');
 
     out.push('', `## Agreed (${agreed.length})`, '');
