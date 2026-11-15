@@ -6,7 +6,7 @@
 import { parseArgs } from 'node:util';
 import { JSDOM } from 'jsdom';
 import { extractClaimText, isClaimTooShort, MIN_CLAIM_LENGTH } from '../core/claim.js';
-import { extractReferenceUrl, extractPageNumber } from '../core/urls.js';
+import { extractReferenceUrl, extractPageNumber, extractReferenceText } from '../core/urls.js';
 import { logVerification } from '../core/worker.js';
 import { DEFAULT_PROVIDER, modelFor } from '../core/models.js';
 import { verifyCitation, VERIFY_STAGES } from '../core/pipeline.js';
@@ -330,6 +330,7 @@ export async function runVerify(opts, { stdout = process.stdout, stderr = proces
     //    so no global shim is needed.
     const sourceUrl = extractReferenceUrl(refAnchor, document);
     const pageNum = extractPageNumber(refAnchor, document);
+    const citationText = extractReferenceText(refAnchor, document);
     if (!sourceUrl) {
         stderr.write(`ccs: citation [${citationNumber}] has no fetchable URL\n`);
         return 6;
@@ -357,6 +358,7 @@ export async function runVerify(opts, { stdout = process.stdout, stderr = proces
         claimText: claim,
         sourceUrl,
         pageNum,
+        citationText,
         provider,
         model: modelFor(provider),
         apiKey,

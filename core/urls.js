@@ -202,3 +202,115 @@ export function extractPageNumber(refElement, doc = globalThis.document) {
 export function isGoogleBooksUrl(url) {
     return /books\.google\./.test(url);
 }
+
+// The footnote as an editor reads it — "Camarota, Steven A. (March 12, 2025).
+// "Foreign-Born Number …". CIS.org." — for the model, which otherwise sees only
+// the source's body text and can't tell who published it or when
+// (docs/design-plans/2026-11-08-fixable-causes-of-disputed-verdicts.md §1).
+//
+// Elements removed before reading the text, all chrome rather than citation:
+// jump-back links ("↑", "1 2 3"), nested sub-references (another footnote's
+// details), CS1's and dewiki's access dates (when an editor read the page,
+// not when it was published — the model could take one for the other),
+// TemplateStyles <style>/<link> (whose CSS is text to textContent), COinS
+// metadata, and CS1 maintenance/error messages hidden by CSS.
+const FOOTNOTE_CHROME_SELECTOR = [
+    '.mw-cite-backlink',
+    '.' + SUBREFERENCE_LIST_CLASS,
+    '.reference-accessdate',
+    '.Abrufdatum',
+    'style', 'link', 'script',
+    '.Z3988',
+    '.cs1-maint', '.cs1-hidden-error', '.citation-comment',
+].join(',');
+
+// Archive boilerplate, as text: the "Archived" in CS1's "Archived from the
+// original on …" is a link, not an element of its own, so it can't be removed
+// structurally. English (CS1, {{webarchive}}) and Russian (ruwiki's cite
+// templates and {{webarchive}}), the two wikis the batch runs on; elsewhere it
+// passes through, labeled as what it is, which the model reads correctly.
+// Russian patterns avoid \b, which only knows ASCII word characters. None
+// takes the phrase's closing period: it stands in for the one the phrase
+// interrupted ("1992 … Архивная копия … Wayback Machine. Гарант"), and a
+// doubled one is collapsed afterwards.
+const FOOTNOTE_BOILERPLATE_PATTERNS = [
+    /\s*\bArchived\b(?:\s*\([^)]*\))?\s+from\s+the\s+original\b(?:\s*\([^)]*\))?\s+on\s+[^.;]{1,40}/gi,
+    /\s*\bArchived\b[^.;]{0,40}?\bat\s+(?:the\s+)?(?:Wayback\s+Machine|archive\.(?:today|is|ph)|WebCite|Ghostarchive)/gi,
+    /\s*\bRetrieved\s+(?:on\s+)?[^.;]{1,30}?\d{4}/g,
+    /\s*Архивн(?:ая|ые)\s+копи[яи][^.;]{0,60}?(?:Wayback\s+Machine|archive\.(?:today|is|ph)|WebCite)/g,
+    /\s*Архивировано[^.;]{0,60}/g,
+    /\s*Дата\s+обращения:?\s*[^.;]{1,30}/g,
+];
+
+// A footnote is a citation, but it can also carry an editor's note or a long
+// |quote=. The prompt wants what the source *is*, so keep the opening.
+export const REFERENCE_TEXT_MAX_CHARS = 600;
+
+function cleanFootnoteText(element) {
+    if (!element) return '';
+    const copy = element.cloneNode(true);
+    for (const node of copy.querySelectorAll(FOOTNOTE_CHROME_SELECTOR)) node.remove();
+    // Hidden by inline style (dewiki's COinS span, some templates' tracking
+    // spans) — never shown to the editor, so never shown to the model.
+    for (const node of copy.querySelectorAll('[style]')) {
+        if (/display\s*:\s*none/i.test(node.getAttribute('style'))) node.remove();
+    }
+    let text = copy.textContent.replace(/\s+/g, ' ');
+    for (const pattern of FOOTNOTE_BOILERPLATE_PATTERNS) text = text.replace(pattern, '');
+    return text
+        // Removing a phrase leaves its neighbours' punctuation behind:
+        // "2017. Archived … 2020." -> "2017.." and "2021, abgerufen …." -> "2021,."
+        .replace(/\s+([.,;:])/g, '$1')
+        .replace(/\.(?:\s*\.)+/g, '.')
+        .replace(/[,;:]\s*\./g, '.')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .replace(/^[.,;:\s]+|[,;:\s]+$/g, '');
+}
+
+function capReferenceText(text) {
+    if (text.length <= REFERENCE_TEXT_MAX_CHARS) return text;
+    const cut = text.slice(0, REFERENCE_TEXT_MAX_CHARS);
+    const lastSpace = cut.lastIndexOf(' ');
+    return `${(lastSpace > REFERENCE_TEXT_MAX_CHARS * 0.6 ? cut.slice(0, lastSpace) : cut).trimEnd()} …`;
+}
+
+// The full citation a Harvard/sfn short cite ("Smith 2010, p. 5") points at,
+// cleaned the same way; '' when the footnote is not a short cite.
+function citerefTarget(footnote, doc) {
+    const link = Array.from(footnote.querySelectorAll('a[href^="#CITEREF"]'))
+        .find(a => !inNestedSubreference(a, footnote));
+    if (!link || !doc) return '';
+    return cleanFootnoteText(doc.getElementById(link.getAttribute('href').substring(1)));
+}
+
+function footnoteCitation(footnote, doc) {
+    const own = cleanFootnoteText(footnote);
+    const full = citerefTarget(footnote, doc);
+    return full && !own.includes(full) ? `${own} ${full}`.trim() : own;
+}
+
+/**
+ * The text of the footnote a citation marker points at, as the editor sees it
+ * in the reference list, without backlinks, access dates or archive
+ * boilerplate — or null when there is no footnote, or it is empty.
+ *
+ * A Harvard/sfn short cite gets the full citation it links to appended; a
+ * sub-reference ([10.1], details only) gets its main reference's citation in
+ * front of its details. Capped at REFERENCE_TEXT_MAX_CHARS.
+ */
+export function extractReferenceText(refElement, doc = globalThis.document) {
+    const refId = refElement && refElement.getAttribute && refElement.getAttribute('href');
+    const fragmentIndex = refId ? refId.indexOf('#') : -1;
+    if (fragmentIndex === -1 || !doc) return null;
+    const footnote = doc.getElementById(refId.substring(fragmentIndex + 1));
+    if (!footnote) return null;
+
+    let text = footnoteCitation(footnote, doc);
+    const mainRef = subreferenceParent(footnote);
+    if (mainRef) {
+        const main = footnoteCitation(mainRef, doc);
+        text = main ? `${main} ${text}`.trim() : text;
+    }
+    return text ? capReferenceText(text) : null;
+}

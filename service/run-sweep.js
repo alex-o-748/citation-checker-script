@@ -919,6 +919,7 @@ export async function runSweep(opts, {
                 try {
                     verification = await verifyCitation(task.citation.claimText, task.citation.source, {
                         callModel, retry: { ...retryOptions, onAttemptFailed }, articleLangCode,
+                        citationText: task.citation.referenceText, sourceUrl: task.citation.url,
                     });
                 } catch (error) {
                     verification = absorbFailure(error, { fetchStatus: task.citation.source?.status ?? null });

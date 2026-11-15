@@ -35,6 +35,7 @@ import { dirname } from 'path';
 import { extractClaimText as extractClaimTextFromRef } from '../core/claim.js';
 import { canonicalizeVerdict, toTitleCase } from '../core/verdicts.js';
 import { isContentTruncated } from '../core/worker.js';
+import { extractReferenceText } from '../core/urls.js';
 import { writeWithMetadata, todayIso, loadRows } from './io.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -281,6 +282,29 @@ export function extractClaimsForCitation(document, citationNumber) {
 }
 
 /**
+ * The footnote text of the `occurrence`-th `[N]` marker (1-based), as
+ * core/urls.js's extractReferenceText() reads it for the userscript and the
+ * batch: the citation as the article shows it, without backlinks, access
+ * dates or archive boilerplate. Every occurrence of a number points at the
+ * same footnote, so the occurrence only matters when the page is malformed.
+ * Null when the marker or its footnote can't be found.
+ *
+ * Stored per row as `citation_text`, which run_benchmark.js sends to the model
+ * (PROMPT_VERSION v3). benchmark/add_citation_text.js backfills it onto an
+ * existing dataset.json without touching anything else.
+ */
+export function extractCitationTextForCitation(document, citationNumber, occurrence = 1) {
+    if (!document) return null;
+    const anchors = [];
+    for (const link of document.querySelectorAll('.reference a')) {
+        const m = link.textContent.trim().match(/^\[(\d+)\]$/);
+        if (m && parseInt(m[1], 10) === citationNumber) anchors.push(link);
+    }
+    const anchor = anchors[occurrence - 1] || anchors[0];
+    return anchor ? extractReferenceText(anchor, document) : null;
+}
+
+/**
  * Extract reference URL from Wikipedia reference section
  */
 function extractReferenceUrl(document, citationNumber) {
@@ -513,6 +537,11 @@ async function main() {
             // Source URL: WMF override takes precedence; otherwise extract from article.
             const sourceUrl = wmfSourceUrl || (document ? extractReferenceUrl(document, citationNumber) : null);
 
+            // The footnote as the article shows it — from the article even when
+            // the WMF override replaced the claim or URL, since it is the
+            // citation the editor saw.
+            const citationText = extractCitationTextForCitation(document, citationNumber, occurrence);
+
             // Fetch source content
             let sourceText = '';
             let sourceTruncated = false;
@@ -534,6 +563,7 @@ async function main() {
                 claim_text: claimText,
                 claim_container: claimContainer,
                 source_url: sourceUrl || '',
+                citation_text: citationText,
                 source_text: sourceText,
                 source_truncated: sourceTruncated,
                 ground_truth: normalizeVerdict(row['Ground truth']),

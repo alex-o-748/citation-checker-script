@@ -19,7 +19,8 @@
       "ground_truth": "Supported",
       "dataset_version": "v1",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "Camarota, Steven A.; Zeigler, Karen (March 12, 2025). \"Foreign-Born Number and Share of U.S. Population at All-Time Highs in January 2025\". CIS.org."
     },
     {
       "id": "row_3",
@@ -36,7 +37,8 @@
       "ground_truth": "Partially supported",
       "dataset_version": "v1",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "Batalova, Jeanne Batalova Jeanne (March 11, 2025). \"Frequently Requested Statistics on Immigrants and Immigration in the United States\". migrationpolicy.org."
     },
     {
       "id": "row_4",
@@ -53,7 +55,8 @@
       "ground_truth": "Supported",
       "dataset_version": "v1",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "\"How Many Illegal Aliens Are in the United States? 2025 Update | FAIRUS.org\". www.fairus.org. March 7, 2025."
     },
     {
       "id": "row_5",
@@ -70,7 +73,8 @@
       "ground_truth": "Partially supported",
       "dataset_version": "v1",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "Batalova, Jeanne Batalova Jeanne (March 11, 2025). \"Frequently Requested Statistics on Immigrants and Immigration in the United States\". migrationpolicy.org."
     },
     {
       "id": "row_6",
@@ -87,7 +91,8 @@
       "ground_truth": "Supported",
       "dataset_version": "v1",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "\"Table 7. Persons Obtaining Lawful Permanent Resident Status By Type And Detailed Class Of Admission: Fiscal Year 2016–2016 Yearbook of Immigration Statistics\". DHS.gov. United States Department of Homeland Security (DHS). December 18, 2017."
     },
     {
       "id": "row_7",
@@ -104,7 +109,8 @@
       "ground_truth": "Supported",
       "dataset_version": "v1",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "\"Table 7. Persons Obtaining Lawful Permanent Resident Status By Type And Detailed Class Of Admission: Fiscal Year 2016–2016 Yearbook of Immigration Statistics\". DHS.gov. United States Department of Homeland Security (DHS). December 18, 2017."
     },
     {
       "id": "row_8",
@@ -121,7 +127,8 @@
       "ground_truth": "Supported",
       "dataset_version": "v1",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "\"Table 7. Persons Obtaining Lawful Permanent Resident Status By Type And Detailed Class Of Admission: Fiscal Year 2016–2016 Yearbook of Immigration Statistics\". DHS.gov. United States Department of Homeland Security (DHS). December 18, 2017."
     },
     {
       "id": "row_9",
@@ -138,7 +145,8 @@
       "ground_truth": "Supported",
       "dataset_version": "v1",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "\"Per Country Limit\". U.S. Citizenship and Immigration Services. in 1965."
     },
     {
       "id": "row_10",
@@ -155,7 +163,8 @@
       "ground_truth": "Partially supported",
       "dataset_version": "v1",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "\"Monthly Census Bureau Data Shows Big Increase in Foreign-Born\". November 2, 2021."
     },
     {
       "id": "row_11",
@@ -172,7 +181,8 @@
       "ground_truth": "Partially supported",
       "dataset_version": "v1",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "\"Key findings about U.S. immigrants\". Pew Research Center. June 17, 2019."
     },
     {
       "id": "row_12",
@@ -189,7 +199,8 @@
       "ground_truth": "Supported",
       "dataset_version": "v1",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "Jens Manuel Krogstad (October 7, 2019). \"Key facts about refugees to the U.S.\" Pew Research Center."
     },
     {
       "id": "row_13",
@@ -206,7 +217,8 @@
       "ground_truth": "Supported",
       "dataset_version": "v1",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "The Guardian, December 19, 2019 \"Fleeing a Hell the U.S. Helped Create: Why Central Americans Journey North – The region's inequality and violence, in which the US has long played a role, is driving people to leave their homes\""
     },
     {
       "id": "row_14",
@@ -223,7 +235,8 @@
       "ground_truth": "Supported",
       "dataset_version": "v1",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "The Nation, October 18, 2017, \"How US Foreign Policy Helped Create the Immigration Crisis: Neoliberal Strictures, Support for Oligarchs, and the War on Drugs Have Impoverished Millions and Destabilized Latin America\""
     },
     {
       "id": "row_15",
@@ -240,7 +253,8 @@
       "ground_truth": "Supported",
       "dataset_version": "v1",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "\"Leaving England: The Social Background of Indentured Servants in the Seventeenth Century\", The Colonial Williamsburg Foundation."
     },
     {
       "id": "row_16",
@@ -257,7 +271,8 @@
       "ground_truth": "Supported",
       "dataset_version": "v1",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "\"Indentured Servitude in Colonial America\". Deanna Barker, Frontier Resources."
     },
     {
       "id": "row_17",
@@ -274,7 +289,8 @@
       "ground_truth": "Supported",
       "dataset_version": "v1",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "Rossiter, W. S. (1909). \"Chapter XI. Nationality as Indicated by Names of Families Reported at the First Census\". A Century of Population Growth. From the First to the Twelfth Census of the United States: 1790–1900 (PDF). Washington, D.C.: U.S. Bureau of the Census. pp. 116–124."
     },
     {
       "id": "row_18",
@@ -291,7 +307,8 @@
       "ground_truth": "Supported",
       "dataset_version": "v1",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "\"A Look at the Record: The Facts Behind the Current Controversy Over Immigration\". American Heritage Magazine. December 1981. Volume 33, Issue 1."
     },
     {
       "id": "row_19",
@@ -308,7 +325,8 @@
       "ground_truth": "Supported",
       "dataset_version": "v1",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "\"History: 1790 Fast Facts\". U.S. Census Bureau."
     },
     {
       "id": "row_20",
@@ -325,7 +343,8 @@
       "ground_truth": "Not supported",
       "dataset_version": "v1",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "Will, George P. (May 2, 2010). \"The real immigration scare tactics\". The Washington Post. Washington, DC. p. A17."
     },
     {
       "id": "row_21",
@@ -342,7 +361,8 @@
       "ground_truth": "Supported",
       "dataset_version": "v1",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "\"Turn of the Century (1900–1910)\". HoustonHistory.com."
     },
     {
       "id": "row_22",
@@ -359,7 +379,8 @@
       "ground_truth": "Partially supported",
       "dataset_version": "v1",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "\"Old fears over new faces\", The Seattle Times, September 21, 2006"
     },
     {
       "id": "row_23",
@@ -376,7 +397,8 @@
       "ground_truth": "Supported",
       "dataset_version": "v1",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "\"A Look at the Record: The Facts Behind the Current Controversy Over Immigration\". American Heritage Magazine. December 1981. Volume 33, Issue 1."
     },
     {
       "id": "row_24",
@@ -393,7 +415,8 @@
       "ground_truth": "Partially supported",
       "dataset_version": "v1",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "\"Saudi-backed forces move on Aden as Yemen secessionist leader vanishes\". Al Jazeera."
     },
     {
       "id": "row_25",
@@ -410,7 +433,8 @@
       "ground_truth": "Supported",
       "dataset_version": "v1",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "\"Southern Yemen separatist group says it will dissolve after its head fled to the UAE\". NPR. The Associated Press. 2026-01-09."
     },
     {
       "id": "row_26",
@@ -427,7 +451,8 @@
       "ground_truth": "Supported",
       "dataset_version": "v1",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "\"Yemen has new 'temporary capital'\". DW."
     },
     {
       "id": "row_27",
@@ -444,7 +469,8 @@
       "ground_truth": "Supported",
       "dataset_version": "v1",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "\"Yemen's Despair on Full Display in 'Ruined' City (Published 2015)\". The New York Times. 2015-04-10."
     },
     {
       "id": "row_28",
@@ -461,7 +487,8 @@
       "ground_truth": "Supported",
       "dataset_version": "v1",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "\"Saudi-backed forces move on Aden as Yemen secessionist leader vanishes\". Al Jazeera."
     },
     {
       "id": "row_29",
@@ -478,7 +505,8 @@
       "ground_truth": "Partially supported",
       "dataset_version": "v1",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "\"Yemen government forces move into Aden as power balance shifts in south\". Anadolu Ajansi."
     },
     {
       "id": "row_30",
@@ -495,7 +523,8 @@
       "ground_truth": "Supported",
       "dataset_version": "v1",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "\"Saudi-backed forces move on Aden as Yemen secessionist leader vanishes\". Al Jazeera."
     },
     {
       "id": "row_31",
@@ -512,7 +541,8 @@
       "ground_truth": "Supported",
       "dataset_version": "v1",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "\"Saudi-backed forces move on Aden as Yemen secessionist leader vanishes\". Al Jazeera."
     },
     {
       "id": "row_32",
@@ -529,7 +559,8 @@
       "ground_truth": "Supported",
       "dataset_version": "v1",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "\"Yemen government forces move into Aden as power balance shifts in south\". Anadolu Ajansi."
     },
     {
       "id": "row_33",
@@ -546,7 +577,8 @@
       "ground_truth": "Supported",
       "dataset_version": "v1",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "\"Yemen's southern separatists have disbanded, STC member in Saudi Arabia says\". Middle East Eye."
     },
     {
       "id": "row_34",
@@ -563,7 +595,8 @@
       "ground_truth": "Supported",
       "dataset_version": "v1",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "\"Yemen's southern separatists have disbanded, STC member in Saudi Arabia says\". Middle East Eye."
     },
     {
       "id": "row_35",
@@ -580,7 +613,8 @@
       "ground_truth": "Partially supported",
       "dataset_version": "v1",
       "extraction_status": "source_fetch_failed",
-      "needs_manual_review": true
+      "needs_manual_review": true,
+      "citation_text": "\"Salafis forced to flee Dammaj, government forces unable to protect them, they say\". ReliefWeb. 15 January 2014."
     },
     {
       "id": "row_36",
@@ -597,7 +631,8 @@
       "ground_truth": "Supported",
       "dataset_version": "v1",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "Ghobari, Mohammed (22 August 2014). \"Tens of thousands of Yemeni Houthis protest against govt in capital\". Reuters."
     },
     {
       "id": "row_37",
@@ -614,7 +649,8 @@
       "ground_truth": "Supported",
       "dataset_version": "v1",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "al Shrhabi, Adel Moujahed (29 September 2014). \"Houthi victory is defeat for Yemen's Islah\". Al-Monitor."
     },
     {
       "id": "row_38",
@@ -631,7 +667,8 @@
       "ground_truth": "Supported",
       "dataset_version": "v1",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "\"Yemeni president accuses Houthis of coup attempt\". Al-Akhbar. 20 September 2014."
     },
     {
       "id": "row_39",
@@ -648,7 +685,8 @@
       "ground_truth": "Supported",
       "dataset_version": "v1",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "\"60 Yemenis killed in Sanaa clashes: Source\". Turkish Weekly. 19 September 2014."
     },
     {
       "id": "row_40",
@@ -665,7 +703,8 @@
       "ground_truth": "Supported",
       "dataset_version": "v1",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "al Shrhabi, Adel Moujahed (29 September 2014). \"Houthi victory is defeat for Yemen's Islah\". Al-Monitor."
     },
     {
       "id": "row_41",
@@ -682,7 +721,8 @@
       "ground_truth": "Supported",
       "dataset_version": "v1",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "Al-Batiti, Saeed (September 2014). \"Yemenis are shocked by Houthis' quick capture of Sana'a\". Middle East Eye."
     },
     {
       "id": "row_42",
@@ -699,7 +739,8 @@
       "ground_truth": "Partially supported",
       "dataset_version": "v1",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "Al-Batiti, Saeed (September 2014). \"Yemenis are shocked by Houthis' quick capture of Sana'a\". Middle East Eye."
     },
     {
       "id": "row_43",
@@ -716,7 +757,8 @@
       "ground_truth": "Supported",
       "dataset_version": "v1",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "al-Zarqa, Ahmed (22 September 2014). \"Yemen: Saudi Arabia recognizes new balance of power in Sanaa as Houthis topple Muslim Brothers\". Al-Akhbar."
     },
     {
       "id": "row_44",
@@ -733,7 +775,8 @@
       "ground_truth": "Supported",
       "dataset_version": "v1",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "Ghobari, Mohammed (21 September 2014). \"Houthi rebels sign deal with Yemen parties to form new government\". Reuters."
     },
     {
       "id": "row_45",
@@ -750,7 +793,8 @@
       "ground_truth": "Supported",
       "dataset_version": "v1",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "\"Yemen's Houthi rebels reject Ahmed Awad bin Mubarak as PM\". BBC News. 7 October 2014."
     },
     {
       "id": "row_46",
@@ -767,7 +811,8 @@
       "ground_truth": "Supported",
       "dataset_version": "v1",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "\"Yemen's president and Houthis reach agreement\". Al Jazeera. 22 January 2015."
     },
     {
       "id": "row_47",
@@ -784,7 +829,8 @@
       "ground_truth": "Supported",
       "dataset_version": "v1",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "\"US blacklists Yemen ex-president Saleh, Houthi commanders\". Middle East Eye. 9 November 2014."
     },
     {
       "id": "row_48",
@@ -801,7 +847,8 @@
       "ground_truth": "Partially supported",
       "dataset_version": "v1",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "\"Houthis free top aide to Yemen president\". Al Jazeera. 27 January 2015."
     },
     {
       "id": "row_49",
@@ -818,7 +865,8 @@
       "ground_truth": "Partially supported",
       "dataset_version": "v1",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "\"Yemen crisis: President resigns as rebels tighten hold\". BBC. January 22, 2015."
     },
     {
       "id": "row_50",
@@ -835,7 +883,8 @@
       "ground_truth": "Partially supported",
       "dataset_version": "v1",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "Umarova, Amina (23 November 2013). \"Chechnya's Forgotten Children Of The Holodomor\". Radio Free Europe/Radio Liberty. Rferl.org."
     },
     {
       "id": "row_51",
@@ -852,7 +901,8 @@
       "ground_truth": "Not supported",
       "dataset_version": "v1",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "(in Russian)Matveyev, Oleg. Русский бунт в Грозном (Russian Riot in Grozny). 30 April 2000. Available for viewing online: http://www.ng.ru/style/2000-08-30/8_bunt.html"
     },
     {
       "id": "row_52",
@@ -869,7 +919,8 @@
       "ground_truth": "Partially supported",
       "dataset_version": "v1",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "\"London Sunday Times on Mashkadov visit\". Mashar.free.fr."
     },
     {
       "id": "row_53",
@@ -886,7 +937,8 @@
       "ground_truth": "Supported",
       "dataset_version": "v1",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "CNN, Four Western hostages beheaded in Chechnya, 8 December 1998"
     },
     {
       "id": "row_54",
@@ -903,7 +955,8 @@
       "ground_truth": "Partially supported",
       "dataset_version": "v1",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "The Michigan Daily Online"
     },
     {
       "id": "row_55",
@@ -920,7 +973,8 @@
       "ground_truth": "Supported",
       "dataset_version": "v1",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "\"Dancing House in Prague – Ginger and Fred\", last modified 26 March 2012"
     },
     {
       "id": "row_56",
@@ -937,7 +991,8 @@
       "ground_truth": "Supported",
       "dataset_version": "v1",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "\"Dancing House Hotel – Ginger & Fred restaurant\", last modified 9 March 2023"
     },
     {
       "id": "row_57",
@@ -954,7 +1009,8 @@
       "ground_truth": "Supported",
       "dataset_version": "v1",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "Interview with V. Milunić"
     },
     {
       "id": "row_58",
@@ -971,7 +1027,8 @@
       "ground_truth": "Supported",
       "dataset_version": "v1",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "\"Dancing House (Tančící dům)\"."
     },
     {
       "id": "row_59",
@@ -988,7 +1045,8 @@
       "ground_truth": "Supported",
       "dataset_version": "v1",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "\"Hotel opens in Dancing House\". prague.tv."
     },
     {
       "id": "row_60",
@@ -1005,7 +1063,8 @@
       "ground_truth": "Partially supported",
       "dataset_version": "v1",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "Dunleavy, Jerry (19 June 2019). \"Al Jazeera pushes back on GOP effort to force it to register as a foreign agent\". Washington Examiner."
     },
     {
       "id": "row_61",
@@ -1022,7 +1081,8 @@
       "ground_truth": "Partially supported",
       "dataset_version": "v1",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "\"Human Rights Watch: US Presses for Censorship of Jazeera TV\". www.hrw.org."
     },
     {
       "id": "row_62",
@@ -1039,7 +1099,8 @@
       "ground_truth": "Supported",
       "dataset_version": "v1",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "\"Al Jazeera TV | Research Starters | EBSCO Research\". EBSCO."
     },
     {
       "id": "row_63",
@@ -1056,7 +1117,8 @@
       "ground_truth": "Supported",
       "dataset_version": "v1",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "Sabbagh, Dan (30 September 2012). \"Al-Jazeera's political independence questioned amid Qatar intervention\". The Guardian."
     },
     {
       "id": "row_64",
@@ -1073,7 +1135,8 @@
       "ground_truth": "Supported",
       "dataset_version": "v1",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "\"Law No. 1 of 1996 on the Establishment of the Al Jazeera Satellite Network\". Al Meezan - Qatar Legal Portal."
     },
     {
       "id": "row_65",
@@ -1090,7 +1153,8 @@
       "ground_truth": "Partially supported",
       "dataset_version": "v1",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "\"A decade of growth\". Al Jazeera English. 1 November 2006."
     },
     {
       "id": "row_66",
@@ -1107,7 +1171,8 @@
       "ground_truth": "Supported",
       "dataset_version": "v1",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "Hagey, Keach; Tau, Byron (18 April 2011). \"Al-Jazeera has fans in Obama W.H.\" POLITICO."
     },
     {
       "id": "row_67",
@@ -1124,7 +1189,8 @@
       "ground_truth": "Supported",
       "dataset_version": "v1",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "\"The Charter Oak Fell – Today in History: August 21\". connecticuthistory.org. Connecticut Humanities."
     },
     {
       "id": "row_68",
@@ -1141,7 +1207,8 @@
       "ground_truth": "Partially supported",
       "dataset_version": "v1",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "\"Hartford Convention | United States history\". Encyclopædia Britannica."
     },
     {
       "id": "row_69",
@@ -1158,7 +1225,8 @@
       "ground_truth": "Supported",
       "dataset_version": "v1",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "\"God in America – People – Lyman Beecher\". God in America."
     },
     {
       "id": "row_70",
@@ -1175,7 +1243,8 @@
       "ground_truth": "Not supported",
       "dataset_version": "v1",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "\"Sala Penal ordena anular acciones penales contra Nasry 'Tito' Asfura\". El Heraldo (in Spanish)."
     },
     {
       "id": "row_71",
@@ -1192,7 +1261,8 @@
       "ground_truth": "Not supported",
       "dataset_version": "v1",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "O'Ballance, Edgar (1989). The Cyanide War: Tamil Insurrection in Sri Lanka 1973–88. London: Brassey's. p. 61. ISBN 978-0-08-036695-1."
     },
     {
       "id": "row_72",
@@ -1209,7 +1279,8 @@
       "ground_truth": "Partially supported",
       "dataset_version": "v1",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "\"New ethnic dispute in Georgia\". UPI. 25 July 1992."
     },
     {
       "id": "row_73",
@@ -1226,7 +1297,8 @@
       "ground_truth": "Partially supported",
       "dataset_version": "v1",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "\"As Georgia Chief, Shevardnadze Rides Whirlwind\". The New York Times. 25 August 1992."
     },
     {
       "id": "row_74",
@@ -1243,7 +1315,8 @@
       "ground_truth": "Not supported",
       "dataset_version": "v1",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "Koutsoukis, Jason (27 June 2011). \"Egypt to assist international Gaza flotilla\". The Sydney Morning Herald."
     },
     {
       "id": "row_75",
@@ -1260,7 +1333,8 @@
       "ground_truth": "Not supported",
       "dataset_version": "v1",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "\"Civil and military casualties of the wars in Chechnya\". Russian-Chechen Friendship Society"
     },
     {
       "id": "row_76",
@@ -1277,7 +1351,8 @@
       "ground_truth": "Not supported",
       "dataset_version": "v1",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "\"War Crimes in Kisangani | The Response of Rwandan-backed Rebels to the May 2002 Mutiny\". Human Rights Watch. 20 August 2002."
     },
     {
       "id": "row_77",
@@ -1294,7 +1369,8 @@
       "ground_truth": "Supported",
       "dataset_version": "v1",
       "extraction_status": "source_fetch_failed",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "\"Nepal: First batch of 254 students, stranded amid Israel–Hamas war, land in Kathmandu\". The Economic Times. 13 October 2023."
     },
     {
       "id": "row_78",
@@ -1311,7 +1387,8 @@
       "ground_truth": "Partially supported",
       "dataset_version": "v2",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "Czudej, Tobias & McDonough, Susan (December 27, 2025). \"The Collector: Agnes Gund\". CzudejMcdonough.com. New York, NY & San Francisco, CA: CzudejMcdonough."
     },
     {
       "id": "row_79",
@@ -1328,7 +1405,8 @@
       "ground_truth": "Not supported",
       "dataset_version": "v2",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "Elizabeth Claire Alberts (July 31, 2025). \"A Sales-Pitch Pivot Brings Deep-Sea Mining Closer to Reality\". Pulitzer Center."
     },
     {
       "id": "row_80",
@@ -1345,7 +1423,8 @@
       "ground_truth": "Not supported",
       "dataset_version": "v2",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "\"Sri Lankan PM Ranil Wickremesinghe survives no confidence vote\". The Straits Times. 2018-04-05."
     },
     {
       "id": "row_81",
@@ -1362,7 +1441,8 @@
       "ground_truth": "Partially supported",
       "dataset_version": "v2",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "\"Piano Music For the Left Hand Alone\"."
     },
     {
       "id": "row_82",
@@ -1379,7 +1459,8 @@
       "ground_truth": "Not supported",
       "dataset_version": "v2",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "\"artnet Galleries: A House in Safed by Yitzhak Frenkel-Frenel from Jordan-Delhaise Gallery\". December 3, 2013."
     },
     {
       "id": "row_83",
@@ -1396,7 +1477,8 @@
       "ground_truth": "Partially supported",
       "dataset_version": "v2",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "Mick Ryan (31 December 2015). \"Justice Mission 2025 is a Golden Opportunity to Learn about PLA Joint Planning and Capabilities\". Substack."
     },
     {
       "id": "row_84",
@@ -1413,7 +1495,8 @@
       "ground_truth": "Not supported",
       "dataset_version": "v2",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "Daw, Stephen (January 11, 2024). \"Twitch Streamer Kai Cenat Blasts Lil Nas X for 'Disrespecting' Christianity: 'God Is Going to Handle You'\". Billboard."
     },
     {
       "id": "row_85",
@@ -1430,7 +1513,8 @@
       "ground_truth": "Partially supported",
       "dataset_version": "v2",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "\"Link label\"."
     },
     {
       "id": "row_86",
@@ -1447,7 +1531,8 @@
       "ground_truth": "Not supported",
       "dataset_version": "v2",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "\"The US Should Support the National Resistance Front of Afghanistan | Hudson Institute\". www.hudson.org. 5 September 2025. The head of the NRF's military committee is former Chief of Staff of the Afghan National Army General Qadam Shah Shahim."
     },
     {
       "id": "row_87",
@@ -1464,7 +1549,8 @@
       "ground_truth": "Not supported",
       "dataset_version": "v2",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "Lambo, Stacy. \"The Love Actually Cast Reveal 10 Things You Didn't Know About The Film\". VH1."
     },
     {
       "id": "row_88",
@@ -1481,7 +1567,8 @@
       "ground_truth": "Supported",
       "dataset_version": "v2",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "\"Tim Kask, TSR's First Employee, Passes At Age 76\". EN World. EN World. 2025-12-31."
     },
     {
       "id": "row_89",
@@ -1498,7 +1585,8 @@
       "ground_truth": "Partially supported",
       "dataset_version": "v2",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "\"About Us\". University Radio York."
     },
     {
       "id": "row_90",
@@ -1515,7 +1603,8 @@
       "ground_truth": "Not supported",
       "dataset_version": "v2",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": null
     },
     {
       "id": "row_91",
@@ -1532,7 +1621,8 @@
       "ground_truth": "Not supported",
       "dataset_version": "v2",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "\"Assassination of Al-Jabal Brigade Leader Highlights Power Struggles in Al-Suwayda\". Al Arabiya."
     },
     {
       "id": "row_92",
@@ -1549,7 +1639,8 @@
       "ground_truth": "Not supported",
       "dataset_version": "v2",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "\"Contact | CB Forrest - Author\". 20 March 2018."
     },
     {
       "id": "row_93",
@@ -1566,7 +1657,8 @@
       "ground_truth": "Not supported",
       "dataset_version": "v2",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": null
     },
     {
       "id": "row_94",
@@ -1583,7 +1675,8 @@
       "ground_truth": "Not supported",
       "dataset_version": "v2",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "\"About us | Croydon Minster\". web.archive.org. 24 March 2012."
     },
     {
       "id": "row_95",
@@ -1600,7 +1693,8 @@
       "ground_truth": "Partially supported",
       "dataset_version": "v2",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "\"Electricity consumption – Electricity Information: Overview – Analysis\". IEA."
     },
     {
       "id": "row_96",
@@ -1617,7 +1711,8 @@
       "ground_truth": "Not supported",
       "dataset_version": "v2",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "\"Middlesbrough 3–1 Norwich: Latte Lath, Forss and Engel lift Boro clear of danger\". BBC Sport. 6 March 2024."
     },
     {
       "id": "row_97",
@@ -1634,7 +1729,8 @@
       "ground_truth": "Partially supported",
       "dataset_version": "v2",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "Georgia Shreve (January 31, 1994). \"Last Acts\". The New Yorker."
     },
     {
       "id": "row_98",
@@ -1651,7 +1747,8 @@
       "ground_truth": "Not supported",
       "dataset_version": "v2",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "Danziger, Pamela N. (October 14, 2017). \"The New American Dream\". Forbes."
     },
     {
       "id": "row_99",
@@ -1668,7 +1765,8 @@
       "ground_truth": "Not supported",
       "dataset_version": "v2",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "\"From reggaeton to riches: inside Latin music's global takeover\". MN2S. April 9, 2021."
     },
     {
       "id": "row_100",
@@ -1685,7 +1783,8 @@
       "ground_truth": "Not supported",
       "dataset_version": "v2",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "\"Mohammed al-Bashir officially the head of the transitional government in Syria until March 2025\". Independent Arabia (in Arabic). 10 December 2024."
     },
     {
       "id": "row_101",
@@ -1702,7 +1801,8 @@
       "ground_truth": "Not supported",
       "dataset_version": "v2",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "\"Profile: Human Rights Lawyer Nasrin Sotoudeh\". The Iran Primer. 1 February 2023."
     },
     {
       "id": "row_102",
@@ -1719,7 +1819,8 @@
       "ground_truth": "Not supported",
       "dataset_version": "v2",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "\"Carnegie Classifications – Institution Profile\". Indiana University Center for Postsecondary Research."
     },
     {
       "id": "row_103",
@@ -1736,7 +1837,8 @@
       "ground_truth": "Not supported",
       "dataset_version": "v2",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "\"'Animal' is out for blood! Ranbir Kapoor's film crosses Rs 425 cr globally in 4 days\". The Economic Times. 6 December 2023. ISSN 0013-0389."
     },
     {
       "id": "row_104",
@@ -1753,7 +1855,8 @@
       "ground_truth": "Not supported",
       "dataset_version": "v2",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "\"Locations\"."
     },
     {
       "id": "row_105",
@@ -1770,7 +1873,8 @@
       "ground_truth": "Not supported",
       "dataset_version": "v2",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "\"Obituary: Richard Harris\". BBC News. 25 October 2002."
     },
     {
       "id": "row_106",
@@ -1787,7 +1891,8 @@
       "ground_truth": "Not supported",
       "dataset_version": "v2",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "\"Public Domain Day 2024 | Duke University School of Law\"."
     },
     {
       "id": "row_107",
@@ -1804,7 +1909,8 @@
       "ground_truth": "Not supported",
       "dataset_version": "v2",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "\"Standard Media Index\". www.adweek.com. 21 December 2017."
     },
     {
       "id": "row_108",
@@ -1822,7 +1928,8 @@
       "dataset_version": "v2",
       "extraction_status": "complete",
       "needs_manual_review": false,
-      "excluded_reason": "cited source unrelated to the claim - citation/URL mismatch"
+      "excluded_reason": "cited source unrelated to the claim - citation/URL mismatch",
+      "citation_text": "\"Explainer - What is financial regulation and why does it matter?\". Central Bank of Ireland."
     },
     {
       "id": "row_109",
@@ -1839,7 +1946,8 @@
       "ground_truth": "Not supported",
       "dataset_version": "v2",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "\"HMAS Sydney (II): In peace and war / Wes Olson\". Australian War Memorial."
     },
     {
       "id": "row_110",
@@ -1856,7 +1964,8 @@
       "ground_truth": "Not supported",
       "dataset_version": "v2",
       "extraction_status": "complete",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "The lyrics can be found at thepeaches.com"
     },
     {
       "id": "row_111",
@@ -1873,7 +1982,8 @@
       "ground_truth": "Source unavailable",
       "dataset_version": "v2",
       "extraction_status": "source_fetch_failed",
-      "needs_manual_review": false
+      "needs_manual_review": false,
+      "citation_text": "David Attenborough (November 2000). State of the Planet. BBC Natural History Unit."
     },
     {
       "id": "row_112",
@@ -1891,7 +2001,8 @@
       "dataset_version": "v3",
       "extraction_status": "complete",
       "needs_manual_review": false,
-      "provenance": "human-annotation:source-verification-2026-04-25"
+      "provenance": "human-annotation:source-verification-2026-04-25",
+      "citation_text": "\"Sopranos Star Aida Turturro on Law & Order: SVU Role\". NBC."
     },
     {
       "id": "row_113",
@@ -1909,7 +2020,8 @@
       "dataset_version": "v3",
       "extraction_status": "complete",
       "needs_manual_review": false,
-      "provenance": "human-annotation:source-verification-2026-04-25"
+      "provenance": "human-annotation:source-verification-2026-04-25",
+      "citation_text": "\"FEDERAL OFFICIALS ANNOUNCE SEIZURE OF MILLIONS OF ILLEGAL IMPORTED FIREWORKS DURING OPERATION MIDWEST THUNDER\". U.S. Consumer Product Safety Commission."
     },
     {
       "id": "row_114",
@@ -1927,7 +2039,8 @@
       "dataset_version": "v3",
       "extraction_status": "complete",
       "needs_manual_review": false,
-      "provenance": "human-annotation:source-verification-2026-04-25"
+      "provenance": "human-annotation:source-verification-2026-04-25",
+      "citation_text": "\"AFI|Catalog\". catalog.afi.com."
     },
     {
       "id": "row_115",
@@ -1945,7 +2058,8 @@
       "dataset_version": "v3",
       "extraction_status": "complete",
       "needs_manual_review": false,
-      "provenance": "human-annotation:source-verification-2026-04-25"
+      "provenance": "human-annotation:source-verification-2026-04-25",
+      "citation_text": "Waters, TaMaryn. \"Gadsden jury awards $779M in internet cafe killing\". Tallahassee Democrat."
     },
     {
       "id": "row_116",
@@ -1963,7 +2077,8 @@
       "dataset_version": "v3",
       "extraction_status": "complete",
       "needs_manual_review": false,
-      "provenance": "human-annotation:source-verification-2026-04-25"
+      "provenance": "human-annotation:source-verification-2026-04-25",
+      "citation_text": "\"How Black Lives Matter Changed the Way Americans Fight for Freedom | ACLU\". American Civil Liberties Union. 2018-07-13."
     },
     {
       "id": "row_117",
@@ -1981,7 +2096,8 @@
       "dataset_version": "v3",
       "extraction_status": "complete",
       "needs_manual_review": false,
-      "provenance": "human-annotation:source-verification-2026-04-25"
+      "provenance": "human-annotation:source-verification-2026-04-25",
+      "citation_text": "Farook, Farhana (10 July 2015). \"Rajesh Khanna's rooh is still in Aashirwad\". Filmfare."
     },
     {
       "id": "row_118",
@@ -1999,7 +2115,8 @@
       "dataset_version": "v3",
       "extraction_status": "complete",
       "needs_manual_review": false,
-      "provenance": "human-annotation:source-verification-2026-04-25"
+      "provenance": "human-annotation:source-verification-2026-04-25",
+      "citation_text": "\"A Witness to History – 145 Years in the Making – Capital Jewish Museum\". capitaljewishmuseum.org."
     },
     {
       "id": "row_119",
@@ -2017,7 +2134,8 @@
       "dataset_version": "v3",
       "extraction_status": "complete",
       "needs_manual_review": false,
-      "provenance": "human-annotation:source-verification-2026-04-25"
+      "provenance": "human-annotation:source-verification-2026-04-25",
+      "citation_text": "\"Meet the House impeachment managers who are taking aim at Ken Paxton\". The Texas Tribune. 2023-06-02."
     },
     {
       "id": "row_120",
@@ -2035,7 +2153,8 @@
       "dataset_version": "v3",
       "extraction_status": "complete",
       "needs_manual_review": false,
-      "provenance": "human-annotation:source-verification-2026-04-25"
+      "provenance": "human-annotation:source-verification-2026-04-25",
+      "citation_text": "\"A Measure of Shape and Sounds | Alex Henry Foster & The Long Shadows\". 2024-07-08."
     },
     {
       "id": "row_121",
@@ -2053,7 +2172,8 @@
       "dataset_version": "v3",
       "extraction_status": "complete",
       "needs_manual_review": false,
-      "provenance": "human-annotation:source-verification-2026-04-25"
+      "provenance": "human-annotation:source-verification-2026-04-25",
+      "citation_text": "\"Wu-Tang: Rise of the Deceiver\". Pipeworks."
     },
     {
       "id": "row_122",
@@ -2071,7 +2191,8 @@
       "dataset_version": "v3",
       "extraction_status": "complete",
       "needs_manual_review": false,
-      "provenance": "human-annotation:source-verification-2026-04-25"
+      "provenance": "human-annotation:source-verification-2026-04-25",
+      "citation_text": "\"Safety & Security\". AMHSI."
     },
     {
       "id": "row_123",
@@ -2089,7 +2210,8 @@
       "dataset_version": "v3",
       "extraction_status": "complete",
       "needs_manual_review": false,
-      "provenance": "human-annotation:source-verification-2026-04-25"
+      "provenance": "human-annotation:source-verification-2026-04-25",
+      "citation_text": "\"Adrian Birrell: Hampshire men's head coach to leave at end of season\". BBC Sport. 10 September 2025."
     },
     {
       "id": "row_124",
@@ -2107,7 +2229,8 @@
       "dataset_version": "v3",
       "extraction_status": "source_fetch_failed",
       "needs_manual_review": true,
-      "provenance": "human-annotation:source-verification-2026-04-25"
+      "provenance": "human-annotation:source-verification-2026-04-25",
+      "citation_text": "\"BRP Announces Appointment of Denis Le Vot as President and Chief Executive Officer\"."
     },
     {
       "id": "row_125",
@@ -2125,7 +2248,8 @@
       "dataset_version": "v3",
       "extraction_status": "complete",
       "needs_manual_review": false,
-      "provenance": "human-annotation:source-verification-2026-04-25"
+      "provenance": "human-annotation:source-verification-2026-04-25",
+      "citation_text": "\"Corrado Cagli. Copernican Artist\". Museo Novecento. \"Gallery of Art of Rome\" spelled as \"Galleria di Roma\" in the source."
     },
     {
       "id": "row_126",
@@ -2143,7 +2267,8 @@
       "dataset_version": "v3",
       "extraction_status": "complete",
       "needs_manual_review": false,
-      "provenance": "human-annotation:source-verification-2026-04-25"
+      "provenance": "human-annotation:source-verification-2026-04-25",
+      "citation_text": "\"Student Leadership\". www.bentleighsc.vic.edu.au."
     },
     {
       "id": "row_127",
@@ -2161,7 +2286,8 @@
       "dataset_version": "v3",
       "extraction_status": "complete",
       "needs_manual_review": false,
-      "provenance": "human-annotation:source-verification-2026-04-25"
+      "provenance": "human-annotation:source-verification-2026-04-25",
+      "citation_text": "\"Children's & Young Adult Series Books - Best Sellers - Books - May 25, 2025 - The New York Times\". The New York Times. ISSN 0362-4331."
     },
     {
       "id": "row_128",
@@ -2179,7 +2305,8 @@
       "dataset_version": "v3",
       "extraction_status": "complete",
       "needs_manual_review": false,
-      "provenance": "human-annotation:source-verification-2026-04-25"
+      "provenance": "human-annotation:source-verification-2026-04-25",
+      "citation_text": "\"Roll Call 23 Roll Call 23, Bill Number: S. 5, 119th Congress, 1st Session\". Office of the Clerk, U.S. House of Representatives. January 22, 2025."
     },
     {
       "id": "row_129",
@@ -2197,7 +2324,8 @@
       "dataset_version": "v3",
       "extraction_status": "complete",
       "needs_manual_review": false,
-      "provenance": "human-annotation:source-verification-2026-04-25"
+      "provenance": "human-annotation:source-verification-2026-04-25",
+      "citation_text": "Walmsley, Sarah; Rivett, Darren A.; Osmotherly, Peter G. (2009-09). \"Adhesive capsulitis: establishing consensus on clinical identifiers for stage 1 using the DELPHI technique\". Physical Therapy. 89 (9): 906–917. doi:10.2522/ptj.20080341. ISSN 1538-6724. PMID 19589853."
     },
     {
       "id": "row_130",
@@ -2215,7 +2343,8 @@
       "dataset_version": "v3",
       "extraction_status": "complete",
       "needs_manual_review": false,
-      "provenance": "human-annotation:source-verification-2026-04-25"
+      "provenance": "human-annotation:source-verification-2026-04-25",
+      "citation_text": "Document Liberation Homepage"
     },
     {
       "id": "row_131",
@@ -2233,7 +2362,8 @@
       "dataset_version": "v3",
       "extraction_status": "complete",
       "needs_manual_review": false,
-      "provenance": "human-annotation:source-verification-2026-04-25"
+      "provenance": "human-annotation:source-verification-2026-04-25",
+      "citation_text": "\"Baroness Meyer faces suspension over offensive racial remark\". 12 December 2024."
     },
     {
       "id": "row_132",
@@ -2251,7 +2381,8 @@
       "dataset_version": "v3",
       "extraction_status": "complete",
       "needs_manual_review": false,
-      "provenance": "human-annotation:source-verification-2026-04-25"
+      "provenance": "human-annotation:source-verification-2026-04-25",
+      "citation_text": "\"セガ60周年スペシャルインタビュー。伝説の筐体R360や『バーチャファイター』などアーケード開発者が開発秘話をたっぷり語る！\" [Sega 60th Anniversary Special Interview: Arcade developers of the legendary chassis R360 and \"Virtua Fighter\" tell a lot of development secrets!]. Famitsu (in Japanese). 28 June 2020."
     },
     {
       "id": "row_133",
@@ -2269,7 +2400,8 @@
       "dataset_version": "v3",
       "extraction_status": "complete",
       "needs_manual_review": false,
-      "provenance": "human-annotation:source-verification-2026-04-25"
+      "provenance": "human-annotation:source-verification-2026-04-25",
+      "citation_text": "\"Pending action against outgoing tax assessor-collector Paul Bettencourt | ABC13 Houston | abc13.com\". ABC13 Houston."
     },
     {
       "id": "row_134",
@@ -2287,7 +2419,8 @@
       "dataset_version": "v3",
       "extraction_status": "complete",
       "needs_manual_review": false,
-      "provenance": "human-annotation:source-verification-2026-04-25"
+      "provenance": "human-annotation:source-verification-2026-04-25",
+      "citation_text": "\"Amazon.in\". www.amazon.in."
     },
     {
       "id": "row_135",
@@ -2305,7 +2438,8 @@
       "dataset_version": "v3",
       "extraction_status": "complete",
       "needs_manual_review": false,
-      "provenance": "human-annotation:source-verification-2026-04-25"
+      "provenance": "human-annotation:source-verification-2026-04-25",
+      "citation_text": "Simson Garfinkel ’87, PhD ’05archive page. \"Enter the Dragon\". MIT Technology Review."
     },
     {
       "id": "row_136",
@@ -2323,7 +2457,8 @@
       "dataset_version": "v3",
       "extraction_status": "complete",
       "needs_manual_review": false,
-      "provenance": "human-annotation:source-verification-2026-04-25"
+      "provenance": "human-annotation:source-verification-2026-04-25",
+      "citation_text": "\"The Aaron Rodgers experiment is starting to fall apart\". NBC News. December 1, 2025."
     },
     {
       "id": "row_137",
@@ -2341,7 +2476,8 @@
       "dataset_version": "v3",
       "extraction_status": "complete",
       "needs_manual_review": false,
-      "provenance": "human-annotation:source-verification-2026-04-25"
+      "provenance": "human-annotation:source-verification-2026-04-25",
+      "citation_text": "\"A first-class passenger experience at LGA's new Delta Terminal C\". www.arup.com."
     },
     {
       "id": "row_138",
@@ -2359,7 +2495,8 @@
       "dataset_version": "v3",
       "extraction_status": "complete",
       "needs_manual_review": false,
-      "provenance": "human-annotation:source-verification-2026-04-25"
+      "provenance": "human-annotation:source-verification-2026-04-25",
+      "citation_text": "Miskell, Dani (2025-12-05). \"San Diego split on Flock cameras as council prepares surveillance vote\". ABC 10 News San Diego KGTV."
     },
     {
       "id": "row_139",
@@ -2377,7 +2514,8 @@
       "dataset_version": "v3",
       "extraction_status": "complete",
       "needs_manual_review": false,
-      "provenance": "human-annotation:source-verification-2026-04-25"
+      "provenance": "human-annotation:source-verification-2026-04-25",
+      "citation_text": "Frost, Danielle (October 31, 2019). \"Tribal member Anthony Hudson channels alter ego into full-length play\". Smoke Signals."
     },
     {
       "id": "row_140",
@@ -2395,7 +2533,8 @@
       "dataset_version": "v3",
       "extraction_status": "complete",
       "needs_manual_review": false,
-      "provenance": "human-annotation:source-verification-2026-04-25"
+      "provenance": "human-annotation:source-verification-2026-04-25",
+      "citation_text": "Staff, cricnepal (2025-06-17). \"Kiran Thagunna and Rupesh Singh make their T20I debut for Nepal\". cricnepal.com."
     },
     {
       "id": "row_141",
@@ -2413,7 +2552,8 @@
       "dataset_version": "v3",
       "extraction_status": "complete",
       "needs_manual_review": false,
-      "provenance": "human-annotation:source-verification-2026-04-25"
+      "provenance": "human-annotation:source-verification-2026-04-25",
+      "citation_text": "\"Miriam Lexmann sa stala členkou Výboru pre zahraničnú politiku\". Denník Postoj (in Slovak). Bratislava: Postoj Press. 5 February 2020."
     },
     {
       "id": "row_142",
@@ -2431,7 +2571,8 @@
       "dataset_version": "v3",
       "extraction_status": "complete",
       "needs_manual_review": false,
-      "provenance": "human-annotation:source-verification-2026-04-25"
+      "provenance": "human-annotation:source-verification-2026-04-25",
+      "citation_text": "\"Lucca Railway Station – Lucca Attractions\". GPSmyCity."
     },
     {
       "id": "row_143",
@@ -2449,7 +2590,8 @@
       "dataset_version": "v3",
       "extraction_status": "complete",
       "needs_manual_review": false,
-      "provenance": "human-annotation:source-verification-2026-04-25"
+      "provenance": "human-annotation:source-verification-2026-04-25",
+      "citation_text": "Rudhraya, B. V. (7 April 2020). \"The Dalrymple Delusion\". Your Awesome India."
     },
     {
       "id": "row_144",
@@ -2467,7 +2609,8 @@
       "dataset_version": "v3",
       "extraction_status": "complete",
       "needs_manual_review": false,
-      "provenance": "human-annotation:source-verification-2026-04-25"
+      "provenance": "human-annotation:source-verification-2026-04-25",
+      "citation_text": "\"Making sure you're not a bot!\". ebird.org."
     },
     {
       "id": "row_145",
@@ -2485,7 +2628,8 @@
       "dataset_version": "v3",
       "extraction_status": "source_fetch_failed",
       "needs_manual_review": true,
-      "provenance": "human-annotation:source-verification-2026-04-25"
+      "provenance": "human-annotation:source-verification-2026-04-25",
+      "citation_text": "\"1957 Dodge D100 1/2 Ton | Hagerty Valuation Tools\". www.hagerty.com."
     },
     {
       "id": "row_146",
@@ -2503,7 +2647,8 @@
       "dataset_version": "v3",
       "extraction_status": "complete",
       "needs_manual_review": false,
-      "provenance": "human-annotation:source-verification-2026-04-25"
+      "provenance": "human-annotation:source-verification-2026-04-25",
+      "citation_text": "Renaud, H. P. J. (1937). \"Sur les dates de la vie du mathématicien arabe marocain Ibn al-Bannāʾ\". Isis. 27 (2). The University of Chicago Press: 216–218. \"mathématicien arabe marocain Ibn al-Bannāʾ\" (Arab Moroccan mathematician)."
     },
     {
       "id": "row_147",
@@ -2521,7 +2666,8 @@
       "dataset_version": "v3",
       "extraction_status": "complete",
       "needs_manual_review": false,
-      "provenance": "human-annotation:source-verification-2026-04-25"
+      "provenance": "human-annotation:source-verification-2026-04-25",
+      "citation_text": "Marconi, Cristina; Armellini, Alvise (2011-02-09). \"Crime-fighting Calabrian: Pino Arlacchi is not afraid to take risks and has some very grand plans\". POLITICO."
     },
     {
       "id": "row_148",
@@ -2539,7 +2685,8 @@
       "dataset_version": "v3",
       "extraction_status": "complete",
       "needs_manual_review": false,
-      "provenance": "human-annotation:source-verification-2026-04-25"
+      "provenance": "human-annotation:source-verification-2026-04-25",
+      "citation_text": "\"Man says accidental shooting led to four other slayings\". Sarasota Herald-Tribune. June 4, 2003."
     },
     {
       "id": "row_149",
@@ -2557,7 +2704,8 @@
       "dataset_version": "v3",
       "extraction_status": "complete",
       "needs_manual_review": false,
-      "provenance": "human-annotation:source-verification-2026-04-25"
+      "provenance": "human-annotation:source-verification-2026-04-25",
+      "citation_text": "\"Kalen Brunson Makes QPR Debut In Cup\". www.bernews.com. 15 August 2025."
     },
     {
       "id": "row_150",
@@ -2575,7 +2723,8 @@
       "dataset_version": "v3",
       "extraction_status": "complete",
       "needs_manual_review": false,
-      "provenance": "human-annotation:source-verification-2026-04-25"
+      "provenance": "human-annotation:source-verification-2026-04-25",
+      "citation_text": "\"SPRINGFIELD ARMORY ANNOUNCES HELLCAT: WORLD'S HIGHEST CAPACITY MICRO 9MM\". springfield-armory.com (Press release). September 26, 2019."
     },
     {
       "id": "row_151",
@@ -2593,7 +2742,8 @@
       "dataset_version": "v3",
       "extraction_status": "complete",
       "needs_manual_review": false,
-      "provenance": "human-annotation:source-verification-2026-04-25"
+      "provenance": "human-annotation:source-verification-2026-04-25",
+      "citation_text": "\"West Morris Runs Over Summit\"."
     },
     {
       "id": "row_152",
@@ -2611,7 +2761,8 @@
       "dataset_version": "v3",
       "extraction_status": "complete",
       "needs_manual_review": false,
-      "provenance": "human-annotation:source-verification-2026-04-25"
+      "provenance": "human-annotation:source-verification-2026-04-25",
+      "citation_text": "Pfenninger, Leslie J. \"Soundgarden | On A&M Records\". www.onamrecords.com."
     },
     {
       "id": "row_153",
@@ -2629,7 +2780,8 @@
       "dataset_version": "v3",
       "extraction_status": "complete",
       "needs_manual_review": false,
-      "provenance": "human-annotation:source-verification-2026-04-25"
+      "provenance": "human-annotation:source-verification-2026-04-25",
+      "citation_text": "Pantoja, Kevin (May 27, 2019). \"10 Funniest Cast Members of MadTV (And Where They Are Now)\". ScreenRant."
     },
     {
       "id": "row_154",
@@ -2647,7 +2799,8 @@
       "dataset_version": "v3",
       "extraction_status": "complete",
       "needs_manual_review": false,
-      "provenance": "human-annotation:source-verification-2026-04-25"
+      "provenance": "human-annotation:source-verification-2026-04-25",
+      "citation_text": "Beverly, Damon N. (2 December 2025). \"Badajoz is From Which Country?\". CountryFC."
     },
     {
       "id": "row_155",
@@ -2665,7 +2818,8 @@
       "dataset_version": "v3",
       "extraction_status": "complete",
       "needs_manual_review": false,
-      "provenance": "human-annotation:source-verification-2026-04-25"
+      "provenance": "human-annotation:source-verification-2026-04-25",
+      "citation_text": "Thompson, Sharareh Drury,Jack Dunn,Todd Gilchrist,Carole Horst,Selena Kuznikov,Karen Idelson,Jaden (2024-04-24). \"2024's Top Film Schools in North America\". Variety."
     },
     {
       "id": "row_156",
@@ -2683,7 +2837,8 @@
       "dataset_version": "v3",
       "extraction_status": "complete",
       "needs_manual_review": false,
-      "provenance": "human-annotation:source-verification-2026-04-25"
+      "provenance": "human-annotation:source-verification-2026-04-25",
+      "citation_text": "\"Amitava Mukherjee assumes additional charge as NMDC CMD\". The Times of India. 14 March 2023. ISSN 0971-8257."
     },
     {
       "id": "row_157",
@@ -2701,7 +2856,8 @@
       "dataset_version": "v3",
       "extraction_status": "complete",
       "needs_manual_review": false,
-      "provenance": "human-annotation:source-verification-2026-04-25"
+      "provenance": "human-annotation:source-verification-2026-04-25",
+      "citation_text": "\"Artist Jacolby Satterwhite on trusting your own process – The Creative Independent\". thecreativeindependent.com."
     },
     {
       "id": "row_158",
@@ -2719,7 +2875,8 @@
       "dataset_version": "v3",
       "extraction_status": "complete",
       "needs_manual_review": false,
-      "provenance": "human-annotation:source-verification-2026-04-25"
+      "provenance": "human-annotation:source-verification-2026-04-25",
+      "citation_text": "\"The Nutri-Score 2023 - all important facts\". Eurofins Scientific."
     },
     {
       "id": "row_159",
@@ -2737,7 +2894,8 @@
       "dataset_version": "v3",
       "extraction_status": "complete",
       "needs_manual_review": false,
-      "provenance": "human-annotation:source-verification-2026-04-25"
+      "provenance": "human-annotation:source-verification-2026-04-25",
+      "citation_text": "\"About | UCCS College of Nursing & Health Sciences\". johnsonbethel.uccs.edu."
     },
     {
       "id": "row_160",
@@ -2755,7 +2913,8 @@
       "dataset_version": "v3",
       "extraction_status": "complete",
       "needs_manual_review": false,
-      "provenance": "human-annotation:source-verification-2026-04-25"
+      "provenance": "human-annotation:source-verification-2026-04-25",
+      "citation_text": "\"Ihimba hot springs\". Kabale District Local Government."
     },
     {
       "id": "row_161",
@@ -2773,7 +2932,8 @@
       "dataset_version": "v3",
       "extraction_status": "complete",
       "needs_manual_review": false,
-      "provenance": "human-annotation:source-verification-2026-04-25"
+      "provenance": "human-annotation:source-verification-2026-04-25",
+      "citation_text": "\"Hyper-Partisan Sorting in the American Electorate, 1976-2008:\"."
     },
     {
       "id": "row_162",
@@ -2791,7 +2951,8 @@
       "dataset_version": "v3",
       "extraction_status": "complete",
       "needs_manual_review": false,
-      "provenance": "human-annotation:source-verification-2026-04-25"
+      "provenance": "human-annotation:source-verification-2026-04-25",
+      "citation_text": "\"Microsoft OneNote: Save Notes - Apps on Google Play\". play.google.com."
     },
     {
       "id": "row_163",
@@ -2809,7 +2970,8 @@
       "dataset_version": "v3",
       "extraction_status": "complete",
       "needs_manual_review": false,
-      "provenance": "human-annotation:source-verification-2026-04-25"
+      "provenance": "human-annotation:source-verification-2026-04-25",
+      "citation_text": "\"Routes and Schedules\". Saskatoon Transit. 8 December 2025."
     },
     {
       "id": "row_164",
@@ -2827,7 +2989,8 @@
       "dataset_version": "v3",
       "extraction_status": "complete",
       "needs_manual_review": false,
-      "provenance": "human-annotation:source-verification-2026-04-25"
+      "provenance": "human-annotation:source-verification-2026-04-25",
+      "citation_text": "\"Digitale Kunst - dieAngewandte\". www.dieangewandte.at (in German)."
     },
     {
       "id": "row_165",
@@ -2845,7 +3008,8 @@
       "dataset_version": "v3",
       "extraction_status": "complete",
       "needs_manual_review": false,
-      "provenance": "human-annotation:source-verification-2026-04-25"
+      "provenance": "human-annotation:source-verification-2026-04-25",
+      "citation_text": "Leger, Justin (September 18, 2023). \"How 'Winning Time' 1984 NBA Finals episode compares to reality\". NBC Sports Boston."
     },
     {
       "id": "row_166",
@@ -2863,7 +3027,8 @@
       "dataset_version": "v3",
       "extraction_status": "complete",
       "needs_manual_review": false,
-      "provenance": "human-annotation:source-verification-2026-04-25"
+      "provenance": "human-annotation:source-verification-2026-04-25",
+      "citation_text": "\"Bankhead-Jones Farm Tenant Act: Legal Overview and Impact | US Legal Forms\". legal-resources.uslegalforms.com."
     },
     {
       "id": "row_167",
@@ -2881,7 +3046,8 @@
       "dataset_version": "v3",
       "extraction_status": "complete",
       "needs_manual_review": false,
-      "provenance": "human-annotation:source-verification-2026-04-25"
+      "provenance": "human-annotation:source-verification-2026-04-25",
+      "citation_text": "Park, Hyung Bin; Gwark, Ji-Yong; Jung, Jaehoon; Jeong, Soon-Taek (6 May 2020). \"Association Between High-Sensitivity C-Reactive Protein and Idiopathic Adhesive Capsulitis\". The Journal of Bone and Joint Surgery. American Volume. 102 (9): 761–768. doi:10.2106/JBJS.19.00759. ISSN 1535-1386. PMID 32379116."
     },
     {
       "id": "row_168",
@@ -2899,7 +3065,8 @@
       "dataset_version": "v3",
       "extraction_status": "complete",
       "needs_manual_review": false,
-      "provenance": "human-annotation:source-verification-2026-04-25"
+      "provenance": "human-annotation:source-verification-2026-04-25",
+      "citation_text": "\"Chino Valley Unified School District Demographic Profile\". Census Reporter."
     },
     {
       "id": "row_169",
@@ -2917,7 +3084,8 @@
       "dataset_version": "v3",
       "extraction_status": "complete",
       "needs_manual_review": false,
-      "provenance": "human-annotation:source-verification-2026-04-25"
+      "provenance": "human-annotation:source-verification-2026-04-25",
+      "citation_text": "\"EENY-062/IN219: Polydamas Swallowtail, Gold Rim, Tailless Swallowtail, Battus polydamas lucayus (Rothschild & Jordan) (Insecta: Lepidoptera: Papilionidae: Troidini)\". Ask IFAS - Powered by EDIS."
     },
     {
       "id": "row_170",
@@ -2935,7 +3103,8 @@
       "dataset_version": "v3",
       "extraction_status": "complete",
       "needs_manual_review": false,
-      "provenance": "human-annotation:source-verification-2026-04-25"
+      "provenance": "human-annotation:source-verification-2026-04-25",
+      "citation_text": "\"\"Mujhe itna dar laga…\": When Salman Khan warned fans not to follow his 'Tere Naam' character\". The Times of India. ISSN 0971-8257."
     },
     {
       "id": "row_171",
@@ -2953,7 +3122,8 @@
       "dataset_version": "v3",
       "extraction_status": "complete",
       "needs_manual_review": false,
-      "provenance": "human-annotation:source-verification-2026-04-25"
+      "provenance": "human-annotation:source-verification-2026-04-25",
+      "citation_text": "\"History of Ragtime\". National Park Service. U.S. Department of the Interior."
     },
     {
       "id": "row_172",
@@ -2971,7 +3141,8 @@
       "dataset_version": "v3",
       "extraction_status": "complete",
       "needs_manual_review": false,
-      "provenance": "human-annotation:source-verification-2026-04-25"
+      "provenance": "human-annotation:source-verification-2026-04-25",
+      "citation_text": "\"FEMA Flood Map Service Center | Search By Address\". msc.fema.gov."
     },
     {
       "id": "row_173",
@@ -2989,7 +3160,8 @@
       "dataset_version": "v3",
       "extraction_status": "complete",
       "needs_manual_review": false,
-      "provenance": "human-annotation:source-verification-2026-04-25"
+      "provenance": "human-annotation:source-verification-2026-04-25",
+      "citation_text": "\"Shepherdia canadensis\". www.fs.usda.gov."
     },
     {
       "id": "row_174",
@@ -3007,7 +3179,8 @@
       "dataset_version": "v3",
       "extraction_status": "complete",
       "needs_manual_review": false,
-      "provenance": "human-annotation:source-verification-2026-04-25"
+      "provenance": "human-annotation:source-verification-2026-04-25",
+      "citation_text": "Cowing, Keith (28 July 2020). \"A Self-Replicating Radiation-Shield for Human Deep-Space Exploration: Radiotrophic Fungi can Attenuate Ionizing Radiation aboard the International Space Station\". Astrobiology."
     },
     {
       "id": "row_175",
@@ -3025,7 +3198,8 @@
       "dataset_version": "v3",
       "extraction_status": "complete",
       "needs_manual_review": false,
-      "provenance": "human-annotation:source-verification-2026-04-25"
+      "provenance": "human-annotation:source-verification-2026-04-25",
+      "citation_text": "\"A.G Cook, Hannah Diamond and more feature on f5ve deluxe album, SEQUENCE 01.5\". The Line of Best Fit."
     },
     {
       "id": "row_176",
@@ -3043,7 +3217,8 @@
       "dataset_version": "v3",
       "extraction_status": "source_fetch_failed",
       "needs_manual_review": false,
-      "provenance": "human-annotation:source-verification-2026-04-25"
+      "provenance": "human-annotation:source-verification-2026-04-25",
+      "citation_text": "\"Il mascarpone artigianale, specialità lombarda\". Ruminantia – Journal of Dairy Science (in Italian). 2020.; Pinarelli, Caterina (6 June 2008). \"Il Mascarpone\". Il Latte (in Italian)."
     },
     {
       "id": "row_177",
@@ -3061,7 +3236,8 @@
       "dataset_version": "v3",
       "extraction_status": "complete",
       "needs_manual_review": false,
-      "provenance": "human-annotation:source-verification-2026-04-25"
+      "provenance": "human-annotation:source-verification-2026-04-25",
+      "citation_text": "Weber, Rachel (December 11, 2025). \"The Game Awards 2025 Winners: The Full List\". IGN. Ziff Davis."
     },
     {
       "id": "row_178",
@@ -3079,7 +3255,8 @@
       "dataset_version": "v3",
       "extraction_status": "complete",
       "needs_manual_review": false,
-      "provenance": "human-annotation:source-verification-2026-04-25"
+      "provenance": "human-annotation:source-verification-2026-04-25",
+      "citation_text": "Vachula, Richard S.; Nelson, Jake R.; Hall, Anthony G. (2023-09-01). \"The timing of fireworks-caused wildfire ignitions during the 4th of July holiday season\". PLOS ONE. 18 (9): e0291026. doi:10.1371/journal.pone.0291026. ISSN 1932-6203. PMC 10473470. PMID 37656710."
     },
     {
       "id": "row_179",
@@ -3097,7 +3274,8 @@
       "dataset_version": "v3",
       "extraction_status": "complete",
       "needs_manual_review": false,
-      "provenance": "human-annotation:source-verification-2026-04-25"
+      "provenance": "human-annotation:source-verification-2026-04-25",
+      "citation_text": "\"Sudanese women's revolution for freedom, dignity and justice continues\". CMI - Chr. Michelsen Institute."
     },
     {
       "id": "row_180",
@@ -3115,7 +3293,8 @@
       "dataset_version": "v3",
       "extraction_status": "complete",
       "needs_manual_review": false,
-      "provenance": "human-annotation:source-verification-2026-04-25"
+      "provenance": "human-annotation:source-verification-2026-04-25",
+      "citation_text": "\"Barry Keoghan Sparks Sabrina Carpenter Reconciliation Rumors With Heart Pin\". ELLE. 10 March 2025."
     },
     {
       "id": "row_181",
@@ -3133,7 +3312,8 @@
       "dataset_version": "v3",
       "extraction_status": "complete",
       "needs_manual_review": false,
-      "provenance": "human-annotation:source-verification-2026-04-25"
+      "provenance": "human-annotation:source-verification-2026-04-25",
+      "citation_text": "\"Ramón Berguer | Galegos | Gallegos\". galegos.galiciadigital.com (in Spanish)."
     },
     {
       "id": "row_182",
@@ -3151,7 +3331,8 @@
       "dataset_version": "v3",
       "extraction_status": "complete",
       "needs_manual_review": false,
-      "provenance": "human-annotation:source-verification-2026-04-25"
+      "provenance": "human-annotation:source-verification-2026-04-25",
+      "citation_text": "\"Hindi movies Database | Mera Shikaar (1988) | Bollymints\". bollymints.com."
     },
     {
       "id": "row_183",
@@ -3169,7 +3350,8 @@
       "dataset_version": "v3",
       "extraction_status": "complete",
       "needs_manual_review": false,
-      "provenance": "human-annotation:source-verification-2026-04-25"
+      "provenance": "human-annotation:source-verification-2026-04-25",
+      "citation_text": "\"Socceroos beat Honduras 3-1 to qualify for FIFA World Cup in Russia thanks to Mile Jedinak\". ABC. 15 November 2017."
     },
     {
       "id": "row_184",
@@ -3187,7 +3369,8 @@
       "dataset_version": "v3",
       "extraction_status": "complete",
       "needs_manual_review": false,
-      "provenance": "human-annotation:source-verification-2026-04-25"
+      "provenance": "human-annotation:source-verification-2026-04-25",
+      "citation_text": "\"Take a walk on the wild side – UC Irvine News\"."
     },
     {
       "id": "row_185",
@@ -3205,7 +3388,8 @@
       "dataset_version": "v3",
       "extraction_status": "complete",
       "needs_manual_review": false,
-      "provenance": "human-annotation:source-verification-2026-04-25"
+      "provenance": "human-annotation:source-verification-2026-04-25",
+      "citation_text": "\"Graham Craig (American football)\", Wikipedia, 2025-12-03"
     },
     {
       "id": "row_186",
@@ -3223,7 +3407,8 @@
       "dataset_version": "v3",
       "extraction_status": "complete",
       "needs_manual_review": false,
-      "provenance": "human-annotation:source-verification-2026-04-25"
+      "provenance": "human-annotation:source-verification-2026-04-25",
+      "citation_text": "DeRiemer, Kyle (June 28, 2022). \"CZW: The Renaissance of Tradition\". Last Word on Pro Wrestling."
     },
     {
       "id": "row_187",
@@ -3241,7 +3426,8 @@
       "dataset_version": "v3",
       "extraction_status": "complete",
       "needs_manual_review": false,
-      "provenance": "human-annotation:source-verification-2026-04-25"
+      "provenance": "human-annotation:source-verification-2026-04-25",
+      "citation_text": "\"Sixth Arab Summit: Policy Statement - 28 November 1973 (Historical Text)\". Interactive Encyclopedia of the Palestine Question – palquest."
     },
     {
       "id": "row_188",
@@ -3259,7 +3445,8 @@
       "dataset_version": "v3",
       "extraction_status": "source_fetch_failed",
       "needs_manual_review": false,
-      "provenance": "human-annotation:source-verification-2026-04-25"
+      "provenance": "human-annotation:source-verification-2026-04-25",
+      "citation_text": "Kudisch, Brianna (June 11, 2023). \"Here's how a $1 deal saved a stunning N.J. church from the wrecking ball\". nj."
     },
     {
       "id": "row_189",
@@ -3277,7 +3464,8 @@
       "dataset_version": "v3",
       "extraction_status": "complete",
       "needs_manual_review": false,
-      "provenance": "human-annotation:source-verification-2026-04-25"
+      "provenance": "human-annotation:source-verification-2026-04-25",
+      "citation_text": "\"The Sigh\". Goodreads."
     },
     {
       "id": "row_190",
@@ -3295,7 +3483,8 @@
       "dataset_version": "v3",
       "extraction_status": "complete",
       "needs_manual_review": false,
-      "provenance": "human-annotation:source-verification-2026-04-25"
+      "provenance": "human-annotation:source-verification-2026-04-25",
+      "citation_text": "\"Ohaozara Local Government Area\". www.manpower.com.ng."
     }
   ]
 }

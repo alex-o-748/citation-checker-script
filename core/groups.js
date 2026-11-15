@@ -36,22 +36,25 @@ export function isGroupClose(citation) {
  * `url|page=N`-keyed sourceCache, while the batch pipeline already carries
  * each citation's resolved `source` object directly
  * (service/claim-extractor.js's processArticle output). It must return
- * `{ key, url, content, error, status }` — `key` is the dedup key; the rest
- * become the entry's fields the first time that key is seen.
+ * `{ key, url, content, error, status, citation? }` — `key` is the dedup key;
+ * the rest become the entry's fields the first time that key is seen.
+ * `citation` is the member's footnote text (core/citations.js's
+ * referenceText), shown to the model under the source's URL.
  *
  * @param {Array<object>} members - Group members, sharing one groupId.
- * @param {(member: object) => {key: string, url?: string|null, content?: string|null, error?: string|null, status?: number|null}} sourceFor
- * @returns {Array<{citationNumbers: (string|number)[], url: string|null, content: string|null, error: string|null, status: number|null}>}
+ * @param {(member: object) => {key: string, url?: string|null, content?: string|null, error?: string|null, status?: number|null, citation?: string|null}} sourceFor
+ * @returns {Array<{citationNumbers: (string|number)[], url: string|null, citation: string|null, content: string|null, error: string|null, status: number|null}>}
  */
 export function groupSourceEntries(members, sourceFor) {
     const byKey = new Map();
     for (const member of members) {
-        const { key, url, content, error, status } = sourceFor(member);
+        const { key, url, content, error, status, citation } = sourceFor(member);
         let entry = byKey.get(key);
         if (!entry) {
             entry = {
                 citationNumbers: [],
                 url: url || null,
+                citation: citation || null,
                 content: content ?? null,
                 error: error ?? null,
                 status: status ?? null,

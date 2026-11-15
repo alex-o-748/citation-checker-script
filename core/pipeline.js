@@ -17,7 +17,7 @@
 // owns it, and both are injectable so callers can test without a network.
 
 import { fetchSourceContent } from './worker.js';
-import { generateSystemPrompt, generateUserPrompt, extractSourceText } from './prompts.js';
+import { generateSystemPrompt, generateUserPrompt, extractSourceText, todayIsoDate } from './prompts.js';
 import { callProviderAPI } from './providers.js';
 import { parseVerificationResult } from './parsing.js';
 import { verifyQuote } from './quote.js';
@@ -39,6 +39,11 @@ export const VERIFY_STAGES = Object.freeze({
  * it through unchanged). `sourceContent` wins if both are given, which is the
  * manual-paste override every front end offers.
  *
+ * `citationText` is the footnote as the article shows it (core/citations.js's
+ * referenceText, or core/urls.js's extractReferenceText()); with `sourceUrl`
+ * and `today` it tells the model what the source is. All three are optional,
+ * and `today` defaults to the local date.
+ *
  * Never throws for an expected failure: a dead source, a 429, or unparseable
  * model output all come back as `{ ok: false, stage, error }`. It only throws
  * on programmer error (a missing claim or provider).
@@ -55,6 +60,8 @@ export async function verifyCitation({
     sourceUrl = null,
     pageNum = null,
     sourceContent = null,
+    citationText = null,
+    today = todayIsoDate(),
     provider,
     model = null,
     apiKey = undefined,
@@ -100,7 +107,7 @@ export async function verifyCitation({
     // 2. Prompts and the model call. A caller that localizes the system prompt
     //    (main.js's localizeSystemPrompt) passes the localized text in.
     const system = systemPrompt ?? generateSystemPrompt();
-    const userContent = generateUserPrompt(claimText, content);
+    const userContent = generateUserPrompt(claimText, content, { citation: citationText, sourceUrl, today });
 
     let response;
     try {

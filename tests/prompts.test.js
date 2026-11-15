@@ -198,7 +198,7 @@ test('omission and source-unavailable examples carry an empty source_quote', () 
 // then replace EXPECTED_HASH below with the value this test's failure
 // message reports.
 test('PROMPT_VERSION is bumped whenever the system prompt text changes', () => {
-  const EXPECTED_HASH = '0d151a226f7f1e0262e1ded8cb158b1e7876472f8ef858cecef7c611a3870b89';
+  const EXPECTED_HASH = '1cfcbd5aaae2db8589f133a923609b804fd42358505e55eaa6ee6f9870430c22';
   const actual = createHash('sha256').update(generateSystemPrompt(), 'utf8').digest('hex');
   assert.equal(
     actual,

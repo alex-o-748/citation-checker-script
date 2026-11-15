@@ -8,6 +8,7 @@
     "extract:dry": "node extract_dataset.js --dry-run",
     "extract:v1": "node extract_dataset.js --version v1",
     "extract:v3": "node extract_dataset.js --version v3",
+    "citation-text": "node add_citation_text.js",
     "benchmark": "node run_benchmark.js",
     "benchmark:publicai": "node run_benchmark.js --providers=publicai",
     "benchmark:gemini-3.7-flash": "node run_benchmark.js --providers=gemini-3.7-flash --concurrency=2",

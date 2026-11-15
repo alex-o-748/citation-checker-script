@@ -67,7 +67,7 @@ test('groupSourceEntries defaults missing fields to null', () => {
         [{ citationNumber: '9' }],
         () => ({ key: 'k' })
     );
-    assert.deepEqual(entries, [{ citationNumbers: ['9'], url: null, content: null, error: null, status: null }]);
+    assert.deepEqual(entries, [{ citationNumbers: ['9'], url: null, citation: null, content: null, error: null, status: null }]);
 });
 
 test('shouldSkipCollective is true with zero available sources', () => {
