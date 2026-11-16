@@ -9,7 +9,7 @@
     "extract:v1": "node extract_dataset.js --version v1",
     "extract:v3": "node extract_dataset.js --version v3",
     "benchmark": "node run_benchmark.js",
-    "benchmark:publicai": "node run_benchmark.js --providers=publicai",
+    "benchmark:publicai": "node run_benchmark.js --providers=apertus-70b,qwen-sealion,olmo-32b",
     "benchmark:gemini-3.7-flash": "node run_benchmark.js --providers=gemini-3.7-flash --concurrency=2",
     "benchmark:liftwing": "node run_benchmark.js --providers=liftwing-qwen3.8-27b",
     "benchmark:liftwing-safeguard": "node run_benchmark.js --providers=liftwing-gpt-oss-safeguard-20b",
