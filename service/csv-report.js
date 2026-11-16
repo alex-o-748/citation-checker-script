@@ -19,7 +19,9 @@
 // are dropped — they mean nothing to a reader and exist only to dedupe rows
 // in ToolsDB.
 
-import { appendFile as fsAppendFile, readFile as fsReadFile, writeFile as fsWriteFile } from 'node:fs/promises';
+import { appendFile as fsAppendFile, writeFile as fsWriteFile } from 'node:fs/promises';
+import { createReadStream as fsCreateReadStream, createWriteStream as fsCreateWriteStream } from 'node:fs';
+import { createCsvParser } from './csv-stream.js';
 import { extname } from 'node:path';
 import { hostForWiki } from '../core/wikipedia.js';
 
@@ -151,16 +153,17 @@ export function cleanCsvPath(path) {
  * Group IDs are only meaningful within an article revision, so the key
  * includes page identity.
  */
-export function cleanCsvText(text) {
-    const records = parseCsv(text);
-    if (records.length === 0) throw new Error('CSV is empty');
-    const header = records[0];
+// The three rules below need two facts about the whole file (which groups
+// have a collective row, which have an unreadable source) before any row can
+// be judged, so they are applied in two passes: observe() every row, then
+// keep() decides each one. Shared by cleanCsvText() (a string, for tests and
+// small files) and writeCleanCsv() (streamed, for real sweeps).
+export function createCleanRules(header) {
     const indexes = Object.fromEntries(header.map((name, index) => [name, index]));
     for (const name of ['source_truncated', 'is_collective', 'group_id', 'verdict', 'reason_type']) {
         if (indexes[name] === undefined) throw new Error(`CSV is missing required column: ${name}`);
     }
     const truthy = value => /^(?:1|true|yes)$/i.test(value.trim());
-    const rows = records.slice(1);
     const groupKey = row => [
         indexes.page_id === undefined ? '' : row[indexes.page_id],
         indexes.revision_id === undefined ? '' : row[indexes.revision_id],
@@ -174,29 +177,78 @@ export function cleanCsvText(text) {
     // undo. An ERROR or SKIPPED row says nothing about the claim either way.
     const undoneByUnreadSource = row => row[indexes.verdict] === 'PARTIALLY SUPPORTED'
         || (row[indexes.verdict] === 'NOT SUPPORTED' && row[indexes.reason_type] !== 'contradiction');
-    const collectiveGroups = new Set(rows
-        .filter(row => row[indexes.group_id] && isCollective(row))
-        .map(groupKey));
-    const incompleteGroups = new Set(rows
-        .filter(row => row[indexes.group_id] && row[indexes.verdict] === 'SOURCE UNAVAILABLE')
-        .map(groupKey));
-    const cleanRows = rows.filter(row => {
-        if (truthy(row[indexes.source_truncated] || '') && !survivesTruncation(row)) return false;
-        if (row[indexes.group_id] && !isCollective(row) && collectiveGroups.has(groupKey(row))) return false;
-        if (row[indexes.group_id] && incompleteGroups.has(groupKey(row)) && undoneByUnreadSource(row)) return false;
-        return true;
-    });
-    return [header, ...cleanRows]
-        .map(row => row.map(csvCell).join(','))
-        .join('\n') + '\n';
+    const collectiveGroups = new Set();
+    const incompleteGroups = new Set();
+    return {
+        observe(row) {
+            if (!row[indexes.group_id]) return;
+            if (isCollective(row)) collectiveGroups.add(groupKey(row));
+            if (row[indexes.verdict] === 'SOURCE UNAVAILABLE') incompleteGroups.add(groupKey(row));
+        },
+        keep(row) {
+            if (truthy(row[indexes.source_truncated] || '') && !survivesTruncation(row)) return false;
+            if (row[indexes.group_id] && !isCollective(row) && collectiveGroups.has(groupKey(row))) return false;
+            if (row[indexes.group_id] && incompleteGroups.has(groupKey(row)) && undoneByUnreadSource(row)) return false;
+            return true;
+        },
+    };
 }
 
+const csvLine = row => row.map(csvCell).join(',');
+
+export function cleanCsvText(text) {
+    const records = parseCsv(text);
+    if (records.length === 0) throw new Error('CSV is empty');
+    const [header, ...rows] = records;
+    const rules = createCleanRules(header);
+    for (const row of rows) rules.observe(row);
+    return [header, ...rows.filter(row => rules.keep(row))].map(csvLine).join('\n') + '\n';
+}
+
+// Streams the file twice rather than loading it: a whole ruwiki sweep's CSV
+// (113,680 rows, 2026-11) parsed into arrays outgrew the job's 2 GiB, and
+// since this runs at the very end of run-sweep.js the process died after a
+// multi-day run without writing the clean CSV or the post-run checks. Memory
+// is now the two sets of group keys, whatever the file's size. Output is
+// byte-identical to cleanCsvText() (tests/csv-report.test.js pins that).
 export async function writeCleanCsv(inputPath, outputPath = cleanCsvPath(inputPath), {
-    readFile = path => fsReadFile(path, 'utf8'),
-    writeFile = fsWriteFile,
+    createReadStream = fsCreateReadStream,
+    createWriteStream = fsCreateWriteStream,
 } = {}) {
-    const text = await readFile(inputPath);
-    await writeFile(outputPath, cleanCsvText(text), 'utf8');
+    // One pass over the file; onRow sees every record after the header.
+    const pass = async (onHeader, onRow) => {
+        let seenHeader = false;
+        const parser = createCsvParser(fields => {
+            if (!seenHeader) { seenHeader = true; onHeader(fields); return; }
+            onRow(fields);
+        });
+        for await (const chunk of createReadStream(inputPath, { encoding: 'utf8' })) {
+            parser.write(chunk);
+            await afterChunk();
+        }
+        parser.end();
+        await afterChunk();
+        return seenHeader;
+    };
+    let afterChunk = async () => {};
+
+    let rules = null;
+    let header = null;
+    if (!await pass(h => { header = h; rules = createCleanRules(h); }, row => rules.observe(row))) {
+        throw new Error('CSV is empty');
+    }
+
+    const out = createWriteStream(outputPath, { encoding: 'utf8' });
+    let pending = csvLine(header) + '\n';
+    // Written once per input chunk, so memory is bounded by the chunk size.
+    afterChunk = async () => {
+        if (!pending) return;
+        const ok = out.write(pending);
+        pending = '';
+        if (!ok) await new Promise(resolve => out.once('drain', resolve));
+    };
+    await pass(() => {}, row => { if (rules.keep(row)) pending += csvLine(row) + '\n'; });
+    await new Promise((resolve, reject) => out.end(err => (err ? reject(err) : resolve())));
     return outputPath;
 }
 
