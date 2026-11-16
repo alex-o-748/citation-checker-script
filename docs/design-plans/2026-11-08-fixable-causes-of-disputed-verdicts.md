@@ -2,7 +2,7 @@
 
 > **Status (2026-11-08):** Proposed. Nothing implemented. Written from the editor feedback in Neon; each cause below has its own fix and its own check, and they can land independently.
 >
-> **Update (2026-11-15):** Cause 1 is implemented (`PROMPT_VERSION` v3); see "Implemented" under §1. On the benchmark it is neutral on Qwen3.8 and costs GPT-OSS-20b about 5 points of exact accuracy (`docs/citation-details-benchmark-2026-11-15.md`). The field replay, which is the decisive check, is still to do. Causes 2–5 are unchanged.
+> **Update (2026-11-15):** Cause 1 is implemented (`PROMPT_VERSION` v3); see "Implemented" under §1. On the benchmark's main metric (Supported vs everything else) it is neutral on Qwen3.8 (80.7% → 81.2%) and costs GPT-OSS-20b about 2–3 points, near the noise (`docs/citation-details-benchmark-2026-11-15.md`). The field replay, which is the decisive check, is still to do. Causes 2–5 are unchanged.
 
 ## Why this exists
 
@@ -69,7 +69,7 @@ Reading the disputed rationales, most 👎 verdicts trace to five causes that a 
 - Both fetchers now write a rating graphic's `aria-label`/`alt` into the text (`src/ratingLabels.js`), but only when it reads as a rating ("3 out of 5 stars", "4/5"). In tf-source-fetcher this covers the crude-text path only: Readability's article text, used for over-cap pages, keeps no attributes.
 - Benchmark, 2026-11-15 (`docs/citation-details-benchmark-2026-11-15.md`):
   - Qwen3.8 is unchanged within noise. Supported rows flagged went from 23 to 21 of 80.
-  - GPT-OSS-20b lost about 5 points of exact accuracy in two runs, against two controls whose flips balanced out. The citation lines cause it, not the rule, and the loss is mostly Partially ↔ Not supported.
+  - GPT-OSS-20b lost about 4 of 181 rows on Supported vs everything else, two of them calls that ran out of output budget. That is close to run-to-run noise. Exact accuracy fell about 5 points, mostly Partially ↔ Not supported. The citation lines cause it, not the rule.
   - Few benchmark rows depend on attribution or datelines, so this neither shows nor rules out the intended gain.
 - Not done:
   - The replay of the 22 rated date rows and the attribution cases.

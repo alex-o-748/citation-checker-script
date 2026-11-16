@@ -4,14 +4,23 @@ This run checks `PROMPT_VERSION` v3, which sends the citation as the article
 shows it, the source URL and today's date with every check. That is cause 1 of
 `docs/design-plans/2026-11-08-fixable-causes-of-disputed-verdicts.md`.
 
-**Short answer: neutral on Qwen3.8; GPT-OSS-20b loses about 5 points of exact
-accuracy; and this benchmark barely tests what the change is for.**
+**Short answer: on the main metric (Supported vs everything else), no
+collateral damage on Qwen3.8, and a small loss on GPT-OSS-20b that is about
+the size of the noise. This benchmark barely tests what the change is for.**
 
-- On Lift Wing Qwen3.8, the default model, nothing moved outside noise.
-- On GPT-OSS-20b, exact accuracy fell about 5 points in two runs out of two.
-  The cause is the lines in the user message, not the new system-prompt rule.
-  The loss is mostly Partially ↔ Not supported, so whether a citation gets
-  flagged at all barely changed.
+- **Qwen3.8**, the default model, goes from 80.7% to 81.2%. Good citations
+  wrongly flagged fall from 23 to 21.
+- **GPT-OSS-20b** goes from 80.1% / 79.6% (two runs of the old prompt) to
+  76.8% / 77.3% (two runs with the citation lines), about 4 rows of 181.
+  - Two of those rows are calls that ran out of output budget (0–1 in the
+    controls).
+  - On rows that got an answer, the new runs flip 6–7 rows to wrong and 2–3 to
+    right, while the two controls flip 3 each way between themselves. A sign
+    test on 7 vs 3 gives p ≈ 0.34.
+  - Only row_172 is worse in every comparison.
+  - Exact-match accuracy, which also scores Partially vs Not supported, drops
+    more, about 5 points (table below). The extra lines mostly change that
+    shading, not whether a citation gets flagged.
 - Few of the 182 rows hinge on who published a source or what its dateline
   says, which is the failure the change targets. The decisive check is the
   field replay of the 22 rated date rows, which has not been run.
@@ -40,6 +49,38 @@ flagged" is the false-positive count the design doc wants to bring down.
 
 ## Results
 
+### Main metric: Supported vs everything else
+
+The ground truth and the verdict are each collapsed to Supported or not, and a
+row scores when the two agree. Errors count as wrong.
+
+| Model | Run | Correct | Good citations flagged | Failing citations missed | Errors |
+|---|---|---|---|---|---|
+| Qwen3.8 | control | 146/181 (80.7%) | 23 | 12 | 0 |
+| Qwen3.8 | treatment | 147/181 (81.2%) | 21 | 13 | 0 |
+| GPT-OSS-20b | control | 145/181 (80.1%) | 31 | 5 | 0 |
+| GPT-OSS-20b | control2 | 144/181 (79.6%) | 30 | 6 | 1 |
+| GPT-OSS-20b | treatment | 139/181 (76.8%) | 33 | 7 | 2 |
+| GPT-OSS-20b | lines-only | 140/181 (77.3%) | 30 | 9 | 2 |
+
+Flips on this metric, over rows answered in both runs:
+
+| Model | Comparison | Became right | Became wrong | Rows that became wrong |
+|---|---|---|---|---|
+| Qwen3.8 | control → treatment | 7 | 6 | 16, 33, 132, 180 (good, now flagged); 137, 140 (failing, now missed) |
+| GPT-OSS-20b | control → control2 (noise) | 3 | 3 | 132; 127, 162 |
+| GPT-OSS-20b | control → treatment | 3 | 7 | 25, 66, 132, 149, 172; 127, 162 |
+| GPT-OSS-20b | control2 → treatment | 2 | 6 | 9, 25, 66, 149, 172; 187 |
+| GPT-OSS-20b | control → lines-only | 3 | 6 | 132, 172; 83, 162, 173, 183 |
+| GPT-OSS-20b | control2 → lines-only | 3 | 6 | 46, 172; 83, 173, 183, 187 |
+
+With the full change, GPT-OSS's new errors are mostly good citations flagged
+as Partially supported (rows 25, 66, 149, 172). With the lines alone, they are
+mostly failing citations it now misses. Neither pattern repeats across both
+runs, apart from row_172.
+
+### Exact match (four verdicts)
+
 | Model | Run | Exact | Supported flagged (FPR) | Failing caught (TPR) | Errors |
 |---|---|---|---|---|---|
 | Qwen3.8 | control | 84/181 (46.4%) | 23/80 (28.8%) | 89/101 (88.1%) | 0 |
@@ -50,8 +91,8 @@ flagged" is the false-positive count the design doc wants to bring down.
 | GPT-OSS-20b | lines-only | 110/181 (60.8%) | 31/80 (38.8%) | 92/101 (91.1%) | 2 |
 
 Errors count as wrong. They are the model spending its whole 16,384-token
-output budget on reasoning. Flips against the control (better / worse /
-lateral):
+output budget on reasoning. Exact-match flips against the control (better /
+worse / lateral):
 
 | Model | Comparison | Better | Worse | Lateral |
 |---|---|---|---|---|
@@ -64,7 +105,7 @@ lateral):
 
 ## Reading it
 
-- **Noise is about 25 flips per run on GPT-OSS, and balanced.** Two controls
+- **Exact-match noise is about 25 flips per run on GPT-OSS, and balanced.** Two controls
   flipped 25 rows between them, 9 better and 9 worse, with identical totals.
   Both runs with the lines lean the same way against both controls, so the loss
   is probably real. But it is about 9 rows out of 181 and spread out: only 3
@@ -72,10 +113,10 @@ lateral):
   (row_164, row_167, row_172).
 - **The rule is not the cause.** lines-only scores the same as the treatment.
   It is the extra lines in the user message.
-- **The loss is mostly in shading, not in flagging.** The worse flips are
-  mostly Partially → Not supported (6) and Supported → Partially (4). The
-  share of Supported rows flagged is unchanged in lines-only (31/80) and up 3
-  in the treatment, which is within noise. TPR dips 1-4 points.
+- **The loss is mostly in shading, not in flagging.** The exact-match losses
+  are mostly Partially → Not supported (6) and Supported → Partially (4). On
+  Supported vs everything else, GPT-OSS loses about 4 rows, 2 of them
+  errors.
 - **The model seldom uses the lines.** GPT-OSS's rationales mention a
   citation, publication date or URL on 8 rows (3 in the control), Qwen3.8's on
   23 (18), and almost none of those rows changed verdict. The rows the change
