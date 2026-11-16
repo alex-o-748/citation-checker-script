@@ -132,3 +132,47 @@ worse / lateral):
 2. If the replay shows a gain, the open question is GPT-OSS. Either accept
    about 5 points of exact accuracy there, or try a shorter header (URL and
    date only, or the citation without the title) and re-run this comparison.
+
+## Follow-up (2026-11-16): a looser rule, and GLM-5.2
+
+The first question was whether "and for nothing else in the claim" made the
+models stricter. The test removes that clause from the rule and changes nothing
+else (`BENCHMARK_PROMPT_OVERRIDE_FILE`; the committed prompt is unchanged).
+The rule then reads:
+
+> - The message may also give the citation as it appears in the Wikipedia article, the source's URL, and today's date. The citation and URL say what the source is: treat them as evidence for who published the source, who wrote it, and when it was published. Use the publication date to resolve relative dates in the source text ("on Thursday", "last year"). If the source text itself gives a different author or date, trust the source text. Dates up to today's date are in the past, even if they are later than you expect.
+
+The second was a third model: GLM-5.2 (`hf-glm-5.2`, `zai-org/GLM-5.2`). It
+goes through the Cloudflare Worker's keyless `/hf` route, because the
+Toolforge router does not allow it. Its three runs went one at a time to stay
+under the Worker's 20-requests-a-minute limit. Raw rows were added to
+`benchmark/results_citation_details_2026-11-15.json` (runs `edited-rule*` and
+`glm-*`).
+
+Supported vs everything else (181 scored rows; errors count as wrong):
+
+| Model | Old prompt | v3 as committed | Edited rule |
+|---|---|---|---|
+| GPT-OSS-20b | 80.1%, 79.6% | 76.8% | 77.9%, 76.8% |
+| Qwen3.8 | 80.7% | 81.2% | 82.9% |
+| GLM-5.2 | 79.6% | 78.5% | 80.7% |
+
+Good citations wrongly flagged:
+
+| Model | Old prompt | v3 as committed | Edited rule |
+|---|---|---|---|
+| GPT-OSS-20b | 31, 30 | 33 | 32, 34 |
+| Qwen3.8 | 23 | 21 | 20 |
+| GLM-5.2 | 31 | 31 | 28 |
+
+- **GPT-OSS's loss is not the clause.** Every run with the three new lines
+  is 2–3 points below the old prompt, whatever the rule says. row_172 is
+  flagged in every one of them, and rows 25 and 149 in most.
+- **On Qwen3.8 and GLM-5.2 the edited rule is the best of the three.** It is
+  +2.2 and +1.1 points over the old prompt, against +0.5 and −1.1 for v3. Each
+  is one run, inside the 2–3 point noise, so the honest reading is "no damage,
+  possibly a little better".
+- **The trade-off of dropping the clause.** It was the explicit guard against
+  reading a footnote's own text (a `|quote=`, a descriptive title) as support
+  for the claim's substance. Without it, the rule still lists what the
+  citation is evidence for, but no longer says it is evidence for nothing else.
