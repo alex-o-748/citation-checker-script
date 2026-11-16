@@ -499,10 +499,38 @@ export async function runSweep(opts, {
                 `Rows will carry no page_id, revision_id or permalink, and each article is read at its latest revision.\n`
             );
         }
-        candidates = chosen.map(title => {
+        // A title that has become a #REDIRECT (the article was renamed since
+        // the list was written — the normal case for a rerun of an earlier
+        // batch by its stored titles) is checked under the target's title:
+        // that is what the REST fetch must ask for, and what the CSV's
+        // page_title should say. The listed title goes in redirected_from,
+        // which is how the coverage check knows it was covered.
+        candidates = [];
+        const byTitle = new Map();
+        for (const title of chosen) {
             const info = resolved.get(title);
-            return { pageId: info?.pageId ?? null, title, revisionId: info?.revisionId ?? null };
-        });
+            const redirectedFrom = info?.redirectedFrom ? title : null;
+            const candidate = {
+                pageId: info?.pageId ?? null,
+                title: redirectedFrom ? info.title : title,
+                revisionId: info?.revisionId ?? null,
+                redirectedFrom,
+            };
+            if (redirectedFrom) stderr.write(`sweep: ${title} redirects to ${candidate.title}\n`);
+            // Two listed titles landing on one article (a title and its old
+            // name, or two old names) would check it twice and write every
+            // row twice, which the structure check fails as duplicates.
+            const earlier = byTitle.get(candidate.title);
+            if (earlier) {
+                stderr.write(
+                    `sweep: ${title} is the same article as ${earlier.redirectedFrom ?? earlier.title} ` +
+                    `(${candidate.title}) — checking it once\n`
+                );
+                continue;
+            }
+            byTitle.set(candidate.title, candidate);
+            candidates.push(candidate);
+        }
         const unresolved = candidates.filter(c => !c.pageId).map(c => c.title);
         if (unresolved.length) {
             stderr.write(
@@ -555,6 +583,12 @@ export async function runSweep(opts, {
     // Every title the run was asked for, including ones --resume skips: the
     // post-run coverage check asks which of these produced no rows at all.
     const plannedTitles = candidates.map(candidate => candidate.title);
+    // processArticle() hands back only pageId/title/revisionId, so the
+    // listed title a redirected candidate came from is looked up by the
+    // article's (target) title when its findings are assembled.
+    const redirectedFromByTitle = new Map(
+        candidates.filter(c => c.redirectedFrom).map(c => [c.title, c.redirectedFrom])
+    );
 
     // Runs the post-run checks over the finished CSV. Never throws and never
     // touches the CSV: a checker problem costs the report, not the findings.
@@ -849,6 +883,7 @@ export async function runSweep(opts, {
 
             const wikiCandidate = {
                 wiki: opts.wiki, pageId: article.pageId, title: article.title, revisionId: article.revisionId,
+                redirectedFrom: redirectedFromByTitle.get(article.title) ?? null,
                 isBlp: isBlpByCategories(article.categories, opts.wiki),
             };
             const { solos, groups } = splitCitations(article.citations);

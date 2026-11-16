@@ -68,6 +68,13 @@ const COLUMNS = [
     ['severity_subclaims', f => (f.severitySubclaims ? JSON.stringify(f.severitySubclaims) : null)],
     ['severity_error', f => f.severityError],
     ['severity_prompt_version', f => f.severityPromptVersion],
+    // The title the article was listed under when that was a #REDIRECT the
+    // sweep followed (run-sweep.js --titles-file); empty otherwise.
+    // page_title is the article actually checked. sweep-checks.js's coverage
+    // check counts a listed title as covered when it appears here, which is
+    // what keeps a rerun by stale titles from reporting renamed articles as
+    // missing. CSV-only, like fetch_error: findings-store.js has no column.
+    ['redirected_from', f => f.redirectedFrom],
     // Last, not first, despite being the row's identifier — csvPageTitles()
     // below reads the FIRST field of every record as the page title, which is
     // what --resume skips on. Moving check_id to column 1 would silently make
