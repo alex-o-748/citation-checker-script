@@ -209,19 +209,93 @@ function sourceFor(citation, cache, fresh) {
     return { ...cache.get(key), cached };
 }
 
+// The default ceiling for runBatch()'s shared source cache, in characters of
+// source text (JS strings are UTF-16, so roughly twice that in bytes).
+export const DEFAULT_SOURCE_CACHE_MAX_CHARS = 50_000_000;
+
+/**
+ * runBatch()'s cross-article source cache, bounded. A Map, so
+ * processArticle() and fetchSources() use it unchanged; `trim()` evicts the
+ * least recently used entries until the cached text is under `maxChars`.
+ *
+ * Unbounded, this was the memory that killed the November 2026 ruwiki rerun:
+ * it kept the full text (up to 100,000 chars) of every source fetched in the
+ * run — ~80,000 of them over 928 articles — and the 2 GiB job was OOM-killed
+ * with 90 articles to go. Bounded, it keeps what made sharing it worth
+ * having: a source cited across many articles of a batch (a newspaper's
+ * archive page, a national encyclopedia) is still fetched once while it is
+ * in use.
+ *
+ * Eviction happens only in trim(), which runBatch() calls *between*
+ * articles, never inside set(): processArticle() fetches an article's
+ * sources into the cache and then reads them back, so evicting during that
+ * window would hand a citation no source.
+ */
+export class BoundedSourceCache extends Map {
+    constructor({ maxChars = DEFAULT_SOURCE_CACHE_MAX_CHARS } = {}) {
+        super();
+        this.maxChars = maxChars;
+        this.chars = 0;
+    }
+
+    static sizeOf(entry) {
+        return (entry?.content?.length ?? 0) + (entry?.error?.length ?? 0) + 64;
+    }
+
+    set(key, value) {
+        if (super.has(key)) this.chars -= BoundedSourceCache.sizeOf(super.get(key));
+        super.delete(key); // re-inserting moves it to the most recently used end
+        super.set(key, value);
+        this.chars += BoundedSourceCache.sizeOf(value);
+        return this;
+    }
+
+    get(key) {
+        if (!super.has(key)) return undefined;
+        const value = super.get(key);
+        super.delete(key);
+        super.set(key, value);
+        return value;
+    }
+
+    delete(key) {
+        if (super.has(key)) this.chars -= BoundedSourceCache.sizeOf(super.get(key));
+        return super.delete(key);
+    }
+
+    clear() {
+        this.chars = 0;
+        super.clear();
+    }
+
+    /** Evicts least recently used entries until under maxChars. Returns how many. */
+    trim() {
+        let evicted = 0;
+        for (const key of super.keys()) {
+            if (this.chars <= this.maxChars) break;
+            this.delete(key);
+            evicted++;
+        }
+        return evicted;
+    }
+}
+
 /**
  * Runs a list of candidates through processArticle, sharing one source cache
  * across the whole batch — the main reason batch fetching is cheaper than the
  * per-editor pattern, since one source is often cited across many articles.
+ * The cache is a BoundedSourceCache unless the caller passes its own.
  *
  * Yields per article so a caller can persist findings incrementally rather than
  * buffering an entire sweep.
  */
 export async function* runBatch(candidates, options = {}) {
-    const sourceCache = options.sourceCache ?? new Map();
+    const sourceCache = options.sourceCache ?? new BoundedSourceCache();
 
     for (const candidate of candidates) {
         if (options.signal?.aborted) return;
+        // Between articles, never during one: see BoundedSourceCache.
+        sourceCache.trim?.();
         yield await processArticle(candidate, { ...options, sourceCache });
     }
 }

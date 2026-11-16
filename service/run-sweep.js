@@ -630,7 +630,11 @@ export async function runSweep(opts, {
         provider: opts.provider, apiKey, model: opts.model, workerBase: opts.workerBase,
     });
 
-    const findings = [];
+    // A count, not the findings themselves: each carries claim, rationale,
+    // quote and severity text, and holding a whole sweep's worth (113,680 on
+    // the November 2026 ruwiki rerun) only to print its length is memory the
+    // run can't spare. Every finding is already in the CSV and ToolsDB.
+    let findingsWritten = 0;
     const storeStats = { written: 0, failed: 0 };
     // citationsSeen -> withUrl -> fetched -> verified -> flagged -> published
     // is deliberately citation-denominated and monotonic (each stage's count
@@ -660,7 +664,7 @@ export async function runSweep(opts, {
     // Counted here anyway so the funnel prints a real 0 rather than omitting
     // the column, which is the whole point of measuring the funnel now.
     const record = async finding => {
-        findings.push(finding);
+        findingsWritten++;
         if (finding.published) funnel.published++;
         await appendFindingFn(opts.out, finding);
         if (!toolsDbQuery) return;
@@ -1009,8 +1013,8 @@ export async function runSweep(opts, {
     // Computed after every worker has drained, not at the moment haltError
     // was set — other workers may have finished and recorded findings
     // concurrently between the failure and the pool actually stopping, so
-    // findings.length here is the true final count, not a lower bound.
-    const haltCode = haltError ? describeHalt(stderr, opts.provider, haltError, findings.length) : null;
+    // findingsWritten here is the true final count, not a lower bound.
+    const haltCode = haltError ? describeHalt(stderr, opts.provider, haltError, findingsWritten) : null;
 
     const cleanOut = cleanCsvPath(opts.out);
     let cleanError = null;
@@ -1030,7 +1034,7 @@ export async function runSweep(opts, {
         `(<=1 usable source), ${funnel.groupsFlagged} flagged.\n` +
         `sweep: verdicts: ${JSON.stringify(verdictCounts)}\n` +
         (opts.severity ? `sweep: severity tiers: ${JSON.stringify(severityCounts)}\n` : '') +
-        `sweep: wrote ${findings.length} finding(s) to ${opts.out}` +
+        `sweep: wrote ${findingsWritten} finding(s) to ${opts.out}` +
         `${toolsDbQuery ? ` and ${storeStats.written} to ToolsDB` : ''}` +
         `${resumeSkipped ? ` (${resumeSkipped} article(s) skipped as already done)` : ''}.\n` +
         (storeStats.failed
