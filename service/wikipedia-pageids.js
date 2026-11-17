@@ -47,6 +47,11 @@ export function buildTitlesQueryUrl(titles, { host = DEFAULT_API_HOST } = {}) {
         formatversion: '2',
         prop: 'revisions',
         rvprop: 'ids',
+        // Follow #REDIRECTs to the article they point at. Without this a
+        // title renamed since it was written down (a rerun of an earlier
+        // batch by its stored titles) resolves to the leftover redirect stub,
+        // which has no citations — the article is silently never checked.
+        redirects: '1',
         titles: titles.join('|'),
     });
     return `https://${host}/w/api.php?${params.toString()}`;
@@ -59,25 +64,34 @@ function chunk(array, size) {
 }
 
 /**
- * Resolves a list of article titles to `{ pageId, revisionId }`.
+ * Resolves a list of article titles to
+ * `{ pageId, revisionId, title, redirectedFrom }`.
  *
- * Returns a Map<title, {pageId, revisionId}>, keyed by both the title as
- * requested and (if MediaWiki normalized it — underscores to spaces,
- * first-letter case) the normalized form, so a caller can look up with
- * whatever string it started with. A title MediaWiki reports missing
- * (deleted, moved, typo) is simply absent from the map rather than throwing —
- * callers skip or degrade rows they can't resolve, the same "survive one bad
- * row" pattern service/claim-extractor.js uses for a single article's fetch
- * failure.
+ * Returns a Map<title, info>, keyed by the title as requested and by every
+ * form MediaWiki passed through on the way to the page (normalized —
+ * underscores to spaces, first-letter case — and redirect source), so a
+ * caller can look up with whatever string it started with. A title MediaWiki
+ * reports missing (deleted, typo, a redirect to a missing page) is simply
+ * absent from the map rather than throwing — callers skip or degrade rows
+ * they can't resolve, the same "survive one bad row" pattern
+ * service/claim-extractor.js uses for a single article's fetch failure.
  *
- * `revisionId` is null (rather than absent) for a page whose revision the API
- * didn't report, which keeps "this title exists" and "we know which revision
- * to pin" separable: a caller can still record the page id.
+ * `title` is the page's own title as MediaWiki names it. `revisionId` is null
+ * (rather than absent) for a page whose revision the API didn't report, which
+ * keeps "this title exists" and "we know which revision to pin" separable: a
+ * caller can still record the page id.
  *
- * Redirects are not followed: a genuine #REDIRECT page resolves to the
- * redirect page's own id, not the target's. None of benchmark/dataset.json's
- * titles are known redirects as of this writing; a future dataset refresh
- * should re-check this if resolution rates drop unexpectedly.
+ * Redirects ARE followed (`redirects=1`): a title that has become a
+ * #REDIRECT resolves to the target article's id, revision and title, and
+ * `redirectedFrom` is set to the title as requested. It is null when no
+ * redirect was followed — normalization alone does not count, since the page
+ * is the same one. Redirect and normalization can chain (`foo_bar` →
+ * `Foo bar` → `Foo baz`), and MediaWiki resolves double redirects in one
+ * query, so the hops are walked rather than looked up once. This used to be
+ * the other way round ("Redirects are not followed"), and the November 2026
+ * ruwiki rerun — re-checking 1,023 articles by the titles stored weeks
+ * earlier — lost three renamed articles to it: each resolved to its redirect
+ * stub, which has no citations, and was logged as `no_citations`.
  */
 export async function resolveTitleInfo(titles, {
     host = DEFAULT_API_HOST,
@@ -95,14 +109,45 @@ export async function resolveTitleInfo(titles, {
             throw new Error(`Wikipedia API returned HTTP ${response.status} resolving page IDs`);
         }
         const data = await response.json();
-        const normalizedFrom = new Map((data.query?.normalized ?? []).map(n => [n.to, n.from]));
+        const normalized = new Map((data.query?.normalized ?? []).map(n => [n.from, n.to]));
+        const redirects = new Map((data.query?.redirects ?? []).map(r => [r.from, r.to]));
 
+        const pages = new Map();
         for (const page of data.query?.pages ?? []) {
-            if (page.missing || !page.pageid) continue;
-            const info = { pageId: page.pageid, revisionId: page.revisions?.[0]?.revid ?? null };
+            if (page.missing || page.invalid || !page.pageid) continue;
+            const info = {
+                pageId: page.pageid,
+                revisionId: page.revisions?.[0]?.revid ?? null,
+                title: page.title,
+                redirectedFrom: null,
+            };
+            pages.set(page.title, info);
             result.set(page.title, info);
-            const original = normalizedFrom.get(page.title);
-            if (original && original !== page.title) result.set(original, info);
+        }
+
+        for (const requested of batch) {
+            // requested -> normalized -> redirect target (-> next target …).
+            // `seen` guards a redirect loop, which MediaWiki can report.
+            const hops = [requested];
+            let current = requested;
+            let redirected = false;
+            const seen = new Set([current]);
+            while (true) {
+                const next = normalized.get(current) ?? redirects.get(current);
+                if (next === undefined || seen.has(next)) break;
+                if (!normalized.has(current)) redirected = true;
+                seen.add(next);
+                hops.push(next);
+                current = next;
+            }
+            const page = pages.get(current);
+            if (!page) continue;
+            const info = redirected ? { ...page, redirectedFrom: requested } : page;
+            // Every hop but the page's own title: the page's own key stays
+            // the direct (redirectedFrom: null) entry set above.
+            for (const hop of hops) {
+                if (hop !== page.title) result.set(hop, info);
+            }
         }
     }
 
