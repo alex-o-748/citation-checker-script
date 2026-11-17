@@ -1,15 +1,18 @@
 #!/usr/bin/env node
-// Nightly triage of editor feedback: rated checks in, proposed field-set rows
-// and a review report out. The first checkpoint of the loop is the PR this
-// output becomes (.github/workflows/feedback-triage.yml): merging it is the
-// owner confirming the labels.
+// Nightly triage of editor feedback: rated checks in, field-set rows out.
+//
+// A row whose label the rule agrees on (adjudicate.js proposeLabel) is
+// accepted as it lands; everything else is written but held out of scoring
+// until the owner decides it. Nobody approves the run: oversight is the
+// weekly digest (digest.js), which spot-checks accepted labels at random and
+// lists the held ones. If spot-checks keep finding wrong labels, agreed rows
+// are held too until they stop (autoAcceptState).
 //
 //   node feedback-loop/run-triage.js --cases cases.json [options]
 //
 //   --cases FILE        JSON array from feedback-loop/sql/cases.sql (required)
 //   --field FILE        field set to read and extend (default benchmark/dataset_field.json)
-//   --report-dir DIR    where the dated report goes (default feedback-loop/reports)
-//   --pr-body FILE      also write a short PR body here
+//   --report FILE       write the run's report (Markdown) here
 //   --limit N           cases to triage this run, disputed first (default 40)
 //   --concurrency N     cases in flight at once (default 2)
 //   --model ID          adjudicator model (default $ADJUDICATOR_MODEL or claude-opus-5-5)
@@ -25,7 +28,6 @@
 // cost the rest of the run, not the part already paid for.
 
 import fs from 'node:fs';
-import path from 'node:path';
 import { parseArgs } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { fetchSourceContent } from '../core/worker.js';
@@ -33,9 +35,10 @@ import { extractSourceText } from '../core/prompts.js';
 import { callClaudeAPI } from '../core/providers.js';
 import { normalizeCase, selectForTriage } from './cases.js';
 import { tagCauses } from './causes.js';
-import { adjudicateCase, proposeLabel, ADJUDICATOR_VERSION } from './adjudicate.js';
+import { adjudicateCase, proposeLabel, ADJUDICATOR_VERSION, LABEL_STATUSES } from './adjudicate.js';
 import { buildFieldRow, mergeFieldRows, summarizeFieldRows, loadFieldSet, writeFieldSet } from './field-set.js';
-import { renderTriageReport, renderPrBody } from './report.js';
+import { autoAcceptState } from './digest.js';
+import { renderTriageReport } from './report.js';
 
 export const DEFAULT_MODEL = 'claude-opus-5-5';
 export const DEFAULT_LIMIT = 40;
@@ -74,7 +77,17 @@ export function resilientModel(call, { attempts = 4, baseDelayMs = 2000, sleep =
     };
 }
 
-async function triageOne(c, { fetchSource, callModel, dryRun, model, now }) {
+/** An agreed label, held for the owner while auto-accepting is paused. */
+export function holdIfPaused(label, state) {
+    if (!state?.paused || label.labelStatus !== LABEL_STATUSES.AGREED) return label;
+    return {
+        ...label,
+        held: true,
+        reasons: [...label.reasons, `held: auto-accept is paused (${state.wrong} of the last ${state.checked} spot-checks were wrong)`],
+    };
+}
+
+async function triageOne(c, { fetchSource, callModel, dryRun, model, now, autoAccept }) {
     const fetched = await fetchSource(c.check.sourceUrl);
     if (!fetched?.content) {
         return { failure: { case: c, stage: 'fetch', error: fetched?.error || 'no content' } };
@@ -90,7 +103,7 @@ async function triageOne(c, { fetchSource, callModel, dryRun, model, now }) {
         if (error instanceof HaltError) throw error;
         return { failure: { case: c, stage: 'adjudication', error: error?.message ?? String(error) } };
     }
-    const label = proposeLabel(c, adjudication);
+    const label = holdIfPaused(proposeLabel(c, adjudication), autoAccept);
     const row = buildFieldRow(c, {
         sourceText, sourceTruncated,
         fetchedAt: now(), adjudication, label, hints, triagedAt: now(),
@@ -114,13 +127,13 @@ export async function runTriage({
     dryRun = false,
     model = null,
     date,
-    reportPath = null,
     now = () => new Date().toISOString(),
 }) {
     if (!dryRun && !callModel) throw new TypeError('runTriage needs callModel unless dryRun');
     const cases = caseRows.map(normalizeCase);
     const triagedIds = fieldRows.map(r => r.field?.check_id).filter(Boolean);
     const { toTriage, deferred, skipped } = selectForTriage(cases, triagedIds, { limit, retriage });
+    const autoAccept = autoAcceptState(fieldRows);
 
     const results = [];
     const failures = [];
@@ -130,7 +143,7 @@ export async function runTriage({
         while (queue.length && !halted) {
             const c = queue.shift();
             try {
-                const out = await triageOne(c, { fetchSource, callModel, dryRun, model, now });
+                const out = await triageOne(c, { fetchSource, callModel, dryRun, model, now, autoAccept });
                 if (out.result) results.push(out.result);
                 if (out.failure) failures.push(out.failure);
             } catch (error) {
@@ -155,19 +168,21 @@ export async function runTriage({
         output: u.output + (r.adjudication?.usage?.output ?? 0),
         calls: u.calls + (r.adjudication?.usage?.calls ?? 0),
     }), { input: 0, output: 0, calls: 0 });
-    const fieldSummary = summarizeFieldRows(merged.rows);
     const run = {
         date, results, failures, skipped,
         deferred: [...deferred, ...notReached],
-        fieldSummary, model, usage, dryRun,
+        fieldSummary: summarizeFieldRows(merged.rows),
+        model, usage, dryRun, autoAccept,
     };
+    const accepted = results.filter(r => r.row && !r.row.needs_manual_review).length;
     return {
         ...run,
         halted,
         merged,
+        accepted,
+        held: results.filter(r => r.row?.needs_manual_review).length,
         changed: merged.added.length + merged.replaced.length > 0,
         report: renderTriageReport(run),
-        prBody: renderPrBody({ ...run, reportPath }),
     };
 }
 
@@ -187,8 +202,7 @@ async function main() {
         options: {
             cases: { type: 'string' },
             field: { type: 'string', default: 'benchmark/dataset_field.json' },
-            'report-dir': { type: 'string', default: 'feedback-loop/reports' },
-            'pr-body': { type: 'string' },
+            report: { type: 'string' },
             limit: { type: 'string', default: String(DEFAULT_LIMIT) },
             concurrency: { type: 'string', default: '2' },
             model: { type: 'string', default: process.env.ADJUDICATOR_MODEL || DEFAULT_MODEL },
@@ -200,7 +214,7 @@ async function main() {
         },
     });
     if (!values.cases) {
-        console.error('Usage: node feedback-loop/run-triage.js --cases cases.json [--limit N] [--dry-run] …');
+        console.error('Usage: node feedback-loop/run-triage.js --cases cases.json [--limit N] [--report FILE] [--dry-run] …');
         process.exit(1);
     }
     const dryRun = values['dry-run'];
@@ -216,7 +230,6 @@ async function main() {
     const callModel = dryRun ? null : resilientModel(({ systemPrompt, userContent }) => callClaudeAPI({
         apiKey, model: values.model, systemPrompt, userContent, maxTokens: 16000, effort: values.effort,
     }));
-    const reportPath = path.join(values['report-dir'], `triage-${values.date}${dryRun ? '-dry-run' : ''}.md`);
 
     const out = await runTriage({
         caseRows, fieldRows,
@@ -228,32 +241,30 @@ async function main() {
         dryRun,
         model: dryRun ? null : values.model,
         date: values.date,
-        reportPath,
     });
 
     if (out.changed) {
         writeFieldSet(values.field, out.merged.rows, { ...metadata, adjudicator_version: ADJUDICATOR_VERSION });
     }
-    fs.mkdirSync(values['report-dir'], { recursive: true });
-    fs.writeFileSync(reportPath, out.report);
-    if (values['pr-body']) fs.writeFileSync(values['pr-body'], out.prBody);
+    if (values.report) fs.writeFileSync(values.report, out.report);
 
     const summary = {
         cases: caseRows.length,
         triaged: out.results.length,
-        agreed: out.results.filter(r => r.label?.labelStatus === 'agreed').length,
+        accepted: out.accepted,
+        held: out.held,
         failures: out.failures.length,
         skipped: out.skipped.length,
         deferred: out.deferred.length,
         added: out.merged.added.length,
         replaced: out.merged.replaced.length,
         changed: out.changed,
+        auto_accept_paused: out.autoAccept.paused,
         halted: out.halted,
-        report: reportPath,
         usage: out.usage,
     };
     console.log(JSON.stringify(summary, null, 2));
-    setGithubOutputs({ changed: out.changed, triaged: out.results.length, report: reportPath });
+    setGithubOutputs({ changed: out.changed, added: out.merged.added.length, accepted: out.accepted, held: out.held });
     if (out.halted) {
         console.error(`Halted on a model auth/billing error: ${out.halted}`);
         process.exit(2);

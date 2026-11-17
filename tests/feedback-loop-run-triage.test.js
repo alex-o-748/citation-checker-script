@@ -56,7 +56,7 @@ test('unframeSource separates the body from the fetch header', () => {
 
 test('a run triages, fails and skips each case for the right reason', async () => {
     const { calls, callModel } = stubModel();
-    const out = await runTriage({ caseRows: CASES, fetchSource, callModel, date: '2026-11-15', reportPath: 'feedback-loop/reports/triage-2026-11-15.md', model: 'stub' });
+    const out = await runTriage({ caseRows: CASES, fetchSource, callModel, date: '2026-11-15', model: 'stub' });
     assert.deepEqual(out.results.map(r => r.case.checkId), ['aaaa0001', 'up000001'], 'disputed first');
     assert.deepEqual(out.failures.map(f => [f.case.checkId, f.stage, f.error]), [['dead0001', 'fetch', 'HTTP 404']]);
     assert.deepEqual(out.skipped.map(s => [s.case.checkId, s.reason]), [['grp00001', 'group']]);
@@ -69,9 +69,26 @@ test('a run triages, fails and skips each case for the right reason', async () =
     assert.equal(drought.ground_truth, 'Supported');
     assert.equal(drought.needs_manual_review, false);
     assert.deepEqual(out.usage, { input: 120, output: 15, calls: 3 });
-    assert.match(out.report, /\*\*2\*\* cases triaged: \*\*2\*\* agreed/);
-    assert.match(out.prBody, /feedback-loop\/reports\/triage-2026-11-15\.md/);
+    assert.equal(out.accepted, 2, 'agreed rows are accepted as they land');
+    assert.equal(out.held, 0);
+    assert.match(out.report, /\*\*2\*\* cases triaged: \*\*2\*\* accepted/);
     assert.equal(out.halted, null);
+});
+
+test('when spot-checks keep failing, agreed rows are held for the owner', async () => {
+    // Two of the owner's recent spot-checks found wrong labels.
+    const audited = ['old00001', 'old00002', 'old00003'].map((id, i) => ({
+        id: `field_${id}`, ground_truth: 'Supported', needs_manual_review: false,
+        field: { check_id: id, label: { status: 'owner', proposed_ground_truth: 'Supported' },
+            audit: { result: i < 2 ? 'wrong' : 'ok', at: `2026-11-1${i}T00:00:00Z` } },
+    }));
+    const out = await runTriage({ caseRows: CASES, fieldRows: audited, fetchSource, callModel: stubModel().callModel, date: '2026-11-15' });
+    assert.equal(out.autoAccept.paused, true);
+    assert.equal(out.accepted, 0);
+    assert.equal(out.held, 2);
+    const drought = out.merged.rows.find(r => r.field.check_id === 'aaaa0001');
+    assert.equal(drought.needs_manual_review, true);
+    assert.match(drought.field.label.reasons.join(' '), /auto-accept is paused \(2 of the last 3 spot-checks were wrong\)/);
 });
 
 test('running again over the merged set triages nothing new', async () => {

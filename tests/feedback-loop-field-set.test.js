@@ -14,7 +14,7 @@ import {
     sha256,
 } from '../feedback-loop/field-set.js';
 import { normalizeCase } from '../feedback-loop/cases.js';
-import { md, safeUrl, renderTriageReport, renderPrBody } from '../feedback-loop/report.js';
+import { md, safeUrl, renderTriageReport } from '../feedback-loop/report.js';
 
 function makeCase(overrides = {}) {
     return normalizeCase({
@@ -164,12 +164,12 @@ test('the report shows verified evidence, never the raw model quote', () => {
         model: 'claude-test', usage: { input: 20, output: 2, calls: 4 },
     });
     assert.match(report, /^# Feedback triage — 2026-11-15/);
-    assert.match(report, /\*\*2\*\* cases triaged: \*\*1\*\* agreed, \*\*1\*\* need your decision/);
-    assert.match(report, /## Needs your decision \(1\)/);
+    assert.match(report, /\*\*2\*\* cases triaged: \*\*1\*\* accepted, \*\*1\*\* waiting for a decision/);
+    assert.match(report, /## Waiting for a decision \(1\)/);
     assert.match(report, /Why it needs you:\*\* the editor rejected the verdict without giving one/);
     assert.match(report, /> droughts could become more frequent/);
     assert.ok(!report.includes('RAW MODEL QUOTE'));
-    assert.match(report, /## Agreed \(1\)/);
+    assert.match(report, /## Accepted \(1\)/);
     assert.match(report, /`missed_evidence` \| cause 4 \| 2 \|/);
     assert.match(report, /`fail0001` — fetch failed: HTTP 403/);
     assert.match(report, /Skipped, `group` \(1\): `grp00001`/);
@@ -185,12 +185,17 @@ test('a dry-run report groups by pattern hints instead of causes', () => {
     assert.match(report, /\| `uncheckable_omission` \| Omission with nothing for the editor to check \| 1 \|/);
 });
 
-test('the PR body is short and points at the full report', () => {
-    const body = renderPrBody({
-        date: '2026-11-15', reportPath: 'feedback-loop/reports/triage-2026-11-15.md',
-        results: [{ case: makeCase(), adjudication: ADJUDICATION, label: AGREED, hints: [] }],
+test('an agreed label held while auto-accept is paused waits like any other', () => {
+    const held = { ...AGREED, held: true, reasons: ['held: auto-accept is paused (2 of the last 10 spot-checks were wrong)'] };
+    const r = row(makeCase(), held);
+    assert.equal(r.needs_manual_review, true);
+    assert.equal(r.field.label.status, 'agreed', 'still agreed by the rule, so a decision on it is a spot-check');
+    assert.equal(r.field.label.held, true);
+    const report = renderTriageReport({
+        date: '2026-11-15',
+        results: [{ case: makeCase(), adjudication: ADJUDICATION, label: held, hints: [] }],
+        autoAccept: { paused: true, wrong: 2, checked: 10 },
     });
-    assert.match(body, /feedback-loop\/reports\/triage-2026-11-15\.md/);
-    assert.match(body, /## How to review/);
-    assert.ok(!body.includes('### `aaaa0001`'), 'per-case blocks belong in the report file');
+    assert.match(report, /\*\*0\*\* accepted, \*\*1\*\* waiting/);
+    assert.match(report, /Auto-accept is paused/);
 });

@@ -1,5 +1,9 @@
 // The field regression set: benchmark/dataset_field.json.
 //
+// Rows are never deleted. A check the owner drops is kept as a marker
+// (excluded_reason: 'dropped by the owner'), because a missing check id looks
+// untriaged and the next run would read it again.
+//
 // Rows are dataset.json's schema, so the benchmark takes the file as it is:
 //
 //   cd benchmark && node run_benchmark.js --dataset dataset_field.json --results results_field.json
@@ -60,7 +64,10 @@ export function buildFieldRow(c, { sourceText, sourceTruncated, fetchedAt, adjud
         ground_truth: label.groundTruth,
         dataset_version: FIELD_DATASET_VERSION,
         extraction_status: 'complete',
-        needs_manual_review: label.labelStatus !== LABEL_STATUSES.AGREED,
+        // An agreed label is accepted as it lands, unless auto-accepting is
+        // paused (feedback-loop/digest.js autoAcceptState), when it is held
+        // for the owner like any other row.
+        needs_manual_review: label.labelStatus !== LABEL_STATUSES.AGREED || Boolean(label.held),
         excluded_reason: label.excludedReason,
         provenance: {
             from: 'editor feedback on a logged check (Neon: feedback + verification_logs)',
@@ -102,6 +109,7 @@ export function buildFieldRow(c, { sourceText, sourceTruncated, fetchedAt, adjud
                 proposed_ground_truth: label.groundTruth,
                 suggested_by: label.suggestedBy,
                 reasons: label.reasons,
+                held: Boolean(label.held),
             },
             triaged_at: triagedAt,
         },

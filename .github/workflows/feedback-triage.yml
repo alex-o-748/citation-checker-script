@@ -1,15 +1,14 @@
 name: Feedback triage
 
 # Nightly: export rated checks from Neon, re-read new ones with an
-# independent model, and propose field-set labels as a PR. Merging the PR is
-# the owner confirming them. See feedback-loop/README.md.
+# independent model, and add them to benchmark/dataset_field.json on main.
+# Agreed labels are accepted as they land; the rest wait, out of scoring, for
+# the weekly digest (feedback-digest.yml). See feedback-loop/README.md.
 #
 # Needs (Settings > Secrets and variables > Actions):
 #   NEON_LOOP_DATABASE_URL  secret: a read-only role's connection string
 #   ANTHROPIC_API_KEY       secret: already used by the talk-page scraper
 #   ADJUDICATOR_MODEL       variable, optional: overrides the default model
-# and Settings > Actions > General > "Allow GitHub Actions to create and
-# approve pull requests".
 
 on:
   schedule:
@@ -20,45 +19,26 @@ on:
         description: Cases to triage this run (disputed first)
         default: '40'
       dry_run:
-        description: Fetch and tag only, no model calls, no PR
+        description: Fetch and tag only, no model calls, nothing committed
         type: boolean
         default: false
 
 permissions:
   contents: write
-  pull-requests: write
 
+# Shared with feedback-commands.yml: both write the field set.
 concurrency:
-  group: feedback-triage
+  group: feedback-field-set
   cancel-in-progress: false
 
 jobs:
   triage:
     runs-on: ubuntu-latest
     timeout-minutes: 120
-    env:
-      BRANCH: feedback-loop/triage
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      # Build on an open triage PR rather than beside it, so cases already
-      # proposed there (not yet merged) are not triaged and paid for twice.
-      - name: Continue the open triage PR, if there is one
-        id: branch
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          pr=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')
-          echo "pr=$pr" >> "$GITHUB_OUTPUT"
-          if [ -n "$pr" ]; then
-            git checkout -B "$BRANCH" "origin/$BRANCH"
-            git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
-              merge --no-edit origin/main
-          else
-            git checkout -B "$BRANCH"
-          fi
 
       - uses: actions/setup-node@v4
         with:
@@ -88,40 +68,37 @@ jobs:
         run: |
           node feedback-loop/run-triage.js --cases "$RUNNER_TEMP/cases.json" \
             --limit "${{ inputs.limit || '40' }}" \
-            --pr-body "$RUNNER_TEMP/pr-body.md" \
+            --report "$RUNNER_TEMP/triage-report.md" \
             ${{ inputs.dry_run && '--dry-run' || '' }}
+
+      - name: Report
+        if: ${{ !cancelled() && steps.export.outputs.skip != 'true' }}
+        run: |
+          if [ -f "$RUNNER_TEMP/triage-report.md" ]; then cat "$RUNNER_TEMP/triage-report.md" >> "$GITHUB_STEP_SUMMARY"; fi
 
       - name: Keep the report
         if: ${{ !cancelled() && steps.export.outputs.skip != 'true' }}
         uses: actions/upload-artifact@v4
         with:
           name: feedback-triage-report
-          path: feedback-loop/reports/
+          path: ${{ runner.temp }}/triage-report.md
           if-no-files-found: ignore
 
       # Also runs after a halt (exit 2): what was triaged before the model
-      # refused is still worth proposing.
-      - name: Open or update the triage PR
+      # refused is still worth keeping.
+      - name: Commit to main
         if: ${{ !cancelled() && steps.triage.outputs.changed == 'true' }}
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR: ${{ steps.branch.outputs.pr }}
+          ADDED: ${{ steps.triage.outputs.added }}
+          ACCEPTED: ${{ steps.triage.outputs.accepted }}
+          HELD: ${{ steps.triage.outputs.held }}
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add benchmark/dataset_field.json feedback-loop/reports/
-          git commit -q -m "Feedback triage $(date -u +%F)"
-          git push --force-with-lease origin "$BRANCH"
-          {
-            cat "$RUNNER_TEMP/pr-body.md"
-            echo
-            echo "Reports in this PR:"
-            git diff --name-only origin/main...HEAD -- feedback-loop/reports/ | sed 's/^/- `/; s/$/`/'
-          } > "$RUNNER_TEMP/body.md"
-          if [ -n "$PR" ]; then
-            gh pr edit "$PR" --body-file "$RUNNER_TEMP/body.md"
-          else
-            gh pr create --base main --head "$BRANCH" \
-              --title 'Feedback triage: confirm field-set labels' \
-              --body-file "$RUNNER_TEMP/body.md"
-          fi
+          git add benchmark/dataset_field.json
+          git commit -q -m "Feedback triage $(date -u +%F): $ADDED added, $ACCEPTED accepted, $HELD waiting"
+          for delay in 2 4 8 16; do
+            git pull -q --rebase origin main && git push -q origin HEAD:main && exit 0
+            sleep "$delay"
+          done
+          exit 1

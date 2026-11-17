@@ -1,5 +1,6 @@
-// Markdown for a triage run: the full report committed alongside the field
-// set, and a short PR body pointing at it.
+// Markdown for a triage run: the report the nightly workflow puts in its run
+// summary. The owner-facing view is the weekly digest (digest.js), which
+// shares md() and safeUrl() from here.
 //
 // Everything quoted here is arbitrary text — article prose, model output,
 // source passages — headed for GitHub, which renders Markdown and turns
@@ -106,21 +107,25 @@ function hintTable(results) {
     return ['| Hint | Pattern | Cases |', '|---|---|---|', ...rows].join('\n');
 }
 
+// Accepted as it landed: agreed by the rule, and not held because
+// auto-accepting was paused.
+const isAccepted = r => r.label?.labelStatus === 'agreed' && !r.label?.held;
+
 function summaryLine({ results, failures, skipped, deferred, dryRun }) {
-    const agreed = results.filter(r => r.label?.labelStatus === 'agreed').length;
+    const accepted = results.filter(isAccepted).length;
     const parts = [dryRun
         ? `**${results.length}** cases fetched and tagged; a dry run proposes no labels.`
-        : `**${results.length}** cases triaged: **${agreed}** agreed, **${results.length - agreed}** need your decision.`];
+        : `**${results.length}** cases triaged: **${accepted}** accepted, **${results.length - accepted}** waiting for a decision.`];
     if (failures.length) parts.push(`${failures.length} could not be triaged (retried next run).`);
     if (skipped.length) parts.push(`${skipped.length} skipped.`);
     if (deferred.length) parts.push(`${deferred.length} deferred to the next run.`);
     return parts.join(' ');
 }
 
-const HOW_TO_REVIEW = `## How to review
+const WHAT_HAPPENS_NEXT = `## What happens next
 
-- **Merging accepts the agreed rows.** An editor and an independent reading (which saw only the claim and the source) reached the same verdict, and the passage it relies on was found in the source.
-- **Rows that need your decision** are in \`benchmark/dataset_field.json\` with \`"needs_manual_review": true\` and a suggested \`ground_truth\`. To accept one, set \`"needs_manual_review": false\`; to relabel it, change \`ground_truth\` too; to drop it, delete the row. Later runs never overwrite a row you edited.
+- **Accepted rows are already in \`benchmark/dataset_field.json\`.** An editor and an independent reading (which saw only the claim and the source) reached the same verdict, and the passage it relies on was found in the source.
+- **Waiting rows** are in the file too, held out of scoring. They go to the weekly feedback digest issue, which also spot-checks a few accepted rows at random. Answer there, one line per check.
 - Nothing here changes the tool. Fixes come as separate PRs, tested against this set.`;
 
 /**
@@ -136,22 +141,25 @@ const HOW_TO_REVIEW = `## How to review
  * @param {boolean} [run.dryRun]
  */
 export function renderTriageReport(run) {
-    const { date, results = [], failures = [], skipped = [], deferred = [], fieldSummary, model, usage, dryRun } = run;
-    const needsOwner = results.filter(r => r.label?.labelStatus !== 'agreed');
-    const agreed = results.filter(r => r.label?.labelStatus === 'agreed');
+    const { date, results = [], failures = [], skipped = [], deferred = [], fieldSummary, model, usage, dryRun, autoAccept } = run;
+    const needsOwner = results.filter(r => !isAccepted(r));
+    const agreed = results.filter(isAccepted);
     const out = [`# Feedback triage — ${date}${dryRun ? ' (dry run: no model calls)' : ''}`, ''];
     out.push(summaryLine({ results, failures, skipped, deferred, dryRun }));
     if (fieldSummary) {
         out.push('', `Field set after this run: ${fieldSummary.rows} rows, ${fieldSummary.scoreable} scoreable, ${fieldSummary.needs_owner} awaiting a decision, ${fieldSummary.excluded} excluded.`);
     }
-    out.push('', HOW_TO_REVIEW, '', '## By cause', '', dryRun ? hintTable(results) : causeTable(results));
+    if (autoAccept?.paused) {
+        out.push('', `**Auto-accept is paused:** ${autoAccept.wrong} of the last ${autoAccept.checked} spot-checks found a wrong label, so agreed rows were held for a decision too.`);
+    }
+    out.push('', WHAT_HAPPENS_NEXT, '', '## By cause', '', dryRun ? hintTable(results) : causeTable(results));
 
     if (!dryRun) out.push('', '### Pattern hints', '', hintTable(results));
 
-    out.push('', dryRun ? `## Cases (${needsOwner.length})` : `## Needs your decision (${needsOwner.length})`, '');
+    out.push('', dryRun ? `## Cases (${needsOwner.length})` : `## Waiting for a decision (${needsOwner.length})`, '');
     out.push(needsOwner.length ? needsOwner.map(caseBlock).join('\n\n') : '_None._');
 
-    out.push('', `## Agreed (${agreed.length})`, '');
+    out.push('', `## Accepted (${agreed.length})`, '');
     if (agreed.length) {
         out.push('| Check | Article | Tool → label | Cause |', '|---|---|---|---|');
         for (const r of agreed) {
@@ -180,15 +188,4 @@ export function renderTriageReport(run) {
         out.push('', '## Model use', '', `${md(model ?? 'unknown model')}: ${usage.calls} calls, ${usage.input} input and ${usage.output} output tokens.`);
     }
     return `${out.join('\n')}\n`;
-}
-
-/** A short PR body: the summary, the review instructions, and where the rest is. */
-export function renderPrBody({ date, reportPath, results = [], failures = [], skipped = [], deferred = [], fieldSummary }) {
-    const lines = [
-        `Nightly triage of editor feedback, ${date}.`, '',
-        summaryLine({ results, failures, skipped, deferred }),
-    ];
-    if (fieldSummary) lines.push('', `Field set after this run: ${fieldSummary.rows} rows, ${fieldSummary.scoreable} scoreable.`);
-    lines.push('', `The full report, with every case, is \`${reportPath}\` in this PR.`, '', HOW_TO_REVIEW, '', '## By cause', '', causeTable(results));
-    return `${lines.join('\n')}\n`;
 }
