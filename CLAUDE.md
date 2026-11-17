@@ -562,9 +562,10 @@ Design, prototype numbers and the alternatives rejected:
 Editor ratings in Neon become confirmed regression rows in
 `benchmark/dataset_field.json`, and the verification log becomes a daily trend.
 Operating notes and setup: `feedback-loop/README.md`. Design:
-`docs/design-plans/2026-11-15-feedback-loop.md`. Two jobs:
+`docs/design-plans/2026-11-15-feedback-loop.md`. Four workflows:
 
-- `feedback-triage.yml` (nightly) re-reads newly rated checks with an independent model and opens or updates **one PR**; merging it is the owner confirming the labels.
+- `feedback-triage.yml` (nightly) re-reads newly rated checks with an independent model and commits them to the field set on `main`: agreed labels are accepted as they land, the rest wait out of scoring.
+- `feedback-digest.yml` (weekly) opens one issue with five accepted labels to spot-check and the rows waiting for a decision; `feedback-commands.yml` applies the owner's one-line replies (`a1b2c3d4 ok`, `a1b2c3d4 not supported`, `a1b2c3d4 drop`).
 - `feedback-monitor.yml` (daily) keeps one issue current, and comments only when the set of alerts changes.
 
 Rules the code depends on:
@@ -573,6 +574,9 @@ Rules the code depends on:
 - **The blind call sees the claim and the source, nothing else.** No tool verdict, no editor feedback: its independence is what makes agreement with the editor evidence. A test fails if either leaks into its prompt.
 - **Labels are decided by `proposeLabel()`, never by a model.** *Agreed* requires the editor and the blind reading to match and the evidence to verify with `core/quote.js`; anything else goes to the owner.
 - **A row the owner edited is never overwritten** (`isOwnerDecided()`), even with `--retriage`.
+- **Rows are never deleted.** A missing check id looks untriaged and would be read again; `drop` leaves a marker (`excluded_reason: 'dropped by the owner'`).
+- **Auto-accept answers to the spot-checks.** Two wrong labels in the owner's last ten pause it (`autoAcceptState()`), and agreed rows are then held like the rest. Don't add a path that accepts a label around that check.
+- **Only the repository owner's comments are applied**, and the comment body reaches `digest.js` through an environment variable, never interpolated into a shell command.
 - **Each rationale pattern is written once**, in `causes.js`, in regex syntax JS and Postgres share; `causeSql()` compiles it for the monitor. Don't copy a pattern into SQL by hand.
 - **The field set is never pooled with `dataset.json`**: its rows were chosen by disagreement.
 - Database access is `psql` in the workflows (a read-only role, `NEON_LOOP_DATABASE_URL`); the Node code reads and writes files and needs no driver.

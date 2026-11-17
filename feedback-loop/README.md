@@ -1,34 +1,44 @@
 # feedback-loop/
 
 Turns editor feedback (the 👍 / 👎 / corrected verdicts in Neon) into a tested
-picture of what the tool gets wrong, with the owner approving every label.
+picture of what the tool gets wrong. Labels that two independent judgements
+agree on are accepted automatically; the owner audits a random sample of them
+and decides the rest, by replying to one issue a week.
 Design and rationale: [`docs/design-plans/2026-11-15-feedback-loop.md`](../docs/design-plans/2026-11-15-feedback-loop.md).
 The causes it looks for: [`docs/design-plans/2026-11-08-fixable-causes-of-disputed-verdicts.md`](../docs/design-plans/2026-11-08-fixable-causes-of-disputed-verdicts.md).
 
-Two jobs run on GitHub Actions:
-
-| Workflow | When | Does | Output |
-|---|---|---|---|
-| `feedback-triage.yml` | nightly 03:17 UTC | Re-reads newly rated checks with an independent model and proposes labels | One PR; **merging it confirms the labels** |
-| `feedback-monitor.yml` | daily 06:43 UTC | Counts verdict mix, fetch failures and rationale patterns across every logged check | One issue, updated in place; a comment when the alerts change |
+| Workflow | When | Does |
+|---|---|---|
+| `feedback-triage.yml` | nightly 03:17 UTC | Re-reads newly rated checks with an independent model and commits them to `benchmark/dataset_field.json` on `main` |
+| `feedback-digest.yml` | Mondays 07:23 UTC | Opens one issue: five accepted labels to spot-check, and the rows waiting for a decision |
+| `feedback-commands.yml` | on each of your replies to a digest | Applies them to the field set and confirms in a reply |
+| `feedback-monitor.yml` | daily 06:43 UTC | Counts verdict mix, fetch failures and rationale patterns across every logged check; keeps one issue current |
 
 ## How a rated check becomes a field-set row
 
 1. **Export** (`sql/cases.sql`): rated checks joined to `verification_logs`, one JSON object each. `client_id` is used inside the query to count how much one browser rated and how fast, and never leaves it.
-2. **Select** (`cases.js`): disputed cases first. Group checks, parse errors and rows without a URL are skipped with a reason, listed in the report.
+2. **Select** (`cases.js`): disputed cases first. Group checks, parse errors and rows without a URL are skipped with a reason, listed in the run's report.
 3. **Re-fetch** the source through the production proxy (`core/worker.js`), exactly as the userscript does.
 4. **Tag** (`causes.js`): the brief's rationale patterns. Hints, not labels.
 5. **Blind reading** (`adjudicate.js`): a strong model sees the claim and the source only, not the tool's verdict or the editor's. Its evidence quote is checked against the source with `core/quote.js`.
 6. **Attribution**, only when someone disagrees: the same model, shown everything, names the cause.
 7. **Label, by rule** (`proposeLabel`): *agreed* when the editor and the blind reading reached the same verdict independently and the evidence verified; otherwise *needs owner*, with the reasons. If the blind reading finds the page unusable while the editor judged it, the row is kept but excluded from scoring.
-8. **Merge** (`field-set.js`) into `benchmark/dataset_field.json` and write `reports/triage-<date>.md`.
+8. **Commit** (`field-set.js`): agreed rows are accepted as they land; the rest are written with `needs_manual_review: true`, out of scoring until decided. The run's report goes to the workflow's summary page.
 
-## Reviewing a triage PR
+## Your part: the weekly digest
 
-- **Merge to accept the agreed rows.**
-- Rows that need you have `"needs_manual_review": true` and a suggested `ground_truth`. To accept, set it to `false`. To relabel, change `ground_truth` too. To drop, delete the row.
-- A row you edited is never overwritten by a later run, even with `--retriage`.
-- The PR grows nightly until merged: each run builds on the open PR, so nothing is triaged (or paid for) twice.
+Reply to the digest issue with one line per check, starting with its id. Other lines are ignored, so notes are fine.
+
+| Reply | Means |
+|---|---|
+| `a1b2c3d4 ok` | The label shown is right. For a waiting row: accept the suggested label |
+| `a1b2c3d4 not supported` | The right label is this one: `supported`, `partially`, `not supported` or `unavailable` |
+| `a1b2c3d4 drop` | Leave this check out of the field set for good |
+
+- **Nothing has to be answered.** An unanswered spot-check stays accepted; an unanswered waiting row stays out of scoring.
+- **Spot-checks are the oversight.** Each digest draws five accepted labels at random. Two wrong in your last ten pauses auto-accepting: agreed rows then wait for you like the rest, until recent spot-checks pass again. A decision on such a held row counts as a spot-check too.
+- **Only your comments are read** (the repository owner's), and only on issues labelled `feedback-digest`. Replies to last week's closed digest still work.
+- **Never delete a row by hand.** A missing check id looks untriaged and is read again the next night; `drop` keeps it as a marker. A row you decided is never overwritten, even by `--retriage`.
 
 ## Using the field set
 
@@ -55,21 +65,24 @@ Only rows with `needs_manual_review: false` are run, and rows with an `excluded_
    - `NEON_LOOP_DATABASE_URL`: that connection string.
    - `ANTHROPIC_API_KEY`: already set for the talk-page scraper.
    - Optional variable `ADJUDICATOR_MODEL` to override the default (`claude-opus-5-5`).
-3. **Let Actions open PRs:** Settings → Actions → General → Workflow permissions → *Allow GitHub Actions to create and approve pull requests*.
-4. Scheduled workflows run only from `main`, so nothing happens until this is merged. Then run **Feedback triage** by hand: first with *dry run* ticked, then with a small limit (say 10) to see a first PR.
+3. Scheduled workflows run only from `main`, so nothing happens until this is merged. Then run **Feedback triage** by hand, first with *dry run* ticked, then with a small limit (say 10), and **Feedback digest** by hand to see the first digest.
 
-Both workflows skip quietly, with a notice, until `NEON_LOOP_DATABASE_URL` exists.
+Triage and the monitor skip quietly, with a notice, until `NEON_LOOP_DATABASE_URL` exists. The bots push to `main` the way the scraper and edit-log jobs already do; if `main` is ever protected, they need the same exemption.
 
 ## Running locally
 
 Export cases with any Postgres client using the role above, then:
 
 ```bash
-node feedback-loop/run-triage.js --cases cases.json --dry-run
+node feedback-loop/run-triage.js --cases cases.json --dry-run --report report.md
 ```
 
 ```bash
-ANTHROPIC_API_KEY=... node feedback-loop/run-triage.js --cases cases.json --limit 5
+ANTHROPIC_API_KEY=... node feedback-loop/run-triage.js --cases cases.json --limit 5 --report report.md
+```
+
+```bash
+node feedback-loop/digest.js render --out digest.md
 ```
 
 ```bash
@@ -80,11 +93,12 @@ node feedback-loop/monitor.js sql > monitor.sql
 
 ## Cost
 
-Per case, the blind reading sends the prompt (~800 tokens) plus the source. Re-fetched sources in a sample of 11 real cases ran from 332 to 100,000 characters, median 7,800, mean 18,000 (about 4,500 tokens). The attribution call (~1,200 tokens) happens only on disagreements. So a night at the default `--limit 40` is roughly 250,000 input tokens plus output; the first backfill of ~500 rated checks is about 3 million. Check current pricing for the model you choose. `--limit` and `ADJUDICATOR_MODEL` are the two levers.
+Per case, the blind reading sends the prompt (~800 tokens) plus the source. Re-fetched sources in a sample of 11 real cases ran from 332 to 100,000 characters, median 7,800, mean 18,000 (about 4,500 tokens). The attribution call (~1,200 tokens) happens only on disagreements. So a night at the default `--limit 40` is roughly 250,000 input tokens plus output; the first backfill of ~500 rated checks is about 3 million. Check current pricing for the model you choose. `--limit` and `ADJUDICATOR_MODEL` are the two levers. The digest, the replies and the monitor call no model.
 
 ## Known limits
 
 - **Rationale patterns are English.** `localizeSystemPrompt()` makes the tool explain itself in the wiki's language, so on de/it/vi/… wikis the hints and the monitor's pattern rates see nothing. Verdict shares and fetch failures are unaffected.
 - **Group checks are skipped** in triage. The collective prompt combines several sources, and re-assembling them isn't built yet.
 - **The source is re-fetched now, not as the tool saw it.** The log doesn't keep source text. A tool quote that verified then but not now is flagged as drift and sent to the owner.
+- **Editors' written explanations aren't used yet.** Talk-page comments become GitHub issues, but never reach the case they are about; see the design plan's *Next*.
 - **Source text is stored** in the field set, as `dataset.json` already does for its 189 rows.
