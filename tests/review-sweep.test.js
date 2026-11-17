@@ -8,6 +8,7 @@ import { gzipSync } from 'node:zlib';
 import { findingToCsvLine, csvHeaderLine } from '../service/csv-report.js';
 import {
     matchKey, unescapeMariadb, readOldFindings, reviewSweep, renderReport, renderSample,
+    deliveryCounts, hostExcluded, GARBLED_RATIONALE,
 } from '../scripts/review-sweep.js';
 
 const base = {
@@ -80,4 +81,58 @@ test('review: SOURCE UNAVAILABLE is split by cause, and old verdicts are joined'
     assert.match(report, /NOT SUPPORTED → SUPPORTED \| 1/);
     const sampleCsv = renderSample(sample);
     assert.match(sampleCsv, /на возвращение/, 'old rationale, with its escaped newline restored');
+});
+
+// --- delivery options and charset-isolating comparisons ---
+
+
+test('problem hosts match as a suffix, not a substring', () => {
+    assert.equal(hostExcluded('www.youtube.com'), true);
+    assert.equal(hostExcluded('youtube.com'), true);
+    assert.equal(hostExcluded('notyoutube.com'), false);
+    assert.equal(hostExcluded('web.archive.org'), false);
+});
+
+test('garbled-source rationales are recognised in Russian and English', () => {
+    assert.match('Исходный текст содержит кодировочные ошибки (mojibake)', GARBLED_RATIONALE);
+    assert.match('Предоставленный текст содержит нечитаемые символы', GARBLED_RATIONALE);
+    assert.doesNotMatch('В тексте не упоминается запрет на возвращение', GARBLED_RATIONALE);
+});
+
+test('delivery tiers narrow cumulatively, drop problem hosts and table-like articles', async () => {
+    const page = { ...base, pageTitle: 'Обычная статья', pageId: 1 };
+    const table = { ...base, pageTitle: 'Список эпизодов', pageId: 2 };
+    const findings = [
+        { ...page, citationNumber: '1', claimText: 'Обычное утверждение о событии', sourceUrl: 'https://a.ru/1',
+          verdict: 'NOT SUPPORTED', reasonType: 'contradiction', quoteStatus: 'exact', rationale: 'Источник говорит иначе о событии.' },
+        { ...page, citationNumber: '2', claimText: 'Обычное утверждение о событии', sourceUrl: 'https://a.ru/2',
+          verdict: 'NOT SUPPORTED', reasonType: 'contradiction', quoteStatus: 'not-found', rationale: 'Источник говорит иначе о событии.' },
+        { ...page, citationNumber: '3', claimText: 'Обычное утверждение о событии', sourceUrl: 'https://a.ru/3',
+          verdict: 'NOT SUPPORTED', reasonType: 'omission', rationale: 'В источнике это не упоминается вовсе.' },
+        { ...page, citationNumber: '4', claimText: 'Обычное утверждение о событии', sourceUrl: 'https://a.ru/4',
+          verdict: 'PARTIALLY SUPPORTED', rationale: 'Источник подтверждает только часть утверждения.' },
+        { ...page, citationNumber: '5', claimText: 'Обычное утверждение о событии', sourceUrl: 'https://www.youtube.com/watch?v=x',
+          verdict: 'NOT SUPPORTED', reasonType: 'contradiction', quoteStatus: 'exact', rationale: 'Только навигация страницы YouTube.' },
+        // Ten table-cell claims make article 2 table-like; its flags all go.
+        ...Array.from({ length: 10 }, (_, i) => ({ ...table, citationNumber: String(i), claimText: `${i}.${i} — 12.03.2019 — 1:2`,
+          sourceUrl: `https://b.ru/${i}`, verdict: 'NOT SUPPORTED', reasonType: 'contradiction', quoteStatus: 'exact',
+          rationale: 'Источник указывает другую дату выхода эпизода.' })),
+    ];
+    const dir = await mkdtemp(join(tmpdir(), 'review-delivery-'));
+    const csv = join(dir, 'clean.csv');
+    await writeFile(csv, csvHeaderLine() + findings.map(findingToCsvLine).join(''));
+    const { summary } = await reviewSweep(csv);
+    const { totals, tableLike } = deliveryCounts(summary);
+    assert.deepEqual(tableLike, ['Список эпизодов']);
+    assert.deepEqual(totals, [15, 4, 3, 2, 1]);
+    assert.match(renderReport(summary), /Delivery options/);
+});
+
+test('old-vs-new also reports safeguard-only rows and garbled-rationale rows', async () => {
+    const { csv, oldPath } = await fixture();
+    const old = await readOldFindings(oldPath);
+    const { summary } = await reviewSweep(csv, { old });
+    assert.deepEqual(summary.old.safeguardTransitions, { 'NOT SUPPORTED → SUPPORTED': 1, 'SUPPORTED → NOT SUPPORTED': 1 });
+    assert.equal(summary.old.garbledMentions, 0);
+    assert.match(renderReport(summary), /Same model both times/);
 });

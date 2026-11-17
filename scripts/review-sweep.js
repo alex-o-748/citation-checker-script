@@ -11,6 +11,7 @@
 // Usage:
 //   node scripts/review-sweep.js ru-rerun-snapshot.csv
 //   node scripts/review-sweep.js ru-rerun-snapshot.csv --old ru-pre-charset.tsv.gz --out ru-review
+//   node scripts/review-sweep.js ru-rerun-clean.csv --exclude-hosts youtube.com,vk.com   # delivery counts
 //
 // --old takes the old findings as `mariadb -B` output (tab-separated, with a
 // header row; .gz is read transparently), e.g.
@@ -32,10 +33,41 @@ import { fileURLToPath } from 'node:url';
 
 import { streamCsvRows } from '../service/csv-stream.js';
 import { hostOf } from '../service/host-pool.js';
-import { scriptShare } from '../service/sweep-checks.js';
+import { scriptShare, isTableLikeClaim, THRESHOLDS } from '../service/sweep-checks.js';
 import { VERDICT_LIST } from '../core/verdicts.js';
 
 const FLAGGED = new Set(['NOT SUPPORTED', 'PARTIALLY SUPPORTED']);
+const VERIFIED_QUOTE = new Set(['exact', 'normalized', 'partial']);
+const SAFEGUARD = 'llm-gpt-oss-safeguard-20b';
+
+// Hosts whose pages reach the model as a JavaScript shell, viewer, login or
+// cookie wall, so "not mentioned" there means "not fetched". From the
+// November 2026 ruwiki rerun, where each was flagged on 80-100% of judged
+// citations. Matched as a suffix, so youtube.com covers www.youtube.com.
+export const DEFAULT_EXCLUDED_HOSTS = Object.freeze([
+    'atpworldtour.com', 'elib.biblioatom.ru', 'cia.gov', 'publication.pravo.gov.ru', 'inside.fifa.com',
+    'rutube.ru', 'youtube.com', 'youtu.be', 'yandex.ru', 'tvguide.com', 'vk.com', 'google.com', 'imdb.com',
+    'uefa.com', 'sportsecyclopedia.com', 'bloomberg.com', 'worldcat.org', 't.me', 'irbis-nbuv.gov.ua',
+]);
+
+export function hostExcluded(host, excluded = DEFAULT_EXCLUDED_HOSTS) {
+    const h = (host ?? '').toLowerCase();
+    return excluded.some(e => h === e || h.endsWith(`.${e}`));
+}
+
+// An old rationale that says the source itself was unreadable: the model
+// noticed the charset damage. A lower bound on checks that saw garbage, since
+// the Pessimist case (2026-11-05) is one where it did not notice.
+export const GARBLED_RATIONALE = /mojibake|кодировк|нечитаем|кракозябр|encoding|неразборчив|искажённ\S* символ|набор символов/i;
+
+// Each delivery tier keeps a subset of the one before.
+export const DELIVERY_TIERS = Object.freeze([
+    ['all-flagged', 'Every NOT / PARTIALLY SUPPORTED row'],
+    ['minus-problem-sources', 'minus problem hosts and table-like articles'],
+    ['not-supported', '…NOT SUPPORTED only'],
+    ['contradiction', '…contradiction only (the source says something else)'],
+    ['contradiction-quoted', '…with the contradicting passage verified in the source'],
+]);
 const CUT = 600;
 
 // Seeded so a sample can be reproduced (same PRNG as service/sweep-checks.js).
@@ -83,6 +115,8 @@ export function unescapeMariadb(field) {
 }
 
 export async function readOldFindings(path) {
+    // byKey also carries garbledMentions: old rows whose rationale says the
+    // source was unreadable (see GARBLED_RATIONALE).
     let stream = createReadStream(path);
     if (path.endsWith('.gz')) stream = stream.pipe(createGunzip());
     const lines = createInterface({ input: stream, crlfDelay: Infinity });
@@ -93,7 +127,11 @@ export async function readOldFindings(path) {
         if (!header) { header = fields; continue; }
         const row = Object.fromEntries(header.map((h, i) => [h, fields[i]]));
         byKey.set(matchKey(row.page_id, row.claim_text, row.source_url), row);
+        if (GARBLED_RATIONALE.test(row.rationale ?? '')) {
+            byKey.garbledMentions = (byKey.garbledMentions ?? 0) + 1;
+        }
     }
+    byKey.garbledMentions ??= 0;
     return byKey;
 }
 
@@ -106,7 +144,7 @@ const cut = s => ((s ?? '').length > CUT ? `${s.slice(0, CUT)}…` : (s ?? ''));
  * Streams the findings CSV once. `old` is the Map from readOldFindings(), or
  * null. Returns { summary, sample }.
  */
-export async function reviewSweep(csvPath, { old = null, seed = 1, perCategory = 25 } = {}) {
+export async function reviewSweep(csvPath, { old = null, seed = 1, perCategory = 25, excludedHosts = DEFAULT_EXCLUDED_HOSTS } = {}) {
     const random = mulberry32(seed);
     const s = {
         rows: 0, articles: new Set(), verdicts: {}, models: {},
@@ -116,7 +154,14 @@ export async function reviewSweep(csvPath, { old = null, seed = 1, perCategory =
         rowsByHost: {}, flaggedByHost: {}, modelRowsByHost: {},
         quoteStatusFlagged: {},
         nonCyrillicRationales: 0, rationalesChecked: 0,
-        old: old ? { matched: 0, transitions: {}, oldModels: {} } : null,
+        old: old ? {
+            matched: 0, transitions: {}, oldModels: {},
+            safeguardTransitions: {}, garbledMentions: old.garbledMentions ?? 0, garbledTransitions: {},
+        } : null,
+        // Per article: rows, table-like claims, and flagged rows surviving each
+        // delivery tier (host exclusion already applied from tier 1 on).
+        delivery: new Map(),
+        excludedHosts,
     };
     const categories = {
         'not-supported': reservoir(perCategory, random),
@@ -155,9 +200,29 @@ export async function reviewSweep(csvPath, { old = null, seed = 1, perCategory =
                     s.old.matched++;
                     bump(s.old.transitions, `${oldRow.verdict} → ${v}`);
                     bump(s.old.oldModels, oldRow.model);
+                    if (oldRow.model === SAFEGUARD) bump(s.old.safeguardTransitions, `${oldRow.verdict} → ${v}`);
+                    if (GARBLED_RATIONALE.test(oldRow.rationale ?? '')) bump(s.old.garbledTransitions, `${oldRow.verdict} → ${v}`);
                 }
             }
             const item = { row, oldRow };
+
+            let art = s.delivery.get(row.page_title);
+            if (!art) s.delivery.set(row.page_title, art = { rows: 0, tableLike: 0, tiers: new Array(DELIVERY_TIERS.length).fill(0) });
+            art.rows++;
+            if (isTableLikeClaim(row.claim_text, THRESHOLDS.tableLikeLetterShare)) art.tableLike++;
+            if (FLAGGED.has(v)) {
+                art.tiers[0]++;
+                if (!hostExcluded(host, excludedHosts)) {
+                    art.tiers[1]++;
+                    if (v === 'NOT SUPPORTED') {
+                        art.tiers[2]++;
+                        if (row.reason_type === 'contradiction') {
+                            art.tiers[3]++;
+                            if (VERIFIED_QUOTE.has(row.quote_status)) art.tiers[4]++;
+                        }
+                    }
+                }
+            }
 
             if (v === 'SOURCE UNAVAILABLE') {
                 if (row.reason_type === 'fetch_failed') s.unavailable.fetch_failed++;
@@ -244,6 +309,8 @@ export function renderReport(s) {
     for (const [k, n] of top(s.quoteStatusFlagged, 10)) L.push(`| ${k} | ${n} |`);
     L.push('', `Rationales not in Russian: ${s.nonCyrillicRationales} of ${s.rationalesChecked} checked (${pct(s.nonCyrillicRationales, s.rationalesChecked)}).`, '');
 
+    L.push(...renderDelivery(s), '');
+
     if (s.old) {
         L.push('## Compared with the previous run', '');
         L.push(`${s.old.matched} rows matched an old finding on page + claim + source URL (${pct(s.old.matched, s.rows)} of new rows). Old models: ${top(s.old.oldModels, 5).map(([k, n]) => `${k} ${n}`).join(', ')}.`, '');
@@ -252,8 +319,65 @@ export function renderReport(s) {
         L.push(`Unchanged: ${same} (${pct(same, s.old.matched)}). Changed:`, '', '| Old → new | Rows |', '|---|---|');
         for (const [k, n] of changed.sort((a, b) => b[1] - a[1]).slice(0, 20)) L.push(`| ${k} | ${n} |`);
         L.push('');
+        L.push(...renderTransitions('### Same model both times (old row was safeguard)',
+            'Holding the model fixed leaves the charset fix and run-to-run variation (temperature 0.1) as the causes of a change.',
+            s.old.safeguardTransitions));
+        L.push(`### Old checks whose rationale said the source was unreadable`, '',
+            `${s.old.garbledMentions} old rows' rationales mention mojibake / unreadable encoding. A lower bound on checks that saw a garbled source: a model that did not notice (the reported Еврейские беженцы case) leaves no such trace.`, '');
+        L.push(...renderTransitions('', '', s.old.garbledTransitions, { includeUnchanged: true }));
     }
     return L.join('\n');
+}
+
+function renderTransitions(title, note, transitions, { includeUnchanged = false } = {}) {
+    const L = [];
+    if (title) L.push(title, '');
+    if (note) L.push(note, '');
+    const total = Object.values(transitions).reduce((a, n) => a + n, 0);
+    const rows = Object.entries(transitions)
+        .filter(([k]) => includeUnchanged || k.split(' → ')[0] !== k.split(' → ')[1])
+        .sort((a, b) => b[1] - a[1]);
+    const same = Object.entries(transitions).filter(([k]) => k.split(' → ')[0] === k.split(' → ')[1]).reduce((a, [, n]) => a + n, 0);
+    L.push(`${total} matched rows; unchanged ${same} (${pct(same, total)}).`, '', '| Old → new | Rows |', '|---|---|');
+    for (const [k, n] of rows.slice(0, 15)) L.push(`| ${k} | ${n} |`);
+    L.push('');
+    return L;
+}
+
+export function tableLikeArticle(art) {
+    return art.rows >= THRESHOLDS.tableLikeArticleMinRows && art.tableLike / art.rows >= THRESHOLDS.tableLikeArticleShare;
+}
+
+export function deliveryCounts(s) {
+    const totals = new Array(DELIVERY_TIERS.length).fill(0);
+    const perArticle = DELIVERY_TIERS.map(() => []);
+    const tableLike = [];
+    for (const [title, art] of s.delivery) {
+        const excludeArticle = tableLikeArticle(art);
+        if (excludeArticle) tableLike.push(title);
+        art.tiers.forEach((n, i) => {
+            const kept = i >= 1 && excludeArticle ? 0 : n;
+            totals[i] += kept;
+            perArticle[i].push(kept);
+        });
+    }
+    return { totals, perArticle, tableLike };
+}
+
+function renderDelivery(s) {
+    const { totals, perArticle, tableLike } = deliveryCounts(s);
+    const articles = s.delivery.size;
+    const L = ['## Delivery options', '',
+        'Flagged rows left by each filter, cumulatively. Run this over the clean CSV to see what would actually be delivered.', '',
+        '| Filter | Flags | Articles with ≥1 | Median per article (those with ≥1) |', '|---|---|---|---|'];
+    DELIVERY_TIERS.forEach(([, label], i) => {
+        const withAny = perArticle[i].filter(n => n > 0).sort((a, b) => a - b);
+        const median = withAny.length ? withAny[Math.floor(withAny.length / 2)] : 0;
+        L.push(`| ${label} | ${totals[i]} | ${withAny.length} of ${articles} | ${median} |`);
+    });
+    L.push('', `Problem hosts excluded: ${s.excludedHosts.join(', ')}.`, '');
+    L.push(`Table-like articles excluded (${tableLike.length}): ${tableLike.join(' · ') || 'none'}.`);
+    return L;
 }
 
 function csvCell(value) {
@@ -283,6 +407,7 @@ async function main(argv) {
             out: { type: 'string' },
             seed: { type: 'string', default: '1' },
             'per-category': { type: 'string', default: '25' },
+            'exclude-hosts': { type: 'string' },
         },
     });
     const csv = positionals[0];
@@ -290,7 +415,12 @@ async function main(argv) {
     const out = values.out ?? csv.replace(/\.csv$/, '') + '-review2';
     const old = values.old ? await readOldFindings(values.old) : null;
     if (old) process.stderr.write(`old findings: ${old.size} rows\n`);
-    const { summary, sample } = await reviewSweep(csv, { old, seed: Number(values.seed), perCategory: Number(values['per-category']) });
+    const excludedHosts = values['exclude-hosts']
+        ? values['exclude-hosts'].split(',').map(h => h.trim().toLowerCase()).filter(Boolean)
+        : DEFAULT_EXCLUDED_HOSTS;
+    const { summary, sample } = await reviewSweep(csv, {
+        old, seed: Number(values.seed), perCategory: Number(values['per-category']), excludedHosts,
+    });
     const report = renderReport(summary);
     await writeFile(`${out}.md`, report + '\n');
     await writeFile(`${out}-sample.csv`, renderSample(sample));
