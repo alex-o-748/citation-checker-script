@@ -4,7 +4,13 @@ This run checks `PROMPT_VERSION` v3, which sends the citation as the article
 shows it, the source URL and today's date with every check. That is cause 1 of
 `docs/design-plans/2026-11-08-fixable-causes-of-disputed-verdicts.md`.
 
-**Short answer: on the main metric (Supported vs everything else), no
+> **Update (2026-11-17), read this first.** A re-run on the 263-row dataset
+> (v4 added) changes the reading below. Two more runs of v3 on GPT-OSS-20b
+> score the same as the old prompt, so the 2026-11-15 loss was most likely a
+> low run. The rule without "for nothing else in the claim" is the variant that
+> loses, in all four of its GPT-OSS runs. See the last section.
+
+**Short answer (2026-11-15, superseded above): on the main metric (Supported vs everything else), no
 collateral damage on Qwen3.8, and a small loss on GPT-OSS-20b that is about
 the size of the noise. This benchmark barely tests what the change is for.**
 
@@ -176,3 +182,79 @@ Good citations wrongly flagged:
   reading a footnote's own text (a `|quote=`, a descriptive title) as support
   for the claim's substance. Without it, the rule still lists what the
   citation is evidence for, but no longer says it is evidence for nothing else.
+
+## Re-run on 263 rows (2026-11-17)
+
+v4 brought the dataset to 263 rows. It adds 74 rows from the Source
+Verification QA sheet, every one of them a batch-pipeline flag that a volunteer
+reviewed (`docs/benchmark-v4-source-verification-qa-2026-11-17.md`). 249 rows
+are scored. `citation_text` was backfilled for v4 by the `cite_ref` id in each
+row's provenance, because their citation numbers are approximate. 72 of the 73
+v4 rows that cite a source have one.
+
+- **Old prompt:** a fresh run of `main` at `604f373`. The second control is
+  `main`'s own same-day run, `benchmark/results_three_way_2026-11-17.json`.
+- **v3:** this branch as committed. Two runs on GPT-OSS, one on Qwen3.8.
+- **Edited rule:** v3 without "and for nothing else in the claim". Two runs on
+  GPT-OSS, one on Qwen3.8.
+- `BENCHMARK_TODAY=2026-11-17`. Raw rows are in
+  `benchmark/results_citation_details_2026-11-17.json`.
+
+Supported vs everything else, all 249 scored rows:
+
+| Model | Old prompt | v3 as committed | Edited rule |
+|---|---|---|---|
+| GPT-OSS-20b | 82.7%, 82.7% | 82.3%, 82.7% | 81.1%, 80.7% |
+| Qwen3.8 | 83.5%, 83.1% | 82.3% | 83.1% |
+
+Good citations wrongly flagged (of 91 Supported rows):
+
+| Model | Old prompt | v3 as committed | Edited rule |
+|---|---|---|---|
+| GPT-OSS-20b | 37, 36 | 39, 36 | 40, 40 |
+| Qwen3.8 | 25, 27 | 26 | 25 |
+
+The same split by subset. v1–v3 (181 rows) is the set the 2026-11-15 runs
+used; v4 (68 rows) is new.
+
+| Model | Run | v1–v3 correct | v1–v3 good flagged | v4 correct | v4 good flagged |
+|---|---|---|---|---|---|
+| GPT-OSS-20b | old ×2 | 80.1%, 79.6% | 31, 30 | 89.7%, 91.2% | 6, 6 |
+| GPT-OSS-20b | v3 ×2 | 80.7%, 80.1% | 31, 30 | 86.8%, 89.7% | 8, 6 |
+| GPT-OSS-20b | edited ×2 | 77.9%, 77.3% | 33, 34 | 89.7%, 89.7% | 7, 6 |
+| Qwen3.8 | old ×2 | 82.3%, 81.2% | 20, 22 | 86.8%, 88.2% | 5, 5 |
+| Qwen3.8 | v3 | 81.2% | 21 | 85.3% | 5 |
+| Qwen3.8 | edited | 82.9% | 20 | 83.8% | 5 |
+
+**All GPT-OSS runs on v1–v3 so far** (Supported vs everything else):
+
+| Prompt | Runs | Mean |
+|---|---|---|
+| Old | 80.1, 79.6, 80.1, 79.6 | 79.9% |
+| v3 as committed | 76.8, 80.7, 80.1 | 79.2% |
+| Lines, no rule | 77.3 | 77.3% |
+| Edited rule | 77.9, 76.8, 77.9, 77.3 | 77.5% |
+
+### Reading it
+
+- **v3 as committed shows no clear damage on either model.** On all 249
+  rows it is within a point of the old prompt on both. On GPT-OSS, two of its
+  three v1–v3 runs match the old prompt, and the third, from 2026-11-15, is
+  the outlier. The 2026-11-15 conclusion that "the lines cause the loss" rested
+  on that one run and on the one lines-only run. It does not hold up.
+- **Dropping "for nothing else in the claim" does hurt GPT-OSS.** All four
+  edited-rule runs land at 76.8–77.9% on v1–v3, against an old prompt that
+  never left 79.6–80.1%. With the lines-only run at 77.3%, the likely reading is
+  that the lines alone cost GPT-OSS about 2 points, and the clause wins them
+  back. On Qwen3.8 the edited rule is neutral.
+- **The old prompt is very stable run to run on GPT-OSS** (four runs within
+  half a point on v1–v3). The prompts with the citation lines vary more. That
+  is part of why a single run misled.
+- **v4 is too small to separate the prompts.** 68 rows and 11 Supported, so a
+  flagged good citation or a missed failing one moves it 1.5 points. Every run
+  scores 84–91% there, in no consistent order.
+
+**Keep the rule as committed.** v3 with the clause is the best-supported
+choice: neutral on both models over 249 rows, and the clause is both a
+safeguard and, on GPT-OSS, worth about 2 points. The field replay of the rated
+date rows is still the test of whether the change does what it is for.
