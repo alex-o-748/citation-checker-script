@@ -176,6 +176,12 @@ export async function runReplay(opts, {
     stderr.write(`replay: ${rows.length} row(s) from ${opts.dataset}\n`);
 
     const titles = [...new Set(rows.map(r => r.article_title))];
+    // Redirects are followed (service/wikipedia-pageids.js), which is what
+    // replay wants: a row's oldid was a revision of the article, and on a
+    // rename the article keeps its page id while the old title becomes a new
+    // redirect page. The redirect stub's id would pair the pinned oldid with
+    // a page it never belonged to. The row's own title and oldid are still
+    // what the finding records.
     let pageIds;
     try {
         pageIds = await resolvePageIdsFn(titles);
@@ -183,7 +189,10 @@ export async function runReplay(opts, {
         stderr.write(`replay: could not resolve page IDs: ${error.message}\n`);
         return 1;
     }
-    stderr.write(`replay: resolved ${pageIds.size}/${titles.length} article title(s) to page IDs\n`);
+    // Counted over the requested titles, not pageIds.size: the map also keys
+    // normalized and redirect-target forms, which would overcount.
+    const resolvedCount = titles.filter(title => pageIds.has(title)).length;
+    stderr.write(`replay: resolved ${resolvedCount}/${titles.length} article title(s) to page IDs\n`);
 
     let connection = null;
     let queryFn = null;

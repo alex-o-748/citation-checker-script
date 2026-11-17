@@ -4,8 +4,11 @@ import assert from 'node:assert/strict';
 import { sentencexLastSentence } from '../service/sentences.js';
 import { lastSentence } from '../core/claim.js';
 
-// The cases the regex splitter gets wrong: an abbreviation or an initial
-// followed by a capital. sentencex must keep each whole.
+// An abbreviation or an initial followed by a capital. Both splitters must
+// keep each whole. Until 2026-10-23 the userscript's regex cut every one of
+// these (and this test pinned that gap); it now carries the initials and
+// abbreviation rules in core/claim.js. The batch pipeline still uses
+// sentencex, whose lists cover ~244 languages rather than the sidebar's five.
 const ABBREVIATION_CASES = [
     ['ru', 'Поэму написал А. С. Пушкин в 1833 году.'],
     ['ru', 'В 1837 г. Пушкин погиб на дуэли.'],
@@ -15,11 +18,9 @@ const ABBREVIATION_CASES = [
 ];
 
 for (const [lang, text] of ABBREVIATION_CASES) {
-    test(`sentencexLastSentence (${lang}) keeps "${text}" whole`, () => {
+    test(`sentencexLastSentence (${lang}) and lastSentence keep "${text}" whole`, () => {
         assert.equal(sentencexLastSentence(lang)(text), text);
-        // Pins why the batch pipeline doesn't use the regex: if this starts
-        // passing, the regex caught up and the dependency can be revisited.
-        assert.notEqual(lastSentence(text), text);
+        assert.equal(lastSentence(text), text);
     });
 }
 

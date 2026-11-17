@@ -46,10 +46,12 @@ test('buildUpsertQuery binds all values and computes hashes internally', () => {
     const placeholderCount = (sql.match(/\?/g) || []).length;
     assert.equal(placeholderCount, params.length);
 
-    // Check that we have 28 parameters (matching the schema, including
+    // Check that we have 30 parameters (matching the schema, including
     // source_quote / quote_status added in service/migrations/
-    // 002-add-quote-columns.sql)
-    assert.equal(params.length, 28);
+    // 002-add-quote-columns.sql, and check_kind / lead_demoted added in
+    // 006-lead-check.sql)
+    assert.equal(params.length, 30);
+    assert.deepEqual(params.slice(-2), ['citation', 0], 'a finding with no check_kind is a citation check, not demoted');
 
     // Check that hashes are computed correctly
     const expectedClaimHash = claimHash(finding.claimText);
@@ -226,7 +228,7 @@ test('upsertFinding calls query with the constructed SQL and parameters', async 
     assert.match(call.sql, /ON DUPLICATE KEY UPDATE/);
 
     // Check that we have the right number of parameters
-    assert.equal(call.params.length, 28);
+    assert.equal(call.params.length, 30);
 });
 
 test('selectCheckedPageIds returns the page ids already stored for a wiki', async () => {
@@ -239,4 +241,14 @@ test('selectCheckedPageIds returns the page ids already stored for a wiki', asyn
     assert.deepEqual([...ids], [12, 34]);
     assert.deepEqual(calls[0].params, ['ruwiki']);
     assert.match(calls[0].sql, /SELECT DISTINCT page_id FROM citation_findings WHERE wiki = \?/);
+});
+
+test('buildUpsertQuery writes a lead row\'s check_kind and a demoted citation\'s flag', () => {
+    const base = {
+        wiki: 'enwiki', pageId: 1, pageTitle: 'T', revisionId: 2, claimText: 'A lead sentence.',
+        sourceUrl: 'https://en.wikipedia.org/w/index.php?curid=1', verdict: 'SUPPORTED',
+    };
+    assert.deepEqual(buildUpsertQuery({ ...base, checkKind: 'lead_body' }).params.slice(-2), ['lead_body', 0]);
+    assert.deepEqual(buildUpsertQuery({ ...base, leadDemoted: true }).params.slice(-2), ['citation', 1]);
+    assert.match(buildUpsertQuery(base).sql, /check_kind = VALUES\(check_kind\),\n\s*lead_demoted = VALUES\(lead_demoted\)/);
 });
