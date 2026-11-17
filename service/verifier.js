@@ -269,6 +269,9 @@ function groupEntries(members) {
         content: m.source?.content ?? null,
         error: m.source?.error ?? null,
         status: m.source?.status ?? null,
+        // Set by run-sweep.js once the member's own check is in
+        // (core/groups.js's isJudgedUnavailable()).
+        judgedUnavailable: Boolean(m.judgedUnavailable),
     }));
 }
 

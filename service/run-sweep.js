@@ -72,6 +72,7 @@ import { fetchSourceContent, STUB_FETCH_ERROR } from '../core/worker.js';
 import { createHostGate, DEFAULT_FETCH_CONCURRENCY } from './host-pool.js';
 import { verifyCitation, verifyGroup, verifyLead, makeModelCaller, ProviderAuthError } from './verifier.js';
 import { isLeadDemotedVerdict } from '../core/lead.js';
+import { isJudgedUnavailable } from '../core/groups.js';
 import { leadChunkSize, LEAD_OUTCOMES } from '../core/lead-check.js';
 import { assembleFinding, assembleGroupFinding, assembleLeadFinding } from './finding-builder.js';
 import { assessSeverity, needsSeverity, assembleGroupText, groupHasUnreadSource } from './severity-assessor.js';
@@ -340,6 +341,13 @@ function makeLiveFetchSource() {
 
 function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// A promise with its resolve exposed, for one task to wait on another.
+function settleable() {
+    let resolve;
+    const promise = new Promise(r => { resolve = r; });
+    return { promise, resolve };
 }
 
 // Splits one article's citations into solo citations and adjacent groups
@@ -912,15 +920,28 @@ export async function runSweep(opts, {
             // report it instead.
             const leadChecked = Boolean(opts.leadCheck && article.lead?.body?.text && article.lead.sentences.length);
 
+            // A group's combined check waits for its members' own checks: a
+            // source its own check found no text behind (an error page, a
+            // paywall preview) is unread for the group too
+            // (core/groups.js's isJudgedUnavailable()). Every member's solo
+            // task is yielded before its group's, so by the time a worker
+            // takes the group task, each member is already running or done:
+            // the wait can't deadlock, at any --concurrency.
+            const ownChecks = new Map(groups.flatMap(members => firstPerFootnote(members).map(m => [m, settleable()])));
             for (const citation of [...solos, ...groups.flatMap(firstPerFootnote)]) {
                 funnel.citationsSeen++;
                 if (citation.url) funnel.citationsWithUrl++;
                 if (citation.source?.content) funnel.citationsFetched++;
+                // Fetch-level only: a member's own finding is ranked as soon
+                // as it is verified, before its siblings' verdicts are in.
                 const unreadSources = citation.groupSize > 1 && unreadGroups.has(citation.groupId);
-                yield { kind: 'solo', wikiCandidate, citation, unreadSources, leadChecked };
+                yield { kind: 'solo', wikiCandidate, citation, unreadSources, leadChecked, ownCheck: ownChecks.get(citation) ?? null };
             }
             for (const members of groups) {
-                yield { kind: 'group', wikiCandidate, members, leadChecked };
+                yield {
+                    kind: 'group', wikiCandidate, members, leadChecked,
+                    ownChecks: firstPerFootnote(members).map(m => ownChecks.get(m).promise),
+                };
             }
             if (leadChecked) yield { kind: 'lead', wikiCandidate, lead: article.lead };
         }
@@ -1025,7 +1046,12 @@ export async function runSweep(opts, {
 
     async function worker(tasks) {
         for await (const task of tasks) {
-            if (halted) continue; // drain without dispatching new model calls
+            if (halted) {
+                // Drain without dispatching new model calls, but release any
+                // group task already waiting on this one.
+                task.ownCheck?.resolve();
+                continue;
+            }
 
             if (task.kind === 'solo') {
                 let verification;
@@ -1042,6 +1068,10 @@ export async function runSweep(opts, {
                 } finally {
                     recordVerifyDuration(verifyStartedAt);
                     finish();
+                    if (task.ownCheck) {
+                        task.citation.judgedUnavailable = isJudgedUnavailable(verification?.verdict);
+                        task.ownCheck.resolve();
+                    }
                 }
                 if (!verification) continue;
                 if (verification.usage) {
@@ -1070,6 +1100,8 @@ export async function runSweep(opts, {
                 let verification;
                 const verifyStartedAt = Date.now();
                 const { onAttemptFailed, finish } = trackRetries();
+                await Promise.all(task.ownChecks);
+                if (halted) continue;
                 try {
                     verification = await verifyGroup(task.members, {
                         callModel, retry: { ...retryOptions, onAttemptFailed }, articleLangCode,

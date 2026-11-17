@@ -36,19 +36,21 @@ export function isGroupClose(citation) {
  * `url|page=N`-keyed sourceCache, while the batch pipeline already carries
  * each citation's resolved `source` object directly
  * (service/claim-extractor.js's processArticle output). It must return
- * `{ key, url, content, error, status, citation? }` — `key` is the dedup key;
- * the rest become the entry's fields the first time that key is seen.
+ * `{ key, url, content, error, status, citation?, judgedUnavailable? }` — `key`
+ * is the dedup key; the rest become the entry's fields the first time that
+ * key is seen. `judgedUnavailable` (see isJudgedUnavailable()) drops the
+ * source's text from the entry if any member sharing the key sets it.
  * `citation` is the member's footnote text (core/citations.js's
  * referenceText), shown to the model under the source's URL.
  *
  * @param {Array<object>} members - Group members, sharing one groupId.
- * @param {(member: object) => {key: string, url?: string|null, content?: string|null, error?: string|null, status?: number|null, citation?: string|null}} sourceFor
+ * @param {(member: object) => {key: string, url?: string|null, content?: string|null, error?: string|null, status?: number|null, citation?: string|null, judgedUnavailable?: boolean}} sourceFor
  * @returns {Array<{citationNumbers: (string|number)[], url: string|null, citation: string|null, content: string|null, error: string|null, status: number|null}>}
  */
 export function groupSourceEntries(members, sourceFor) {
     const byKey = new Map();
     for (const member of members) {
-        const { key, url, content, error, status, citation } = sourceFor(member);
+        const { key, url, content, error, status, citation, judgedUnavailable } = sourceFor(member);
         let entry = byKey.get(key);
         if (!entry) {
             entry = {
@@ -61,15 +63,54 @@ export function groupSourceEntries(members, sourceFor) {
             };
             byKey.set(key, entry);
         }
+        // Any member's own check finding no source behind the page is
+        // enough: two members citing one source share its text.
+        if (judgedUnavailable) markJudgedUnavailable(entry);
         entry.citationNumbers.push(member.citationNumber);
     }
     return Array.from(byKey.values());
 }
 
 /**
+ * Shown to the model, in place of the source's text, for a source whose own
+ * check came back SOURCE UNAVAILABLE.
+ */
+export const JUDGED_UNAVAILABLE_REASON = 'checked on its own, the page did not contain the source\'s text';
+
+/**
+ * Whether a member's own (solo) result means its source counts as unread for
+ * the group: the model, given the fetched page, said SOURCE UNAVAILABLE (an
+ * error page, a login wall, a paywalled preview). The fetch succeeded, so the
+ * text alone can't tell; the solo verdict can.
+ *
+ * Without this the group's combined check still read that page as a source
+ * and could reach PARTIALLY SUPPORTED on the strength of a paywall preview
+ * while every member card said Unavailable: two readings of the same page,
+ * shown on one row. With it, the solo verdict, the stricter reading, wins
+ * everywhere: shouldSkipCollective() and hasUnreadSource() count the source
+ * as unread, and assembleGroupSources() labels it unavailable rather than
+ * sending its text.
+ *
+ * An ERROR is not a judgement about the page (the model call failed), so it
+ * leaves the source readable.
+ *
+ * @param {string|null|undefined} verdict - The member's solo verdict.
+ */
+export function isJudgedUnavailable(verdict) {
+    return String(verdict || '').toUpperCase() === 'SOURCE UNAVAILABLE';
+}
+
+function markJudgedUnavailable(entry) {
+    entry.content = null;
+    entry.status = null;
+    entry.error = JUDGED_UNAVAILABLE_REASON;
+}
+
+/**
  * Whether the collective (multi-source) verdict should be skipped in favor
  * of the group's existing per-source results. True when at most one member
- * source has usable text — with ≤1 available source, a collective verdict
+ * source has usable text (a source its own check judged unavailable has
+ * none; see isJudgedUnavailable()) — with ≤1 available source, a collective verdict
  * would just restate the solo one, so running it would burn a model call to
  * say nothing new.
  *
