@@ -32,7 +32,7 @@ benchmark/
   render_compare.js              # JSON / Markdown / self-contained HTML renderers for ComparisonResult
   wice.js                        # Pure WiCE -> dataset-row transform (external benchmark; see below)
   convert_wice.js                # Fetch + convert WiCE into dataset_wice.json (gitignored, regenerate with npm run wice:convert)
-  dataset.json                   # Current dataset (189 entries: v1: 76 + v2: 34 + v3: 79; counts drift as rows are added)
+  dataset.json                   # Current dataset (263 entries: v1: 76 + v2: 34 + v3: 79 + v4: 74; counts drift as rows are added)
   dataset_v1.json                # Frozen v1 snapshot for reproducing original analysis
   dataset_v3.json                # Frozen v3 snapshot (post strict-rubric audit, 2026-04-30)
   results.json                   # Raw benchmark results
@@ -316,6 +316,14 @@ Since 2026-10 `run-sweep.js` stores every finding in ToolsDB by default, and `ru
 - **The CSV is still the record; the store follows it.** A failed ToolsDB write is counted and reported, never fatal to the sweep, and the summary prints the `run-import-findings.js` command that backfills it. Halting a day-long batch over a database hiccup costs more than the row.
 - **The pick fails if it can't read ToolsDB**, rather than continuing without the filter: silently re-picking checked articles is the failure the filter exists to prevent.
 - **Apply migrations 003, 004 and 005 (`service/migrations/`) before the first store**, and 006 before the first store or import of any kind once the lead check is deployed, not only a `--lead-check` sweep: it adds `check_kind` and `lead_demoted`, and `buildUpsertQuery()` names both on every row, so without it every write fails with an unknown column (the sweep still finishes and writes its CSV; backfill with `run-import-findings.js` after migrating). 003 (citation_number INT → text) had never been applied to the live table when storing became the default; the first backfill lost ~10% of rows to `Incorrect integer value: 'a'` / `'2, 3'` until it was. 005 makes it TEXT, since a collective row joins every member's number and overflowed 64 characters. 004 widens `reason_type` (the pipeline writes 23-byte reasons into a 16-byte column) and `group_id` (Cyrillic ref names), and makes `provider` `NOT NULL DEFAULT ''`: it is part of the unique key, and MariaDB never matches NULLs there, so every re-store of a no-model row (SOURCE UNAVAILABLE, SKIPPED) used to insert a duplicate. `buildUpsertQuery()` writes `''` for "no model ran" to match.
+
+### `--titles-file` follows redirects (read before touching `resolveTitleInfo`)
+
+Reruns re-check an earlier batch by the titles stored in ToolsDB, and articles get renamed in between. `service/wikipedia-pageids.js`'s `resolveTitleInfo()` used to resolve a renamed title to its leftover `#REDIRECT` stub, which has no citations, so the sweep logged `skipped <title> — no_citations` and never checked the article (3 of 1,023 in the November 2026 ruwiki rerun). It now queries with `redirects=1` and returns `{ pageId, revisionId, title, redirectedFrom }`.
+
+- `run-sweep.js --titles-file` checks a redirected title **under the target's title** (REST fetch, `page_title`), logs `sweep: <old> redirects to <new>`, and writes the listed title to the CSV's `redirected_from` column (CSV-only; no ToolsDB column). Two listed titles that land on one article are checked once.
+- The coverage check counts a listed title as covered when it appears in `redirected_from`, so `run-checks.js --titles-file` over the original list stays honest without network access. A CSV written before this column existed gets the usual "missing columns" structure warning.
+- `run-replay.js` gets the target's page id too, which is the right one: on a rename the page id moves with the article, so it is the page its pinned oldid belongs to.
 
 ### Post-run checks (`service/sweep-checks.js`, read before adding a halt-or-record decision)
 

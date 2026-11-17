@@ -414,8 +414,9 @@ export function createSweepChecker({
         }
 
         let article = perArticle.get(title);
-        if (!article) perArticle.set(title, article = { rows: 0, tableLike: 0, revisions: new Set() });
+        if (!article) perArticle.set(title, article = { rows: 0, tableLike: 0, revisions: new Set(), redirectedFrom: null });
         article.rows++;
+        if (row.redirected_from) article.redirectedFrom = row.redirected_from;
         if (row.revision_id) article.revisions.add(row.revision_id);
 
         bump(verdicts, verdict || '(blank)');
@@ -598,9 +599,18 @@ export function createSweepChecker({
 
         // --- Coverage ---
         if (titles) {
-            const present = new Set(articleTitles);
+            // A listed title that had become a #REDIRECT was checked under
+            // its target's title (run-sweep.js --titles-file); the row's
+            // redirected_from names the listed one, so it counts as covered,
+            // and the target doesn't count as an article nobody listed.
+            const listed = new Set(titles);
+            const followed = [...perArticle.entries()]
+                .filter(([, a]) => a.redirectedFrom && listed.has(a.redirectedFrom))
+                .map(([target, a]) => [a.redirectedFrom, target]);
+            const present = new Set([...articleTitles, ...followed.map(([from]) => from)]);
+            const reachedByRedirect = new Set(followed.map(([, target]) => target));
             const missing = titles.filter(t => !present.has(t));
-            const extra = articleTitles.filter(t => !titles.includes(t));
+            const extra = articleTitles.filter(t => !listed.has(t) && !reachedByRedirect.has(t));
             const level = !missing.length ? LEVELS.PASS
                 : share(missing.length, titles.length) > thresholds.missingTitlesFail ? LEVELS.FAIL : LEVELS.WARN;
             add('coverage', level, 'Coverage',
@@ -608,6 +618,7 @@ export function createSweepChecker({
                     ? `${missing.length} of ${titles.length} title(s) have no rows (no citations, a failed article fetch — the run log's "sweep: skipped" lines say which — or lost): ${missing.slice(0, 15).join(' · ')}${missing.length > 15 ? ' …' : ''}`
                     : `all ${titles.length} title(s) have rows`,
                 [
+                    ...(followed.length ? [`${followed.length} title(s) had become redirects and were checked under the target's title: ${followed.slice(0, 10).map(([from, to]) => `${from} → ${to}`).join(' · ')}${followed.length > 10 ? ' …' : ''}`] : []),
                     ...(extra.length ? [`${extra.length} article(s) in the CSV are not in the titles list: ${extra.slice(0, 10).join(' · ')}`] : []),
                 ]);
         }

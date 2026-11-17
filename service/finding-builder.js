@@ -169,6 +169,7 @@ export function assembleFinding({
             wiki: candidate.wiki,
             pageId: candidate.pageId,
             pageTitle: candidate.title,
+            redirectedFrom: candidate.redirectedFrom ?? null,
             revisionId: candidate.revisionId,
             claimText: citation.claimText,
             citationNumber: citation.citationNumber ?? null,
@@ -241,6 +242,7 @@ export function assembleGroupFinding({
             wiki: candidate.wiki,
             pageId: candidate.pageId,
             pageTitle: candidate.title,
+            redirectedFrom: candidate.redirectedFrom ?? null,
             revisionId: candidate.revisionId,
             claimText: members[0]?.claimText ?? null,
             // Display only, per 001's schema comment — not an identifier.

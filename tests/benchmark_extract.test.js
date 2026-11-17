@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
-import { extractClaimsForCitation } from '../benchmark/extract_dataset.js';
+import { extractClaimsForCitation, parseCSVLine } from '../benchmark/extract_dataset.js';
 
 function mkDoc(html) {
     return new JSDOM(`<!DOCTYPE html><body>${html}</body>`).window.document;
@@ -46,4 +46,20 @@ test('extractClaimsForCitation: does NOT match [10] when asked for [1]', () => {
     `);
     const claims = extractClaimsForCitation(doc, 1);
     assert.deepEqual(claims, []);
+});
+
+test('parseCSVLine: a doubled quote inside a quoted field is a literal quote', () => {
+    // The claim text column carries quotations from the source; they must
+    // survive parsing, not toggle the quote state and vanish.
+    const line = '61,1,https://x,Supported,v4,"Brown said it has ""sharp-witted dialogue"", in short.",https://y,,';
+    const cols = parseCSVLine(line);
+    assert.equal(cols.length, 9);
+    assert.equal(cols[5], 'Brown said it has "sharp-witted dialogue", in short.');
+    assert.equal(cols[6], 'https://y');
+});
+
+test('parseCSVLine: unquoted fields and empty trailing fields', () => {
+    assert.deepEqual(parseCSVLine('a,b,,'), ['a', 'b', '', '']);
+    assert.deepEqual(parseCSVLine('"a,b",c'), ['a,b', 'c']);
+    assert.deepEqual(parseCSVLine('""""'), ['"']);
 });
