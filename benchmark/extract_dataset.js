@@ -110,16 +110,23 @@ function parseCSV(content) {
 }
 
 /**
- * Parse a single CSV line, handling quoted fields
+ * Parse a single CSV line, handling quoted fields. A doubled quote inside a
+ * quoted field ("") is an escaped quote character, per RFC 4180. It used to
+ * toggle the quote state twice and vanish, so a claim quoting the source
+ * ('saying it has "sharp-witted dialogue"') reached the model without its
+ * quotation marks.
  */
-function parseCSVLine(line) {
+export function parseCSVLine(line) {
     const result = [];
     let current = '';
     let inQuotes = false;
 
     for (let i = 0; i < line.length; i++) {
         const char = line[i];
-        if (char === '"') {
+        if (char === '"' && inQuotes && line[i + 1] === '"') {
+            current += '"';
+            i++;
+        } else if (char === '"') {
             inQuotes = !inQuotes;
         } else if (char === ',' && !inQuotes) {
             result.push(current);
