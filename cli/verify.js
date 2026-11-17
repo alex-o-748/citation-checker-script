@@ -10,6 +10,8 @@ import { extractReferenceUrl, extractPageNumber, extractReferenceText } from '..
 import { logVerification } from '../core/worker.js';
 import { DEFAULT_PROVIDER, modelFor } from '../core/models.js';
 import { verifyCitation, VERIFY_STAGES } from '../core/pipeline.js';
+import { quoteExpectedFor } from '../core/quote.js';
+import { canonicalizeVerdict } from '../core/verdicts.js';
 import { parseCompareArgs, COMPARE_HELP_TEXT, runCompare } from './compare.js';
 
 const KNOWN_PROVIDERS = ['liftwing', 'publicai', 'huggingface', 'claude', 'gemini', 'openai'];
@@ -398,12 +400,14 @@ export async function runVerify(opts, { stdout = process.stdout, stderr = proces
 
     // 12. Print the result. The quote is printed only once it has been found
     //     in the fetched source (core/quote.js) — an unlocated quote is
-    //     reported as such rather than shown.
+    //     reported as such rather than shown — and only for a verdict a
+    //     passage can decide: an omission's quote is left out, as in the
+    //     userscript (core/quote.js, displayedQuote()).
     stdout.write(`Verdict:    ${result.verdict}\n`);
     stdout.write(`Support score: ${result.supportScore ?? 'n/a'}\n`);
     stdout.write(`Claim:      ${claim}\n`);
     stdout.write(`Source:     ${sourceUrl}\n`);
-    if (result.sourceQuote) {
+    if (result.sourceQuote && quoteExpectedFor(canonicalizeVerdict(result.verdict), result.reasonType)) {
         stdout.write(result.quote.verified
             ? `Quote:      "${result.sourceQuote}"\n`
             : `Quote:      (not found in source: ${result.quote.status})\n`);

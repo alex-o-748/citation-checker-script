@@ -820,6 +820,18 @@ unverifiable quote is worth flagging: omission and SOURCE UNAVAILABLE verdicts
 have nothing to quote, so a stray quote there is ignored rather than warned
 about.
 
+**It also decides whether a located quote is shown at all** (`displayedQuote()`,
+since `PROMPT_VERSION` v4). v4 puts `source_quote` first in the JSON, so the
+model quotes before it decides. On an omission it then often quotes a passage
+that is in the source but proves nothing: Qwen3.8 did on ~90% of its NOT
+SUPPORTED verdicts, nearly all labelled `omission`
+(`docs/quote-first-benchmark-2026-11-17.md`). Under a NOT SUPPORTED verdict
+such a block reads as the passage refuting the claim. So `buildQuoteView()`'s
+`display`, `verifyCitation()`'s `quoteDisplay` and the CLI's quote line are
+empty for those verdicts, while the log and the batch CSV still record the
+quote and its status. Don't drop the gate without moving the quote back after
+the verdict.
+
 The **verification log is the exception**: `logVerification()` records
 `source_quote` and `quote_status` on every row regardless of outcome. The UI
 hides an unverified quote because showing it would mislead an editor; the log
