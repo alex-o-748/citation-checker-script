@@ -63,7 +63,7 @@ export const GARBLED_RATIONALE = /mojibake|кодировк|нечитаем|к�
 // Each delivery tier keeps a subset of the one before.
 export const DELIVERY_TIERS = Object.freeze([
     ['all-flagged', 'Every NOT / PARTIALLY SUPPORTED row'],
-    ['minus-problem-sources', 'minus problem hosts and table-like articles'],
+    ['minus-problem-sources', 'minus problem hosts and table-cell claims'],
     ['not-supported', '…NOT SUPPORTED only'],
     ['contradiction', '…contradiction only (the source says something else)'],
     ['contradiction-quoted', '…with the contradicting passage verified in the source'],
@@ -158,9 +158,13 @@ export async function reviewSweep(csvPath, { old = null, seed = 1, perCategory =
             matched: 0, transitions: {}, oldModels: {},
             safeguardTransitions: {}, garbledMentions: old.garbledMentions ?? 0, garbledTransitions: {},
         } : null,
-        // Per article: rows, table-like claims, and flagged rows surviving each
-        // delivery tier (host exclusion already applied from tier 1 on).
+        // Per article: flagged rows surviving each delivery tier. From tier 1 on,
+        // a row is out if its source is a problem host or its claim is a table
+        // cell — judged per row, not per article: excluding whole articles
+        // dropped Якутия and Владимир, prose articles whose clean CSV happens
+        // to be mostly figures once the cleaner has removed prose rows.
         delivery: new Map(),
+        droppedByHost: 0, droppedTableCell: 0,
         excludedHosts,
     };
     const categories = {
@@ -207,12 +211,14 @@ export async function reviewSweep(csvPath, { old = null, seed = 1, perCategory =
             const item = { row, oldRow };
 
             let art = s.delivery.get(row.page_title);
-            if (!art) s.delivery.set(row.page_title, art = { rows: 0, tableLike: 0, tiers: new Array(DELIVERY_TIERS.length).fill(0) });
-            art.rows++;
-            if (isTableLikeClaim(row.claim_text, THRESHOLDS.tableLikeLetterShare)) art.tableLike++;
+            if (!art) s.delivery.set(row.page_title, art = { tiers: new Array(DELIVERY_TIERS.length).fill(0) });
             if (FLAGGED.has(v)) {
                 art.tiers[0]++;
-                if (!hostExcluded(host, excludedHosts)) {
+                const badHost = hostExcluded(host, excludedHosts);
+                const tableCell = isTableLikeClaim(row.claim_text, THRESHOLDS.tableLikeLetterShare);
+                if (badHost) s.droppedByHost++;
+                else if (tableCell) s.droppedTableCell++;
+                if (!badHost && !tableCell) {
                     art.tiers[1]++;
                     if (v === 'NOT SUPPORTED') {
                         art.tiers[2]++;
@@ -344,28 +350,17 @@ function renderTransitions(title, note, transitions, { includeUnchanged = false 
     return L;
 }
 
-export function tableLikeArticle(art) {
-    return art.rows >= THRESHOLDS.tableLikeArticleMinRows && art.tableLike / art.rows >= THRESHOLDS.tableLikeArticleShare;
-}
-
 export function deliveryCounts(s) {
     const totals = new Array(DELIVERY_TIERS.length).fill(0);
     const perArticle = DELIVERY_TIERS.map(() => []);
-    const tableLike = [];
-    for (const [title, art] of s.delivery) {
-        const excludeArticle = tableLikeArticle(art);
-        if (excludeArticle) tableLike.push(title);
-        art.tiers.forEach((n, i) => {
-            const kept = i >= 1 && excludeArticle ? 0 : n;
-            totals[i] += kept;
-            perArticle[i].push(kept);
-        });
+    for (const art of s.delivery.values()) {
+        art.tiers.forEach((n, i) => { totals[i] += n; perArticle[i].push(n); });
     }
-    return { totals, perArticle, tableLike };
+    return { totals, perArticle };
 }
 
 function renderDelivery(s) {
-    const { totals, perArticle, tableLike } = deliveryCounts(s);
+    const { totals, perArticle } = deliveryCounts(s);
     const articles = s.delivery.size;
     const L = ['## Delivery options', '',
         'Flagged rows left by each filter, cumulatively. Run this over the clean CSV to see what would actually be delivered.', '',
@@ -375,8 +370,8 @@ function renderDelivery(s) {
         const median = withAny.length ? withAny[Math.floor(withAny.length / 2)] : 0;
         L.push(`| ${label} | ${totals[i]} | ${withAny.length} of ${articles} | ${median} |`);
     });
-    L.push('', `Problem hosts excluded: ${s.excludedHosts.join(', ')}.`, '');
-    L.push(`Table-like articles excluded (${tableLike.length}): ${tableLike.join(' · ') || 'none'}.`);
+    L.push('', `Problem hosts excluded (${s.droppedByHost} flags): ${s.excludedHosts.join(', ')}.`, '');
+    L.push(`Table-cell claims excluded (${s.droppedTableCell} flags): claims that are mostly digits and punctuation — a score line, a date, a table cell.`);
     return L;
 }
 

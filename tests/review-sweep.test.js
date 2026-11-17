@@ -99,7 +99,7 @@ test('garbled-source rationales are recognised in Russian and English', () => {
     assert.doesNotMatch('В тексте не упоминается запрет на возвращение', GARBLED_RATIONALE);
 });
 
-test('delivery tiers narrow cumulatively, drop problem hosts and table-like articles', async () => {
+test('delivery tiers narrow cumulatively, dropping problem hosts and table-cell claims row by row', async () => {
     const page = { ...base, pageTitle: 'Обычная статья', pageId: 1 };
     const table = { ...base, pageTitle: 'Список эпизодов', pageId: 2 };
     const findings = [
@@ -113,7 +113,10 @@ test('delivery tiers narrow cumulatively, drop problem hosts and table-like arti
           verdict: 'PARTIALLY SUPPORTED', rationale: 'Источник подтверждает только часть утверждения.' },
         { ...page, citationNumber: '5', claimText: 'Обычное утверждение о событии', sourceUrl: 'https://www.youtube.com/watch?v=x',
           verdict: 'NOT SUPPORTED', reasonType: 'contradiction', quoteStatus: 'exact', rationale: 'Только навигация страницы YouTube.' },
-        // Ten table-cell claims make article 2 table-like; its flags all go.
+        // Table-cell claims go row by row; the article's prose flag stays.
+        { ...table, citationNumber: 'p', claimText: 'Сериал продлён на второй сезон после хороших рейтингов',
+          sourceUrl: 'https://b.ru/p', verdict: 'NOT SUPPORTED', reasonType: 'omission',
+          rationale: 'В источнике нет сведений о продлении сериала.' },
         ...Array.from({ length: 10 }, (_, i) => ({ ...table, citationNumber: String(i), claimText: `${i}.${i} — 12.03.2019 — 1:2`,
           sourceUrl: `https://b.ru/${i}`, verdict: 'NOT SUPPORTED', reasonType: 'contradiction', quoteStatus: 'exact',
           rationale: 'Источник указывает другую дату выхода эпизода.' })),
@@ -122,9 +125,10 @@ test('delivery tiers narrow cumulatively, drop problem hosts and table-like arti
     const csv = join(dir, 'clean.csv');
     await writeFile(csv, csvHeaderLine() + findings.map(findingToCsvLine).join(''));
     const { summary } = await reviewSweep(csv);
-    const { totals, tableLike } = deliveryCounts(summary);
-    assert.deepEqual(tableLike, ['Список эпизодов']);
-    assert.deepEqual(totals, [15, 4, 3, 2, 1]);
+    const { totals } = deliveryCounts(summary);
+    assert.deepEqual(totals, [16, 5, 4, 2, 1]);
+    assert.equal(summary.droppedByHost, 1);
+    assert.equal(summary.droppedTableCell, 10);
     assert.match(renderReport(summary), /Delivery options/);
 });
 
