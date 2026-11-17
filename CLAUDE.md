@@ -31,7 +31,7 @@ benchmark/
   render_compare.js              # JSON / Markdown / self-contained HTML renderers for ComparisonResult
   wice.js                        # Pure WiCE -> dataset-row transform (external benchmark; see below)
   convert_wice.js                # Fetch + convert WiCE into dataset_wice.json (gitignored, regenerate with npm run wice:convert)
-  dataset.json                   # Current dataset (189 entries: v1: 76 + v2: 34 + v3: 79; counts drift as rows are added)
+  dataset.json                   # Current dataset (263 entries: v1: 76 + v2: 34 + v3: 79 + v4: 74; counts drift as rows are added)
   dataset_v1.json                # Frozen v1 snapshot for reproducing original analysis
   dataset_v3.json                # Frozen v3 snapshot (post strict-rubric audit, 2026-04-30)
   results.json                   # Raw benchmark results

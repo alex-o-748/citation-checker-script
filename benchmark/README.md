@@ -498,7 +498,7 @@ logic lives in `voting.js` and is tested in `tests/voting.test.js` and
 ## Dataset versions
 
 `Benchmarking_data_Citations.csv` has a `Dataset version` column so the set can
-grow without losing old analyses. The 189 rows:
+grow without losing old analyses. The 263 rows:
 
 - **`v1`**: the original 76 rows of the published benchmark.
 - **`v2`**: 34 negative-class additions (mostly `Not supported` /
@@ -506,13 +506,21 @@ grow without losing old analyses. The 189 rows:
 - **`v3`**: 79 rows from the WMF source-verification annotation dataset
   (provenance `human-annotation:source-verification-2026-04-25`), re-audited
   under the strict WP:V/WP:CITE rubric on 2026-04-30.
+- **`v4`**: 74 rows (68 scoreable) from the WMF **Source Verification QA**
+  sheet, where volunteers reviewed batch-pipeline flags against the cited
+  sources (provenance `human-annotation:source-verification-qa-2026-11`).
+  Every row started as a model flag, so v4 measures the flagging path (true
+  and false positives), not the base rate of failing citations. Import rules
+  and every per-row decision:
+  [`docs/benchmark-v4-source-verification-qa-2026-11-17.md`](../docs/benchmark-v4-source-verification-qa-2026-11-17.md).
 
-Every script takes `--version v1|v2|v3|all` (default `all`).
+Every script takes `--version v1|v2|v3|v4|all` (default `all`); the
+`extract:v4`, `benchmark:v4` and `analyze:v4` npm scripts are shortcuts.
 
 ### Override columns for externally-imported rows
 
 Used only by rows whose claim/source came from outside the Wikipedia extraction
-(currently the v3 / WMF rows):
+(currently the v3 and v4 WMF rows):
 
 | Column | Purpose |
 |---|---|
