@@ -1,6 +1,8 @@
 # Fixable causes of disputed verdicts
 
 > **Status (2026-11-08):** Proposed. Nothing implemented. Written from the editor feedback in Neon; each cause below has its own fix and its own check, and they can land independently.
+>
+> **Update (2026-11-15):** Cause 1 is implemented (`PROMPT_VERSION` v3); see "Implemented" under §1. On the benchmark's main metric (Supported vs everything else), a 2026-11-17 re-run on 263 rows puts it within a point of the old prompt on both GPT-OSS-20b and Qwen3.8 (`docs/citation-details-benchmark-2026-11-15.md`). The field replay, which is the decisive check, is still to do. Causes 2–5 are unchanged.
 
 ## Why this exists
 
@@ -58,6 +60,21 @@ Reading the disputed rationales, most 👎 verdicts trace to five causes that a 
 - `dataset.json` has no reference text, so add a `citation_text` field. A one-off script can read each row's pinned revision (the `oldid` in `article_url`); `source_text` stays untouched.
 - Run the benchmark before and after and compare with `ccs compare`. The target is fewer flags on Supported rows with no loss on Not supported rows.
 - Replay the 22 rated date rows.
+
+**Implemented (2026-11-15).**
+- `core/urls.js`'s `extractReferenceText()` reads the footnote. It removes backlinks, sub-reference lists, TemplateStyles CSS, COinS and CS1 maintenance messages by element, and access dates where they have a class (`.reference-accessdate` for CS1, `.Abrufdatum` on dewiki). English and Russian archive phrases ("Archived from the original on …", "Архивная копия от … на Wayback Machine", "Дата обращения: …") are removed by pattern. A Harvard/sfn short cite gets the full citation it links to appended. A sub-reference gets its main reference in front. The result is capped at 600 characters. `collectCitations()` carries it as `referenceText`.
+- `generateUserPrompt(claim, sourceInfo, { citation, sourceUrl, today })` puts the three lines between the claim and the source text. `assembleGroupSources()` puts each source's citation under its URL, and `generateGroupUserPrompt()` takes `{ today }`. Both system prompts have the new rule, which also says to trust the source's own text over the citation, and that dates up to today are in the past.
+- It is wired into every front end: the userscript (single check, Verify All, groups), `core/pipeline.js` (`citationText`, `today`), the CLI, the batch verifier (`verifyCitation`'s `citationText`/`sourceUrl`/`today`, and `verifyGroup`'s `today`), `run-replay.js`, the HTTP API (an optional `citation` field) and `run_benchmark.js`.
+- `dataset.json` rows now carry `citation_text`, backfilled by `benchmark/add_citation_text.js` from each row's pinned revision (187 of 189 found). `extract_dataset.js` records it from now on. The frozen v1/v3 snapshots don't have it, so a run on them sends no citation line.
+- Both fetchers now write a rating graphic's `aria-label`/`alt` into the text (`src/ratingLabels.js`), but only when it reads as a rating ("3 out of 5 stars", "4/5"). In tf-source-fetcher this covers the crude-text path only: Readability's article text, used for over-cap pages, keeps no attributes.
+- Benchmark (`docs/citation-details-benchmark-2026-11-15.md`):
+  - On 2026-11-15 (181 rows), one v3 run on GPT-OSS-20b came in 3 points low.
+  - The 2026-11-17 re-run on 263 rows, with two more v3 runs, puts v3 within a point of the old prompt on both GPT-OSS-20b and Qwen3.8.
+  - Dropping "and for nothing else in the claim" from the rule costs GPT-OSS about 2 points in all four of its runs, so the clause stays.
+  - Few benchmark rows depend on attribution or datelines, so the benchmark neither shows nor rules out the intended gain.
+- Not done:
+  - The replay of the 22 rated date rows and the attribution cases.
+  - The Worker doesn't yet send `article:published_time` (tf-source-fetcher's `Published:` header already does).
 
 ---
 

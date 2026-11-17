@@ -128,6 +128,7 @@ export async function processArticle(candidate, {
             claimText: citation.claimText,
             url: citation.url,
             pageNum: citation.pageNum,
+            referenceText: citation.referenceText,
             groupId: citation.groupId,
             groupSize: citation.groupSize,
             groupIndex: citation.groupIndex,

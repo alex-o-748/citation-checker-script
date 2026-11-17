@@ -134,7 +134,11 @@ function needsApiKey(id, apiKey) {
 // key — see docs/design-plans/2026-08-07-batch-source-checks-for-edit-suggestions.md
 // §6 — precisely so a prompt change invalidates old findings rather than
 // overwriting them).
-const PROMPT_VERSION = 'v2';
+//
+// v3 (2026-11-15): the rule on citation details, URL and today's date, which
+// generateUserPrompt() now sends (docs/design-plans/
+// 2026-11-08-fixable-causes-of-disputed-verdicts.md §1).
+const PROMPT_VERSION = 'v3';
 
 function generateSystemPrompt() {
     return `You are a fact-checking assistant for Wikipedia. Analyze whether claims are supported by the provided source text.
@@ -145,6 +149,7 @@ Rules:
 - Accept paraphrasing and straightforward implications, but not speculative inferences or logical leaps.
 - Distinguish between definitive statements and uncertain/hedged language. Claims stated as facts require sources that make definitive statements, not speculation or tentative assertions.
 - Names from languages using non-Latin scripts (Arabic, Chinese, Japanese, Korean, Russian, Hindi, etc.) may have multiple valid romanizations/transliterations. For example, "Yasmin" and "Yazmeen," or "Chekhov" and "Tchekhov," are variant spellings of the same name. Do not treat transliteration differences as factual errors.
+- The message may also give the citation as it appears in the Wikipedia article, the source's URL, and today's date. The citation and URL say what the source is: treat them as evidence for who published the source, who wrote it, and when it was published, and for nothing else in the claim. Use the publication date to resolve relative dates in the source text ("on Thursday", "last year"). If the source text itself gives a different author or date, trust the source text. Dates up to today's date are in the past, even if they are later than you expect.
 
 Source text evaluation:
 Before analyzing, check if the provided "source text" is actually usable content.
@@ -314,18 +319,49 @@ function extractSourceText(sourceInfo) {
     return sourceInfo;
 }
 
+// Today's date as YYYY-MM-DD, in local time: the date the editor (or the
+// batch host) is checking on, not UTC's, which is already tomorrow for an
+// evening check in the Americas.
+function todayIsoDate(now = new Date()) {
+    const pad = n => String(n).padStart(2, '0');
+    return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
+
+// What the source *is*, which its body text often doesn't say: the footnote
+// the editor sees (title, publication, author, date), where it lives, and the
+// date of the check. Without these the model judged "named market leader in
+// the Handelszeitung" unsupported by an article on handelszeitung.ch, and an
+// article's own "on Thursday" unresolvable (docs/design-plans/
+// 2026-11-08-fixable-causes-of-disputed-verdicts.md §1). Each line is left out
+// when its value is missing, so a caller with none of them gets the prompt it
+// always got.
+function sourceDetailLines({ citation, sourceUrl, today } = {}) {
+    const lines = [];
+    const cited = typeof citation === 'string' ? citation.replace(/\s+/g, ' ').trim() : '';
+    if (cited) lines.push(`Citation (as given in the article): ${cited}`);
+    if (sourceUrl) lines.push(`Source URL: ${sourceUrl}`);
+    if (today) lines.push(`Today's date: ${today}`);
+    return lines;
+}
+
 /**
  * Parses source info and generates the user message
  * @param {string} claim - The claim to verify
  * @param {string} sourceInfo - The source information
+ * @param {{citation?: string|null, sourceUrl?: string|null, today?: string|null}} [details] -
+ *   The footnote's text (core/citations.js's referenceText), the cited URL,
+ *   and today's date (todayIsoDate()). Optional, and each part independently:
+ *   a caller passing none gets the two-part prompt unchanged.
  * @returns {string} The user message content
  */
-function generateUserPrompt(claim, sourceInfo) {
+function generateUserPrompt(claim, sourceInfo, details = {}) {
     const sourceText = extractSourceText(sourceInfo);
+    const lines = sourceDetailLines(details || {});
+    const header = lines.length ? `${lines.join('\n')}\n\n` : '';
 
     return `Claim: "${claim}"
 
-Source text:
+${header}Source text:
 ${sourceText}`;
 }
 
@@ -347,6 +383,7 @@ Rules:
 - Accept paraphrasing and straightforward implications, but not speculative inferences or logical leaps.
 - Distinguish between definitive statements and uncertain/hedged language. Claims stated as facts require sources that make definitive statements, not speculation or tentative assertions.
 - Names from languages using non-Latin scripts (Arabic, Chinese, Japanese, Korean, Russian, Hindi, etc.) may have multiple valid romanizations/transliterations. For example, "Yasmin" and "Yazmeen," or "Chekhov" and "Tchekhov," are variant spellings of the same name. Do not treat transliteration differences as factual errors.
+- A source may be followed by its citation as it appears in the Wikipedia article, and the message may give today's date. A source's citation and URL say what that source is: treat them as evidence for who published it, who wrote it, and when it was published, and for nothing else in the claim. Use its publication date to resolve relative dates in its text ("on Thursday", "last year"). If a source's own text gives a different author or date, trust the text. Dates up to today's date are in the past, even if they are later than you expect.
 
 Source text evaluation:
 Some of the provided sources may be unusable — a paywall, login page, library catalog/metadata page (e.g. WorldCat, Google Books, JSTOR preview), cookie/JavaScript notice, 404/redirect, or an explicit "[This source could not be retrieved: ...]" note. Ignore unusable sources and judge the claim against the sources that DO contain usable article/book content.
@@ -406,12 +443,15 @@ Source (https://example.org/infrastructure/funding-report): "Funding for the pro
  * Builds the user message for the collective (multi-source) verification path.
  * @param {string} claim - The claim cited by the group.
  * @param {string} assembledText - Labeled source blocks from assembleGroupSources().
+ * @param {{today?: string|null}} [details] - Today's date (todayIsoDate()).
+ *   Each source's citation travels on its own block (assembleGroupSources()).
  * @returns {string} The user message content.
  */
-function generateGroupUserPrompt(claim, assembledText) {
+function generateGroupUserPrompt(claim, assembledText, { today } = {}) {
+    const dateLine = today ? `Today's date: ${today}\n\n` : '';
     return `Claim: "${claim}"
 
-The following sources are all cited for this claim. Evaluate whether they support it together.
+${dateLine}The following sources are all cited for this claim. Evaluate whether they support it together.
 
 ${assembledText}`;
 }
@@ -427,8 +467,8 @@ ${assembledText}`;
  * since a bracketed citation number baked into that text can go stale once
  * the article is re-numbered by a later edit.
  *
- * @param {Array<{citationNumbers?: (string|number)[], url?: string, content?: string|null,
- *   error?: string|null, status?: number|null}>} entries - one per distinct
+ * @param {Array<{citationNumbers?: (string|number)[], url?: string, citation?: string|null,
+ *   content?: string|null, error?: string|null, status?: number|null}>} entries - one per distinct
  *   source (callers should dedupe sources shared by named refs).
  * @returns {{text: string, anyAvailable: boolean}} Combined text and whether at
  *   least one source contributed usable content.
@@ -437,7 +477,9 @@ function assembleGroupSources(entries) {
     const blocks = [];
     let anyAvailable = false;
     for (const e of entries) {
-        const label = `Source${e.url ? ` (${e.url})` : ''}:`;
+        // The citation goes on its own line under the URL, on unavailable
+        // sources too: it is how the model names a source in "comments".
+        const label = [`Source${e.url ? ` (${e.url})` : ''}:`, ...sourceDetailLines({ citation: e.citation })].join('\n');
         const text = e.content ? extractSourceText(e.content).trim() : '';
         if (text) {
             anyAvailable = true;
@@ -1288,6 +1330,118 @@ function isGoogleBooksUrl(url) {
     return /books\.google\./.test(url);
 }
 
+// The footnote as an editor reads it — "Camarota, Steven A. (March 12, 2025).
+// "Foreign-Born Number …". CIS.org." — for the model, which otherwise sees only
+// the source's body text and can't tell who published it or when
+// (docs/design-plans/2026-11-08-fixable-causes-of-disputed-verdicts.md §1).
+//
+// Elements removed before reading the text, all chrome rather than citation:
+// jump-back links ("↑", "1 2 3"), nested sub-references (another footnote's
+// details), CS1's and dewiki's access dates (when an editor read the page,
+// not when it was published — the model could take one for the other),
+// TemplateStyles <style>/<link> (whose CSS is text to textContent), COinS
+// metadata, and CS1 maintenance/error messages hidden by CSS.
+const FOOTNOTE_CHROME_SELECTOR = [
+    '.mw-cite-backlink',
+    '.' + SUBREFERENCE_LIST_CLASS,
+    '.reference-accessdate',
+    '.Abrufdatum',
+    'style', 'link', 'script',
+    '.Z3988',
+    '.cs1-maint', '.cs1-hidden-error', '.citation-comment',
+].join(',');
+
+// Archive boilerplate, as text: the "Archived" in CS1's "Archived from the
+// original on …" is a link, not an element of its own, so it can't be removed
+// structurally. English (CS1, {{webarchive}}) and Russian (ruwiki's cite
+// templates and {{webarchive}}), the two wikis the batch runs on; elsewhere it
+// passes through, labeled as what it is, which the model reads correctly.
+// Russian patterns avoid \b, which only knows ASCII word characters. None
+// takes the phrase's closing period: it stands in for the one the phrase
+// interrupted ("1992 … Архивная копия … Wayback Machine. Гарант"), and a
+// doubled one is collapsed afterwards.
+const FOOTNOTE_BOILERPLATE_PATTERNS = [
+    /\s*\bArchived\b(?:\s*\([^)]*\))?\s+from\s+the\s+original\b(?:\s*\([^)]*\))?\s+on\s+[^.;]{1,40}/gi,
+    /\s*\bArchived\b[^.;]{0,40}?\bat\s+(?:the\s+)?(?:Wayback\s+Machine|archive\.(?:today|is|ph)|WebCite|Ghostarchive)/gi,
+    /\s*\bRetrieved\s+(?:on\s+)?[^.;]{1,30}?\d{4}/g,
+    /\s*Архивн(?:ая|ые)\s+копи[яи][^.;]{0,60}?(?:Wayback\s+Machine|archive\.(?:today|is|ph)|WebCite)/g,
+    /\s*Архивировано[^.;]{0,60}/g,
+    /\s*Дата\s+обращения:?\s*[^.;]{1,30}/g,
+];
+
+// A footnote is a citation, but it can also carry an editor's note or a long
+// |quote=. The prompt wants what the source *is*, so keep the opening.
+const REFERENCE_TEXT_MAX_CHARS = 600;
+
+function cleanFootnoteText(element) {
+    if (!element) return '';
+    const copy = element.cloneNode(true);
+    for (const node of copy.querySelectorAll(FOOTNOTE_CHROME_SELECTOR)) node.remove();
+    // Hidden by inline style (dewiki's COinS span, some templates' tracking
+    // spans) — never shown to the editor, so never shown to the model.
+    for (const node of copy.querySelectorAll('[style]')) {
+        if (/display\s*:\s*none/i.test(node.getAttribute('style'))) node.remove();
+    }
+    let text = copy.textContent.replace(/\s+/g, ' ');
+    for (const pattern of FOOTNOTE_BOILERPLATE_PATTERNS) text = text.replace(pattern, '');
+    return text
+        // Removing a phrase leaves its neighbours' punctuation behind:
+        // "2017. Archived … 2020." -> "2017.." and "2021, abgerufen …." -> "2021,."
+        .replace(/\s+([.,;:])/g, '$1')
+        .replace(/\.(?:\s*\.)+/g, '.')
+        .replace(/[,;:]\s*\./g, '.')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .replace(/^[.,;:\s]+|[,;:\s]+$/g, '');
+}
+
+function capReferenceText(text) {
+    if (text.length <= REFERENCE_TEXT_MAX_CHARS) return text;
+    const cut = text.slice(0, REFERENCE_TEXT_MAX_CHARS);
+    const lastSpace = cut.lastIndexOf(' ');
+    return `${(lastSpace > REFERENCE_TEXT_MAX_CHARS * 0.6 ? cut.slice(0, lastSpace) : cut).trimEnd()} …`;
+}
+
+// The full citation a Harvard/sfn short cite ("Smith 2010, p. 5") points at,
+// cleaned the same way; '' when the footnote is not a short cite.
+function citerefTarget(footnote, doc) {
+    const link = Array.from(footnote.querySelectorAll('a[href^="#CITEREF"]'))
+        .find(a => !inNestedSubreference(a, footnote));
+    if (!link || !doc) return '';
+    return cleanFootnoteText(doc.getElementById(link.getAttribute('href').substring(1)));
+}
+
+function footnoteCitation(footnote, doc) {
+    const own = cleanFootnoteText(footnote);
+    const full = citerefTarget(footnote, doc);
+    return full && !own.includes(full) ? `${own} ${full}`.trim() : own;
+}
+
+/**
+ * The text of the footnote a citation marker points at, as the editor sees it
+ * in the reference list, without backlinks, access dates or archive
+ * boilerplate — or null when there is no footnote, or it is empty.
+ *
+ * A Harvard/sfn short cite gets the full citation it links to appended; a
+ * sub-reference ([10.1], details only) gets its main reference's citation in
+ * front of its details. Capped at REFERENCE_TEXT_MAX_CHARS.
+ */
+function extractReferenceText(refElement, doc = globalThis.document) {
+    const refId = refElement && refElement.getAttribute && refElement.getAttribute('href');
+    const fragmentIndex = refId ? refId.indexOf('#') : -1;
+    if (fragmentIndex === -1 || !doc) return null;
+    const footnote = doc.getElementById(refId.substring(fragmentIndex + 1));
+    if (!footnote) return null;
+
+    let text = footnoteCitation(footnote, doc);
+    const mainRef = subreferenceParent(footnote);
+    if (mainRef) {
+        const main = footnoteCitation(mainRef, doc);
+        text = main ? `${main} ${text}`.trim() : text;
+    }
+    return text ? capReferenceText(text) : null;
+}
+
 // --- core/claim.js ---
 // Extracts the prose claim text bearing a given citation from a parsed
 // Wikipedia Document. Works with both browser DOM and JSDOM.
@@ -1756,6 +1910,12 @@ function collectCitations(root, { minClaimLength = MIN_CLAIM_LENGTH, claimScope 
             claimText,
             url: extractReferenceUrl(refElement, doc),
             pageNum: extractPageNumber(refElement, doc),
+            // The footnote as the editor reads it (title, publication,
+            // author, date), for the verification prompt: without it the
+            // model can't tell a claim "in the Handelszeitung" is sourced to
+            // handelszeitung.ch, or that "on Thursday" is the article's own
+            // dateline. Null when the footnote can't be found.
+            referenceText: extractReferenceText(refElement, doc),
             // A citation whose preceding text is too short to be a claim is
             // kept and flagged, not dropped: it used to be silently skipped
             // here, which made it invisible in both the userscript report and
@@ -2350,22 +2510,25 @@ function isGroupClose(citation) {
  * `url|page=N`-keyed sourceCache, while the batch pipeline already carries
  * each citation's resolved `source` object directly
  * (service/claim-extractor.js's processArticle output). It must return
- * `{ key, url, content, error, status }` — `key` is the dedup key; the rest
- * become the entry's fields the first time that key is seen.
+ * `{ key, url, content, error, status, citation? }` — `key` is the dedup key;
+ * the rest become the entry's fields the first time that key is seen.
+ * `citation` is the member's footnote text (core/citations.js's
+ * referenceText), shown to the model under the source's URL.
  *
  * @param {Array<object>} members - Group members, sharing one groupId.
- * @param {(member: object) => {key: string, url?: string|null, content?: string|null, error?: string|null, status?: number|null}} sourceFor
- * @returns {Array<{citationNumbers: (string|number)[], url: string|null, content: string|null, error: string|null, status: number|null}>}
+ * @param {(member: object) => {key: string, url?: string|null, content?: string|null, error?: string|null, status?: number|null, citation?: string|null}} sourceFor
+ * @returns {Array<{citationNumbers: (string|number)[], url: string|null, citation: string|null, content: string|null, error: string|null, status: number|null}>}
  */
 function groupSourceEntries(members, sourceFor) {
     const byKey = new Map();
     for (const member of members) {
-        const { key, url, content, error, status } = sourceFor(member);
+        const { key, url, content, error, status, citation } = sourceFor(member);
         let entry = byKey.get(key);
         if (!entry) {
             entry = {
                 citationNumbers: [],
                 url: url || null,
+                citation: citation || null,
                 content: content ?? null,
                 error: error ?? null,
                 status: status ?? null,
@@ -6025,6 +6188,9 @@ function useToolforgeSourceFetcher() {
             this.activeClaim = null;
             this.activeSource = null;
             this.activeSourceUrl = null;
+            // The clicked citation's footnote text, for the prompt (see
+            // core/prompts.js's generateUserPrompt()).
+            this.activeCitationText = null;
             this.activeCitationNumber = null;
             this.activeRefElement = null;
             // Id of the check currently shown in the sidebar; feedback on that
@@ -8368,6 +8534,7 @@ function useToolforgeSourceFetcher() {
 
                 const refUrl = this.extractReferenceUrl(refElement);
                 this.activeSourceUrl = refUrl;
+                this.activeCitationText = extractReferenceText(refElement, document);
                 
                 if (!refUrl) {
                     this.showSourceTextInput();
@@ -9075,8 +9242,8 @@ function useToolforgeSourceFetcher() {
             return generateSystemPrompt();
         }
         
-        generateUserPrompt(claim, sourceInfo) {
-            return generateUserPrompt(claim, sourceInfo);
+        generateUserPrompt(claim, sourceInfo, details) {
+            return generateUserPrompt(claim, sourceInfo, details);
         }
 
         // Ask the model to write its free-text explanation in the article's
@@ -9171,7 +9338,10 @@ function useToolforgeSourceFetcher() {
                 this.buttons.verify.setIcon('clock');
                 this.updateStatus(this.t('Verifying claim against source...'));
 
-                const apiResult = await this.callProviderAPI(this.activeClaim, this.activeSource);
+                const apiResult = await this.callProviderAPI(this.activeClaim, this.activeSource, {
+                    citation: this.activeCitationText,
+                    sourceUrl: this.activeSourceUrl,
+                });
                 const result = apiResult.text;
 
                 if (verifyId !== this.currentVerifyId) {
@@ -10073,15 +10243,18 @@ function useToolforgeSourceFetcher() {
             return {};
         }
 
-        async callProviderAPI(claim, sourceInfo) {
-            return callProviderAPI(this.currentProvider, { apiKey: this.getCurrentApiKey(), model: this.providers[this.currentProvider].model, systemPrompt: this.localizeSystemPrompt(generateSystemPrompt()), userContent: generateUserPrompt(claim, sourceInfo), ...this.llmRouterConfigOverrides() });
+        // `citation` (the footnote's text) and `sourceUrl` tell the model what
+        // the source is; with today's date they go above the source text.
+        async callProviderAPI(claim, sourceInfo, { citation = null, sourceUrl = null } = {}) {
+            const userContent = generateUserPrompt(claim, sourceInfo, { citation, sourceUrl, today: todayIsoDate() });
+            return callProviderAPI(this.currentProvider, { apiKey: this.getCurrentApiKey(), model: this.providers[this.currentProvider].model, systemPrompt: this.localizeSystemPrompt(generateSystemPrompt()), userContent, ...this.llmRouterConfigOverrides() });
         }
 
         // Collective (multi-source) variant of callProviderAPI: same provider
         // routing, but the group system prompt and a pre-assembled multi-source
         // user message. `assembledText` comes from assembleGroupSources().
         async callProviderAPIGroup(claim, assembledText) {
-            return callProviderAPI(this.currentProvider, { apiKey: this.getCurrentApiKey(), model: this.providers[this.currentProvider].model, systemPrompt: this.localizeSystemPrompt(generateGroupSystemPrompt()), userContent: generateGroupUserPrompt(claim, assembledText), maxTokens: groupMaxTokens(this.currentProvider), ...this.llmRouterConfigOverrides() });
+            return callProviderAPI(this.currentProvider, { apiKey: this.getCurrentApiKey(), model: this.providers[this.currentProvider].model, systemPrompt: this.localizeSystemPrompt(generateGroupSystemPrompt()), userContent: generateGroupUserPrompt(claim, assembledText, { today: todayIsoDate() }), maxTokens: groupMaxTokens(this.currentProvider), ...this.llmRouterConfigOverrides() });
         }
 
         // ========================================
@@ -10365,7 +10538,7 @@ function useToolforgeSourceFetcher() {
                 const fetchResult = m.url
                     ? (this.sourceCache.get(cacheKey) || { content: null, error: null, status: null })
                     : { content: null, error: 'No URL found in reference', status: null };
-                return { key: cacheKey, url: m.url || null, content: fetchResult.content, error: fetchResult.error, status: fetchResult.status };
+                return { key: cacheKey, url: m.url || null, citation: m.referenceText || null, content: fetchResult.content, error: fetchResult.error, status: fetchResult.status };
             });
             const truncated = entries.some(e => e.content && e.content.includes('\nTruncated: true'));
             // A cited source nobody could read discounts absence in the
@@ -11150,7 +11323,10 @@ function useToolforgeSourceFetcher() {
                         this.updateReportProgress(completed, progressTotal, this.t('Verifying citation [{num}]', { num: citation.citationNumber }), startTime);
                         try {
                             const apiResult = await withRetry(
-                                () => this.callProviderAPI(citation.claimText, sourceContent),
+                                () => this.callProviderAPI(citation.claimText, sourceContent, {
+                                    citation: citation.referenceText,
+                                    sourceUrl: citation.url,
+                                }),
                                 {
                                     maxRetries: 4,
                                     minBackoffMs: 5000,

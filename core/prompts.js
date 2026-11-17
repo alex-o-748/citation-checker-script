@@ -10,7 +10,11 @@
 // key — see docs/design-plans/2026-08-07-batch-source-checks-for-edit-suggestions.md
 // §6 — precisely so a prompt change invalidates old findings rather than
 // overwriting them).
-export const PROMPT_VERSION = 'v2';
+//
+// v3 (2026-11-15): the rule on citation details, URL and today's date, which
+// generateUserPrompt() now sends (docs/design-plans/
+// 2026-11-08-fixable-causes-of-disputed-verdicts.md §1).
+export const PROMPT_VERSION = 'v3';
 
 export function generateSystemPrompt() {
     return `You are a fact-checking assistant for Wikipedia. Analyze whether claims are supported by the provided source text.
@@ -21,6 +25,7 @@ Rules:
 - Accept paraphrasing and straightforward implications, but not speculative inferences or logical leaps.
 - Distinguish between definitive statements and uncertain/hedged language. Claims stated as facts require sources that make definitive statements, not speculation or tentative assertions.
 - Names from languages using non-Latin scripts (Arabic, Chinese, Japanese, Korean, Russian, Hindi, etc.) may have multiple valid romanizations/transliterations. For example, "Yasmin" and "Yazmeen," or "Chekhov" and "Tchekhov," are variant spellings of the same name. Do not treat transliteration differences as factual errors.
+- The message may also give the citation as it appears in the Wikipedia article, the source's URL, and today's date. The citation and URL say what the source is: treat them as evidence for who published the source, who wrote it, and when it was published, and for nothing else in the claim. Use the publication date to resolve relative dates in the source text ("on Thursday", "last year"). If the source text itself gives a different author or date, trust the source text. Dates up to today's date are in the past, even if they are later than you expect.
 
 Source text evaluation:
 Before analyzing, check if the provided "source text" is actually usable content.
@@ -190,18 +195,49 @@ export function extractSourceText(sourceInfo) {
     return sourceInfo;
 }
 
+// Today's date as YYYY-MM-DD, in local time: the date the editor (or the
+// batch host) is checking on, not UTC's, which is already tomorrow for an
+// evening check in the Americas.
+export function todayIsoDate(now = new Date()) {
+    const pad = n => String(n).padStart(2, '0');
+    return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
+
+// What the source *is*, which its body text often doesn't say: the footnote
+// the editor sees (title, publication, author, date), where it lives, and the
+// date of the check. Without these the model judged "named market leader in
+// the Handelszeitung" unsupported by an article on handelszeitung.ch, and an
+// article's own "on Thursday" unresolvable (docs/design-plans/
+// 2026-11-08-fixable-causes-of-disputed-verdicts.md §1). Each line is left out
+// when its value is missing, so a caller with none of them gets the prompt it
+// always got.
+function sourceDetailLines({ citation, sourceUrl, today } = {}) {
+    const lines = [];
+    const cited = typeof citation === 'string' ? citation.replace(/\s+/g, ' ').trim() : '';
+    if (cited) lines.push(`Citation (as given in the article): ${cited}`);
+    if (sourceUrl) lines.push(`Source URL: ${sourceUrl}`);
+    if (today) lines.push(`Today's date: ${today}`);
+    return lines;
+}
+
 /**
  * Parses source info and generates the user message
  * @param {string} claim - The claim to verify
  * @param {string} sourceInfo - The source information
+ * @param {{citation?: string|null, sourceUrl?: string|null, today?: string|null}} [details] -
+ *   The footnote's text (core/citations.js's referenceText), the cited URL,
+ *   and today's date (todayIsoDate()). Optional, and each part independently:
+ *   a caller passing none gets the two-part prompt unchanged.
  * @returns {string} The user message content
  */
-export function generateUserPrompt(claim, sourceInfo) {
+export function generateUserPrompt(claim, sourceInfo, details = {}) {
     const sourceText = extractSourceText(sourceInfo);
+    const lines = sourceDetailLines(details || {});
+    const header = lines.length ? `${lines.join('\n')}\n\n` : '';
 
     return `Claim: "${claim}"
 
-Source text:
+${header}Source text:
 ${sourceText}`;
 }
 
@@ -223,6 +259,7 @@ Rules:
 - Accept paraphrasing and straightforward implications, but not speculative inferences or logical leaps.
 - Distinguish between definitive statements and uncertain/hedged language. Claims stated as facts require sources that make definitive statements, not speculation or tentative assertions.
 - Names from languages using non-Latin scripts (Arabic, Chinese, Japanese, Korean, Russian, Hindi, etc.) may have multiple valid romanizations/transliterations. For example, "Yasmin" and "Yazmeen," or "Chekhov" and "Tchekhov," are variant spellings of the same name. Do not treat transliteration differences as factual errors.
+- A source may be followed by its citation as it appears in the Wikipedia article, and the message may give today's date. A source's citation and URL say what that source is: treat them as evidence for who published it, who wrote it, and when it was published, and for nothing else in the claim. Use its publication date to resolve relative dates in its text ("on Thursday", "last year"). If a source's own text gives a different author or date, trust the text. Dates up to today's date are in the past, even if they are later than you expect.
 
 Source text evaluation:
 Some of the provided sources may be unusable — a paywall, login page, library catalog/metadata page (e.g. WorldCat, Google Books, JSTOR preview), cookie/JavaScript notice, 404/redirect, or an explicit "[This source could not be retrieved: ...]" note. Ignore unusable sources and judge the claim against the sources that DO contain usable article/book content.
@@ -282,12 +319,15 @@ Source (https://example.org/infrastructure/funding-report): "Funding for the pro
  * Builds the user message for the collective (multi-source) verification path.
  * @param {string} claim - The claim cited by the group.
  * @param {string} assembledText - Labeled source blocks from assembleGroupSources().
+ * @param {{today?: string|null}} [details] - Today's date (todayIsoDate()).
+ *   Each source's citation travels on its own block (assembleGroupSources()).
  * @returns {string} The user message content.
  */
-export function generateGroupUserPrompt(claim, assembledText) {
+export function generateGroupUserPrompt(claim, assembledText, { today } = {}) {
+    const dateLine = today ? `Today's date: ${today}\n\n` : '';
     return `Claim: "${claim}"
 
-The following sources are all cited for this claim. Evaluate whether they support it together.
+${dateLine}The following sources are all cited for this claim. Evaluate whether they support it together.
 
 ${assembledText}`;
 }
@@ -303,8 +343,8 @@ ${assembledText}`;
  * since a bracketed citation number baked into that text can go stale once
  * the article is re-numbered by a later edit.
  *
- * @param {Array<{citationNumbers?: (string|number)[], url?: string, content?: string|null,
- *   error?: string|null, status?: number|null}>} entries - one per distinct
+ * @param {Array<{citationNumbers?: (string|number)[], url?: string, citation?: string|null,
+ *   content?: string|null, error?: string|null, status?: number|null}>} entries - one per distinct
  *   source (callers should dedupe sources shared by named refs).
  * @returns {{text: string, anyAvailable: boolean}} Combined text and whether at
  *   least one source contributed usable content.
@@ -313,7 +353,9 @@ export function assembleGroupSources(entries) {
     const blocks = [];
     let anyAvailable = false;
     for (const e of entries) {
-        const label = `Source${e.url ? ` (${e.url})` : ''}:`;
+        // The citation goes on its own line under the URL, on unavailable
+        // sources too: it is how the model names a source in "comments".
+        const label = [`Source${e.url ? ` (${e.url})` : ''}:`, ...sourceDetailLines({ citation: e.citation })].join('\n');
         const text = e.content ? extractSourceText(e.content).trim() : '';
         if (text) {
             anyAvailable = true;

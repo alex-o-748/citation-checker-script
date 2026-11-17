@@ -125,6 +125,9 @@ export function toCitation(row) {
         claimText: row.claim_text,
         citationNumber: row.citation_number ?? null,
         url: row.source_url ?? null,
+        // benchmark/add_citation_text.js's footnote text; absent on rows
+        // and snapshots extracted before it existed.
+        referenceText: row.citation_text ?? null,
         groupId: null,
         source: hasSource
             ? {
@@ -229,7 +232,9 @@ export async function runReplay(opts, {
 
             let verification;
             try {
-                verification = await verifyCitation(citation.claimText, citation.source, { callModel });
+                verification = await verifyCitation(citation.claimText, citation.source, {
+                    callModel, citationText: citation.referenceText, sourceUrl: citation.url,
+                });
             } catch (error) {
                 // Halts on ANY error, not just ProviderAuthError — see the
                 // matching comment on run-sweep.js's describeHalt() for why a
