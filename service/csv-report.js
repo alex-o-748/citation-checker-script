@@ -211,9 +211,13 @@ export function cleanCsvText(text) {
 // multi-day run without writing the clean CSV or the post-run checks. Memory
 // is now the two sets of group keys, whatever the file's size. Output is
 // byte-identical to cleanCsvText() (tests/csv-report.test.js pins that).
+// `filter`, when given, is applied after the clean rules to each row as an
+// object keyed by header name (service/delivery-filter.js's deliveryPredicate()
+// for clean-csv.js --deliver).
 export async function writeCleanCsv(inputPath, outputPath = cleanCsvPath(inputPath), {
     createReadStream = fsCreateReadStream,
     createWriteStream = fsCreateWriteStream,
+    filter = null,
 } = {}) {
     // One pass over the file; onRow sees every record after the header.
     const pass = async (onHeader, onRow) => {
@@ -247,7 +251,10 @@ export async function writeCleanCsv(inputPath, outputPath = cleanCsvPath(inputPa
         pending = '';
         if (!ok) await new Promise(resolve => out.once('drain', resolve));
     };
-    await pass(() => {}, row => { if (rules.keep(row)) pending += csvLine(row) + '\n'; });
+    const asObject = row => Object.fromEntries(header.map((name, i) => [name, row[i] ?? '']));
+    await pass(() => {}, row => {
+        if (rules.keep(row) && (!filter || filter(asObject(row)))) pending += csvLine(row) + '\n';
+    });
     await new Promise((resolve, reject) => out.end(err => (err ? reject(err) : resolve())));
     return outputPath;
 }

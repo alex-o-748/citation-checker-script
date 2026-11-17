@@ -33,41 +33,22 @@ import { fileURLToPath } from 'node:url';
 
 import { streamCsvRows } from '../service/csv-stream.js';
 import { hostOf } from '../service/host-pool.js';
-import { scriptShare, isTableLikeClaim, THRESHOLDS } from '../service/sweep-checks.js';
+import { scriptShare } from '../service/sweep-checks.js';
+import {
+    DEFAULT_EXCLUDED_HOSTS, DELIVERY_TIERS, exclusionReason, tierReached,
+} from '../service/delivery-filter.js';
+
+export { DEFAULT_EXCLUDED_HOSTS, hostExcluded } from '../service/delivery-filter.js';
 import { VERDICT_LIST } from '../core/verdicts.js';
 
 const FLAGGED = new Set(['NOT SUPPORTED', 'PARTIALLY SUPPORTED']);
-const VERIFIED_QUOTE = new Set(['exact', 'normalized', 'partial']);
 const SAFEGUARD = 'llm-gpt-oss-safeguard-20b';
-
-// Hosts whose pages reach the model as a JavaScript shell, viewer, login or
-// cookie wall, so "not mentioned" there means "not fetched". From the
-// November 2026 ruwiki rerun, where each was flagged on 80-100% of judged
-// citations. Matched as a suffix, so youtube.com covers www.youtube.com.
-export const DEFAULT_EXCLUDED_HOSTS = Object.freeze([
-    'atpworldtour.com', 'elib.biblioatom.ru', 'cia.gov', 'publication.pravo.gov.ru', 'inside.fifa.com',
-    'rutube.ru', 'youtube.com', 'youtu.be', 'yandex.ru', 'tvguide.com', 'vk.com', 'google.com', 'imdb.com',
-    'uefa.com', 'sportsecyclopedia.com', 'bloomberg.com', 'worldcat.org', 't.me', 'irbis-nbuv.gov.ua',
-]);
-
-export function hostExcluded(host, excluded = DEFAULT_EXCLUDED_HOSTS) {
-    const h = (host ?? '').toLowerCase();
-    return excluded.some(e => h === e || h.endsWith(`.${e}`));
-}
 
 // An old rationale that says the source itself was unreadable: the model
 // noticed the charset damage. A lower bound on checks that saw garbage, since
 // the Pessimist case (2026-11-05) is one where it did not notice.
 export const GARBLED_RATIONALE = /mojibake|кодировк|нечитаем|кракозябр|encoding|неразборчив|искажённ\S* символ|набор символов/i;
 
-// Each delivery tier keeps a subset of the one before.
-export const DELIVERY_TIERS = Object.freeze([
-    ['all-flagged', 'Every NOT / PARTIALLY SUPPORTED row'],
-    ['minus-problem-sources', 'minus problem hosts and table-cell claims'],
-    ['not-supported', '…NOT SUPPORTED only'],
-    ['contradiction', '…contradiction only (the source says something else)'],
-    ['contradiction-quoted', '…with the contradicting passage verified in the source'],
-]);
 const CUT = 600;
 
 // Seeded so a sample can be reproduced (same PRNG as service/sweep-checks.js).
@@ -212,22 +193,13 @@ export async function reviewSweep(csvPath, { old = null, seed = 1, perCategory =
 
             let art = s.delivery.get(row.page_title);
             if (!art) s.delivery.set(row.page_title, art = { tiers: new Array(DELIVERY_TIERS.length).fill(0) });
-            if (FLAGGED.has(v)) {
-                art.tiers[0]++;
-                const badHost = hostExcluded(host, excludedHosts);
-                const tableCell = isTableLikeClaim(row.claim_text, THRESHOLDS.tableLikeLetterShare);
-                if (badHost) s.droppedByHost++;
-                else if (tableCell) s.droppedTableCell++;
-                if (!badHost && !tableCell) {
-                    art.tiers[1]++;
-                    if (v === 'NOT SUPPORTED') {
-                        art.tiers[2]++;
-                        if (row.reason_type === 'contradiction') {
-                            art.tiers[3]++;
-                            if (VERIFIED_QUOTE.has(row.quote_status)) art.tiers[4]++;
-                        }
-                    }
-                }
+            // Same predicates as service/clean-csv.js --deliver, so these counts
+            // are what a delivery file at each tier contains.
+            const reached = tierReached(row, { excludedHosts });
+            for (let i = 0; i <= reached; i++) art.tiers[i]++;
+            if (reached === 0) {
+                if (exclusionReason(row, { excludedHosts }) === 'problem-host') s.droppedByHost++;
+                else s.droppedTableCell++;
             }
 
             if (v === 'SOURCE UNAVAILABLE') {
@@ -365,10 +337,11 @@ function renderDelivery(s) {
     const L = ['## Delivery options', '',
         'Flagged rows left by each filter, cumulatively. Run this over the clean CSV to see what would actually be delivered.', '',
         '| Filter | Flags | Articles with ≥1 | Median per article (those with ≥1) |', '|---|---|---|---|'];
-    DELIVERY_TIERS.forEach(([, label], i) => {
+    DELIVERY_TIERS.forEach(({ label, name }, i) => {
         const withAny = perArticle[i].filter(n => n > 0).sort((a, b) => a - b);
         const median = withAny.length ? withAny[Math.floor(withAny.length / 2)] : 0;
-        L.push(`| ${label} | ${totals[i]} | ${withAny.length} of ${articles} | ${median} |`);
+        const flag = i >= 1 ? ` (\`--deliver ${name}\`)` : '';
+        L.push(`| ${label}${flag} | ${totals[i]} | ${withAny.length} of ${articles} | ${median} |`);
     });
     L.push('', `Problem hosts excluded (${s.droppedByHost} flags): ${s.excludedHosts.join(', ')}.`, '');
     L.push(`Table-cell claims excluded (${s.droppedTableCell} flags): claims that are mostly digits and punctuation — a score line, a date, a table cell.`);
