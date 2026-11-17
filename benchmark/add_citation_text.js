@@ -21,7 +21,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { JSDOM } from 'jsdom';
-import { extractCitationTextForCitation } from './extract_dataset.js';
+import { extractCitationTextForCitation, extractCitationTextForRef } from './extract_dataset.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -40,6 +40,12 @@ export async function fetchArticleDocument(articleUrl, { fetchImpl = fetch, retr
         }
         await sleep(DELAY_MS * 2 ** attempt);
     }
+}
+
+// "human-annotation:… evergreen#67 cite_ref-Schirru_2022_15-1 check_id=…"
+export function citeRefFromProvenance(provenance) {
+    const match = /(?:^|\s)(cite_ref-\S+)/.exec(provenance || '');
+    return match ? match[1] : null;
 }
 
 /**
@@ -68,7 +74,12 @@ export async function addCitationText(rows, { loadDocument, force = false, log =
             continue;
         }
         for (const row of articleRows) {
-            const text = extractCitationTextForCitation(doc, row.citation_number, row.occurrence || 1);
+            // A row that records its marker's cite_ref id (v4's provenance)
+            // is looked up by it: its citation number may be approximate.
+            const citeRef = citeRefFromProvenance(row.provenance);
+            const text = citeRef
+                ? extractCitationTextForRef(doc, citeRef)
+                : extractCitationTextForCitation(doc, row.citation_number, row.occurrence || 1);
             row.citation_text = text;
             if (text) filled++; else missing++;
         }

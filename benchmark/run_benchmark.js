@@ -252,7 +252,7 @@ export const PROVIDERS = {
     'hf-glm-5.2': {
         name: 'GLM-5.2 (HF Inference)',
         model: 'zai-org/GLM-5.2:novita',
-        endpoint: 'https://router.huggingface.co/v1',
+        endpoint: 'https://router.huggingface.co/v1/chat/completions',
         requiresKey: false,
         keyEnv: 'HF_TOKEN',
         type: 'huggingface'

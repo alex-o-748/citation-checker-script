@@ -111,16 +111,23 @@ function parseCSV(content) {
 }
 
 /**
- * Parse a single CSV line, handling quoted fields
+ * Parse a single CSV line, handling quoted fields. A doubled quote inside a
+ * quoted field ("") is an escaped quote character, per RFC 4180. It used to
+ * toggle the quote state twice and vanish, so a claim quoting the source
+ * ('saying it has "sharp-witted dialogue"') reached the model without its
+ * quotation marks.
  */
-function parseCSVLine(line) {
+export function parseCSVLine(line) {
     const result = [];
     let current = '';
     let inQuotes = false;
 
     for (let i = 0; i < line.length; i++) {
         const char = line[i];
-        if (char === '"') {
+        if (char === '"' && inQuotes && line[i + 1] === '"') {
+            current += '"';
+            i++;
+        } else if (char === '"') {
             inQuotes = !inQuotes;
         } else if (char === ',' && !inQuotes) {
             result.push(current);
@@ -293,6 +300,19 @@ export function extractClaimsForCitation(document, citationNumber) {
  * (PROMPT_VERSION v3). benchmark/add_citation_text.js backfills it onto an
  * existing dataset.json without touching anything else.
  */
+/**
+ * The footnote text of one exact citation marker, by its `cite_ref-…` id
+ * (the id of the marker's <sup>). Rows imported with full overrides (v4)
+ * record that id in `provenance`, and it pins the marker exactly, where
+ * their citation number is only approximate. Null when it isn't on the page.
+ */
+export function extractCitationTextForRef(document, citeRefId) {
+    if (!document || !citeRefId) return null;
+    const sup = document.getElementById(citeRefId);
+    const anchor = sup && sup.querySelector('a');
+    return anchor ? extractReferenceText(anchor, document) : null;
+}
+
 export function extractCitationTextForCitation(document, citationNumber, occurrence = 1) {
     if (!document) return null;
     const anchors = [];

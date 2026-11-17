@@ -318,3 +318,29 @@ test('POST /v1/verify forwards `citation` to the model and validates it', async 
   assert.match(validateVerifyRequest({ claim: 'c', source_content: 's', citation: 'x'.repeat(MAX_CITATION_CHARS + 1) }), /must not exceed/);
   assert.equal(validateVerifyRequest({ claim: 'c', source_content: 's', citation: 'ok' }), null);
 });
+
+import { extractCitationTextForRef } from '../benchmark/extract_dataset.js';
+import { citeRefFromProvenance } from '../benchmark/add_citation_text.js';
+
+test('v4 rows are looked up by the cite_ref id in their provenance, not their approximate number', async () => {
+  assert.equal(
+    citeRefFromProvenance('human-annotation:source-verification-qa-2026-11 evergreen#67 cite_ref-Schirru_2022_15-1 check_id=0115107373902747'),
+    'cite_ref-Schirru_2022_15-1'
+  );
+  assert.equal(citeRefFromProvenance('human-annotation:source-verification-2026-04-25'), null);
+
+  const doc = new JSDOM(`<!DOCTYPE html><body>
+    <p>Claim.<sup class="reference" id="cite_ref-a_1-0"><a href="#cite_note-a-1">[1]</a></sup>
+       Other claim.<sup class="reference" id="cite_ref-b_2-0"><a href="#cite_note-b-2">[2]</a></sup></p>
+    <ol class="references">
+      <li id="cite_note-a-1"><span class="reference-text">"Alpha". The Times.</span></li>
+      <li id="cite_note-b-2"><span class="reference-text">"Beta". Le Monde.</span></li>
+    </ol></body>`).window.document;
+  assert.equal(extractCitationTextForRef(doc, 'cite_ref-b_2-0'), '"Beta". Le Monde.');
+  assert.equal(extractCitationTextForRef(doc, 'cite_ref-missing'), null);
+
+  // The id wins over a citation number that points elsewhere.
+  const rows = [{ article_url: 'A', citation_number: 1, occurrence: 1, provenance: 'x cite_ref-b_2-0 check_id=1' }];
+  await addCitationText(rows, { loadDocument: async () => doc });
+  assert.equal(rows[0].citation_text, '"Beta". Le Monde.');
+});
