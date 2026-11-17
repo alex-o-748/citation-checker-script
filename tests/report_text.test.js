@@ -31,7 +31,13 @@ function methods() {
   const plaintextEnd = src.indexOf('\n        async copyReportToClipboard(format) {');
   assert.ok(wikitextStart !== -1 && plaintextEnd !== -1, 'report generators not found in main.js');
   const reportMethods = src.slice(wikitextStart + 1, plaintextEnd);
-  return [classMethod('reasonTypeLabel'), classMethod('escapeWikitableCell'), reportMethods].join('\n');
+  // The lead section's export (leadReportLines) and the set-aside filter
+  // (getCountedReportUnits) are lifted too, so the exports are tested as
+  // shipped: with no lead check in the run, both are no-ops.
+  return [
+    classMethod('reasonTypeLabel'), classMethod('escapeWikitableCell'),
+    classMethod('getCountedReportUnits'), classMethod('leadReportLines'), reportMethods,
+  ].join('\n');
 }
 
 function makeHarness(reportUnits, { revId = null } = {}) {
@@ -44,6 +50,7 @@ function makeHarness(reportUnits, { revId = null } = {}) {
         this.reportTokenUsage = { input: 0, output: 0 };
         this.providers = { claude: { name: 'Claude', model: 'claude-sonnet-4-6' } };
         this.currentProvider = 'claude';
+        this.reportLead = null;
       }
       t(en, params) {
         let s = en;
@@ -141,4 +148,15 @@ test('plain text report tags an omission NOT SUPPORTED row for a combined group'
   }]);
   const text = harness.generatePlainTextReport();
   assert.match(text, /^\[1\]\[2\] \(combined\) NOT SUPPORTED \(Omission\)$/m);
+});
+
+test('a set-aside lead citation is left out of both exports, and no lead section appears without a lead check', () => {
+  const units = [baseUnit({ citationNumber: 1 }), baseUnit({ citationNumber: 2, verdict: 'PARTIALLY SUPPORTED', leadDemoted: true })];
+  const h = makeHarness(units);
+  const wiki = h.generateWikitextReport();
+  assert.match(wiki, /\[1\]/);
+  assert.doesNotMatch(wiki, /\[2\]/);
+  assert.match(wiki, /0 partially supported, 1 not supported/);
+  assert.doesNotMatch(wiki, /Lead vs body/);
+  assert.doesNotMatch(h.generatePlainTextReport(), /\[2\]/);
 });

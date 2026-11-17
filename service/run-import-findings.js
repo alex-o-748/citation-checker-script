@@ -88,6 +88,10 @@ export function findingFromCsvRow(row, { wiki, fetchedAt, ttlDays = FINDING_TTL_
         tokensOut: numberOrNull(row.tokens_out),
         expiresAt: hasContent ? new Date(fetchedAt.getTime() + ttlDays * 24 * 60 * 60 * 1000) : null,
         published: row.published === '1',
+        // Absent from CSVs written before the lead check: those rows are all
+        // citation checks, none demoted.
+        checkKind: textOrNull(row.check_kind) ?? 'citation',
+        leadDemoted: row.lead_demoted === '1',
     };
 }
 

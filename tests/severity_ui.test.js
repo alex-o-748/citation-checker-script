@@ -24,6 +24,7 @@ function harness(bodyHtml = '') {
   const methods = [
     'severityLabelFor(severity) {',
     'severityHtml(severity) {',
+    'severitySubclaimsHtml(severity) {',
     'renderReportSeverity(unit) {',
     'blockSeverity(block) {',
     'applyReportSort() {',
@@ -42,9 +43,14 @@ ${methods}
   return { h: new Harness(), doc: dom.window.document };
 }
 
-const card = (id, order) => `<div class="verifier-report-card" data-id="${id}" data-doc-order="${order}"><div class="report-card-comment"></div><div class="verifier-feedback"></div></div>`;
-const group = (id, order, rows) => `<div class="verifier-report-group" data-id="${id}" data-doc-order="${order}"><div class="verifier-report-group-rows">${
-  rows.map((r) => `<div class="verifier-report-group-row" data-id="${r}"></div>`).join('')}</div></div>`;
+// The card anatomy findingHtml() builds: a head line, then details.
+const head = '<div class="sv-finding-head"><div class="sv-finding-headline"><span class="sv-finding-verdict"><span class="sv-verdict">Partial</span></span></div></div>';
+const card = (id, order) => `<div class="verifier-report-card sv-finding" data-id="${id}" data-doc-order="${order}">${head}`
+  + '<div class="sv-finding-details" hidden><div class="sv-quote"></div><div class="sv-finding-actions"><div class="verifier-feedback"></div></div></div></div>';
+const group = (id, order, rows) => `<div class="verifier-report-group sv-finding" data-id="${id}" data-doc-order="${order}">${head}`
+  + '<div class="sv-finding-details"><div class="verifier-report-group-collective"></div><div class="sv-finding-actions"></div><div class="verifier-report-group-rows">'
+  + rows.map((r) => `<div class="verifier-report-group-row sv-finding" data-id="${r}">${head}<div class="sv-finding-details"><div class="sv-finding-actions"></div></div></div>`).join('')
+  + '</div></div></div>';
 const order = (doc) => [...doc.getElementById('verifier-report-results').children].map((el) => el.dataset.id || el.className);
 
 // Ranks the element with data-id=`id` the way rankReportBySeverity() does.
@@ -100,12 +106,38 @@ test('a report that was not severity-ranked always shows article order', () => {
   assert.deepEqual(order(doc), ['a', 'b']);
 });
 
-test('the severity block sits above the feedback controls and is replaced, not stacked, on re-render', () => {
+test('on a card, what was found goes in the head line and the failing subclaims in the details, above the actions', () => {
   const { h, doc } = harness(card('a', 0));
-  const unit = rank(h, doc, 'a', SEVERITY_TIERS.CENTRAL_ABSENT);
+  const unit = rank(h, doc, 'a', SEVERITY_TIERS.CENTRAL_CONTRADICTED, 20, [{ text: 'opened in 1998', status: 'contradicted', central: true }]);
   h.renderReportSeverity(unit);
-  const children = [...doc.querySelector('[data-id="a"]').children].map((el) => el.className);
-  assert.deepEqual(children, ['report-card-comment', 'sv-severity-slot', 'verifier-feedback']);
+  const el = doc.querySelector('[data-id="a"]');
+  const tags = [...el.querySelector(':scope > .sv-finding-head').querySelectorAll('.sv-severity-tag')];
+  assert.deepEqual(tags.map((t) => t.textContent), ['Key fact contradicted'], 'replaced, not stacked, on re-render');
+  assert.ok(tags[0].classList.contains('sv-finding-tag'), 'a few quiet words, like the reason beside it');
+  assert.equal(tags[0].dataset.level, 'high', 'the level is kept, though no longer a colour');
+  assert.deepEqual([...el.querySelector('.sv-finding-details').children].map((c) => c.className), ['sv-quote', 'sv-severity-slot', 'sv-finding-actions']);
+  assert.match(el.querySelector('.sv-severity-slot').textContent, /Contradicted opened in 1998/);
+});
+
+test('a group\'s combined verdict is ranked on the group card, with its subclaims beside the combined evidence', () => {
+  const { h, doc } = harness(group('g', 0, ['g1']));
+  const slot = doc.querySelector('[data-id="g"] .verifier-report-group-collective');
+  const unit = { support_score: 20, severity: { tier: SEVERITY_TIERS.CENTRAL_ABSENT, subclaims: [{ text: 'cost $1m', status: 'absent', central: true }] } };
+  h.reportCardEls.set(unit, slot);
+  h.renderReportSeverity(unit);
+  const groupEl = doc.querySelector('[data-id="g"]');
+  assert.equal(groupEl.querySelector(':scope > .sv-finding-head .sv-severity-tag').textContent, 'Key fact not in source');
+  assert.match(slot.querySelector('.sv-severity-slot').textContent, /Not in source cost \$1m/);
+  assert.equal(doc.querySelector('[data-id="g1"] .sv-severity-tag'), null, 'not on its sources');
+  assert.equal(groupEl.dataset.severityTier, 'T2');
+});
+
+test('an unranked card says so in its head, with the error as a tooltip rather than text', () => {
+  const { h, doc } = harness(card('a', 0));
+  rank(h, doc, 'a', null);
+  const tag = doc.querySelector('[data-id="a"] .sv-severity-tag');
+  assert.equal(tag.textContent, 'Not ranked');
+  assert.equal(tag.title, 'parse_error');
 });
 
 test('the block lists only failing subclaims, marks peripheral ones, and escapes model text', () => {
@@ -121,7 +153,7 @@ test('the block lists only failing subclaims, marks peripheral ones, and escapes
   assert.match(html, /Key fact contradicted/);
   assert.match(html, /opened in &lt;b&gt;1998&lt;\/b&gt;/);
   assert.doesNotMatch(html, /designed by Holt/);
-  assert.match(html, /<li class="sv-subclaim sv-subclaim-absent">.*Holt is an engineer <span class="sv-subclaim-minor">\(minor\)<\/span><\/li>/);
+  assert.match(html, /<li class="sv-subclaim sv-subclaim-absent">.*<span class="sv-subclaim-text">Holt is an engineer <span class="sv-subclaim-minor">\(minor\)<\/span><\/span><\/li>/);
 });
 
 test('badge labels say what was found; T2 tells a contradicted detail from a missing key fact', () => {
