@@ -87,3 +87,29 @@ test('runRecheck writes input plus recheck columns, and --resume skips what is d
     assert.equal(keptRows.length, 2, 'header plus the one row both models flagged');
     assert.match(keptRows[1][1], /Первое/);
 });
+
+test('chained passes with their own prefixes keep only flags both models agree on', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'recheck-chain-'));
+    const input = join(dir, 'in.csv');
+    await writeFile(input, 'label,claim_text,source_url\n'
+        + 'genuine,"Первое утверждение, достаточно длинное",https://a.ru/1\n'
+        + 'wrong,"Второе утверждение, тоже длинное",https://a.ru/2\n'
+        + 'wrong,"Третье утверждение, тоже длинное",https://a.ru/3\n');
+    const io = verdictFor => ({
+        stderr: { write() {} }, stdout: { write() {} },
+        fetchOne: async url => ({ content: `Source Content:\nтекст ${url}`, status: 200 }),
+        callModel: async (s, u) => answer(verdictFor(u)),
+    });
+    const base = { provider: 'stub', model: 'm', wiki: 'ruwiki', concurrency: 1, resume: false };
+    // First model keeps rows 1 and 2; second keeps rows 1 and 3. Both: row 1.
+    assert.equal(await runRecheck({ ...base, input, out: join(dir, 'a.csv'), prefix: 'qwen' },
+        io(u => (u.includes('Третье') ? 'SUPPORTED' : 'NOT SUPPORTED'))), 0);
+    assert.equal(await runRecheck({ ...base, input: join(dir, 'a-kept.csv'), out: join(dir, 'b.csv'), prefix: 'glm' },
+        io(u => (u.includes('Второе') ? 'SUPPORTED' : 'NOT SUPPORTED'))), 0);
+    const final = parseCsv(await readFile(join(dir, 'b-kept.csv'), 'utf8'));
+    assert.equal(final.length, 2);
+    assert.ok(final[0].includes('qwen_rationale') && final[0].includes('glm_rationale'), 'both passes\' columns kept');
+    // Reusing a prefix is refused rather than silently overwriting columns.
+    assert.equal(await runRecheck({ ...base, input: join(dir, 'a-kept.csv'), out: join(dir, 'c.csv'), prefix: 'qwen' },
+        io(() => 'NOT SUPPORTED')), 2);
+});

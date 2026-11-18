@@ -42,10 +42,16 @@ import { langCodeForWiki } from '../core/wikipedia.js';
 import { modelFor } from '../core/models.js';
 
 export const SOURCE_FETCHER_BASE = 'https://source-fetcher.toolforge.org';
-export const RECHECK_COLUMNS = [
-    'recheck_row', 'recheck_provider', 'recheck_model', 'recheck_verdict', 'recheck_reason_type',
-    'recheck_rationale', 'recheck_source_quote', 'recheck_quote_status', 'recheck_kept', 'recheck_error',
+const COLUMN_SUFFIXES = [
+    'row', 'provider', 'model', 'verdict', 'reason_type', 'rationale', 'source_quote', 'quote_status', 'kept', 'error',
 ];
+// --prefix names a pass's columns, so passes can be chained (one model's kept
+// file fed to the next) without the second pass's columns colliding with the
+// first's: qwen_verdict, then glm_verdict.
+export function recheckColumns(prefix = 'recheck') {
+    return COLUMN_SUFFIXES.map(s => `${prefix}_${s}`);
+}
+export const RECHECK_COLUMNS = recheckColumns();
 
 // A flag survives the recheck when the second model also says NOT SUPPORTED.
 // Deliberately not "also contradiction": a stronger model that calls a
@@ -129,14 +135,14 @@ export function keptCsvPath(out) {
 
 // The rows that survived, from the whole output (a resumed run included):
 // the file to deliver. Streams, like everything that reads a sweep's CSVs.
-export async function writeKeptCsv(out, keptPath) {
+export async function writeKeptCsv(out, keptPath, prefix = 'recheck') {
     let header = null;
     let lines = [];
     let total = 0;
     for await (const { row } of iterateCsvRows(out)) {
         if (!row) continue;
         if (!header) { header = Object.keys(row); lines.push(header.map(csvCell).join(',')); }
-        if (row.recheck_kept !== '1') continue;
+        if (row[`${prefix}_kept`] !== '1') continue;
         total++;
         lines.push(header.map(h => csvCell(row[h])).join(','));
     }
@@ -151,12 +157,13 @@ async function countOutputRows(path) {
     return n;
 }
 
-export async function runRecheck(opts, {
+export async function runRecheck(rawOpts, {
     stderr = process.stderr,
     stdout = process.stdout,
-    fetchOne = (url) => fetchSourceContent(url, null, { workerBase: opts.fetcherBase }),
-    callModel = makeModelCaller({ provider: opts.provider, model: opts.model, workerBase: opts.workerBase, apiKey: opts.apiKey }),
+    fetchOne = (url) => fetchSourceContent(url, null, { workerBase: rawOpts.fetcherBase }),
+    callModel = makeModelCaller({ provider: rawOpts.provider, model: rawOpts.model, workerBase: rawOpts.workerBase, apiKey: rawOpts.apiKey }),
 } = {}) {
+    const opts = { prefix: 'recheck', ...rawOpts };
     const articleLangCode = langCodeForWiki(opts.wiki);
     const cache = new Map();
     const fetchSource = url => {
@@ -204,7 +211,13 @@ export async function runRecheck(opts, {
                 stderr.write('recheck: input needs claim_text and source_url columns\n');
                 return 2;
             }
-            if (!done) await writeFile(opts.out, [...header, ...RECHECK_COLUMNS].map(csvCell).join(',') + '\n');
+            const own = recheckColumns(opts.prefix);
+            const clash = own.filter(c => header.includes(c));
+            if (clash.length) {
+                stderr.write(`recheck: input already has ${clash.join(', ')}; pass a different --prefix\n`);
+                return 2;
+            }
+            if (!done) await writeFile(opts.out, [...header, ...own].map(csvCell).join(',') + '\n');
         }
         index++;
         if (index <= done) continue;
@@ -224,7 +237,7 @@ export async function runRecheck(opts, {
     const kept = outcomes.filter(o => o.kept).length;
     const errors = outcomes.filter(o => o.error).length;
     const keptPath = keptCsvPath(opts.out);
-    const keptTotal = await writeKeptCsv(opts.out, keptPath);
+    const keptTotal = await writeKeptCsv(opts.out, keptPath, opts.prefix);
     stdout.write(`recheck: ${outcomes.length} rechecked; ${kept} kept (second model also NOT SUPPORTED), `
         + `${outcomes.length - kept - errors} removed, ${errors} error(s). Wrote ${opts.out}\n`
         + `recheck: ${keptTotal} kept row(s) in total, the delivery file: ${keptPath}\n`);
@@ -235,7 +248,7 @@ export async function runRecheck(opts, {
 export const HELP_TEXT = `usage: node service/run-recheck.js <findings.csv> --provider <p> [options]
 
 Re-verifies each row's claim against its freshly fetched source with a second
-model and writes the input plus recheck_* columns. recheck_kept is 1 when the
+model and writes the input plus <prefix>_* columns. <prefix>_kept is 1 when the
 second model also says NOT SUPPORTED. With a label column, scores itself
 against the labels.
 
@@ -249,6 +262,9 @@ Options:
   --limit <n>           Recheck at most n rows
   --resume              Skip rows already in --out
   --fetcher-base <url>  Source fetcher (default: ${SOURCE_FETCHER_BASE})
+  --prefix <name>       Column prefix for this pass (default: recheck). Use a
+                        different one per pass when chaining: feeding one pass's
+                        -kept.csv to another keeps only flags both models agree on.
 `;
 
 async function main(argv) {
@@ -260,6 +276,7 @@ async function main(argv) {
             concurrency: { type: 'string', default: '4' }, limit: { type: 'string' },
             resume: { type: 'boolean', default: false },
             'fetcher-base': { type: 'string', default: SOURCE_FETCHER_BASE },
+            prefix: { type: 'string', default: 'recheck' },
             help: { type: 'boolean', short: 'h' },
         },
     });
@@ -279,6 +296,7 @@ async function main(argv) {
         limit: values.limit ? Number(values.limit) : null,
         resume: values.resume,
         fetcherBase: values['fetcher-base'],
+        prefix: values.prefix,
     };
     return runRecheck(opts);
 }
