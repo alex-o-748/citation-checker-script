@@ -64,7 +64,7 @@ export const CAUSE_BRIEF_SECTION = Object.freeze({
     other: null,
 });
 
-const ATTRIBUTION_DESCRIPTIONS = Object.freeze({
+export const ATTRIBUTION_DESCRIPTIONS = Object.freeze({
     tool_correct: "the checker's verdict was right.",
     missed_evidence: 'the source contains the passage that decides the verdict, and the checker did not find or credit it.',
     citation_metadata: "what the checker said was missing is the source's own identity or date (publisher, author, dateline), which its URL or the text's dateline establishes.",

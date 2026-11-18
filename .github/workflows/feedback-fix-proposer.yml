@@ -1,0 +1,160 @@
+name: Feedback fix proposer
+
+# Weekly: take the commonest cause of wrong verdicts in the confirmed field
+# set, have an agent (headless Claude Code) draft a fix, benchmark the code
+# before and after with the production model, and open a PR only if it passes
+# the bar fixed in feedback-loop/proposer.js (GATE). The owner decides whether
+# to merge. See feedback-loop/README.md.
+#
+# Needs: ANTHROPIC_API_KEY (secret); optional PROPOSER_MODEL (variable);
+# Settings > Actions > General > "Allow GitHub Actions to create and approve
+# pull requests". The benchmark model (Lift Wing Qwen3.8) needs no key.
+
+on:
+  schedule:
+    - cron: '41 4 * * 3'
+  workflow_dispatch:
+    inputs:
+      cause:
+        description: Propose for this cause only (e.g. missed_evidence); empty picks the largest
+        default: ''
+      min_cases:
+        description: Confirmed cases a cause needs
+        default: '10'
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: feedback-fix-proposer
+  cancel-in-progress: false
+
+env:
+  BENCH_PROVIDER: liftwing-qwen3.8-27b
+
+jobs:
+  propose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      # Outside the checkout, so nothing here shows up as the agent's change.
+      - name: Scratch folder
+        run: echo "P=$RUNNER_TEMP/proposal" >> "$GITHUB_ENV"
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - run: npm ci
+
+      # A cause with a proposal opened in the last three weeks waits: the
+      # owner may still be reviewing it, or has just closed it.
+      - name: Pick a cause
+        id: pick
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CAUSE: ${{ inputs.cause }}
+          MIN_CASES: ${{ inputs.min_cases || '10' }}
+        run: |
+          since=$(date -u -d '-21 days' +%FT%TZ)
+          busy=$(gh pr list --label fix-proposal --state all --limit 100 --json labels,createdAt \
+            --jq "[.[] | select(.createdAt > \"$since\") | .labels[].name | select(startswith(\"cause:\")) | ltrimstr(\"cause:\")] | unique | join(\",\")")
+          mkdir -p "$P"
+          node feedback-loop/proposer.js pick --field benchmark/dataset_field.json --out-dir "$P" \
+            --exclude "$busy" --cause "$CAUSE" --min-cases "$MIN_CASES"
+
+      # The field rows lack the footnote text the production prompt sends;
+      # add it to a copy so the benchmark sees what users' checks see.
+      - name: Benchmark before the change
+        if: steps.pick.outputs.cause != ''
+        run: |
+          cp benchmark/dataset_field.json "$P/field_full.json"
+          (cd benchmark && node add_citation_text.js --dataset "$P/field_full.json") || echo "::warning::citation text backfill failed; benchmarking without it"
+          cd benchmark
+          node run_benchmark.js --providers=$BENCH_PROVIDER --dataset "$P/field_full.json" --results "$P/control_field.json" --concurrency 4
+          node run_benchmark.js --providers=$BENCH_PROVIDER --dataset dataset.json --results "$P/control_main.json" --concurrency 4
+
+      # The agent sees the field set without the held-out cases, can edit
+      # files and run the tests, and has no network, git or GitHub access.
+      - name: Draft a fix
+        if: steps.pick.outputs.cause != ''
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          MODEL: ${{ vars.PROPOSER_MODEL || 'claude-opus-5-5' }}
+          # Hard cap on the agent's API spend per attempt.
+          BUDGET_USD: ${{ vars.PROPOSER_BUDGET_USD || '20' }}
+        run: |
+          npm install -g @anthropic-ai/claude-code@^2.1.327
+          cp "$P/field_visible.json" benchmark/dataset_field.json
+          # dontAsk: the listed tools work, anything else is refused rather
+          # than waiting on a prompt nobody will answer.
+          claude -p --model "$MODEL" --max-budget-usd "$BUDGET_USD" --permission-mode dontAsk \
+            --allowedTools "Read,Edit,Write,Glob,Grep,Bash(npm test),Bash(npm run build),Bash(node --test:*)" \
+            < "$P/brief.md" > "$P/agent-log.txt" 2>&1 || echo "::warning::the agent exited with an error"
+          git checkout -- benchmark/dataset_field.json
+
+      - name: Check what the agent changed
+        id: changes
+        if: steps.pick.outputs.cause != ''
+        run: |
+          git status --porcelain --untracked-files=all > "$P/changes.txt"
+          cat "$P/changes.txt"
+          if [ ! -s "$P/changes.txt" ]; then echo "::notice::The agent changed nothing."; echo "ok=false" >> "$GITHUB_OUTPUT"; exit 0; fi
+          if grep -Eq ' (benchmark/|feedback-loop/|\.github/)' "$P/changes.txt"; then
+            echo "::error::The agent edited a protected path; discarding the attempt."; echo "ok=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          npm test
+          echo "ok=true" >> "$GITHUB_OUTPUT"
+
+      - name: Benchmark after the change
+        if: steps.changes.outputs.ok == 'true'
+        run: |
+          cd benchmark
+          node run_benchmark.js --providers=$BENCH_PROVIDER --dataset "$P/field_full.json" --results "$P/treatment_field.json" --concurrency 4
+          node run_benchmark.js --providers=$BENCH_PROVIDER --dataset dataset.json --results "$P/treatment_main.json" --concurrency 4
+
+      - name: Gate
+        id: gate
+        if: steps.changes.outputs.ok == 'true'
+        run: |
+          node feedback-loop/proposer.js gate --dir "$P" \
+            --run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          cat "$P/gate.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Open the PR
+        if: steps.gate.outputs.pass == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CAUSE: ${{ steps.pick.outputs.cause }}
+        run: |
+          branch="fix-proposal/$CAUSE-$(date -u +%Y%m%d)"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git checkout -b "$branch"
+          git add -A
+          git commit -q -m "Fix proposal for $CAUSE (feedback loop)"
+          git push -q origin "$branch"
+          gh label create fix-proposal --color 1d76db --description 'Drafted by the feedback loop; passed its gate' 2>/dev/null || true
+          gh label create "cause:$CAUSE" --color c5def5 2>/dev/null || true
+          gh pr create --base main --head "$branch" --title "Fix proposal: $CAUSE" \
+            --body-file "$P/pr-body.md" --label fix-proposal --label "cause:$CAUSE"
+
+      - name: Keep the attempt
+        if: ${{ !cancelled() && steps.pick.outputs.cause != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: fix-proposal
+          path: |
+            ${{ env.P }}/brief.md
+            ${{ env.P }}/agent-log.txt
+            ${{ env.P }}/agent-summary.md
+            ${{ env.P }}/changes.txt
+            ${{ env.P }}/gate.md
+            ${{ env.P }}/gate.json
+            ${{ env.P }}/proposal.json
+          if-no-files-found: ignore
