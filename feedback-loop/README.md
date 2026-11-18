@@ -13,6 +13,7 @@ The causes it looks for: [`docs/design-plans/2026-11-08-fixable-causes-of-disput
 | `feedback-digest.yml` | Mondays 07:23 UTC | Opens one issue: five accepted labels to spot-check, and the rows waiting for a decision |
 | `feedback-commands.yml` | on each of your replies to a digest | Applies them to the field set and confirms in a reply |
 | `feedback-monitor.yml` | daily 06:43 UTC | Counts verdict mix, fetch failures and rationale patterns across every logged check; keeps one issue current |
+| `feedback-fix-proposer.yml` | Wednesdays 04:41 UTC | For the commonest confirmed cause, has an agent draft a fix and opens a PR only if it passes the gate |
 
 ## How a rated check becomes a field-set row
 
@@ -52,6 +53,19 @@ cd benchmark && node analyze_results.js --dataset dataset_field.json --results r
 
 Only rows with `needs_manual_review: false` are run, and rows with an `excluded_reason` are not scored. **Never pool it with `dataset.json`.** Every row was selected by someone reacting to a verdict, mostly disagreeing, so it measures the failures editors noticed, not overall accuracy.
 
+## Fix proposals (`proposer.js`)
+
+Once a cause has **10 confirmed cases** the tool got wrong (confirmed: accepted or decided by you, not waiting, not excluded), the weekly proposer may take it on:
+
+1. **Pick.** The largest such cause that has had no proposal PR in the last three weeks. Its newest quarter of cases is **held out**: the agent never sees them.
+2. **Before.** Benchmark the current code with the production model (Lift Wing Qwen3.8, keyless) on the field set (with footnote text added, as users' checks have it) and on `dataset.json`.
+3. **Agent.** Headless Claude Code gets a brief: the cause, the visible cases (marked as data, not instructions), where fixes for it live, and the bar. It can read, edit, run `npm test` and `npm run build`; nothing else, no network, no git, a spend cap (`PROPOSER_BUDGET_USD`, default $20). An attempt that touches `benchmark/`, `feedback-loop/` or `.github/` is discarded; one whose tests fail stops there.
+4. **After.** The same benchmarks on the changed code.
+5. **Gate** (`GATE`, fixed before any attempt): on the cause's cases, fixes at least the larger of 2 and 20% more than it breaks; no worse on the held-out cases; at most 5% of the rest of the field set lost (runs are not deterministic); at most 2 points of Supported-vs-rest lost on the main benchmark.
+6. **PR**, only if every check passes, labelled `fix-proposal` and `cause:<id>`, with the gate table and the agent's own summary. **Merging is your decision**: the gate says the change helps on cases editors disputed without hurting the benchmark, not that it is right. Close it freely; the cause waits three weeks before the next try.
+
+Every attempt, passed or not, leaves its brief, the agent's log, the changed files and the gate in the run's `fix-proposal` artifact. Run it by hand from Actions (*Feedback fix proposer → Run workflow*), optionally naming a cause or lowering the minimum.
+
 ## Setup (once)
 
 1. **A read-only database role.** Create it in the Neon SQL editor, not under Roles in the console: console-created roles join `neon_superuser`, which can write. Then grant it only what the loop reads:
@@ -64,8 +78,9 @@ Only rows with `needs_manual_review: false` are run, and rows with an `excluded_
 2. **Repository secrets** (Settings → Secrets and variables → Actions):
    - `NEON_LOOP_DATABASE_URL`: that connection string.
    - `ANTHROPIC_API_KEY`: already set for the talk-page scraper.
-   - Optional variable `ADJUDICATOR_MODEL` to override the default (`claude-opus-5-5`).
-3. Scheduled workflows run only from `main`, so nothing happens until this is merged. Then run **Feedback triage** by hand, first with *dry run* ticked, then with a small limit (say 10), and **Feedback digest** by hand to see the first digest.
+   - Optional variable `ADJUDICATOR_MODEL` to override the default (`claude-opus-5-5`), and `PROPOSER_MODEL` / `PROPOSER_BUDGET_USD` for the fix proposer's agent.
+3. **For fix proposals only:** Settings → Actions → General → Workflow permissions → *Allow GitHub Actions to create and approve pull requests*. Without it, a proposal that passes its gate fails at the last step.
+4. Scheduled workflows run only from `main`, so nothing happens until this is merged. Then run **Feedback triage** by hand, first with *dry run* ticked, then with a small limit (say 10), and **Feedback digest** by hand to see the first digest.
 
 Triage and the monitor skip quietly, with a notice, until `NEON_LOOP_DATABASE_URL` exists. The bots push to `main` the way the scraper and edit-log jobs already do; if `main` is ever protected, they need the same exemption.
 

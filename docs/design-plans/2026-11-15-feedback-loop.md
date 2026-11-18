@@ -1,6 +1,6 @@
 # A feedback loop with the owner auditing labels and approving fixes
 
-> **Status (2026-11-17):** In progress on branch `claude/nifty-rubin-3iq0l1`, not yet merged. Stages 1–3 and the monitor are built; stages 4–5 are not. On 2026-11-17 label confirmation changed from merging a PR per batch to auditing a random sample (see *Decisions*). Operating notes: [`feedback-loop/README.md`](../../feedback-loop/README.md).
+> **Status (2026-11-18):** In progress. Stages 1–3 and the monitor are merged (#406) and running; stage 4, the fix proposer, is built on branch `claude/nifty-rubin-3iq0l1`; stage 5 is not built. On 2026-11-17 label confirmation changed from merging a PR per batch to auditing a random sample (see *Decisions*). Operating notes: [`feedback-loop/README.md`](../../feedback-loop/README.md).
 
 ## Why
 
@@ -20,7 +20,7 @@ The loop turns ratings into confirmed regression rows, and the log into a daily 
 | 1. Export rated checks; re-fetch; tag patterns | machine, nightly | yes (`sql/cases.sql`, `cases.js`, `causes.js`) |
 | 2. Blind reading, then attribution; label by rule | machine, nightly | yes (`adjudicate.js`, `run-triage.js`) |
 | 3. **Audit labels**: spot-check a weekly random sample, decide the exceptions, by one-line reply | **owner** | yes (`digest.js`, `feedback-digest.yml`, `feedback-commands.yml`) |
-| 4. Propose a fix per cause cluster, gated on the benchmark | machine | no |
+| 4. Propose a fix per cause cluster, gated on the benchmark | machine | yes (`proposer.js`, `feedback-fix-proposer.yml`) |
 | 5. **Merge the fix**, then canary it | **owner**, then machine | no |
 | Daily, beside all of it: label-free monitor | machine | yes (`monitor.js`, `feedback-monitor.yml`) |
 
@@ -37,6 +37,8 @@ The loop turns ratings into confirmed regression rows, and the log into a daily 
 **The owner answers in one-line comments, not checkboxes or JSON edits.** `a1b2c3d4 not supported` can be written from a phone, says exactly what was decided, and leaves a public record in the issue. Checkboxes cannot carry "the right label is X" without five boxes per row. Only the repository owner's comments are applied, and the comment body reaches the script through an environment variable, never a shell string.
 
 **Rows are never deleted; `drop` leaves a marker.** A check id missing from the field set looks untriaged, so a deleted row would be read, and paid for, again the next night.
+
+**The fix proposer can only propose, and only past a bar it can't move.** The agent edits a working copy with no network, git or GitHub access, under a spend cap; the workflow, not the agent, checks the diff, runs the tests and the benchmarks, and opens the PR. An attempt that touches `benchmark/`, `feedback-loop/` or `.github/` (the data, the judge, or the workflow) is discarded unseen. A failed attempt opens nothing, so the owner's queue holds only changes that already beat the bar, and merging stays theirs.
 
 **Two model calls, blind then attribution, not one.**
 - A single call that sees the tool's verdict and the editor's correction is anchored by both, so its agreement with the editor proves little.
@@ -92,10 +94,10 @@ The loop turns ratings into confirmed regression rows, and the log into a daily 
 2. **Capture what the log lacks.**
    - `buildLogPayload()` should send `PROMPT_VERSION` (it already exists in `core/prompts.js`), the claim scope, the source length and truncation. The Worker's INSERT needs the columns too (`docs/worker-logging-reference.md`).
    - The 👎 should send the source text the model saw, so triage stops depending on a re-fetch.
-3. **Stage 4, the fix proposer.**
-   - When a cause has at least 10 confirmed rows, an agent drafts the matching fix as a PR, one cause per PR.
-   - The PR is gated on the field set, `dataset.json` and WiCE `unanimous`, with `ccs compare` output attached.
-   - The pass bar is written down before the run, and the newest month of the field set is held out.
+3. **Stage 4, the fix proposer: built 2026-11-18.** As planned, a cause needs 10 confirmed rows, one cause per PR, and the bar (`GATE` in `proposer.js`) is fixed before any attempt. Three things differ from this plan, on purpose:
+   - **The held-out set is the cause's newest quarter, not the newest month.** Triage reads the newest feedback first, so on the first real field set a 30-day window held out every case and left the agent no example to study.
+   - **WiCE is not in the gate.** It is gitignored and rebuilt by download, and adding 707 rows to both runs would double each attempt's time for a benchmark whose labels are partly projection artifacts. `dataset.json` stands in as the guard against regressions.
+   - **The gate compares the runs itself instead of attaching `ccs compare` output**, so the pass/fail rule lives in one tested function rather than in reading a report.
 4. **Stage 5, the canary.**
    - Assign a candidate prompt by `client_id` hash and log `prompt_version`.
    - Raw 👎 rates are biased by who rates; the difference between randomly assigned groups isn't.
