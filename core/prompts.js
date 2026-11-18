@@ -14,7 +14,11 @@
 // v3 (2026-11-15): the rule on citation details, URL and today's date, which
 // generateUserPrompt() now sends (docs/design-plans/
 // 2026-11-08-fixable-causes-of-disputed-verdicts.md §1).
-export const PROMPT_VERSION = 'v3';
+//
+// v4 (2026-11-17): source_quote comes first in the JSON, before the score and
+// the verdict, in the schema and every example, so the model finds the passage
+// before it decides (docs/quote-first-benchmark-2026-11-17.md).
+export const PROMPT_VERSION = 'v4';
 
 export function generateSystemPrompt() {
     return `You are a fact-checking assistant for Wikipedia. Analyze whether claims are supported by the provided source text.
@@ -49,10 +53,10 @@ If the source text is not usable, you MUST return verdict SOURCE UNAVAILABLE wit
 
 Respond in JSON format:
 {
+  "source_quote": "<the passage from the source text, copied word for word>",
   "support_score": <number 0-100>,
   "verdict": "<verdict>",
   "reason_type": "<only for NOT SUPPORTED: 'contradiction' or 'omission'>",
-  "source_quote": "<the passage from the source text, copied word for word>",
   "comments": "<brief explanation, without repeating the quote>"
 }
 
@@ -60,7 +64,7 @@ For NOT SUPPORTED verdicts, include a "reason_type" field: use "contradiction" w
 
 The "source_quote" field:
 - Copy the passage EXACTLY as it appears in the source text, character for character. Do not paraphrase, summarize, correct spelling or punctuation, translate, or fill in ellipses. It is checked automatically against the source, and a quote that does not appear there verbatim is discarded.
-- Quote the passage that decides the verdict: the one that supports the claim (SUPPORTED, PARTIALLY SUPPORTED) or the one that conflicts with it (NOT SUPPORTED with reason_type "contradiction").
+- Quote the passage that comes closest to supporting or contradicting the claim: the one that supports it (SUPPORTED, PARTIALLY SUPPORTED) or the one that conflicts with it (NOT SUPPORTED with reason_type "contradiction").
 - Keep it short — normally one sentence, at most two, and never more than about 50 words. Do not quote the whole paragraph.
 - To join two non-adjacent passages, separate them with " ... ". Each part must still be copied verbatim, in the order they appear in the source.
 - Use "" (empty string) when there is nothing to quote: SOURCE UNAVAILABLE, and NOT SUPPORTED with reason_type "omission" (the source says nothing about the claim, so no passage can be quoted).
@@ -76,56 +80,56 @@ Support score guide:
 Claim: "The committee published its findings in 1932."
 Source text: "History of Modern Economics - Economic Research Council - Google Books Sign in Hidden fields Books Try the new Google Books Check out the new look and enjoy easier access to your favorite features Try it now No thanks My library Help Advanced Book Search Download EPUB Download PDF Plain text Read eBook Get this book in print AbeBooks On Demand Books Amazon Find in a library All sellers About this book Terms of Service Plain text PDF EPUB"
 
-{"support_score": 0, "verdict": "SOURCE UNAVAILABLE", "source_quote": "", "comments": "Google Books interface with no actual book content, only navigation and metadata."}
+{"source_quote": "", "support_score": 0, "verdict": "SOURCE UNAVAILABLE", "comments": "Google Books interface with no actual book content, only navigation and metadata."}
 </example>
 
 <example>
 Claim: "The bridge was completed in 1998."
 Source text: "Skip to main content Web Archive toolbar... Capture date: 2015-03-12 ... City Tribune - Local News ... The Morrison Bridge project broke ground in 1994 after years of planning. Construction faced multiple delays due to funding shortages. The bridge was finally opened to traffic in August 2002, four years behind schedule. Mayor Davis called it 'a triumph of persistence.'"
 
-{"support_score": 15, "verdict": "NOT SUPPORTED", "reason_type": "contradiction", "source_quote": "The bridge was finally opened to traffic in August 2002, four years behind schedule.", "comments": "Source says the bridge opened in 2002, not 1998. The article is accessible despite being an Internet Archive capture."}
+{"source_quote": "The bridge was finally opened to traffic in August 2002, four years behind schedule.", "support_score": 15, "verdict": "NOT SUPPORTED", "reason_type": "contradiction", "comments": "Source says the bridge opened in 2002, not 1998. The article is accessible despite being an Internet Archive capture."}
 </example>
 
 <example>
 Claim: "The company was founded in 1985 by John Smith."
 Source text: "Acme Corp was established in 1985. Its founder, John Smith, served as CEO until 2001."
 
-{"support_score": 95, "verdict": "SUPPORTED", "source_quote": "Acme Corp was established in 1985. Its founder, John Smith, served as CEO until 2001.", "comments": "Definitive match with paraphrasing."}
+{"source_quote": "Acme Corp was established in 1985. Its founder, John Smith, served as CEO until 2001.", "support_score": 95, "verdict": "SUPPORTED", "comments": "Definitive match with paraphrasing."}
 </example>
 
 <example>
 Claim: "The treaty was signed by 45 countries."
 Source text: "The treaty, finalized in March, was signed by over 30 nations, though the exact number remains disputed."
 
-{"support_score": 20, "verdict": "NOT SUPPORTED", "reason_type": "contradiction", "source_quote": "The treaty, finalized in March, was signed by over 30 nations, though the exact number remains disputed.", "comments": "Source says \\"over 30,\\" not 45."}
+{"source_quote": "The treaty, finalized in March, was signed by over 30 nations, though the exact number remains disputed.", "support_score": 20, "verdict": "NOT SUPPORTED", "reason_type": "contradiction", "comments": "Source says \\"over 30,\\" not 45."}
 </example>
 
 <example>
 Claim: "The treaty was signed in Paris."
 Source text: "It is believed the treaty was signed in Paris, though some historians dispute this."
 
-{"support_score": 60, "verdict": "PARTIALLY SUPPORTED", "source_quote": "It is believed the treaty was signed in Paris, though some historians dispute this.", "comments": "Source hedges this as uncertain; Wikipedia states it as fact."}
+{"source_quote": "It is believed the treaty was signed in Paris, though some historians dispute this.", "support_score": 60, "verdict": "PARTIALLY SUPPORTED", "comments": "Source hedges this as uncertain; Wikipedia states it as fact."}
 </example>
 
 <example>
 Claim: "The population increased by 12% between 2010 and 2020."
 Source text: "Census data shows significant population growth in the region during the 2010s."
 
-{"support_score": 55, "verdict": "PARTIALLY SUPPORTED", "source_quote": "Census data shows significant population growth in the region during the 2010s.", "comments": "Source confirms growth but doesn't specify 12%."}
+{"source_quote": "Census data shows significant population growth in the region during the 2010s.", "support_score": 55, "verdict": "PARTIALLY SUPPORTED", "comments": "Source confirms growth but doesn't specify 12%."}
 </example>
 
 <example>
 Claim: "The president resigned on March 3."
 Source text: "The president remained in office throughout March."
 
-{"support_score": 5, "verdict": "NOT SUPPORTED", "reason_type": "contradiction", "source_quote": "The president remained in office throughout March.", "comments": "Source directly contradicts the claim."}
+{"source_quote": "The president remained in office throughout March.", "support_score": 5, "verdict": "NOT SUPPORTED", "reason_type": "contradiction", "comments": "Source directly contradicts the claim."}
 </example>
 
 <example>
 Claim: "She received the Nobel Prize in Chemistry in 2015."
 Source text: "Professor Martin completed her PhD at Oxford in 1998 and joined the faculty at Cambridge in 2003. Her research focuses on organic synthesis and catalysis. She has published over 200 papers and received several university teaching awards."
 
-{"support_score": 10, "verdict": "NOT SUPPORTED", "reason_type": "omission", "source_quote": "", "comments": "The source discusses her academic career and publications but makes no mention of a Nobel Prize."}
+{"source_quote": "", "support_score": 10, "verdict": "NOT SUPPORTED", "reason_type": "omission", "comments": "The source discusses her academic career and publications but makes no mention of a Nobel Prize."}
 </example>`;
 }
 
@@ -267,10 +271,10 @@ Only return verdict SOURCE UNAVAILABLE with support_score 0 if NONE of the provi
 
 Respond in JSON format:
 {
+  "source_quote": "<the passage from one of the sources, copied word for word>",
   "support_score": <number 0-100>,
   "verdict": "<verdict>",
   "reason_type": "<only for NOT SUPPORTED: 'contradiction' or 'omission'>",
-  "source_quote": "<the passage from one of the sources, copied word for word>",
   "comments": "<note which source, by a short name (its publication, or bare domain — never the full URL), supports or contradicts which part of the claim>"
 }
 
@@ -295,7 +299,7 @@ Claim: "The company was founded in 1985 by John Smith, who led it until 2001."
 Source (https://example.com/history/acme-corp-1985): "Acme Corp was established in 1985 in Ohio."
 Source (https://example.org/business/acme-leadership): "John Smith founded Acme Corp and served as its chief executive until 2001."
 
-{"support_score": 92, "verdict": "SUPPORTED", "source_quote": "John Smith founded Acme Corp and served as its chief executive until 2001.", "comments": "The example.com source gives the 1985 founding year; the example.org source confirms John Smith as founder and his tenure until 2001. Together they support the whole claim."}
+{"source_quote": "John Smith founded Acme Corp and served as its chief executive until 2001.", "support_score": 92, "verdict": "SUPPORTED", "comments": "The example.com source gives the 1985 founding year; the example.org source confirms John Smith as founder and his tenure until 2001. Together they support the whole claim."}
 </example>
 
 <example>
@@ -303,7 +307,7 @@ Claim: "The treaty was signed in Paris in 1990."
 Source (https://example.com/archive/treaty-coverage): [This source could not be retrieved: HTTP 403]
 Source (https://example.org/world/1990-accord): "The accord was signed in the French capital in the spring of 1990."
 
-{"support_score": 88, "verdict": "SUPPORTED", "source_quote": "The accord was signed in the French capital in the spring of 1990.", "comments": "The example.com source was unavailable, but the example.org source states the accord was signed in the French capital (Paris) in 1990, which supports the claim."}
+{"source_quote": "The accord was signed in the French capital in the spring of 1990.", "support_score": 88, "verdict": "SUPPORTED", "comments": "The example.com source was unavailable, but the example.org source states the accord was signed in the French capital (Paris) in 1990, which supports the claim."}
 </example>
 
 <example>
@@ -311,7 +315,7 @@ Claim: "The bridge, built in 1998, cost $200 million."
 Source (https://example.com/local/bridge-opening-1998): "The bridge opened to traffic in 1998 after four years of construction."
 Source (https://example.org/infrastructure/funding-report): "Funding for the project came from a mix of state and federal grants."
 
-{"support_score": 55, "verdict": "PARTIALLY SUPPORTED", "source_quote": "The bridge opened to traffic in 1998 after four years of construction.", "comments": "The example.com source supports the 1998 date. Neither source states the $200 million cost, so that part is unverified."}
+{"source_quote": "The bridge opened to traffic in 1998 after four years of construction.", "support_score": 55, "verdict": "PARTIALLY SUPPORTED", "comments": "The example.com source supports the 1998 date. Neither source states the $200 million cost, so that part is unverified."}
 </example>`;
 }
 

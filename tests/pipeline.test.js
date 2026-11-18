@@ -49,6 +49,27 @@ test('a supported claim comes back with the verdict, score and located quote', a
   assert.equal(result.quote.verifiedText, SUPPORTED.source_quote);
 });
 
+test('quoteDisplay carries the located quote, but not on an omission', async () => {
+  const base = {
+    claimText: 'The company was founded in 1985 by John Smith.',
+    sourceUrl: 'https://example.com/a',
+    provider: 'claude',
+    model: 'claude-sonnet-4-6',
+    fetchSource: fetchOk(),
+  };
+  const supported = await verifyCitation({ ...base, callProvider: respond(SUPPORTED) });
+  assert.equal(supported.quoteDisplay, SUPPORTED.source_quote);
+
+  // The quote is in the source, and still not shown: a passage cannot be the
+  // evidence for "the source never mentions this".
+  const omission = await verifyCitation({
+    ...base,
+    callProvider: respond({ ...SUPPORTED, verdict: 'NOT SUPPORTED', reason_type: 'omission', support_score: 10 }),
+  });
+  assert.equal(omission.quote.verified, true, 'the quote is still checked and reported');
+  assert.equal(omission.quoteDisplay, '');
+});
+
 test('a quote the source does not contain is reported unverified, not thrown away silently', async () => {
   const result = await verifyCitation({
     claimText: 'The company was founded in 1985.',

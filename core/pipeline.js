@@ -20,7 +20,7 @@ import { fetchSourceContent } from './worker.js';
 import { generateSystemPrompt, generateUserPrompt, extractSourceText, todayIsoDate } from './prompts.js';
 import { callProviderAPI } from './providers.js';
 import { parseVerificationResult } from './parsing.js';
-import { verifyQuote } from './quote.js';
+import { verifyQuote, displayedQuote } from './quote.js';
 
 // Which step failed, on a `{ ok: false }` result. Callers map these onto their
 // own error surface — the CLI onto exit codes, a UI onto a message.
@@ -50,7 +50,7 @@ export const VERIFY_STAGES = Object.freeze({
  *
  * @returns {Promise<
  *   { ok: true, claimText, provider, model, verdict, supportScore, comments,
- *     reasonType, sourceQuote, quote, sourceUrl, sourceContent, sourceText,
+ *     reasonType, sourceQuote, quote, quoteDisplay, sourceUrl, sourceContent, sourceText,
  *     sourceStatus, usage, raw }
  *   | { ok: false, stage, error, status?, cause?, raw?, sourceUrl,
  *       sourceContent?, usage? }>}
@@ -146,8 +146,10 @@ export async function verifyCitation({
     }
 
     // 4. Quote check. The model's source_quote is looked up in the exact text
-    //    the model was shown; renderers display quote.verifiedText, never the
-    //    raw quote (see core/quote.js).
+    //    the model was shown; renderers display quoteDisplay, never the raw
+    //    quote. quoteDisplay is quote.verifiedText, kept only for a verdict a
+    //    passage can decide, so an omission's quote is not shown
+    //    (core/quote.js's displayedQuote()).
     const sourceText = extractSourceText(content);
     const quote = verifyQuote(sourceText, parsed.source_quote);
 
@@ -165,6 +167,7 @@ export async function verifyCitation({
         reasonType: parsed.reason_type ?? null,
         sourceQuote: parsed.source_quote,
         quote,
+        quoteDisplay: displayedQuote(quote, parsed.verdict, parsed.reason_type),
         sourceUrl,
         sourceContent: content,
         sourceText,
