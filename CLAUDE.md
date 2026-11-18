@@ -43,7 +43,8 @@ benchmark/
   analysis_v3.json               # Frozen v3 analysis snapshot
 Benchmarking_data_Citations.csv  # Source ground truth data (Dataset version + WMF override columns)
 service/                         # Toolforge batch pipeline: select -> extract -> fetch -> verify -> store (see Batch Pipeline below)
-.github/workflows/               # Scheduled talk-page scraper (not test/build CI)
+feedback-loop/                   # Editor feedback -> confirmed field-set rows + a daily log monitor (see Feedback loop below)
+.github/workflows/               # Scheduled jobs: talk-page scraper, edit-log sweep, feedback triage + monitor (not test/build CI)
 docs/                            # Reference docs + design plans (see docs/README.md)
 ```
 
@@ -556,10 +557,34 @@ Rules to keep if you touch it:
 Design, prototype numbers and the alternatives rejected:
 `docs/design-plans/2026-10-22-lead-checks.md`.
 
+## Feedback loop (`feedback-loop/`, read before touching it)
+
+Editor ratings in Neon become confirmed regression rows in
+`benchmark/dataset_field.json`, and the verification log becomes a daily trend.
+Operating notes and setup: `feedback-loop/README.md`. Design:
+`docs/design-plans/2026-11-15-feedback-loop.md`. Four workflows:
+
+- `feedback-triage.yml` (nightly) re-reads newly rated checks with an independent model and commits them to the field set on `main`: agreed labels are accepted as they land, the rest wait out of scoring.
+- `feedback-digest.yml` (weekly) opens one issue with five accepted labels to spot-check and the rows waiting for a decision; `feedback-commands.yml` applies the owner's one-line replies (`a1b2c3d4 ok`, `a1b2c3d4 not supported`, `a1b2c3d4 drop`).
+- `feedback-monitor.yml` (daily) keeps one issue current, and comments only when the set of alerts changes.
+
+Rules the code depends on:
+
+- **`client_id` never leaves `sql/cases.sql`.** It is used there for rater counts and rating speed only; the field set is committed publicly, and a stable token would link one person's ratings across articles. A test fails if it reaches a case.
+- **The blind call sees the claim and the source, nothing else.** No tool verdict, no editor feedback: its independence is what makes agreement with the editor evidence. A test fails if either leaks into its prompt.
+- **Labels are decided by `proposeLabel()`, never by a model.** *Agreed* requires the editor and the blind reading to match and the evidence to verify with `core/quote.js`; anything else goes to the owner.
+- **A row the owner edited is never overwritten** (`isOwnerDecided()`), even with `--retriage`.
+- **Rows are never deleted.** A missing check id looks untriaged and would be read again; `drop` leaves a marker (`excluded_reason: 'dropped by the owner'`).
+- **Auto-accept answers to the spot-checks.** Two wrong labels in the owner's last ten pause it (`autoAcceptState()`), and agreed rows are then held like the rest. Don't add a path that accepts a label around that check.
+- **Only the repository owner's comments are applied**, and the comment body reaches `digest.js` through an environment variable, never interpolated into a shell command.
+- **Each rationale pattern is written once**, in `causes.js`, in regex syntax JS and Postgres share; `causeSql()` compiles it for the monitor. Don't copy a pattern into SQL by hand.
+- **The field set is never pooled with `dataset.json`**: its rows were chosen by disagreement.
+- Database access is `psql` in the workflows (a read-only role, `NEON_LOOP_DATABASE_URL`); the Node code reads and writes files and needs no driver.
+
 ## Development Workflow
 
 - **Tests:** `node --test` via `npm test` from the repo root, runs everything in `tests/**/*.test.js`. New helpers should get a sibling `*.test.js` file. Behavioral validation also goes through the benchmark suite against the human-labeled citation dataset.
-- **No test/build CI** is wired up (the only GitHub Actions workflow is a scheduled talk-page scraper).
+- **No test/build CI** is wired up. The GitHub Actions workflows are scheduled jobs (talk-page scraper, edit-log sweep, feedback triage and monitor) plus the comment-triggered opencode agent.
 - **No linter** configured
 - **Branching:** Feature branches off `main`, merged via pull requests
 - **Deployment:** Deployed as a Wikipedia User Script (`User:Alaexis/AI_Source_Verification`) with USync for auto-updates

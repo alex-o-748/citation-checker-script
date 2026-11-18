@@ -3,6 +3,8 @@
 > **Status (2026-11-08):** Proposed. Nothing implemented. Written from the editor feedback in Neon; each cause below has its own fix and its own check, and they can land independently.
 >
 > **Update (2026-11-15):** Cause 1 is implemented (`PROMPT_VERSION` v3); see "Implemented" under §1. On the benchmark's main metric (Supported vs everything else), a 2026-11-17 re-run on 263 rows puts it within a point of the old prompt on both GPT-OSS-20b and Qwen3.8 (`docs/citation-details-benchmark-2026-11-15.md`). The field replay, which is the decisive check, is still to do. Causes 2–5 are unchanged.
+>
+> **2026-11-15:** the loop that builds the field regression set these fixes will be tested against, and the monitor that counts each cause daily, is in [`2026-11-15-feedback-loop.md`](2026-11-15-feedback-loop.md). Its pattern definitions are this brief's appendix, as code (`feedback-loop/causes.js`).
 
 ## Why this exists
 
