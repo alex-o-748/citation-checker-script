@@ -74,7 +74,7 @@ import { verifyCitation, verifyGroup, makeModelCaller, ProviderAuthError } from 
 import { assembleFinding, assembleGroupFinding } from './finding-builder.js';
 import { assessSeverity, needsSeverity, assembleGroupText, groupHasUnreadSource } from './severity-assessor.js';
 import { upsertFinding } from './findings-store.js';
-import { openToolsDbConnection } from './toolsdb.js';
+import { openToolsDbConnection, openReconnectingQuery } from './toolsdb.js';
 import { resolveTitleInfo } from './wikipedia-pageids.js';
 import { csvHeaderLine, appendFinding, csvPageTitles, cleanCsvPath, writeCleanCsv } from './csv-report.js';
 import { PROMPT_VERSION } from '../core/prompts.js';
@@ -609,8 +609,13 @@ export async function runSweep(opts, {
     let toolsDbQuery = null;
     if (opts.store) {
         try {
-            toolsDbConnection = await connectToolsDb(readFile ? { readFile } : {});
-            toolsDbQuery = makeQueryFn(toolsDbConnection);
+            // Reopened when it drops: one connection held for a day-long
+            // sweep stored 183 findings of the November 2026 ruwiki rerun
+            // and failed the next 8,679 (service/toolsdb.js).
+            toolsDbConnection = await openReconnectingQuery(() => connectToolsDb(readFile ? { readFile } : {}), {
+                onReconnect: (error, n) => stderr.write(`sweep: ToolsDB connection lost (${error.message}); reconnected (${n})\n`),
+            });
+            toolsDbQuery = toolsDbConnection.query;
         } catch (error) {
             stderr.write(`sweep: could not connect to ToolsDB: ${error.message} (pass --no-store to write the CSV only)\n`);
             return 1;
