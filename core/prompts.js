@@ -152,13 +152,14 @@ export const COMMENT_LANGUAGE_NAMES = {
     es: 'Spanish (español)',
     ru: 'Russian (русский)',
     he: 'Hebrew (עברית)',
+    nl: 'Dutch (Nederlands)',
 };
 
 // Appends a language directive to an already-built system prompt rather than
 // localizing generateSystemPrompt() itself — the few-shot examples above stay
 // English and untouched (they're tuned against the benchmark; see CLAUDE.md).
 // Two cases:
-//   - `lang` is a COMMENT_LANGUAGE_NAMES key (fr/es/ru/he): name the language
+//   - `lang` is a COMMENT_LANGUAGE_NAMES key (fr/es/ru/he/nl): name the language
 //     explicitly, using the same curated name shown to editors elsewhere.
 //   - Any other non-English wiki (`articleLangCode` set and not 'en', no
 //     COMMENT_LANGUAGE_NAMES entry): a generic "match the source" directive,

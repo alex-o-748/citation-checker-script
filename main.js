@@ -276,13 +276,14 @@ const COMMENT_LANGUAGE_NAMES = {
     es: 'Spanish (español)',
     ru: 'Russian (русский)',
     he: 'Hebrew (עברית)',
+    nl: 'Dutch (Nederlands)',
 };
 
 // Appends a language directive to an already-built system prompt rather than
 // localizing generateSystemPrompt() itself — the few-shot examples above stay
 // English and untouched (they're tuned against the benchmark; see CLAUDE.md).
 // Two cases:
-//   - `lang` is a COMMENT_LANGUAGE_NAMES key (fr/es/ru/he): name the language
+//   - `lang` is a COMMENT_LANGUAGE_NAMES key (fr/es/ru/he/nl): name the language
 //     explicitly, using the same curated name shown to editors elsewhere.
 //   - Any other non-English wiki (`articleLangCode` set and not 'en', no
 //     COMMENT_LANGUAGE_NAMES entry): a generic "match the source" directive,
@@ -6121,13 +6122,358 @@ function useToolforgeSourceFetcher() {
             'המקור אינו תומך בטענה (נבדק באמצעות [[:en:User:Alaexis/AI_Source_Verification|Source Verifier]])',
     };
 
+    const NL_MESSAGES = {
+        // Sidebar structure
+        'Selected Claim': 'Geselecteerde bewering',
+        'Click on a reference number [1] next to a claim to verify it against its source.':
+            'Klik op een referentienummer [1] naast een bewering om deze aan de hand van de bron te controleren.',
+        'Source Content': 'Broninhoud',
+        'No source loaded yet.': 'Er is nog geen bron geladen.',
+        'Verification Result': 'Controleresultaat',
+
+        // Buttons and inputs
+        'Close': 'Sluiten',
+        'Set API Key': 'API-sleutel instellen',
+        'Verify Claim': 'Bewering controleren',
+        'Verifying...': 'Bezig met controleren…',
+        'Change Key': 'Sleutel wijzigen',
+        'Remove API Key': 'API-sleutel verwijderen',
+        'Paste the source text here...': 'Plak de brontekst hier…',
+        'Load Text': 'Tekst laden',
+        'Cancel': 'Annuleren',
+        'Paste source text manually': 'Brontekst handmatig plakken',
+        'Replace the fetched source content with text you paste in (e.g., the full article from The Wikipedia Library)':
+            'Vervang de opgehaalde broninhoud door tekst die je plakt (bijvoorbeeld het volledige artikel uit The Wikipedia Library)',
+        'Verify All Citations': 'Alle bronvermeldingen controleren',
+        'Stop': 'Stoppen',
+        'Back to Report': 'Terug naar het rapport',
+        'Save': 'Opslaan',
+        'Give feedback': 'Feedback geven',
+
+        // Feedback controls
+        'Was this right?': 'Klopt dit?',
+        'Yes': 'Ja',
+        'No': 'Nee',
+        'This verdict looks right': 'Dit oordeel lijkt juist',
+        'This verdict looks wrong': 'Dit oordeel lijkt onjuist',
+        'What should it have been?': 'Wat had het oordeel moeten zijn?',
+        'Thanks — recorded.': 'Bedankt — opgeslagen.',
+        'Could not record that, sorry.': 'Sorry, dit kon niet worden opgeslagen.',
+        'Comment': 'Opmerking',
+        'Edit Section': 'Sectie bewerken',
+
+        // Provider info
+        '✓ Using your {name} API key': '✓ Je API-sleutel voor {name} wordt gebruikt',
+        '✓ Free to use. Optional: ': '✓ Gratis te gebruiken. Optioneel: ',
+        'add your {name} API key': 'voeg je API-sleutel voor {name} toe',
+        '✓ Free to use': '✓ Gratis te gebruiken',
+        'API key configured for {name}': 'API-sleutel ingesteld voor {name}',
+        'API key required for {name}': 'API-sleutel vereist voor {name}',
+        'Results are logged for research. Your username is not recorded.':
+            'Resultaten worden opgeslagen voor onderzoek. Je gebruikersnaam wordt niet vastgelegd.',
+        'Claim scope': 'Omvang van de bewering',
+        'Full claim': 'Volledige bewering',
+        'Last sentence only': 'Alleen de laatste zin',
+        '"Last sentence only" avoids flagging a multi-sentence claim as unsupported just because an earlier sentence lacks a citation.':
+            'Met ‘Alleen de laatste zin’ wordt voorkomen dat een bewering met meerdere zinnen als niet ondersteund wordt aangemerkt alleen omdat een eerdere zin geen bronvermelding heeft.',
+        'Rank problems by severity': 'Problemen op ernst rangschikken',
+        'Verify All also checks each sentence of the lead against the rest of the article, since a lead statement may be sourced in the body instead. A lead citation found to support only part of its claim is then set aside rather than counted as a problem. A few extra model calls per article.':
+            'Bij Alle bronvermeldingen controleren wordt ook elke zin van de inleiding vergeleken met de rest van het artikel, omdat een uitspraak in de inleiding door de hoofdtekst kan worden onderbouwd. Een bronvermelding in de inleiding die slechts een deel van de bewering ondersteunt, wordt dan terzijde gelegd in plaats van als probleem aangemerkt. Dit kost enkele extra modelaanroepen per artikel.',
+        'Check the lead against the body': 'Inleiding aan hoofdtekst toetsen',
+        'This citation is in the lead, where a statement can be supported by the article body instead of its own citation. This verdict may only mean the source backs part of the sentence. Verify All Citations also checks the lead against the body.':
+            'Deze bronvermelding staat in de inleiding, waar een uitspraak ook door de hoofdtekst kan worden onderbouwd in plaats van door de eigen bronvermelding. Dit oordeel kan betekenen dat de bron slechts een deel van de zin ondersteunt. Alle bronvermeldingen controleren toetst de inleiding ook aan de hoofdtekst.',
+        'Set aside: lead': 'Terzijde gelegd: inleiding',
+        'In the lead, a statement can be supported by the article body instead of its own citation, so a lead citation that backs only part of its claim, or none of it, is not counted as a problem. The lead check above covers what the body says. These are worth a look when the claim is contentious.':
+            'In de inleiding kan een uitspraak door de hoofdtekst worden onderbouwd in plaats van door de eigen bronvermelding. Daarom telt een bronvermelding in de inleiding die slechts een deel van de bewering of niets ervan ondersteunt niet als probleem. De controle hierboven laat zien wat de hoofdtekst zegt. Als de bewering betwist is, zijn deze bronvermeldingen het bekijken waard.',
+        '{covered} of {total} lead sentences are covered in the body.':
+            '{covered} van de {total} zinnen in de inleiding worden door de hoofdtekst gedekt.',
+        'The body is long, so only the sections closest to the lead were sent. A sentence reported as not covered may be in a section that was left out.':
+            'De hoofdtekst is lang, daarom zijn alleen de secties die het dichtst bij de inleiding staan meegestuurd. Een zin die als niet gedekt wordt aangemerkt, kan in een weggelaten sectie staan.',
+        'Covered in the body ({count})': 'Gedekt door de hoofdtekst ({count})',
+        'Lead vs body': 'Inleiding versus hoofdtekst',
+        'Contradicts the body': 'In tegenspraak met de hoofdtekst',
+        'Not covered in the body': 'Niet gedekt door de hoofdtekst',
+        'From the body': 'Uit de hoofdtekst',
+        'Section: {section}': 'Sectie: {section}',
+        'Checking the lead against the body': 'De inleiding aan de hoofdtekst toetsen',
+        '! Lead sentence !! Finding !! Quote from the body !! Comments':
+            '! Zin uit de inleiding !! Bevinding !! Citaat uit de hoofdtekst !! Opmerkingen',
+        'Lead sentence: {text}': 'Zin uit de inleiding: {text}',
+        'This article has no body to check the lead against.':
+            'Dit artikel heeft geen hoofdtekst waaraan de inleiding kan worden getoetst.',
+        '{count} lead citation set aside': '{count} bronvermelding uit de inleiding terzijde gelegd',
+        '{count} lead citations set aside': '{count} bronvermeldingen uit de inleiding terzijde gelegd',
+        'Citations': 'Bronvermeldingen',
+        'Details': 'Details',
+        'Edit section': 'Sectie bewerken',
+        'Back': 'Terug',
+        'Copy report': 'Rapport kopiëren',
+        'Wikitext': 'Wikitext',
+        'Plain text': 'Platte tekst',
+        '{count} hidden by filter': '{count} verborgen door filter',
+        'runs after the citations': 'volgt na de bronvermeldingen',
+        'checking, {done} of {total}': 'bezig, {done} van {total}',
+        '{covered} of {total} sentences covered': '{covered} van de {total} zinnen gedekt',
+        'not checked (stopped)': 'niet gecontroleerd (gestopt)',
+        '{count} lead sentence could not be checked.':
+            '{count} zin uit de inleiding kon niet worden gecontroleerd.',
+        '{count} lead sentences could not be checked.':
+            '{count} zinnen uit de inleiding konden niet worden gecontroleerd.',
+        '{count} lead citation was set aside: its source backs only part of its claim, which in the lead the body may cover.':
+            '{count} bronvermelding uit de inleiding is terzijde gelegd: de bron ondersteunt slechts een deel van de bewering, dat in de inleiding mogelijk door de hoofdtekst wordt gedekt.',
+        '{count} lead citations were set aside: their sources back only part of their claims, which in the lead the body may cover.':
+            '{count} bronvermeldingen uit de inleiding zijn terzijde gelegd: de bronnen ondersteunen slechts een deel van de beweringen, dat in de inleiding mogelijk door de hoofdtekst wordt gedekt.',
+        'Runs one more check on each flagged citation to tell a contradicted key fact from a missing minor detail. Costs one extra model call per flagged citation.':
+            'Voert voor elke gemarkeerde bronvermelding een extra controle uit om een tegengesproken kernfeit te onderscheiden van een ontbrekend detail. Dit kost één extra modelaanroep per gemarkeerde bronvermelding.',
+        'Checking severity…': 'Ernst controleren…',
+        'Checking severity of [{num}]': 'Ernst van [{num}] controleren',
+        'Severity': 'Ernst',
+        'Key fact contradicted': 'Kernfeit tegengesproken',
+        'Detail contradicted': 'Detail tegengesproken',
+        'Key fact not in source': 'Kernfeit staat niet in de bron',
+        'Only a minor detail missing': 'Alleen een klein detail ontbreekt',
+        'Unclear: source only partly read': 'Onduidelijk: bron slechts gedeeltelijk gelezen',
+        'Unclear: not every cited source was read': 'Onduidelijk: niet alle geciteerde bronnen zijn gelezen',
+        'Second check found it supported': 'Tweede controle vond ondersteuning',
+        'Not ranked': 'Niet gerangschikt',
+        'Contradicted': 'Tegengesproken',
+        'Not in source': 'Niet in de bron',
+        '(minor)': '(klein)',
+        'Order': 'Volgorde',
+        'Article order': 'Volgorde in artikel',
+        'Most serious first': 'Ernstigste eerst',
+
+        // Verifier tab + first-run notification
+        'Verify': 'Controleren',
+        'Verify claims against sources': 'Beweringen controleren aan de hand van bronnen',
+        'Source Verifier': 'Source Verifier',
+        'Source Verifier installed — click the ':
+            'Source Verifier is geïnstalleerd — klik op het tabblad ',
+        ' tab to get started.': ' om aan de slag te gaan.',
+
+        // Source display
+        '✓ PDF content extracted{pageInfo}': '✓ PDF-inhoud geëxtraheerd{pageInfo}',
+        ' (page {page} of {total})': ' (pagina {page} van {total})',
+        ' ({pages} pages)': ' ({pages} pagina’s)',
+        '✓ Content fetched successfully': '✓ Inhoud opgehaald',
+        'Content will be fetched by AI during verification.':
+            'De AI haalt de inhoud op tijdens de controle.',
+        '⚠ The source is long and can only be checked partially.':
+            '⚠ De bron is lang en kan slechts gedeeltelijk worden gecontroleerd.',
+        'Source URL:': 'Bron-URL:',
+        'No URL found. Please paste the source text below:':
+            'Geen URL gevonden. Plak de brontekst hieronder:',
+        'Manual Source Text:': 'Handmatig ingevoerde brontekst:',
+        'No source loaded.': 'Geen bron geladen.',
+        'Click "Verify Claim" to verify the selected claim against the source.':
+            'Klik op ‘Bewering controleren’ om de geselecteerde bewering aan de hand van de bron te controleren.',
+        'Part of a group of {count} citations: {numbers}':
+            'Onderdeel van een groep van {count} bronvermeldingen: {numbers}',
+
+        // Verdicts (full, shown for a single verification)
+        'SUPPORTED': 'ONDERSTEUND',
+        'PARTIALLY SUPPORTED': 'GEDEELTELIJK ONDERSTEUND',
+        'NOT SUPPORTED': 'NIET ONDERSTEUND',
+        'SOURCE UNAVAILABLE': 'BRON NIET BESCHIKBAAR',
+        'ERROR': 'FOUT',
+        // Verdicts (short, shown on report cards/chips)
+        'Supported': 'Ondersteund',
+        'Partial': 'Gedeeltelijk',
+        'Not Supported': 'Niet ondersteund',
+        'Unavailable': 'Niet beschikbaar',
+        // Reason tag on a 'not supported' verdict
+        'Contradiction': 'Tegenstrijdigheid',
+        'Omission': 'Ontbrekende informatie',
+
+        // Report progress
+        'Checking citation [{num}]': 'Bronvermelding [{num}] controleren',
+        'Fetching source for [{num}]': 'Bron voor [{num}] ophalen',
+        'Verifying citation [{num}]': 'Bronvermelding [{num}] verifiëren',
+        'Rate limited, retrying in {secs}s...':
+            'Aanvraaglimiet bereikt, nieuwe poging over {secs} s…',
+        'Checking combined sources {token}': 'Gecombineerde bronnen {token} controleren',
+        'Cancelled after {done} of {total} citations': 'Geannuleerd na {done} van {total} bronvermeldingen',
+        'Cancelled after {done} of {total} citation': 'Geannuleerd na {done} van {total} bronvermelding',
+        ' · ~{duration} remaining': ' · nog ongeveer {duration}',
+
+        // Report summary
+        'supported': 'ondersteund',
+        'partial': 'gedeeltelijk',
+        'not supported': 'niet ondersteund',
+        'unavailable': 'niet beschikbaar',
+        'errors': 'fouten',
+        'skipped': 'overgeslagen',
+        'Skipped': 'Overgeslagen',
+        'Show {label} citations': 'Toon bronvermeldingen: {label}',
+        'Hide {label} citations': 'Verberg bronvermeldingen: {label}',
+        '{count} citations checked': '{count} bronvermeldingen gecontroleerd',
+        '{count} citation checked': '{count} bronvermelding gecontroleerd',
+        '{citations} citations across {claims} claims':
+            '{citations} bronvermeldingen bij {claims} beweringen',
+        '{citations} citations across {claims} claim':
+            '{citations} bronvermeldingen bij {claims} bewering',
+        ' · {input} input + {output} output tokens':
+            ' · {input} invoer- + {output} uitvoertokens',
+        'Revision: ': 'Versie: ',
+
+        // Report cards / groups
+        '⚠ Source is long, only partially checked.':
+            '⚠ Bron is lang en slechts gedeeltelijk gecontroleerd.',
+        '⚠ Combined sources are long, only partially checked.':
+            '⚠ Gecombineerde bronnen zijn lang en slechts gedeeltelijk gecontroleerd.',
+        'Checking combined sources…': 'Gecombineerde bronnen controleren…',
+        'All citations are hidden by the current filters. Click a filter above to show them.':
+            'Alle bronvermeldingen zijn verborgen door de huidige filters. Klik hierboven op een filter om ze te tonen.',
+
+        // Notifications / dialogs
+        'Report copied to clipboard!': 'Rapport gekopieerd naar het klembord!',
+        'No citations found on this page.': 'Geen bronvermeldingen gevonden op deze pagina.',
+        'Are you sure you want to remove the stored API key?':
+            'Weet je zeker dat je de opgeslagen API-sleutel wilt verwijderen?',
+        'Enter your {name} API Key...': 'Voer je API-sleutel voor {name} in…',
+        'Set {name} API Key': 'API-sleutel voor {name} instellen',
+        'Enter your {name} API Key to enable source verification:':
+            'Voer je API-sleutel voor {name} in om broncontrole in te schakelen:',
+        'Estimated time: ~{minutes} minutes.\n\nContinue?':
+            'Geschatte tijd: ongeveer {minutes} minuten.\n\nDoorgaan?',
+        'Estimated time: ~{minutes} minute.\n\nContinue?':
+            'Geschatte tijd: ongeveer {minutes} minuut.\n\nDoorgaan?',
+
+        // Generated result comments
+        'No URL found in reference': 'Geen URL gevonden in de bronvermelding',
+        'None of the grouped sources could be retrieved.':
+            'Geen van de bronnen in de groep kon worden opgehaald.',
+        'Could not fetch source content': 'Broninhoud kon niet worden opgehaald',
+
+        // Exported reports (wikitext + plain text)
+        'Citation verification report': 'Rapport over bronvermeldingscontrole',
+        'This is an experimental check of the article sources by [[User:Alaexis/AI_Source_Verification|Source Verifier]]. Treat it with caution, be aware of its [[User:Alaexis/AI_Source_Verification#Limitations|limitations]] and feel free to leave feedback at [[User_talk:Alaexis/AI_Source_Verification|the talk page]].':
+            'Dit is een experimentele controle van de artikelbronnen door [[:en:User:Alaexis/AI_Source_Verification|Source Verifier]]. Gebruik de resultaten met voorzichtigheid, houd rekening met de [[:en:User:Alaexis/AI_Source_Verification#Limitations|beperkingen]] en laat gerust feedback achter op de [[:en:User_talk:Alaexis/AI_Source_Verification|overlegpagina]].',
+        'Revision checked: ': 'Gecontroleerde versie: ',
+        '! # !! Verdict !! Source !! Quote !! Comments':
+            '! # !! Oordeel !! Bron !! Citaat !! Opmerkingen',
+        '{{tick}} Supported': '{{tick}} Ondersteund',
+        '{{bang}} Partially supported': '{{bang}} Gedeeltelijk ondersteund',
+        '{{cross}} Not supported': '{{cross}} Niet ondersteund',
+        '{{hmmm}} Source unavailable': '{{hmmm}} Bron niet beschikbaar',
+        "''(Combined sources are long, only partially checked.)''":
+            "''(Gecombineerde bronnen zijn lang en slechts gedeeltelijk gecontroleerd.)''",
+        "''(Source is long, only partially checked.)''":
+            "''(Bron is lang en slechts gedeeltelijk gecontroleerd.)''",
+        '(combined)': '(gecombineerd)',
+        // Link text for the source column of the wikitext table: [url source]
+        'source': 'bron',
+        "'''Summary:''' {supported} supported, {partial} partially supported, {notSupported} not supported, {unavailable} source unavailable out of {claims}.": 
+            "'''Samenvatting:''' {supported} ondersteund, {partial} gedeeltelijk ondersteund, {notSupported} niet ondersteund, {unavailable} bron niet beschikbaar van de {claims}.",
+        '{count} citations': '{count} bronvermeldingen',
+        '{count} citation': '{count} bronvermelding',
+        '{claims} claims ({citations} citations)': '{claims} beweringen ({citations} bronvermeldingen)',
+        '{claims} claim ({citations} citations)': '{claims} bewering ({citations} bronvermeldingen)',
+        'a PublicAI-hosted open-source LLM': 'een open-sourcetaalmodel gehost door PublicAI',
+        'a HuggingFace-hosted open-source LLM ({model})':
+            'een open-sourcetaalmodel gehost door HuggingFace ({model})',
+        'a Wikimedia Lift Wing-hosted open-source LLM ({model})':
+            'een open-sourcetaalmodel gehost door Wikimedia Lift Wing ({model})',
+        'Generated by [[User:Alaexis/AI_Source_Verification|Source Verifier]] using {model} on ~~~~~.':
+            'Gegenereerd door [[:en:User:Alaexis/AI_Source_Verification|Source Verifier]] met {model} op ~~~~~.',
+        ' Tokens used: {input} input, {output} output.':
+            ' Tokens gebruikt: {input} invoer, {output} uitvoer.',
+        'Citation Verification Report: {title}': 'Rapport over bronvermeldingscontrole: {title}',
+        'Provider: {name}': 'Aanbieder: {name}',
+        'Revision: {rev}': 'Versie: {rev}',
+        'Claim: {text}': 'Bewering: {text}',
+        'Sources: {urls}': 'Bronnen: {urls}',
+        'Source: {url}': 'Bron: {url}',
+        'Quote: "{text}"': 'Citaat: "{text}"',
+        'Comments: {text}': 'Opmerkingen: {text}',
+        'From the source': 'Uit de bron',
+        'Note: Combined sources are long, only partially checked.':
+            'Opmerking: gecombineerde bronnen zijn lang en slechts gedeeltelijk gecontroleerd.',
+        'Note: Source is long, only partially checked.':
+            'Opmerking: bron is lang en slechts gedeeltelijk gecontroleerd.',
+        'Tokens used: {input} input, {output} output':
+            'Tokens gebruikt: {input} invoer, {output} uitvoer',
+        // Sidebar chrome and the state-driven panel
+        'Settings': 'Instellingen',
+        'Done': 'Gereed',
+        'Open settings': 'Instellingen openen',
+        'Upload PDF': 'PDF uploaden',
+        'or paste the text below': 'of plak de tekst hieronder',
+        'Click any citation number in the article to check whether its source actually supports the claim.':
+            'Klik op een bronvermeldingsnummer in het artikel om te controleren of de bron de bewering daadwerkelijk ondersteunt.',
+        'Ready · free, no setup needed': 'Gereed · gratis, geen configuratie nodig',
+        'Ready · using your API key': 'Gereed · je API-sleutel wordt gebruikt',
+        'Add an API key in settings to start':
+            'Voeg een API-sleutel toe via Instellingen om te beginnen',
+        'Checking citations…': 'Bronvermeldingen controleren…',
+        'Model: {model}': 'Model: {model}',
+        // Verdict framing: the assessment is attributed, and each verdict says
+        // what the editor should do next.
+        'AI assessment': 'AI-beoordeling',
+        'Read the source before changing the article — this is a machine reading, not a fact.':
+            'Lees de bron voordat je het artikel aanpast — dit is een geautomatiseerde lezing, geen feit.',
+        'Spot-check the source yourself — this is a machine reading, not a fact.':
+            'Controleer de bron zelf — dit is een geautomatiseerde lezing, geen feit.',
+        'The tool could not read this source. Try pasting the text or uploading a PDF.':
+            'De tool kon deze bron niet lezen. Probeer de tekst te plakken of een PDF te uploaden.',
+        'How accurate is this?': 'Hoe nauwkeurig is dit?',
+        'Measured against 186 human-labelled citations, a "not supported" flag was confirmed by a reviewer roughly two thirds of the time. Treat every verdict as a reason to read the source, not as a conclusion.':
+            'Bij een vergelijking met 186 door mensen beoordeelde bronvermeldingen werd een melding ‘niet ondersteund’ in ongeveer twee derde van de gevallen door een beoordelaar bevestigd. Zie elk oordeel als aanleiding om de bron te lezen, niet als conclusie.',
+
+        // Status strip
+        'Could not extract claim text': 'Beweringstekst kon niet worden geëxtraheerd',
+        'Skipped (claim too short to check)': 'Overgeslagen (bewering te kort om te controleren)',
+        'Skipped: the text before this citation ("{claim}") is too short to check as a claim.':
+            'Overgeslagen: de tekst vóór deze bronvermelding ("{claim}") is te kort om als bewering te controleren.',
+        'The text before this citation is too short to check as a claim.':
+            'De tekst vóór deze bronvermelding is te kort om als bewering te controleren.',
+        'No URL found in reference. Please paste the source text below.':
+            'Geen URL gevonden in de bronvermelding. Plak de brontekst hieronder.',
+        'Google Books sources cannot be fetched. Please paste the source text below.':
+            'Bronnen van Google Books kunnen niet worden opgehaald. Plak de brontekst hieronder.',
+        'Fetching source content...': 'Broninhoud ophalen…',
+        'Could not fetch source{status}{reason}. Please paste the source text below.':
+            'Bron{status}{reason} kon niet worden opgehaald. Plak de brontekst hieronder.',
+        'Source fetched. Ready to verify.': 'Bron opgehaald. Klaar om te controleren.',
+        'Ready to verify claim against source': 'Klaar om de bewering aan de hand van de bron te controleren',
+        'Error: {message}': 'Fout: {message}',
+        'Please enter some source text': 'Voer brontekst in',
+        'Source text loaded (trimmed to {count} characters). Ready to verify.':
+            'Brontekst geladen (ingekort tot {count} tekens). Klaar om te controleren.',
+        'Source text loaded. Ready to verify.': 'Brontekst geladen. Klaar om te controleren.',
+        'Cancelled': 'Geannuleerd',
+        'Please choose a PDF file.': 'Kies een PDF-bestand.',
+        'Reading {name}…': '{name} lezen…',
+        'This PDF has no selectable text (it looks scanned). Please paste the relevant passage instead.':
+            'Deze PDF bevat geen selecteerbare tekst (het lijkt een scan). Plak in plaats daarvan de relevante passage.',
+        'Loaded text from {name}. Ready to verify.': 'Tekst uit {name} geladen. Klaar om te controleren.',
+        'Could not read that PDF: {message}. Try pasting the text instead.':
+            'Deze PDF kon niet worden gelezen: {message}. Probeer de tekst te plakken.',
+        'Switched to {name}': 'Overgeschakeld naar {name}',
+        'Paste replacement source text below, then click Load Text.':
+            'Plak hieronder vervangende brontekst en klik daarna op Tekst laden.',
+        'This provider does not require an API key.': 'Voor deze aanbieder is geen API-sleutel nodig.',
+        'API key set successfully!': 'API-sleutel ingesteld!',
+        'This provider does not use a stored API key.': 'Deze aanbieder gebruikt geen opgeslagen API-sleutel.',
+        'API key removed successfully!': 'API-sleutel verwijderd!',
+        'Missing API key (for this provider), claim, or source content':
+            'API-sleutel (voor deze aanbieder), bewering of broninhoud ontbreekt',
+        'Verifying claim against source...': 'Bewering aan de hand van de bron controleren…',
+        'Verification complete!': 'Controle voltooid!',
+
+        // Pre-filled wiki edit summary
+        'source does not support claim (checked with [[User:Alaexis/AI_Source_Verification|Source Verifier]])':
+            'bron ondersteunt bewering niet (gecontroleerd met [[:en:User:Alaexis/AI_Source_Verification|Source Verifier]])',
+    };
+
     // Registered UI languages, keyed by the MediaWiki language-code prefix that
     // selects them. English is the absence of a table, not an entry here.
     const MESSAGES = {
         fr: FR_MESSAGES,
         es: ES_MESSAGES,
         ru: RU_MESSAGES,
-        he: HE_MESSAGES
+        he: HE_MESSAGES,
+        nl: NL_MESSAGES
     };
 
     // UI languages written right to left. The sidebar's `dir` follows the UI
@@ -6142,7 +6488,8 @@ function useToolforgeSourceFetcher() {
         fr: 'French (français)',
         es: 'Spanish (español)',
         ru: 'Russian (русский)',
-        he: 'Hebrew (עברית)'
+        he: 'Hebrew (עברית)',
+        nl: 'Dutch (Nederlands)'
     };
 
     // Pick the UI language from the wiki's content language, falling back to the
