@@ -123,6 +123,27 @@ export function renderScore(table) {
     return lines.join('\n') + '\n';
 }
 
+export function keptCsvPath(out) {
+    return out.replace(/\.csv$/, '') + '-kept.csv';
+}
+
+// The rows that survived, from the whole output (a resumed run included):
+// the file to deliver. Streams, like everything that reads a sweep's CSVs.
+export async function writeKeptCsv(out, keptPath) {
+    let header = null;
+    let lines = [];
+    let total = 0;
+    for await (const { row } of iterateCsvRows(out)) {
+        if (!row) continue;
+        if (!header) { header = Object.keys(row); lines.push(header.map(csvCell).join(',')); }
+        if (row.recheck_kept !== '1') continue;
+        total++;
+        lines.push(header.map(h => csvCell(row[h])).join(','));
+    }
+    await writeFile(keptPath, lines.length ? lines.join('\n') + '\n' : '');
+    return total;
+}
+
 async function countOutputRows(path) {
     try { await access(path); } catch { return 0; }
     let n = 0;
@@ -202,8 +223,11 @@ export async function runRecheck(opts, {
 
     const kept = outcomes.filter(o => o.kept).length;
     const errors = outcomes.filter(o => o.error).length;
+    const keptPath = keptCsvPath(opts.out);
+    const keptTotal = await writeKeptCsv(opts.out, keptPath);
     stdout.write(`recheck: ${outcomes.length} rechecked; ${kept} kept (second model also NOT SUPPORTED), `
-        + `${outcomes.length - kept - errors} removed, ${errors} error(s). Wrote ${opts.out}\n`);
+        + `${outcomes.length - kept - errors} removed, ${errors} error(s). Wrote ${opts.out}\n`
+        + `recheck: ${keptTotal} kept row(s) in total, the delivery file: ${keptPath}\n`);
     if (outcomes.some(o => o.label)) stdout.write(renderScore(scoreAgainstLabels(outcomes)));
     return 0;
 }

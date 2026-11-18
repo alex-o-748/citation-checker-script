@@ -83,4 +83,7 @@ test('runRecheck writes input plus recheck columns, and --resume skips what is d
     assert.deepEqual(records[0], ['label', 'claim_text', 'source_url', ...RECHECK_COLUMNS]);
     const kept = records[0].indexOf('recheck_kept');
     assert.deepEqual(records.slice(1).map(r => r[kept]), ['1', '0']);
+    const keptRows = parseCsv(await readFile(join(dir, 'out-kept.csv'), 'utf8'));
+    assert.equal(keptRows.length, 2, 'header plus the one row both models flagged');
+    assert.match(keptRows[1][1], /Первое/);
 });
