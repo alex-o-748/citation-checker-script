@@ -27,6 +27,7 @@
 import { withRetry, isSourceTooLargeError, isOutputBudgetError } from './retry.js';
 import { normalizeForMatch, QUOTE_STATUSES } from './quote.js';
 import { COMMENT_LANGUAGE_NAMES } from './prompts.js';
+import { PROVIDERS, STRONG_FREE_MODEL } from './models.js';
 
 // Bump whenever the prompt text changes, same contract as PROMPT_VERSION:
 // tests/uncited-check.test.js pins a hash of the prompt against it.
@@ -67,14 +68,21 @@ export function uncitedChunkSize(provider) {
     return UNCITED_CHUNK_SIZES[provider] ?? UNCITED_CHUNK_SIZE_DEFAULT;
 }
 
-// The provider a front end runs this check on unless the editor picks the
-// one their citation checks use. The same as core/models.js's
-// DEFAULT_PROVIDER since 2026-10-24, but kept apart from the sidebar's choice
-// on purpose: an editor who switches the citation checks to gpt-oss-20b still
-// gets Lift Wing here. On the 2026-10-23 smoke test gpt-oss-20b flagged 14 of
-// 98 correct sentences against Lift Wing Qwen's 5, and confidently denied
-// true facts. docs/design-plans/2026-10-23-uncited-text-check.md.
-export const UNCITED_DEFAULT_PROVIDER = 'liftwing';
+// The model this check runs on, given the provider the citation checks use.
+// An editor who pays for a provider (one that needs their own key) gets that
+// provider's model: it is as strong as anything here. Everyone else gets
+// STRONG_FREE_MODEL rather than their free provider's own model, because this
+// check leans on what the model knows: on the 2026-10-23 smoke test
+// gpt-oss-20b flagged 14 of 98 correct sentences against Qwen3.6's 5, and
+// both denied true facts. Returns `{ provider, model, name }`.
+// docs/design-plans/2026-10-23-uncited-text-check.md.
+export function uncitedModelFor(providerId) {
+    const provider = PROVIDERS[providerId];
+    if (provider && provider.requiresKey) {
+        return { provider: providerId, model: provider.model, name: provider.name };
+    }
+    return { ...STRONG_FREE_MODEL };
+}
 
 // The paragraph text shown before a chunk's first statement, at most.
 export const UNCITED_CONTEXT_MAX_CHARS = 1500;

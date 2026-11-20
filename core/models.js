@@ -96,6 +96,19 @@ export const PROVIDER_IDS = Object.freeze(Object.keys(PROVIDERS));
 // once, so existing users stop consuming exhausted shared HF credits.
 export const DEFAULT_PROVIDER = 'liftwing';
 
+// A stronger model than the keyless default, still free to the editor: GLM
+// 5.2 through Hugging Face (the Worker's /hf, or the editor's own HF key if
+// they stored one). Not a sidebar provider; a check that needs more than the
+// citation checks' model reaches for it (core/uncited-check.js's
+// uncitedModelFor()). It tied gpt-oss-20b and beat Qwen3.8 on the citation
+// benchmark (docs/three-way-benchmark-2026-11-17.md). Its calls draw on the
+// same shared HF credits the move to Lift Wing was made to spare.
+export const STRONG_FREE_MODEL = Object.freeze({
+    provider: 'huggingface',
+    model: 'zai-org/GLM-5.2:novita',
+    name: 'GLM 5.2',
+});
+
 export function getProvider(id) {
     return PROVIDERS[id] ?? null;
 }

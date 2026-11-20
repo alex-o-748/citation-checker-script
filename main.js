@@ -105,6 +105,19 @@ const PROVIDER_IDS = Object.freeze(Object.keys(PROVIDERS));
 // once, so existing users stop consuming exhausted shared HF credits.
 const DEFAULT_PROVIDER = 'liftwing';
 
+// A stronger model than the keyless default, still free to the editor: GLM
+// 5.2 through Hugging Face (the Worker's /hf, or the editor's own HF key if
+// they stored one). Not a sidebar provider; a check that needs more than the
+// citation checks' model reaches for it (core/uncited-check.js's
+// uncitedModelFor()). It tied gpt-oss-20b and beat Qwen3.8 on the citation
+// benchmark (docs/three-way-benchmark-2026-11-17.md). Its calls draw on the
+// same shared HF credits the move to Lift Wing was made to spare.
+const STRONG_FREE_MODEL = Object.freeze({
+    provider: 'huggingface',
+    model: 'zai-org/GLM-5.2:novita',
+    name: 'GLM 5.2',
+});
+
 function getProvider(id) {
     return PROVIDERS[id] ?? null;
 }
@@ -4812,14 +4825,21 @@ function uncitedChunkSize(provider) {
     return UNCITED_CHUNK_SIZES[provider] ?? UNCITED_CHUNK_SIZE_DEFAULT;
 }
 
-// The provider a front end runs this check on unless the editor picks the
-// one their citation checks use. The same as core/models.js's
-// DEFAULT_PROVIDER since 2026-10-24, but kept apart from the sidebar's choice
-// on purpose: an editor who switches the citation checks to gpt-oss-20b still
-// gets Lift Wing here. On the 2026-10-23 smoke test gpt-oss-20b flagged 14 of
-// 98 correct sentences against Lift Wing Qwen's 5, and confidently denied
-// true facts. docs/design-plans/2026-10-23-uncited-text-check.md.
-const UNCITED_DEFAULT_PROVIDER = 'liftwing';
+// The model this check runs on, given the provider the citation checks use.
+// An editor who pays for a provider (one that needs their own key) gets that
+// provider's model: it is as strong as anything here. Everyone else gets
+// STRONG_FREE_MODEL rather than their free provider's own model, because this
+// check leans on what the model knows: on the 2026-10-23 smoke test
+// gpt-oss-20b flagged 14 of 98 correct sentences against Qwen3.6's 5, and
+// both denied true facts. Returns `{ provider, model, name }`.
+// docs/design-plans/2026-10-23-uncited-text-check.md.
+function uncitedModelFor(providerId) {
+    const provider = PROVIDERS[providerId];
+    if (provider && provider.requiresKey) {
+        return { provider: providerId, model: provider.model, name: provider.name };
+    }
+    return { ...STRONG_FREE_MODEL };
+}
 
 // The paragraph text shown before a chunk's first statement, at most.
 const UNCITED_CONTEXT_MAX_CHARS = 1500;
@@ -5366,14 +5386,10 @@ function useToolforgeSourceFetcher() {
         // Uncited-text check (core/uncited-check.js)
         'Check uncited text against general knowledge':
             'Vérifier le texte sans référence avec les connaissances générales',
+        'With a free provider this check runs on {model}; with a provider that uses an API key of its own, on that provider\'s model.':
+            'Avec un fournisseur gratuit, cette vérification utilise {model} ; avec un fournisseur qui utilise sa propre clé API, le modèle de ce fournisseur.',
         'Verify All also checks the sentences that have no citation against the model\'s general knowledge, and lists up to three that look wrong, so a source can be found for them. The model can be wrong about a correct sentence, so this is a prompt to look, not a finding. A few extra model calls per article.':
             '« Vérifier toutes les citations » vérifie aussi les phrases sans référence à l\'aide des connaissances générales du modèle, et signale jusqu\'à trois phrases qui semblent fausses, pour qu\'on leur trouve une source. Le modèle peut se tromper sur une phrase correcte : c\'est une invitation à vérifier, pas un constat. Quelques appels supplémentaires au modèle par article.',
-        'Model for the uncited-text check':
-            'Modèle pour la vérification du texte sans référence',
-        '{name} (recommended)':
-            '{name} (recommandé)',
-        'Same as citation checks':
-            'Le même que pour les citations',
         'Uncited text':
             'Texte sans référence',
         '{count} of {total} sentences may be wrong':
@@ -5776,14 +5792,10 @@ function useToolforgeSourceFetcher() {
         // Uncited-text check (core/uncited-check.js)
         'Check uncited text against general knowledge':
             'Contrastar el texto sin referencias con el conocimiento general',
+        'With a free provider this check runs on {model}; with a provider that uses an API key of its own, on that provider\'s model.':
+            'Con un proveedor gratuito, esta revisión usa {model}; con un proveedor que usa una clave API propia, el modelo de ese proveedor.',
         'Verify All also checks the sentences that have no citation against the model\'s general knowledge, and lists up to three that look wrong, so a source can be found for them. The model can be wrong about a correct sentence, so this is a prompt to look, not a finding. A few extra model calls per article.':
             '«Verificar todas las citas» también contrasta las oraciones sin referencias con el conocimiento general del modelo y señala hasta tres que parecen erróneas, para que se les busque una fuente. El modelo puede equivocarse con una oración correcta, así que es una invitación a revisar, no un hallazgo. Supone algunas llamadas adicionales al modelo por artículo.',
-        'Model for the uncited-text check':
-            'Modelo para la revisión del texto sin referencias',
-        '{name} (recommended)':
-            '{name} (recomendado)',
-        'Same as citation checks':
-            'El mismo que para las citas',
         'Uncited text':
             'Texto sin referencias',
         '{count} of {total} sentences may be wrong':
@@ -6182,14 +6194,10 @@ function useToolforgeSourceFetcher() {
         // Uncited-text check (core/uncited-check.js)
         'Check uncited text against general knowledge':
             'Проверять текст без сносок по общим знаниям',
+        'With a free provider this check runs on {model}; with a provider that uses an API key of its own, on that provider\'s model.':
+            'С бесплатным провайдером эта проверка использует {model}, а с провайдером, работающим по собственному API-ключу, — модель этого провайдера.',
         'Verify All also checks the sentences that have no citation against the model\'s general knowledge, and lists up to three that look wrong, so a source can be found for them. The model can be wrong about a correct sentence, so this is a prompt to look, not a finding. A few extra model calls per article.':
             '«Проверить все сноски» также сверяет предложения без сносок с общими знаниями модели и показывает до трёх, которые выглядят ошибочными, чтобы для них можно было найти источник. Модель может ошибиться и в верном предложении, поэтому это повод проверить, а не вывод. Несколько дополнительных запросов к модели на статью.',
-        'Model for the uncited-text check':
-            'Модель для проверки текста без сносок',
-        '{name} (recommended)':
-            '{name} (рекомендуется)',
-        'Same as citation checks':
-            'Та же, что для сносок',
         'Uncited text':
             'Текст без сносок',
         '{count} of {total} sentences may be wrong':
@@ -6596,14 +6604,10 @@ function useToolforgeSourceFetcher() {
         // Uncited-text check (core/uncited-check.js)
         'Check uncited text against general knowledge':
             'בדיקת טקסט ללא מקור מול ידע כללי',
+        'With a free provider this check runs on {model}; with a provider that uses an API key of its own, on that provider\'s model.':
+            'עם ספק חינמי הבדיקה הזו משתמשת ב־{model}, ועם ספק שעובד עם מפתח API משלו, במודל של אותו ספק.',
         'Verify All also checks the sentences that have no citation against the model\'s general knowledge, and lists up to three that look wrong, so a source can be found for them. The model can be wrong about a correct sentence, so this is a prompt to look, not a finding. A few extra model calls per article.':
             '״בדיקת כל הערות השוליים״ בודקת גם משפטים ללא הערת שוליים מול הידע הכללי של המודל, ומציגה עד שלושה שנראים שגויים, כדי שאפשר יהיה למצוא להם מקור. המודל עלול לטעות גם במשפט נכון, ולכן זו הזמנה לבדוק ולא ממצא. כמה קריאות נוספות למודל לכל ערך.',
-        'Model for the uncited-text check':
-            'מודל לבדיקת טקסט ללא מקור',
-        '{name} (recommended)':
-            '{name} (מומלץ)',
-        'Same as citation checks':
-            'כמו בבדיקת הערות השוליים',
         'Uncited text':
             'טקסט ללא מקור',
         '{count} of {total} sentences may be wrong':
@@ -6974,14 +6978,10 @@ function useToolforgeSourceFetcher() {
         // Uncited-text check (core/uncited-check.js)
         'Check uncited text against general knowledge':
             'Tekst zonder bronvermelding toetsen aan algemene kennis',
+        'With a free provider this check runs on {model}; with a provider that uses an API key of its own, on that provider\'s model.':
+            'Met een gratis aanbieder gebruikt deze controle {model}; met een aanbieder die een eigen API-sleutel gebruikt, het model van die aanbieder.',
         'Verify All also checks the sentences that have no citation against the model\'s general knowledge, and lists up to three that look wrong, so a source can be found for them. The model can be wrong about a correct sentence, so this is a prompt to look, not a finding. A few extra model calls per article.':
             'Bij Alle bronvermeldingen controleren worden ook de zinnen zonder bronvermelding getoetst aan de algemene kennis van het model, en worden er maximaal drie getoond die onjuist lijken, zodat er een bron voor gezocht kan worden. Het model kan zich vergissen in een juiste zin, dus dit is een aanleiding om te kijken, geen bevinding. Dit kost enkele extra modelaanroepen per artikel.',
-        'Model for the uncited-text check':
-            'Model voor de controle van tekst zonder bronvermelding',
-        '{name} (recommended)':
-            '{name} (aanbevolen)',
-        'Same as citation checks':
-            'Hetzelfde als bij bronvermeldingen',
         'Uncited text':
             'Tekst zonder bronvermelding',
         '{count} of {total} sentences may be wrong':
@@ -7387,12 +7387,9 @@ function useToolforgeSourceFetcher() {
             // checks the body sentences no citation covers against the
             // model's general knowledge. Off until the editor turns it on:
             // the evidence is the model's memory, not a source, and it is
-            // unvalidated. It runs on its own model ('default' is
-            // UNCITED_DEFAULT_PROVIDER, whatever the sidebar's provider)
-            // unless the editor picks 'current', the provider the citation
-            // checks use.
+            // unvalidated. Its model follows the sidebar's provider:
+            // uncitedModel().
             this.uncitedCheckEnabled = localStorage.getItem('verifier_uncited_check') === 'on';
-            this.uncitedModelChoice = localStorage.getItem('verifier_uncited_model') === 'current' ? 'current' : 'default';
             this.sidebarWidth = localStorage.getItem('verifier_sidebar_width') || '400px';
             this.isVisible = localStorage.getItem('verifier_sidebar_visible') === 'true';
             this.buttons = {};
@@ -7554,9 +7551,7 @@ function useToolforgeSourceFetcher() {
                         <div id="verifier-lead-check-container"></div>
                         <div id="verifier-lead-check-note">${this.t('Verify All also checks each sentence of the lead against the rest of the article, since a lead statement may be sourced in the body instead. A lead citation found to support only part of its claim is then set aside rather than counted as a problem. A few extra model calls per article.')}</div>
                         <div id="verifier-uncited-check-container"></div>
-                        <div id="verifier-uncited-check-note">${this.t('Verify All also checks the sentences that have no citation against the model\'s general knowledge, and lists up to three that look wrong, so a source can be found for them. The model can be wrong about a correct sentence, so this is a prompt to look, not a finding. A few extra model calls per article.')}</div>
-                        <div id="verifier-uncited-model-label">${this.t('Model for the uncited-text check')}</div>
-                        <div id="verifier-uncited-model-container"></div>
+                        <div id="verifier-uncited-check-note">${this.t('Verify All also checks the sentences that have no citation against the model\'s general knowledge, and lists up to three that look wrong, so a source can be found for them. The model can be wrong about a correct sentence, so this is a prompt to look, not a finding. A few extra model calls per article.')} ${this.t('With a free provider this check runs on {model}; with a provider that uses an API key of its own, on that provider\'s model.', { model: STRONG_FREE_MODEL.name })}</div>
                         <div id="verifier-accuracy-note"></div>
                         <div id="verifier-privacy-note">${this.t('Results are logged for research. Your username is not recorded.')}</div>
                         <div id="verifier-settings-done-container"></div>
@@ -9182,14 +9177,6 @@ function useToolforgeSourceFetcher() {
                 #verifier-uncited-check-note {
                     font-size: 12px;
                     color: var(--sv-ink-4);
-                    margin-bottom: 6px;
-                }
-                #verifier-uncited-model-label {
-                    font-size: 12px;
-                    color: var(--sv-ink-4);
-                    margin-bottom: 4px;
-                }
-                #verifier-uncited-model-container {
                     margin-bottom: 10px;
                 }
                 #verifier-lead-note {
@@ -9424,25 +9411,12 @@ function useToolforgeSourceFetcher() {
                 align: 'inline'
             });
 
-            // Uncited-text check toggle, and the model it runs on
+            // Uncited-text check toggle
             this.buttons.uncitedCheckToggle = new OO.ui.CheckboxInputWidget({ selected: this.uncitedCheckEnabled });
             this.buttons.uncitedCheckField = new OO.ui.FieldLayout(this.buttons.uncitedCheckToggle, {
                 label: this.t('Check uncited text against general knowledge'),
                 align: 'inline'
             });
-            this.buttons.uncitedModelSelect = new OO.ui.DropdownWidget({
-                menu: {
-                    items: [
-                        new OO.ui.MenuOptionWidget({
-                            data: 'default',
-                            label: this.t('{name} (recommended)', { name: this.providers[UNCITED_DEFAULT_PROVIDER].name })
-                        }),
-                        new OO.ui.MenuOptionWidget({ data: 'current', label: this.t('Same as citation checks') })
-                    ]
-                },
-                disabled: !this.uncitedCheckEnabled
-            });
-            this.buttons.uncitedModelSelect.getMenu().selectItemByData(this.uncitedModelChoice);
 
             this.buttons.setKey = new OO.ui.ButtonWidget({
                 label: this.t('Set API Key'),
@@ -9526,7 +9500,6 @@ function useToolforgeSourceFetcher() {
             document.getElementById('verifier-severity-container').appendChild(this.buttons.severityField.$element[0]);
             document.getElementById('verifier-lead-check-container').appendChild(this.buttons.leadCheckField.$element[0]);
             document.getElementById('verifier-uncited-check-container').appendChild(this.buttons.uncitedCheckField.$element[0]);
-            document.getElementById('verifier-uncited-model-container').appendChild(this.buttons.uncitedModelSelect.$element[0]);
             document.getElementById('verifier-settings-done-container').appendChild(this.buttons.settingsDone.$element[0]);
 
             this.updateProviderInfo();
@@ -10330,12 +10303,6 @@ function useToolforgeSourceFetcher() {
             this.buttons.uncitedCheckToggle.on('change', (selected) => {
                 this.uncitedCheckEnabled = !!selected;
                 localStorage.setItem('verifier_uncited_check', this.uncitedCheckEnabled ? 'on' : 'off');
-                this.buttons.uncitedModelSelect.setDisabled(!this.uncitedCheckEnabled);
-            });
-
-            this.buttons.uncitedModelSelect.getMenu().on('select', (item) => {
-                this.uncitedModelChoice = item.getData() === 'current' ? 'current' : 'default';
-                localStorage.setItem('verifier_uncited_model', this.uncitedModelChoice);
             });
 
             this.buttons.setKey.on('click', () => {
@@ -11505,8 +11472,8 @@ function useToolforgeSourceFetcher() {
 
         // Lift Wing is unconditionally routed via Toolforge in core/providers.js.
         // This opt-in override now applies only to keyless HuggingFace calls.
-        llmRouterConfigOverrides() {
-            if (useToolforgeLlmRouter() && this.currentProvider === 'huggingface') {
+        llmRouterConfigOverrides(provider = this.currentProvider) {
+            if (useToolforgeLlmRouter() && provider === 'huggingface') {
                 return { workerBase: TOOLFORGE_LLM_ROUTER_BASE };
             }
             return {};
@@ -12433,10 +12400,11 @@ function useToolforgeSourceFetcher() {
             return uncited;
         }
 
-        // The provider the uncited-text check runs on: UNCITED_DEFAULT_PROVIDER
-        // unless the editor chose the one their citation checks use.
-        uncitedProvider() {
-            return this.uncitedModelChoice === 'current' ? this.currentProvider : UNCITED_DEFAULT_PROVIDER;
+        // The model the uncited-text check runs on, { provider, model, name }:
+        // the citation checks' own when the editor pays for their provider,
+        // else STRONG_FREE_MODEL (core/uncited-check.js's uncitedModelFor()).
+        uncitedModel() {
+            return uncitedModelFor(this.currentProvider);
         }
 
         // A provider's key as getCurrentApiKey() reads the current one's:
@@ -12517,7 +12485,7 @@ function useToolforgeSourceFetcher() {
             const findings = uncited.findings || [];
             const unchecked = uncited.unchecked || [];
             const done = uncited.done || 0;
-            const model = (this.providers[uncited.provider] && this.providers[uncited.provider].name) || uncited.provider;
+            const model = uncited.model.name;
             const notes = [];
             if (uncited.state === 'running' || uncited.state === 'done') {
                 notes.push(this.t('Checked with {model}, against its general knowledge rather than a source. A finding is a reason to look for a source before changing anything.', { model }));
@@ -12567,13 +12535,12 @@ function useToolforgeSourceFetcher() {
         }
 
         // The uncited-text phase of Verify All: core/uncited-check.js's
-        // runUncitedCheck() on the provider chosen for it, at that
-        // provider's pace. A failed call costs its sentences, counted as
+        // runUncitedCheck() on uncitedModel(), at its provider's pace. A failed call costs its sentences, counted as
         // unchecked. Not logged, like the lead check: the verification log
         // has no field for a sentence checked against no source.
         async runReportUncitedCheck(startTime) {
             const uncited = this.reportUncited;
-            const provider = uncited.provider;
+            const { provider, model } = uncited.model;
             const total = uncited.sentences.length;
             const phase = this.t('Checking uncited text');
             const delayBetweenCalls = provider === 'publicai' || provider.startsWith('liftwing') ? 3000 : 1000;
@@ -12583,11 +12550,11 @@ function useToolforgeSourceFetcher() {
             this.renderReportUncited();
             const callModel = (systemPrompt, userContent) => callProviderAPI(provider, {
                 apiKey: this.apiKeyFor(provider),
-                model: this.providers[provider].model,
+                model,
                 systemPrompt,
                 userContent,
                 maxTokens: groupMaxTokens(provider),
-                ...(provider === this.currentProvider ? this.llmRouterConfigOverrides() : {})
+                ...this.llmRouterConfigOverrides(provider)
             });
             let run = null;
             try {
@@ -12657,7 +12624,7 @@ function useToolforgeSourceFetcher() {
             const checkable = citations.filter(c => !c.skipReason);
             const multiGroupCount = new Set(checkable.filter(c => c.groupSize > 1).map(c => c.groupId)).size;
             const leadCalls = lead ? Math.ceil(lead.sentences.length / leadChunkSize(this.currentProvider)) : 0;
-            const uncitedCalls = uncited ? Math.ceil(uncited.sentences.length / uncitedChunkSize(this.uncitedProvider())) : 0;
+            const uncitedCalls = uncited ? Math.ceil(uncited.sentences.length / uncitedChunkSize(this.uncitedModel().provider)) : 0;
             const estimatedSeconds = checkable.length * 7 + multiGroupCount * 8 + leadCalls * 15 + uncitedCalls * 10;
             const estimatedMinutes = Math.max(1, Math.ceil(estimatedSeconds / 60));
 
@@ -12700,7 +12667,7 @@ function useToolforgeSourceFetcher() {
             // The uncited-text check's state for this report, or null when it
             // doesn't run. Its provider is fixed for the run, like the lead's.
             this.reportUncited = uncited
-                ? { ...uncited, provider: this.uncitedProvider(), findings: [], unchecked: [], done: 0, state: 'pending' }
+                ? { ...uncited, model: this.uncitedModel(), findings: [], unchecked: [], done: 0, state: 'pending' }
                 : null;
 
             this.showReportView();

@@ -1,6 +1,6 @@
 # Checking uncited text against the model's knowledge
 
-> **Status (2026-11-20):** In progress on `claude/article-accuracy-model-checks-6babki`, stacked on the lead-check branch (`claude/clever-darwin-9yn9ef`, [#387](https://github.com/alex-o-748/citation-checker-script/pull/387)). Built: extraction, the check, the batch pipeline, and the userscript behind a setting that is **off by default** and runs on its own model (§ The userscript). The labeled evaluation set is not built. The numbers come from a smoke test on 7 enwiki articles with 9 injected errors (§ What the smoke test found); they show the shape works and which model to use, and nothing about accuracy.
+> **Status (2026-11-20):** In progress on `claude/article-accuracy-model-checks-6babki` ([#390](https://github.com/alex-o-748/citation-checker-script/pull/390)); the lead check it builds on (#387) is merged. Built: extraction, the check, the batch pipeline, and the userscript behind a setting that is **off by default** and runs on its own model (§ The userscript). The labeled evaluation set is not built. The numbers come from a smoke test on 7 enwiki articles with 9 injected errors (§ What the smoke test found); they show the shape works and which model to use, and nothing about accuracy.
 
 ## The problem
 
@@ -178,17 +178,24 @@ with no findings from an unchecked one.
 
 A setting, **off by default** (`verifier_uncited_check`): "Check uncited text
 against general knowledge". It stays off because the evidence is the model's
-memory rather than a source, and it is unvalidated. Under it is a choice of
-model (`verifier_uncited_model`), disabled while the setting is off:
+memory rather than a source, and it is unvalidated.
 
-- **Lift Wing (recommended)**, the default: `UNCITED_DEFAULT_PROVIDER`. It is
-  keyless, and it did far better in the smoke test.
-- **Same as citation checks**: the provider the sidebar is set to.
+**Which model runs it follows the sidebar's provider** (`uncitedModelFor()`),
+with no setting of its own:
 
-The model is a separate setting from the sidebar's provider. Lift Wing has
-been the sidebar's default too since 2026-10-24 (#389), but an editor who
-switches the citation checks to gpt-oss-20b, the model that did worst here,
-still gets Lift Wing for this check.
+- **A provider that needs the editor's own key** (Claude, Gemini, OpenAI):
+  that provider's model. It is as strong as anything here, and the editor is
+  paying for it already.
+- **Any free provider** (Lift Wing, Hugging Face, PublicAI): **GLM 5.2**
+  (`STRONG_FREE_MODEL` in `core/models.js`, `zai-org/GLM-5.2:novita` through
+  the Worker's `/hf`). This check leans on what the model knows, and on the
+  smoke test GLM 5.2 did best of the five models tried (§ What the smoke test
+  found). Its calls draw on the shared Hugging Face credits that the switch to
+  Lift Wing (#389) was made to spare. That cost is a few calls per Verify All,
+  and only for editors who turn the check on.
+
+(Until 2026-11-20 it was a dropdown: Lift Wing by default, or "Same as citation
+checks". GLM 5.2 wasn't reachable through the proxies when that was written.)
 
 It follows the rules #387's report rebuild set for an extra check:
 
@@ -288,10 +295,25 @@ What that says:
   the smoke test: the check catches well-known errors, and its false flags are
   confident and vary between runs.
 
-**Consequences:** the batch runs this check on Lift Wing, its default
-provider, and so does the userscript unless the editor chooses otherwise
-(`UNCITED_DEFAULT_PROVIDER`), whatever provider the citation checks use. It is
-never silently on gpt-oss-20b.
+**GLM 5.2 and Qwen3.8, 2026-11-20** (the same 7 articles and 9 injections;
+both reachable by then):
+
+| | GLM 5.2 (HF, Novita) | Qwen3.8-27B (Lift Wing) |
+|---|---|---|
+| Injected errors caught | **9 of 9** | 8 of 9 (missed Graz → Vienna) |
+| Untouched sentences flagged | 1 of 98: the Einstein/Compton sentence, the likely real error above | 0 of 98 |
+| Calls, wall time | 11, 101 s | 17, 26 s |
+| Tokens in / out | 16.5k / 7.5k | 23.0k / 0.6k |
+
+GLM is the first model to give a `medium` (on Graz → Vienna), and its comments
+named the right facts; one of Qwen3.8's credited Augustus De Morgan with what
+Babbage did. Seven articles prove nothing, but every run points the same way.
+
+**Consequences:** the userscript runs this check on GLM 5.2 for any free
+provider and on the editor's own model for a paid one (§ The userscript). It
+is never silently on gpt-oss-20b. The batch uses its `--provider`, Lift Wing
+by default; moving it to GLM 5.2 is a separate decision, since a batch's calls
+would come out of the same shared HF credits at a much larger scale.
 
 ## Code
 
@@ -307,7 +329,8 @@ never silently on gpt-oss-20b.
 | `service/csv-report.js` | `uncited_confidence` |
 | `service/sweep-checks.js` | The handling above, `uncitedFormatProblems()`, the `uncited_check` run check |
 | `service/run-extract.js` | An uncited line in the funnel, so a past batch can be measured with no model calls |
-| `main.js` | The setting, `articleUncited()`, `runReportUncitedCheck()`, the report section, and strings in all five tables (§ The userscript) |
+| `main.js` | The setting, `articleUncited()`, `uncitedModel()`, `runReportUncitedCheck()`, the report section, and strings in all five tables (§ The userscript) |
+| `core/models.js` | `STRONG_FREE_MODEL` (GLM 5.2), the free fallback `uncitedModelFor()` picks |
 | `scripts/sync-main.js` | `uncited.js` and `uncited-check.js` in `CORE_ORDER` |
 
 Both core modules are browser-safe and prefix their top-level names, ready for

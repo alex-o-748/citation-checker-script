@@ -4,11 +4,12 @@ import { createHash } from 'node:crypto';
 
 import {
     generateUncitedSystemPrompt, generateUncitedUserPrompt, parseUncitedCheckResult, runUncitedCheck,
-    locateExcerpt, rankUncitedFindings, uncitedChunkSize, withUncitedCommentLanguage,
+    locateExcerpt, rankUncitedFindings, uncitedChunkSize, withUncitedCommentLanguage, uncitedModelFor,
     UNCITED_PROMPT_VERSION, UNCITED_PER_CALL_MAX, UNCITED_MAX_FINDINGS, UNCITED_CHUNK_SIZE_DEFAULT,
     UNCITED_CONTEXT_MAX_CHARS, UNCITED_VERDICT, UNCITED_REASON_TYPE,
 } from '../core/uncited-check.js';
 import { VERDICTS } from '../core/verdicts.js';
+import { PROVIDERS, STRONG_FREE_MODEL } from '../core/models.js';
 
 // Same contract as the PROMPT_VERSION, SEVERITY_PROMPT_VERSION and
 // LEAD_PROMPT_VERSION pins: findings from two prompt revisions are not
@@ -318,4 +319,15 @@ test('runUncitedCheck: pause runs between calls, never before the first; shouldA
     assert.equal(calls, 1);
     assert.equal(run.checked, 2, 'what was answered before the stop is kept');
     assert.deepEqual(run.findings.map(f => f.index), [0]);
+});
+
+test('uncitedModelFor: a paid provider\'s own model, else the strong free one', () => {
+    assert.deepEqual(uncitedModelFor('claude'), { provider: 'claude', model: PROVIDERS.claude.model, name: PROVIDERS.claude.name });
+    assert.deepEqual(uncitedModelFor('liftwing'), { ...STRONG_FREE_MODEL });
+    assert.deepEqual(uncitedModelFor('huggingface'), { ...STRONG_FREE_MODEL });
+    assert.deepEqual(uncitedModelFor('nonexistent'), { ...STRONG_FREE_MODEL });
+    assert.equal(PROVIDERS[STRONG_FREE_MODEL.provider].requiresKey, false, 'free: the proxy carries the key');
+    const copy = uncitedModelFor('liftwing');
+    copy.model = 'changed';
+    assert.equal(STRONG_FREE_MODEL.model, 'zai-org/GLM-5.2:novita', 'callers get a copy');
 });

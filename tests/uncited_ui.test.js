@@ -7,12 +7,11 @@ import { JSDOM } from 'jsdom';
 
 import { uncitedSentences } from '../core/uncited.js';
 import {
-    runUncitedCheck, generateUncitedSystemPrompt, withUncitedCommentLanguage, uncitedChunkSize,
-    UNCITED_DEFAULT_PROVIDER,
+    runUncitedCheck, generateUncitedSystemPrompt, withUncitedCommentLanguage, uncitedChunkSize, uncitedModelFor,
 } from '../core/uncited-check.js';
 import { QUOTE_STATUSES } from '../core/quote.js';
 import { groupMaxTokens } from '../core/providers.js';
-import { PROVIDERS } from '../core/models.js';
+import { PROVIDERS, STRONG_FREE_MODEL } from '../core/models.js';
 
 const MAIN_JS = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'main.js');
 const SRC = fs.readFileSync(MAIN_JS, 'utf8');
@@ -31,7 +30,7 @@ function extractMethod(signature) {
 function harness(bodyHtml = '', { callProviderAPI = async () => { throw new Error('no model in this test'); }, storage = {} } = {}) {
     const methods = [
         'articleUncited() {',
-        'uncitedProvider() {',
+        'uncitedModel() {',
         'apiKeyFor(providerId) {',
         'resetReportUncited() {',
         'renderReportUncited() {',
@@ -50,14 +49,13 @@ function harness(bodyHtml = '', { callProviderAPI = async () => { throw new Erro
     const localStorage = { getItem: k => (k in storage ? storage[k] : null) };
     const deps = {
         uncitedSentences, runUncitedCheck, generateUncitedSystemPrompt, withUncitedCommentLanguage, uncitedChunkSize,
-        UNCITED_DEFAULT_PROVIDER, QUOTE_STATUSES, groupMaxTokens, callProviderAPI, localStorage,
+        uncitedModelFor, QUOTE_STATUSES, groupMaxTokens, callProviderAPI, localStorage,
     };
     const Harness = new Function('document', 'console', ...Object.keys(deps), `
         class Harness {
             constructor() {
                 this.providers = ${JSON.stringify(PROVIDERS)};
                 this.currentProvider = 'huggingface';
-                this.uncitedModelChoice = 'default';
                 this.lang = 'en';
                 this.articleLangCode = 'en';
                 this.reportUncited = null;
@@ -69,7 +67,7 @@ function harness(bodyHtml = '', { callProviderAPI = async () => { throw new Erro
             updateReportProgress(done, total, phase) { this.progress.push([done, total, phase]); }
             renderReportSummary() {}
             reportArticleTitle() { return 'Morrison Bridge'; }
-            llmRouterConfigOverrides() { return { workerBase: 'https://router.example' }; }
+            llmRouterConfigOverrides(provider = this.currentProvider) { return provider === 'huggingface' ? { workerBase: 'https://router.example' } : {}; }
             isFindingSummaryClick() { return false; }
             scrollToUncitedSentence() {}
 ${methods}
@@ -86,17 +84,21 @@ const ARTICLE = '<div class="mw-parser-output">'
     + `<p>It opened in 1998.${ref(2)} It was designed by Gustave Eiffel. It is painted red.</p>`
     + '</div>';
 
-test('the setting is off by default, and the check runs on its own model unless told otherwise', () => {
+test('the setting is off by default, and the model follows the sidebar\'s provider', () => {
     assert.match(SRC, /this\.uncitedCheckEnabled = localStorage\.getItem\('verifier_uncited_check'\) === 'on';/,
         'off until turned on: the evidence is the model\'s memory, not a source');
-    assert.match(SRC, /this\.uncitedModelChoice = localStorage\.getItem\('verifier_uncited_model'\) === 'current' \? 'current' : 'default';/);
-    assert.equal(UNCITED_DEFAULT_PROVIDER, 'liftwing');
-    assert.equal(PROVIDERS[UNCITED_DEFAULT_PROVIDER].requiresKey, false, 'the default needs no key');
+    assert.doesNotMatch(SRC, /verifier_uncited_model/, 'no model setting: the rule decides');
 
     const { h } = harness();
-    assert.equal(h.uncitedProvider(), 'liftwing', 'whatever the sidebar\'s provider');
-    h.uncitedModelChoice = 'current';
-    assert.equal(h.uncitedProvider(), 'huggingface', 'the citation checks\' provider');
+    for (const free of ['liftwing', 'huggingface', 'publicai', 'liftwing-safeguard']) {
+        h.currentProvider = free;
+        assert.deepEqual(h.uncitedModel(), { ...STRONG_FREE_MODEL }, `${free} is free, so GLM 5.2`);
+    }
+    for (const paid of ['claude', 'gemini', 'openai']) {
+        h.currentProvider = paid;
+        assert.deepEqual(h.uncitedModel(), { provider: paid, model: PROVIDERS[paid].model, name: PROVIDERS[paid].name },
+            `${paid} needs the editor's key, so its own model`);
+    }
 });
 
 test('there is no uncited-only action: the check is a phase of Verify All, like the lead check', () => {
@@ -127,7 +129,7 @@ const sentences = [
     { index: 1, paragraphIndex: 0, sectionTitle: 'History', text: 'It is <b>painted</b> red.' },
     { index: 2, paragraphIndex: 1, sectionTitle: null, text: 'It cost 40 million.' },
 ];
-const state = extra => ({ sentences, total: 3, provider: 'liftwing', findings: [], unchecked: [], done: 0, state: 'pending', ...extra });
+const state = extra => ({ sentences, total: 3, model: { ...STRONG_FREE_MODEL }, findings: [], unchecked: [], done: 0, state: 'pending', ...extra });
 
 test('the section header says where the check is, in the lead check\'s words where they fit', () => {
     const { h } = harness();
@@ -157,7 +159,7 @@ test('a finding is a report row: its verdict, the sentence, the comment, and the
             { index: 2, text: sentences[2].text, sectionTitle: null, excerpt: 'cost 400 million', excerptStatus: 'not-found', comments: '', confidence: 'medium' },
         ],
     }));
-    assert.match(done.querySelector('.sv-section-note').textContent, /^Checked with Lift Wing, against its general knowledge rather than a source\./);
+    assert.match(done.querySelector('.sv-section-note').textContent, /^Checked with GLM 5\.2, against its general knowledge rather than a source\./);
     const rows = [...done.querySelectorAll('.sv-rows > .sv-finding')];
     assert.deepEqual(rows.map(r => r.dataset.uncitedIndex), ['0', '1', '2']);
     assert.ok(rows.every(r => r.classList.contains('sv-uncited-finding') && r.classList.contains('verdict-partial')));
@@ -181,7 +183,7 @@ test('notes: none before it runs; the model once it does; the cap, a stop part-w
         unchecked: [{ index: 1, text: 'x', error: 'error' }],
     })).querySelectorAll('.sv-section-note')].map(n => n.textContent);
     assert.equal(notes.length, 4);
-    assert.match(notes[0], /^Checked with Lift Wing/);
+    assert.match(notes[0], /^Checked with GLM 5\.2/);
     assert.deepEqual(notes.slice(1), [
         'Only the first 3 of 160 sentences with no citation were checked.',
         'Stopped after 2 of 3 sentences.',
@@ -207,7 +209,7 @@ test('the section is a closed .sv-section like the lead check\'s, and only exist
     assert.equal(section.querySelector('.sv-section-status').textContent, 'checking, 1 of 3');
 });
 
-test('the phase runs on the uncited provider, with its model and key, and renders its findings and tokens', async () => {
+test('with a free provider the phase runs on GLM 5.2 through the HF route, and renders its findings and tokens', async () => {
     const calls = [];
     const callProviderAPI = async (provider, config) => {
         calls.push({ provider, config });
@@ -217,15 +219,16 @@ test('the phase runs on the uncited provider, with its model and key, and render
         };
     };
     const { h, doc } = harness(ARTICLE, { callProviderAPI });
-    h.reportUncited = { ...h.articleUncited(), provider: h.uncitedProvider(), findings: [], unchecked: [], done: 0, state: 'pending' };
+    h.currentProvider = 'liftwing';
+    h.reportUncited = { ...h.articleUncited(), model: h.uncitedModel(), findings: [], unchecked: [], done: 0, state: 'pending' };
     h.resetReportUncited();
     await h.runReportUncitedCheck(Date.now());
 
     assert.equal(calls.length, 1);
-    assert.equal(calls[0].provider, 'liftwing', 'not the citation checks\' huggingface');
-    assert.equal(calls[0].config.model, PROVIDERS.liftwing.model);
-    assert.equal(calls[0].config.apiKey, null);
-    assert.equal(calls[0].config.workerBase, undefined, 'the router override belongs to the current provider only');
+    assert.equal(calls[0].provider, 'huggingface');
+    assert.equal(calls[0].config.model, STRONG_FREE_MODEL.model);
+    assert.equal(calls[0].config.apiKey, null, 'keyless: the proxy\'s key, unless the editor stored an HF key');
+    assert.equal(calls[0].config.workerBase, 'https://router.example', 'the HF route\'s override applies, whatever the sidebar\'s provider');
     assert.match(calls[0].config.userContent, /^Article: Morrison Bridge$/m);
     assert.match(calls[0].config.userContent, /1\. "It was designed by Gustave Eiffel\."/);
     assert.equal(calls[0].config.systemPrompt, generateUncitedSystemPrompt());
@@ -239,28 +242,29 @@ test('the phase runs on the uncited provider, with its model and key, and render
     assert.equal(doc.querySelectorAll('#verifier-report-uncited .sv-uncited-finding').length, 1);
 });
 
-test('with "same as citation checks" the phase uses the current provider, its key and its router override', async () => {
+test('with a paid provider the phase uses that provider\'s model and the editor\'s key', async () => {
     const calls = [];
     const callProviderAPI = async (provider, config) => {
         calls.push({ provider, config });
         return { text: '{"issues": []}', usage: { input: 1, output: 1 } };
     };
-    const { h } = harness(ARTICLE, { callProviderAPI, storage: { hf_api_key: 'hf-x' } });
-    h.uncitedModelChoice = 'current';
+    const { h } = harness(ARTICLE, { callProviderAPI, storage: { claude_api_key: 'sk-x' } });
+    h.currentProvider = 'claude';
     h.lang = 'ru';
     h.articleLangCode = 'ru';
-    h.reportUncited = { ...h.articleUncited(), provider: h.uncitedProvider(), findings: [], unchecked: [], done: 0, state: 'pending' };
+    h.reportUncited = { ...h.articleUncited(), model: h.uncitedModel(), findings: [], unchecked: [], done: 0, state: 'pending' };
     await h.runReportUncitedCheck(Date.now());
-    assert.equal(calls[0].provider, 'huggingface');
-    assert.equal(calls[0].config.apiKey, 'hf-x');
-    assert.equal(calls[0].config.workerBase, 'https://router.example');
+    assert.equal(calls[0].provider, 'claude');
+    assert.equal(calls[0].config.model, PROVIDERS.claude.model);
+    assert.equal(calls[0].config.apiKey, 'sk-x');
+    assert.equal(calls[0].config.workerBase, undefined);
     assert.match(calls[0].config.systemPrompt, /Write the "comments" field in Russian/);
     assert.deepEqual(h.reportUncited.findings, []);
 });
 
 test('a Stop before the phase\'s first call checks nothing and says so', async () => {
     const { h } = harness(ARTICLE, { callProviderAPI: async () => { throw new Error('must not be called'); } });
-    h.reportUncited = { ...h.articleUncited(), provider: 'liftwing', findings: [], unchecked: [], done: 0, state: 'pending' };
+    h.reportUncited = { ...h.articleUncited(), model: h.uncitedModel(), findings: [], unchecked: [], done: 0, state: 'pending' };
     h.reportCancelled = true;
     await h.runReportUncitedCheck(Date.now());
     assert.equal(h.reportUncited.state, 'done');

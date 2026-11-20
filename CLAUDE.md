@@ -587,12 +587,14 @@ with 14.
 Every finding from both models was `high`, so confidence doesn't rank anything
 yet.
 
-**In the userscript it is off by default** (`verifier_uncited_check`), with its
-own model setting (`verifier_uncited_model`): Lift Wing
-(`UNCITED_DEFAULT_PROVIDER`) unless the editor picks "Same as citation
-checks". It is separate from the sidebar provider so that an editor who
-switches the citation checks to gpt-oss-20b, which did worst here, still gets
-Lift Wing for this check. Like the lead check it is a phase of Verify All with
+**In the userscript it is off by default** (`verifier_uncited_check`). Its
+model follows the sidebar's provider (`uncitedModelFor()` in
+`core/uncited-check.js`): a provider that needs the editor's own key keeps
+its own model, and every free provider gets GLM 5.2 (`STRONG_FREE_MODEL` in
+`core/models.js`, through the Worker's `/hf`), which caught 9 of 9 injected
+errors with 1 extra flag on the 2026-11-20 re-run (Qwen3.8: 8, 0). It draws on
+the shared HF credits #389 moved the defaults off, so keep it to this opt-in
+check. The batch uses its `--provider`. Like the lead check it is a phase of Verify All with
 no action of its own, its calls go into the confirmation's time estimate, and
 its findings are a closed `.sv-section` above the citations, made of
 `findingHtml()` rows. They are not counted in the summary, not in the
