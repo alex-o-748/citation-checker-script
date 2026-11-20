@@ -1,6 +1,8 @@
 # Leads from borrowable books: names the book never mentions, and contradictions in its snippets
 
 > **Status (2026-11-04):** Proposed. Step 0 partly done (first result below): the per-book search to build on is archive.org's own full-text search with `identifier:`, not Open Library's endpoint. Finish step 0 before any code.
+>
+> **Widened (2026-11-20)** by `2026-11-20-book-citations-on-the-internet-archive.md`: every book citation, linked or not, with this doc's two lead rules as its phase 4. Its pilot measured the search endpoint on 170 claims, which answers most of step 0.
 
 ## The problem
 
