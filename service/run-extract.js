@@ -126,20 +126,32 @@ export function describeLead(lead) {
     return `lead: ${sentences.length} sentence(s) against a body of ${body.chars} chars in ${body.sections.length} section(s)${cut}`;
 }
 
+// What the uncited-text check (core/uncited-check.js) would read: how many
+// sentences no citation covers, outside the lead.
+export function describeUncited(uncited) {
+    if (!uncited) return null;
+    const where = uncited.usesLead ? ' (no headings, so the whole article)' : '';
+    const cap = uncited.capped ? `, ${uncited.sentences.length} checked under the cap` : '';
+    return `uncited: ${uncited.total} sentence(s) in ${uncited.paragraphs.length} paragraph(s)${where}${cap}`;
+}
+
 function printArticle(result) {
     process.stdout.write(`## ${result.title} (page ${result.pageId}, rev ${result.revisionId})\n`);
     process.stdout.write(`outcome: ${result.outcome}\n`);
 
     if (result.outcome === ARTICLE_OUTCOMES.FETCH_FAILED) {
         process.stdout.write(`  article fetch failed (status ${result.fetchStatus}): ${result.error}\n\n`);
-        return { citations: 0, withUrl: 0, fetched: 0, failed: 0, leadSentences: 0, leadCitations: 0 };
+        return { citations: 0, withUrl: 0, fetched: 0, failed: 0, leadSentences: 0, leadCitations: 0, uncitedSentences: 0 };
     }
     const leadLine = describeLead(result.lead);
     if (leadLine) process.stdout.write(`  ${leadLine}\n`);
     const leadSentences = result.lead && result.lead.body.text ? result.lead.sentences.length : 0;
+    const uncitedLine = describeUncited(result.uncited);
+    if (uncitedLine) process.stdout.write(`  ${uncitedLine}\n`);
+    const uncitedSentences = result.uncited ? result.uncited.total : 0;
     if (result.outcome === ARTICLE_OUTCOMES.NO_CITATIONS) {
         process.stdout.write(`  no citations extracted\n\n`);
-        return { citations: 0, withUrl: 0, fetched: 0, failed: 0, leadSentences, leadCitations: 0 };
+        return { citations: 0, withUrl: 0, fetched: 0, failed: 0, leadSentences, leadCitations: 0, uncitedSentences };
     }
 
     // Skipped citations (claim too short to check) are never fetched, so
@@ -165,7 +177,7 @@ function printArticle(result) {
     }
     process.stdout.write('\n');
 
-    return { citations: result.citations.length, withUrl, fetched, failed, leadSentences, leadCitations };
+    return { citations: result.citations.length, withUrl, fetched, failed, leadSentences, leadCitations, uncitedSentences };
 }
 
 async function main(argv) {
@@ -221,6 +233,7 @@ async function main(argv) {
     let totalFailed = 0;
     let totalLeadSentences = 0;
     let totalLeadCitations = 0;
+    let totalUncitedSentences = 0;
 
     // core/urls.js logs one console.log per citation it examines (no-URL,
     // page-number-extracted, Harvard/sfn resolution) — fine for a human
@@ -239,13 +252,14 @@ async function main(argv) {
             fetchSource: opts.liveSourceFetch ? makeLiveFetchSource() : stubFetchSource,
             fetchConcurrency: opts.fetchConcurrency,
         })) {
-            const { citations, withUrl, fetched, failed, leadSentences, leadCitations } = printArticle(result);
+            const { citations, withUrl, fetched, failed, leadSentences, leadCitations, uncitedSentences } = printArticle(result);
             totalCitations += citations;
             totalWithUrl += withUrl;
             totalFetched += fetched;
             totalFailed += failed;
             totalLeadSentences += leadSentences;
             totalLeadCitations += leadCitations;
+            totalUncitedSentences += uncitedSentences;
         }
     } finally {
         console.log = realLog;
@@ -255,7 +269,8 @@ async function main(argv) {
         `done. ${totalCitations} citation(s) extracted across ${candidates.length} article(s), ` +
         `${totalWithUrl} with a fetchable URL — ${totalFetched} fetched, ${totalFailed} failed. ` +
         `Lead check: ${totalLeadSentences} lead sentence(s) with a body to check against; ` +
-        `${totalLeadCitations} lead citation(s).\n`
+        `${totalLeadCitations} lead citation(s). ` +
+        `Uncited-text check: ${totalUncitedSentences} uncited sentence(s) outside the lead.\n`
     );
     return 0;
 }

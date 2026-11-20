@@ -2201,6 +2201,7 @@ const LEAD_NON_PROSE_CONTAINER = [
 // Subtrees whose text is never prose: footnote markers, edit links,
 // TemplateStyles CSS, and .noprint inline maintenance templates
 // ([citation needed]) — the same things core/claim.js leaves out of a claim.
+// Exported for core/uncited.js, which reads body paragraphs the same way.
 const LEAD_TEXT_NOISE = '.reference, .mw-ref, .mw-editsection, style, script, link, meta, .noprint, .ts-fix-template';
 
 // Footnote lists and bibliographies. Their text is never body.
@@ -2361,14 +2362,16 @@ function bodySectionText(parts) {
         .join('\n');
 }
 
-// The body's sections in document order: { level, heading, text, appendix }.
+// The body's sections in document order: { level, heading, text, paragraphs }.
 // One pass, walking the body's nodes; Parsoid's nested <section>s and the
 // skin's flat markup come out the same, since headings are met in order.
+// `paragraphs` are the section's own <p> elements, for core/uncited.js;
+// articleBody() leaves them out, so the body it returns stays plain data.
 function collectBodySections(nodes) {
     const sections = [];
     let current = null;
     const start = (level, heading) => {
-        current = { level, heading, parts: [], hasBibliography: false };
+        current = { level, heading, parts: [], paragraphs: [], hasBibliography: false };
         sections.push(current);
     };
     const walk = node => {
@@ -2387,6 +2390,7 @@ function collectBodySections(nodes) {
         }
         if (node.matches(BODY_FOOTNOTE_LIST)) return;
         if (node.matches(BODY_NOISE)) return;
+        if (node.tagName === 'P' && current) current.paragraphs.push(node);
         for (const child of node.childNodes) walk(child);
         if (!current) return;
         if (BODY_BLOCK_ELEMENTS.has(node.tagName)) current.parts.push('\n');
@@ -2406,7 +2410,7 @@ function collectBodySections(nodes) {
             appendixLevel = s.level;
             continue;
         }
-        if (text) kept.push({ level: s.level, heading: s.heading, text });
+        if (text) kept.push({ level: s.level, heading: s.heading, text, paragraphs: s.paragraphs });
     }
     return kept;
 }
@@ -2433,7 +2437,26 @@ function leadWords(text) {
  * Over `maxChars`, see fitBody().
  */
 function articleBody(root, { maxChars = LEAD_BODY_MAX_CHARS, leadText = '' } = {}) {
-    return fitBody(collectBodySections(splitLeadAndBody(root).body), { maxChars, leadText });
+    const sections = collectBodySections(splitLeadAndBody(root).body)
+        .map(({ level, heading, text }) => ({ level, heading, text }));
+    return fitBody(sections, { maxChars, leadText });
+}
+
+/**
+ * The body's prose paragraphs, in order: `{ block, sectionTitle }`, where
+ * `block` is the <p> and `sectionTitle` the heading of the section it is in.
+ * The same body articleBody() reads (no appendix sections, navigation or
+ * reference lists), and only <p>s outside tables, figures, quotations and
+ * the like, as for lead prose. Empty when the article has no headings.
+ */
+function bodyParagraphs(root) {
+    const paragraphs = [];
+    for (const section of collectBodySections(splitLeadAndBody(root).body)) {
+        for (const block of section.paragraphs) {
+            if (!block.closest(LEAD_NON_PROSE_CONTAINER)) paragraphs.push({ block, sectionTitle: section.heading });
+        }
+    }
+    return paragraphs;
 }
 
 /**
@@ -2501,6 +2524,174 @@ function isLeadDemotedVerdict(verdict, reasonType) {
     const v = canonicalizeVerdict(verdict);
     if (v === VERDICTS.PARTIALLY_SUPPORTED) return true;
     return v === VERDICTS.NOT_SUPPORTED && String(reasonType || '').toLowerCase() === 'omission';
+}
+
+// --- core/uncited.js ---
+// Uncited sentences: the body text no citation covers.
+//
+// Every prose sentence is checked by exactly one of three things:
+//
+//   a citation follows it in its paragraph   its source   (core/prompts.js)
+//   it is in the lead                        the body     (core/lead-check.js)
+//   neither                                  the model's general knowledge
+//                                                         (core/uncited-check.js)
+//
+// This module finds the third group. Design:
+// docs/design-plans/2026-10-23-uncited-text-check.md.
+//
+// The rule, in one sentence: **a sentence counts as cited when a citation
+// marker sits in it or anywhere after it in the same paragraph.** So the
+// uncited text of a paragraph is the run of whole sentences after the one
+// holding its last marker, or the whole paragraph when it has none. That is
+// Wikipedia's own reading of a paragraph-final citation (it may cover the
+// sentences before it), and it is fixed by the page alone: unlike the claim
+// scope, no user setting moves it, so one result serves every scope and can
+// be cached per revision. A sentence with a marker mid-way ("X, according to
+// Smith,[1] was the largest") is cited: the citation is in it, and the words
+// after the marker are not a sentence an editor would read on their own.
+//
+// The lead is left out when the article has a body: the lead check reads every
+// lead sentence against the body, cited or not. An article with no headings
+// has no body and so no lead check, and there its paragraphs are read here
+// instead, so that no prose is left to nothing.
+//
+// Nothing here is Node-specific: it is inlined into main.js
+// (scripts/sync-main.js), so top-level names carry an UNCITED_ / uncited
+// prefix for that shared scope.
+
+
+// Sentences checked per article, at most. A poorly sourced article can hold
+// hundreds of uncited sentences, and each one costs model time while the
+// check only ever reports a few (UNCITED_MAX_FINDINGS in uncited-check.js).
+// The first ones in article order are kept; `capped` records that the rest
+// were left out.
+const UNCITED_MAX_SENTENCES = 150;
+
+// The opening paragraph goes with every call so the model knows what the
+// article is about. A first paragraph is usually a few hundred characters;
+// this is a ceiling.
+const UNCITED_OPENING_MAX_CHARS = 1000;
+
+// A citation marker: what core/claim.js treats as a claim boundary.
+const UNCITED_MARKER = '.reference';
+
+// A sentence ending in a colon introduces what follows it: "Awards that she
+// received include:", "Eiffel said:". The list or quotation after it is not
+// part of the paragraph, and it is where the citation usually is, so the
+// lead-in is left out rather than read as an uncited claim. On the
+// 2026-10-23 sample (six enwiki articles), 20 of 120 uncited sentences were
+// lead-ins like these.
+const UNCITED_LEAD_IN_RE = /[:：]\s*$/u;
+
+function uncitedClean(text) {
+    return text
+        .replace(/\s+/g, ' ')
+        .replace(MAINTENANCE_MARKER_RE, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+// The paragraph's prose text, cleaned as a lead sentence is (core/lead.js),
+// and `citedChars`: how much of that text comes before its last citation
+// marker (0 when there is none). Cleaning a prefix gives a prefix of the
+// cleaned whole, so `citedChars` is an offset into `text`.
+//
+// A walk, never a DOM Range: Range boundary checks are O(document) under
+// JSDOM (see CLAUDE.md, "Claim extraction must not use DOM Range").
+function uncitedParagraphText(block) {
+    let raw = '';
+    let lastMarkerAt = -1;
+    const walk = node => {
+        for (const child of node.childNodes) {
+            if (child.nodeType === 3) {
+                raw += child.data;
+            } else if (child.nodeType === 1) {
+                if (child.matches(UNCITED_MARKER)) lastMarkerAt = raw.length;
+                else if (!child.matches(LEAD_TEXT_NOISE)) walk(child);
+            }
+        }
+    };
+    walk(block);
+    const text = uncitedClean(raw);
+    const citedChars = lastMarkerAt < 0 ? 0 : uncitedClean(raw.slice(0, lastMarkerAt)).length;
+    return { text, citedChars };
+}
+
+function uncitedOpening(root) {
+    const first = leadParagraphs(root)[0];
+    if (!first) return '';
+    const { text } = uncitedParagraphText(first);
+    return text.length > UNCITED_OPENING_MAX_CHARS
+        ? `${text.slice(0, UNCITED_OPENING_MAX_CHARS).trimEnd()}…`
+        : text;
+}
+
+/**
+ * Every uncited body sentence, in article order:
+ *
+ *   {
+ *     sentences:  [{ index, paragraphIndex, sectionTitle, text, start }],
+ *     paragraphs: [{ index, sectionTitle, text, block }],
+ *     opening,    // the lead's first paragraph, for context ('' with no body)
+ *     total,      // uncited sentences found, before the cap
+ *     capped,     // true when total > maxSentences
+ *     usesLead,   // true for an article with no headings: its lead was read
+ *   }
+ *
+ * `paragraphs` holds only paragraphs with an uncited sentence; `text` is the
+ * whole paragraph (citation markers left out) and each sentence's `start` is
+ * its offset there, so a caller can show the text before a sentence as
+ * context. `block` is the <p>, for highlighting; a batch caller drops it.
+ * Sentences shorter than `minLength` are left out, as a claim that short is,
+ * and so are lead-ins ending in a colon (UNCITED_LEAD_IN_RE).
+ *
+ * `splitSentences` defaults to core/claim.js's; the batch injects sentencex
+ * (service/sentences.js), as it does for the lead.
+ */
+function uncitedSentences(root, {
+    splitSentences: split = splitSentences,
+    minLength = MIN_CLAIM_LENGTH,
+    maxSentences = UNCITED_MAX_SENTENCES,
+} = {}) {
+    let blocks = bodyParagraphs(root);
+    const usesLead = blocks.length === 0;
+    if (usesLead) blocks = leadParagraphs(root).map(block => ({ block, sectionTitle: null }));
+
+    const sentences = [];
+    const paragraphs = [];
+    let total = 0;
+    for (const { block, sectionTitle } of blocks) {
+        const { text, citedChars } = uncitedParagraphText(block);
+        if (!text) continue;
+        const found = [];
+        let cursor = 0;
+        for (const sentence of split(text)) {
+            const at = text.indexOf(sentence, cursor);
+            // A splitter that rewrites text (none does today) can't be
+            // located; such a sentence counts as cited rather than guessed at.
+            if (at < 0) continue;
+            cursor = at + sentence.length;
+            if (at < citedChars || sentence.length < minLength || UNCITED_LEAD_IN_RE.test(sentence)) continue;
+            found.push({ text: sentence, start: at });
+        }
+        if (found.length === 0) continue;
+        total += found.length;
+        const room = maxSentences - sentences.length;
+        if (room <= 0) continue;
+        const paragraphIndex = paragraphs.length;
+        paragraphs.push({ index: paragraphIndex, sectionTitle, text, block });
+        for (const s of found.slice(0, room)) {
+            sentences.push({ index: sentences.length, paragraphIndex, sectionTitle, text: s.text, start: s.start });
+        }
+    }
+    return {
+        sentences,
+        paragraphs,
+        opening: usesLead ? '' : uncitedOpening(root),
+        total,
+        capped: total > sentences.length,
+        usesLead,
+    };
 }
 
 // --- core/groups.js ---
@@ -4553,6 +4744,432 @@ async function runLeadCheck({ sentences, body, articleTitle, only } = {}, {
         promptVersion: LEAD_PROMPT_VERSION,
     };
 }
+
+// --- core/uncited-check.js ---
+// The uncited-text check: uncited body sentences against the model's own
+// knowledge.
+//
+// The other two checks are grounded: a citation is read against its source,
+// a lead sentence against the body. An uncited sentence has nothing to be
+// read against, so this one asks the model what it knows. That is the weaker
+// kind of evidence, and the check is shaped around it:
+//
+// - It reports exceptions, not verdicts. The model is asked which statements
+//   it has a specific reason to think are wrong, and "none" is the expected
+//   answer. A statement it doesn't report has no verdict at all: "not
+//   reported" is not "checked and fine".
+// - It reports few. At most UNCITED_PER_CALL_MAX per call and
+//   UNCITED_MAX_FINDINGS per article, ranked by the model's confidence.
+// - The action is always the same, and cheap when the model is wrong: find a
+//   source for the sentence. Per WP:V that is a fair request for any uncited
+//   statement, true or not, so a false alarm costs a citation search, not a
+//   correct sentence. The model's idea of the right value is in its comment,
+//   never offered as an edit.
+//
+// Its own prompt with its own hash-pinned version, like the lead and severity
+// passes. Shared by the batch (service/verifier.js's verifyUncited()) and
+// the userscript (inlined into main.js, so top-level names carry an UNCITED_
+// / uncited prefix); runUncitedCheck() is the one sequence.
+// Design: docs/design-plans/2026-10-23-uncited-text-check.md.
+
+
+// Bump whenever the prompt text changes, same contract as PROMPT_VERSION:
+// tests/uncited-check.test.js pins a hash of the prompt against it.
+const UNCITED_PROMPT_VERSION = 'u1';
+
+const UNCITED_CONFIDENCE = Object.freeze({ HIGH: 'high', MEDIUM: 'medium' });
+const UNCITED_CONFIDENCE_ORDER = [UNCITED_CONFIDENCE.HIGH, UNCITED_CONFIDENCE.MEDIUM];
+
+// What a finding is recorded as. Same verdict vocabulary as every other
+// check, so a consumer reads it the way it reads a citation verdict: no
+// citation supports the sentence, and the model doubts it.
+const UNCITED_VERDICT = 'NOT SUPPORTED';
+const UNCITED_REASON_TYPE = 'doubtful';
+
+// Statements the model may report per call. Said in the prompt, and enforced
+// on the answer: a model that reports everything is not ranking.
+const UNCITED_PER_CALL_MAX = 3;
+// Findings kept per article, best first. "Top one or top three things": the
+// check is a short list for an editor, not an audit.
+const UNCITED_MAX_FINDINGS = 3;
+
+// Statements per call. The answer is short (a few issues at most), but a
+// model that reasons first thinks about each statement before answering, and
+// Lift Wing's router clamps output to 4,096 tokens. First guesses, per
+// provider; an answer that runs out of budget is retried in halves anyway.
+const UNCITED_CHUNK_SIZES = Object.freeze({
+    liftwing: 8,
+    'liftwing-safeguard': 8,
+    huggingface: 15,
+    publicai: 12,
+    claude: 30,
+    gemini: 25,
+    openai: 30,
+});
+const UNCITED_CHUNK_SIZE_DEFAULT = 12;
+
+function uncitedChunkSize(provider) {
+    return UNCITED_CHUNK_SIZES[provider] ?? UNCITED_CHUNK_SIZE_DEFAULT;
+}
+
+// The provider this check runs on for an editor on a free provider: keyless
+// Lift Wing Qwen3.8. On the 2026-11-20 smoke test it caught 8 of 9 injected
+// errors with no false flag; GLM 5.2 caught 9 with one, too small a gain for
+// what it would cost the shared Hugging Face credits. gpt-oss-20b, a free
+// provider an editor can pick, flagged 14 of 98 correct sentences on the
+// 2026-10-23 run, so a free provider's own model is not used.
+const UNCITED_FREE_PROVIDER = 'liftwing';
+
+// The model this check runs on, given the provider the citation checks use:
+// that provider's own model when the editor pays for it (a provider that needs
+// their own key), else UNCITED_FREE_PROVIDER's. Returns
+// `{ provider, model, name }`. docs/design-plans/2026-10-23-uncited-text-check.md.
+function uncitedModelFor(providerId) {
+    const id = PROVIDERS[providerId]?.requiresKey ? providerId : UNCITED_FREE_PROVIDER;
+    const provider = PROVIDERS[id];
+    return { provider: id, model: provider.model, name: provider.name };
+}
+
+// The paragraph text shown before a chunk's first statement, at most.
+const UNCITED_CONTEXT_MAX_CHARS = 1500;
+
+function generateUncitedSystemPrompt() {
+    return `You help Wikipedia volunteers find statements that may be factually wrong. You are given numbered STATEMENTS from a Wikipedia article. None of them has a citation, so nothing in the article backs them up. Judge them using your own knowledge.
+
+Report a statement only when you have a specific reason to believe it is wrong:
+- a wrong date, number, name, place, title or ranking;
+- events in the wrong order, or attributed to the wrong person, group or work;
+- something impossible or implausible on its face, such as an age that does not add up.
+
+Only judge well-established facts: the kind any good reference work on the subject states. Leave obscure details alone (a minor date, a small number, a fact about one building, event or episode that few sources cover). Your memory of those is not reliable enough to correct an encyclopedia.
+
+Rules:
+- Report at most ${UNCITED_PER_CALL_MAX} statements. Reporting none is a normal answer: most statements in most articles are correct.
+- Never report a statement only because you do not know about it, cannot confirm it, or it may describe events after your knowledge ends. Not knowing something is not a reason to doubt it.
+- Never report a statement because it has no citation. None of them has one.
+- Do not report opinions, wording, tone, neutrality, or missing detail.
+- The article context and the earlier text of each paragraph are there so you know what a statement refers to ("She later moved to Paris"). Report only the numbered statements.
+- Names from languages using non-Latin scripts may have several valid romanizations. Do not treat transliteration differences as errors.
+
+For each statement you report:
+- "id": its number.
+- "excerpt": the words in the statement that are wrong, copied exactly from it. Keep it short.
+- "comments": what is wrong and what you believe is correct, in one or two sentences. Decide before you write: never report a statement and then conclude in "comments" that it is correct.
+- "confidence": "high" if you are sure it is wrong, "medium" if it is probably wrong. Do not report a statement you are less sure about than that.
+
+Respond with JSON only:
+{"issues": [{"id": <statement number>, "excerpt": "<words from the statement>", "comments": "<explanation>", "confidence": "high|medium"}]}
+When nothing is wrong, respond with {"issues": []}.
+
+<example>
+Article: Eiffel Tower
+
+Opening paragraph, for context:
+The Eiffel Tower is a wrought-iron lattice tower on the Champ de Mars in Paris, France.
+
+Section: History
+Statements to check:
+1. "The tower was completed in 1899 as the entrance arch to the World's Fair."
+2. "Its design is credited to Maurice Koechlin and Émile Nouguier, two engineers working for Gustave Eiffel's company."
+3. "A small plaque near the north pillar lists the workers who maintained the elevators in the 1950s."
+
+{"issues": [{"id": 1, "excerpt": "completed in 1899", "comments": "The tower was completed in 1889, as the entrance arch to the 1889 Exposition Universelle, not in 1899.", "confidence": "high"}]}
+</example>`;
+}
+
+/**
+ * The comment-language directive, for a non-English wiki. Not
+ * core/prompts.js's withCommentLanguage(): that one names the verdict
+ * prompt's fields (source_quote, verdict, reason_type), which this prompt
+ * doesn't have. Same rule otherwise: the explanation in the article's
+ * language, the copied text never translated.
+ */
+function withUncitedCommentLanguage(prompt, { lang, articleLangCode } = {}) {
+    const language = COMMENT_LANGUAGE_NAMES[lang];
+    if (!language && (!articleLangCode || articleLangCode === 'en')) return prompt;
+    const instruction = language
+        ? `Write the "comments" field in ${language}.`
+        : 'Write the "comments" field in the same language as the statements, not in English.';
+    return `${prompt}\n\nLANGUAGE: ${instruction} The "excerpt" field is an exception: copy it from the statement exactly, never translated. Keep the "confidence" values in English (high, medium).`;
+}
+
+function uncitedContextBefore(paragraph, start) {
+    const text = paragraph.text.slice(0, start).trim();
+    if (text.length <= UNCITED_CONTEXT_MAX_CHARS) return text;
+    return `…${text.slice(text.length - UNCITED_CONTEXT_MAX_CHARS).trimStart()}`;
+}
+
+/**
+ * @param {object} args
+ * @param {string} [args.articleTitle]
+ * @param {string} [args.opening] - core/uncited.js's `opening`.
+ * @param {Array} args.paragraphs - core/uncited.js's `paragraphs` (text, sectionTitle).
+ * @param {Array<{index, paragraphIndex, text, start}>} args.statements - Numbered index + 1.
+ */
+function generateUncitedUserPrompt({ articleTitle, opening, paragraphs, statements }) {
+    const lines = [];
+    if (articleTitle) lines.push(`Article: ${articleTitle}`, '');
+    if (opening) lines.push('Opening paragraph, for context:', opening, '');
+    let section;
+    let paragraphIndex = null;
+    for (const s of statements) {
+        if (s.paragraphIndex !== paragraphIndex) {
+            if (paragraphIndex !== null) lines.push('');
+            paragraphIndex = s.paragraphIndex;
+            const paragraph = paragraphs[paragraphIndex];
+            const title = paragraph?.sectionTitle || null;
+            if (title !== section) {
+                section = title;
+                if (title) lines.push(`Section: ${title}`);
+            }
+            const context = paragraph ? uncitedContextBefore(paragraph, s.start ?? 0) : '';
+            if (context) lines.push('Earlier in the paragraph, for context:', context);
+            lines.push('Statements to check:');
+        }
+        lines.push(`${s.index + 1}. "${s.text}"`);
+    }
+    return lines.join('\n');
+}
+
+// The issue list in a model's answer, or null. The answer may wrap its JSON
+// in a fence or in prose, and the prose may itself hold brackets or braces
+// ("Statement [3] looks wrong: {...}"), so each '{' or '[' is tried as the
+// start, up to the last matching closer, until one parses into a list. A
+// bare array is accepted too: some models drop the wrapper.
+function uncitedIssueList(text) {
+    const trimmed = (text || '').trim();
+    const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+    const body = fenced ? fenced[1].trim() : trimmed;
+    const listOf = parsed => (Array.isArray(parsed)
+        ? parsed
+        : (parsed && typeof parsed === 'object'
+            ? (Array.isArray(parsed.issues) ? parsed.issues : Object.values(parsed).find(Array.isArray))
+            : null));
+    for (let start = 0; start < body.length; start++) {
+        const open = body[start];
+        if (open !== '{' && open !== '[') continue;
+        const end = body.lastIndexOf(open === '{' ? '}' : ']');
+        if (end <= start) continue;
+        try {
+            const list = listOf(JSON.parse(body.slice(start, end + 1)));
+            if (Array.isArray(list)) return list;
+        } catch {
+            // Not JSON from here; try the next opening bracket.
+        }
+    }
+    return null;
+}
+
+/**
+ * Parses an uncited-check answer: `{ ok: true, issues }` or
+ * `{ ok: false, error: 'parse_error' }`. Each issue is
+ * `{ id, excerpt, comments, confidence }`. An empty list is a valid answer.
+ *
+ * Lenient about shape (`{"issues": [...]}`, a bare array, string ids, prose
+ * around the JSON, brackets in that prose) and strict about content: an issue
+ * without a usable id, or with a confidence other than high or medium, is
+ * left out. A model that reports a statement as "low" confidence was told not
+ * to report it at all.
+ */
+function parseUncitedCheckResult(text) {
+    const raw = uncitedIssueList(text);
+    if (!raw) return { ok: false, error: 'parse_error' };
+
+    const issues = [];
+    for (const item of raw) {
+        const id = Number(item?.id);
+        const confidence = String(item?.confidence ?? '').trim().toLowerCase();
+        if (!Number.isInteger(id) || !UNCITED_CONFIDENCE_ORDER.includes(confidence)) continue;
+        const excerpt = item.excerpt ?? item.quote;
+        const comments = item.comments ?? item.problem ?? item.reason;
+        issues.push({
+            id,
+            excerpt: typeof excerpt === 'string' ? excerpt.trim() : '',
+            comments: typeof comments === 'string' ? comments.trim() : '',
+            confidence,
+        });
+    }
+    return { ok: true, issues };
+}
+
+/**
+ * Where the model's excerpt is in a statement, as a core/quote.js status:
+ * `exact`, `normalized` (after folding case, quote style, dashes and
+ * whitespace), `not-found`, or `empty`. No minimum length, unlike a source
+ * quote: an excerpt is matched inside one sentence, not a whole source, so
+ * "1899" found there means something.
+ */
+function locateExcerpt(sentence, excerpt) {
+    const raw = String(excerpt ?? '').trim();
+    if (!raw) return QUOTE_STATUSES.EMPTY;
+    const text = String(sentence ?? '');
+    if (text.includes(raw)) return QUOTE_STATUSES.EXACT;
+    const needle = normalizeForMatch(raw);
+    if (needle && normalizeForMatch(text).includes(needle)) return QUOTE_STATUSES.NORMALIZED;
+    return QUOTE_STATUSES.NOT_FOUND;
+}
+
+function uncitedExcerptFound(status) {
+    return status === QUOTE_STATUSES.EXACT || status === QUOTE_STATUSES.NORMALIZED;
+}
+
+// The statement an issue is about. Its id, unless the excerpt is not in that
+// statement and is in exactly one other statement of the call: a model that
+// numbered off by one still names the words. An issue whose id is not in the
+// call at all, and whose excerpt doesn't settle it, is dropped (null).
+function uncitedResolveIssue(issue, statements) {
+    const byId = statements.find(s => s.index + 1 === issue.id) ?? null;
+    const status = byId ? locateExcerpt(byId.text, issue.excerpt) : QUOTE_STATUSES.NOT_FOUND;
+    if (byId && (uncitedExcerptFound(status) || status === QUOTE_STATUSES.EMPTY)) {
+        return { statement: byId, excerptStatus: status };
+    }
+    if (issue.excerpt) {
+        const matches = statements
+            .map(s => ({ s, status: locateExcerpt(s.text, issue.excerpt) }))
+            .filter(m => uncitedExcerptFound(m.status));
+        if (matches.length === 1) return { statement: matches[0].s, excerptStatus: matches[0].status };
+    }
+    return byId ? { statement: byId, excerptStatus: status } : null;
+}
+
+/**
+ * Orders findings best first: high confidence before medium, then article
+ * order. Stable, pure; exported for the tests and for any front end that
+ * merges findings itself.
+ */
+function rankUncitedFindings(findings) {
+    return [...findings].sort((a, b) =>
+        (UNCITED_CONFIDENCE_ORDER.indexOf(a.confidence) - UNCITED_CONFIDENCE_ORDER.indexOf(b.confidence))
+        || (a.index - b.index));
+}
+
+/**
+ * Checks uncited sentences against the model's knowledge.
+ *
+ * @param {object} input
+ * @param {object} input.uncited - core/uncited.js's uncitedSentences() (or
+ *   its plain-data copy): `{ sentences, paragraphs, opening }`.
+ * @param {string} [input.articleTitle]
+ * @param {object} deps
+ * @param {Function} deps.callModel - (systemPrompt, userContent, { kind: 'uncited' }) => { text, usage }.
+ * @param {string} [deps.systemPrompt] - A localized generateUncitedSystemPrompt().
+ * @param {number} [deps.chunkSize]
+ * @param {number} [deps.maxFindings] - Findings kept, best first.
+ * @param {object} [deps.retry] - core/retry.js options.
+ * @param {Function} [deps.onChunk] - (sentences done so far, answered or not;
+ *   sentences total), after each call.
+ * @param {Function} [deps.pause] - Awaited between two calls (a rate-limit delay).
+ * @param {Function} [deps.shouldAbort] - Checked before each call; true stops
+ *   the check, returning what was found so far.
+ * @param {Function} [deps.onChunkError] - (error) => an error code to record
+ *   that call's sentences under, then carry on; or nothing, to throw. It may
+ *   throw itself (an auth error that must halt a run).
+ *
+ * Returns `{ findings, dropped, unchecked, checked, usage, calls, promptVersion }`:
+ * - `findings`: at most `maxFindings`, best first —
+ *   `{ index, text, sectionTitle, excerpt, excerptStatus, comments, confidence, usage }`,
+ *   `usage` being the finding's share of its call's tokens;
+ * - `dropped`: findings past `maxFindings`;
+ * - `unchecked`: `{ index, text, sectionTitle, error }` for each sentence of
+ *   a call that failed or answered unreadably;
+ * - `checked`: sentences whose call answered.
+ *
+ * As in the lead check, two failures depend on how much is asked at once and
+ * are handled here: an answer that ran out of output budget, or a prompt too
+ * long for the model, is retried as two calls of half the sentences each,
+ * down to one. Every other failure goes to onChunkError.
+ */
+async function runUncitedCheck({ uncited, articleTitle } = {}, {
+    callModel, systemPrompt = generateUncitedSystemPrompt(), chunkSize = UNCITED_CHUNK_SIZE_DEFAULT,
+    maxFindings = UNCITED_MAX_FINDINGS, retry = {}, onChunk, onChunkError, pause, shouldAbort,
+} = {}) {
+    if (typeof callModel !== 'function') {
+        throw new TypeError('runUncitedCheck requires a callModel(systemPrompt, userContent) function');
+    }
+    const usage = { input: 0, output: 0 };
+    const sentences = Array.isArray(uncited?.sentences) ? uncited.sentences : [];
+    const paragraphs = uncited?.paragraphs ?? [];
+    const result = { findings: [], dropped: 0, unchecked: [], checked: 0, usage, calls: 0, promptVersion: UNCITED_PROMPT_VERSION };
+    if (sentences.length === 0) return result;
+
+    const size = Math.max(1, chunkSize);
+    const queue = [];
+    for (let i = 0; i < sentences.length; i += size) queue.push(sentences.slice(i, i + size));
+    const found = [];
+
+    while (queue.length) {
+        if (typeof shouldAbort === 'function' && shouldAbort()) break;
+        if (result.calls > 0 && typeof pause === 'function') await pause();
+        const chunk = queue.shift();
+        const userContent = generateUncitedUserPrompt({ articleTitle, opening: uncited.opening, paragraphs, statements: chunk });
+        let response = null;
+        let failure = null;
+        try {
+            result.calls++;
+            response = await withRetry(() => callModel(systemPrompt, userContent, { kind: 'uncited' }), retry);
+        } catch (error) {
+            if ((isOutputBudgetError(error) || isSourceTooLargeError(error)) && chunk.length > 1) {
+                const half = Math.ceil(chunk.length / 2);
+                queue.unshift(chunk.slice(0, half), chunk.slice(half));
+                continue;
+            }
+            if (isSourceTooLargeError(error)) {
+                failure = 'source_too_large';
+            } else {
+                failure = typeof onChunkError === 'function' ? onChunkError(error) : null;
+                if (!failure) throw error;
+            }
+        }
+
+        if (response) {
+            usage.input += response.usage?.input || 0;
+            usage.output += response.usage?.output || 0;
+        }
+        const parsed = response ? parseUncitedCheckResult(response.text) : null;
+        const error = failure || (parsed.ok ? null : parsed.error);
+        if (error) {
+            for (const s of chunk) {
+                result.unchecked.push({ index: s.index, text: s.text, sectionTitle: s.sectionTitle ?? null, error });
+            }
+        } else {
+            result.checked += chunk.length;
+            const seen = new Set();
+            const issues = [];
+            for (const issue of parsed.issues) {
+                const resolved = uncitedResolveIssue(issue, chunk);
+                if (!resolved || seen.has(resolved.statement.index)) continue;
+                seen.add(resolved.statement.index);
+                issues.push({ issue, ...resolved });
+                if (issues.length === UNCITED_PER_CALL_MAX) break;
+            }
+            // Each finding carries its share of the call's tokens, the
+            // remainder on the first, so per-row token columns still sum to
+            // what the calls that found something cost.
+            const shareOf = (total, i) => Math.floor(total / issues.length) + (i === 0 ? total % issues.length : 0);
+            issues.forEach(({ issue, statement, excerptStatus }, i) => {
+                found.push({
+                    index: statement.index,
+                    text: statement.text,
+                    sectionTitle: statement.sectionTitle ?? null,
+                    excerpt: issue.excerpt,
+                    excerptStatus,
+                    comments: issue.comments,
+                    confidence: issue.confidence,
+                    usage: {
+                        input: shareOf(response.usage?.input || 0, i),
+                        output: shareOf(response.usage?.output || 0, i),
+                    },
+                });
+            });
+        }
+        if (typeof onChunk === 'function') onChunk(result.checked + result.unchecked.length, sentences.length);
+    }
+
+    const ranked = rankUncitedFindings(found);
+    result.findings = ranked.slice(0, Math.max(0, maxFindings));
+    result.dropped = ranked.length - result.findings.length;
+    return result;
+}
 // </core-injected>
 
 // Cap for manually-pasted source text. Unlike fetched sources — which the
@@ -4755,6 +5372,37 @@ function useToolforgeSourceFetcher() {
             '{count} citation du résumé introductif a été mise de côté : sa source ne soutient qu\'une partie de son affirmation, et dans le résumé introductif le reste peut être couvert par le corps de l\'article.',
         '{count} lead citations were set aside: their sources back only part of their claims, which in the lead the body may cover.':
             '{count} citations du résumé introductif ont été mises de côté : leurs sources ne soutiennent qu\'une partie de leurs affirmations, et dans le résumé introductif le reste peut être couvert par le corps de l\'article.',
+        // Uncited-text check (core/uncited-check.js)
+        'Check uncited text against general knowledge':
+            'Vérifier le texte sans référence avec les connaissances générales',
+        'With a free provider this check runs on {model}; with a provider that uses an API key of its own, on that provider\'s model.':
+            'Avec un fournisseur gratuit, cette vérification utilise {model} ; avec un fournisseur qui utilise sa propre clé API, le modèle de ce fournisseur.',
+        'Verify All also checks the sentences that have no citation against the model\'s general knowledge, and lists up to three that look wrong, so a source can be found for them. The model can be wrong about a correct sentence, so this is a prompt to look, not a finding. A few extra model calls per article.':
+            '« Vérifier toutes les citations » vérifie aussi les phrases sans référence à l\'aide des connaissances générales du modèle, et signale jusqu\'à trois phrases qui semblent fausses, pour qu\'on leur trouve une source. Le modèle peut se tromper sur une phrase correcte : c\'est une invitation à vérifier, pas un constat. Quelques appels supplémentaires au modèle par article.',
+        'Uncited text':
+            'Texte sans référence',
+        '{count} of {total} sentences may be wrong':
+            '{count} phrases sur {total} peut-être fausses',
+        'nothing found in {total} sentences':
+            'rien trouvé dans {total} phrases',
+        'nothing found in {checked} of {total} sentences':
+            'rien trouvé dans {checked} phrases sur {total}',
+        'Checked with {model}, against its general knowledge rather than a source. A finding is a reason to look for a source before changing anything.':
+            'Vérifié avec {model}, à partir de ses connaissances générales et non d\'une source. Un signalement est une raison de chercher une source avant de modifier quoi que ce soit.',
+        'Only the first {count} of {total} sentences with no citation were checked.':
+            'Seules les {count} premières des {total} phrases sans référence ont été vérifiées.',
+        'Stopped after {done} of {total} sentences.':
+            'Arrêté après {done} phrases sur {total}.',
+        '{count} sentence with no citation could not be checked.':
+            '{count} phrase sans référence n\'a pas pu être vérifiée.',
+        '{count} sentences with no citation could not be checked.':
+            '{count} phrases sans référence n\'ont pas pu être vérifiées.',
+        'Doubted: “{text}”':
+            'Mis en doute : « {text} »',
+        'No citation, may be wrong':
+            'Sans référence, peut-être faux',
+        'Checking uncited text':
+            'Vérification du texte sans référence',
         'Runs one more check on each flagged citation to tell a contradicted key fact from a missing minor detail. Costs one extra model call per flagged citation.':
             'Effectue une vérification supplémentaire sur chaque citation signalée pour distinguer un fait essentiel contredit d’un détail mineur absent. Coûte un appel au modèle de plus par citation signalée.',
         'Checking severity…': 'Évaluation de la gravité…',
@@ -5130,6 +5778,37 @@ function useToolforgeSourceFetcher() {
             'Se apartó {count} cita de la introducción: su fuente solo respalda parte de su afirmación, y en la introducción el resto puede estar cubierto por el cuerpo del artículo.',
         '{count} lead citations were set aside: their sources back only part of their claims, which in the lead the body may cover.':
             'Se apartaron {count} citas de la introducción: sus fuentes solo respaldan parte de sus afirmaciones, y en la introducción el resto puede estar cubierto por el cuerpo del artículo.',
+        // Uncited-text check (core/uncited-check.js)
+        'Check uncited text against general knowledge':
+            'Contrastar el texto sin referencias con el conocimiento general',
+        'With a free provider this check runs on {model}; with a provider that uses an API key of its own, on that provider\'s model.':
+            'Con un proveedor gratuito, esta revisión usa {model}; con un proveedor que usa una clave API propia, el modelo de ese proveedor.',
+        'Verify All also checks the sentences that have no citation against the model\'s general knowledge, and lists up to three that look wrong, so a source can be found for them. The model can be wrong about a correct sentence, so this is a prompt to look, not a finding. A few extra model calls per article.':
+            '«Verificar todas las citas» también contrasta las oraciones sin referencias con el conocimiento general del modelo y señala hasta tres que parecen erróneas, para que se les busque una fuente. El modelo puede equivocarse con una oración correcta, así que es una invitación a revisar, no un hallazgo. Supone algunas llamadas adicionales al modelo por artículo.',
+        'Uncited text':
+            'Texto sin referencias',
+        '{count} of {total} sentences may be wrong':
+            '{count} de {total} oraciones pueden ser erróneas',
+        'nothing found in {total} sentences':
+            'nada encontrado en {total} oraciones',
+        'nothing found in {checked} of {total} sentences':
+            'nada encontrado en {checked} de {total} oraciones',
+        'Checked with {model}, against its general knowledge rather than a source. A finding is a reason to look for a source before changing anything.':
+            'Revisado con {model}, a partir de su conocimiento general y no de una fuente. Un hallazgo es motivo para buscar una fuente antes de cambiar nada.',
+        'Only the first {count} of {total} sentences with no citation were checked.':
+            'Solo se revisaron las primeras {count} de {total} oraciones sin referencias.',
+        'Stopped after {done} of {total} sentences.':
+            'Se detuvo tras {done} de {total} oraciones.',
+        '{count} sentence with no citation could not be checked.':
+            'No se pudo revisar {count} oración sin referencias.',
+        '{count} sentences with no citation could not be checked.':
+            'No se pudieron revisar {count} oraciones sin referencias.',
+        'Doubted: “{text}”':
+            'Puesto en duda: «{text}»',
+        'No citation, may be wrong':
+            'Sin referencias, puede ser errónea',
+        'Checking uncited text':
+            'Revisando el texto sin referencias',
         'Runs one more check on each flagged citation to tell a contradicted key fact from a missing minor detail. Costs one extra model call per flagged citation.':
             'Hace una comprobación más en cada cita señalada para distinguir un hecho clave contradicho de un detalle menor ausente. Supone una llamada adicional al modelo por cada cita señalada.',
         'Checking severity…': 'Evaluando la gravedad…',
@@ -5492,7 +6171,7 @@ function useToolforgeSourceFetcher() {
         '{covered} of {total} sentences covered':
             'подтверждено: {covered} из {total}',
         'not checked (stopped)':
-            'не проверена (остановлено)',
+            'не проверено (остановлено)',
         '{count} lead sentence could not be checked.':
             'Не удалось проверить предложений преамбулы: {count}.',
         '{count} lead sentences could not be checked.':
@@ -5501,6 +6180,37 @@ function useToolforgeSourceFetcher() {
             'Отложено сносок в преамбуле: {count}. Их источники подтверждают лишь часть утверждения, а в преамбуле остальное может подтверждаться основным текстом.',
         '{count} lead citations were set aside: their sources back only part of their claims, which in the lead the body may cover.':
             'Отложено сносок в преамбуле: {count}. Их источники подтверждают лишь часть утверждений, а в преамбуле остальное может подтверждаться основным текстом.',
+        // Uncited-text check (core/uncited-check.js)
+        'Check uncited text against general knowledge':
+            'Проверять текст без сносок по общим знаниям',
+        'With a free provider this check runs on {model}; with a provider that uses an API key of its own, on that provider\'s model.':
+            'С бесплатным провайдером эта проверка использует {model}, а с провайдером, работающим по собственному API-ключу, — модель этого провайдера.',
+        'Verify All also checks the sentences that have no citation against the model\'s general knowledge, and lists up to three that look wrong, so a source can be found for them. The model can be wrong about a correct sentence, so this is a prompt to look, not a finding. A few extra model calls per article.':
+            '«Проверить все сноски» также сверяет предложения без сносок с общими знаниями модели и показывает до трёх, которые выглядят ошибочными, чтобы для них можно было найти источник. Модель может ошибиться и в верном предложении, поэтому это повод проверить, а не вывод. Несколько дополнительных запросов к модели на статью.',
+        'Uncited text':
+            'Текст без сносок',
+        '{count} of {total} sentences may be wrong':
+            'возможно, неверно: {count} из {total}',
+        'nothing found in {total} sentences':
+            'ничего не найдено (предложений: {total})',
+        'nothing found in {checked} of {total} sentences':
+            'ничего не найдено (проверено предложений: {checked} из {total})',
+        'Checked with {model}, against its general knowledge rather than a source. A finding is a reason to look for a source before changing anything.':
+            'Проверено моделью {model} по её общим знаниям, а не по источнику. Найденное — повод поискать источник, прежде чем что-либо менять.',
+        'Only the first {count} of {total} sentences with no citation were checked.':
+            'Проверены только первые предложения без сносок: {count} из {total}.',
+        'Stopped after {done} of {total} sentences.':
+            'Остановлено после предложений: {done} из {total}.',
+        '{count} sentence with no citation could not be checked.':
+            'Не удалось проверить предложений без сносок: {count}.',
+        '{count} sentences with no citation could not be checked.':
+            'Не удалось проверить предложений без сносок: {count}.',
+        'Doubted: “{text}”':
+            'Под сомнением: «{text}»',
+        'No citation, may be wrong':
+            'Без сноски, возможно, неверно',
+        'Checking uncited text':
+            'Проверка текста без сносок',
         'Runs one more check on each flagged citation to tell a contradicted key fact from a missing minor detail. Costs one extra model call per flagged citation.':
             'Проводит дополнительную проверку каждой проблемной сноски, чтобы отличить опровергнутый ключевой факт от отсутствующей второстепенной детали. Требует одного дополнительного запроса к модели на каждую такую сноску.',
         'Checking severity…': 'Оценка серьёзности…',
@@ -5880,6 +6590,37 @@ function useToolforgeSourceFetcher() {
             '{count} הערת שוליים בפתיח הוצגה בנפרד: המקור שלה תומך רק בחלק מהטענה, ובפתיח את השאר יכול לכסות גוף הערך.',
         '{count} lead citations were set aside: their sources back only part of their claims, which in the lead the body may cover.':
             '{count} הערות שוליים בפתיח הוצגו בנפרד: המקורות שלהן תומכים רק בחלק מהטענות, ובפתיח את השאר יכול לכסות גוף הערך.',
+        // Uncited-text check (core/uncited-check.js)
+        'Check uncited text against general knowledge':
+            'בדיקת טקסט ללא מקור מול ידע כללי',
+        'With a free provider this check runs on {model}; with a provider that uses an API key of its own, on that provider\'s model.':
+            'עם ספק חינמי הבדיקה הזו משתמשת ב־{model}, ועם ספק שעובד עם מפתח API משלו, במודל של אותו ספק.',
+        'Verify All also checks the sentences that have no citation against the model\'s general knowledge, and lists up to three that look wrong, so a source can be found for them. The model can be wrong about a correct sentence, so this is a prompt to look, not a finding. A few extra model calls per article.':
+            '״בדיקת כל הערות השוליים״ בודקת גם משפטים ללא הערת שוליים מול הידע הכללי של המודל, ומציגה עד שלושה שנראים שגויים, כדי שאפשר יהיה למצוא להם מקור. המודל עלול לטעות גם במשפט נכון, ולכן זו הזמנה לבדוק ולא ממצא. כמה קריאות נוספות למודל לכל ערך.',
+        'Uncited text':
+            'טקסט ללא מקור',
+        '{count} of {total} sentences may be wrong':
+            '{count} מתוך {total} משפטים עלולים להיות שגויים',
+        'nothing found in {total} sentences':
+            'לא נמצא דבר ב־{total} משפטים',
+        'nothing found in {checked} of {total} sentences':
+            'לא נמצא דבר ב־{checked} מתוך {total} משפטים',
+        'Checked with {model}, against its general knowledge rather than a source. A finding is a reason to look for a source before changing anything.':
+            'נבדק באמצעות {model}, מול הידע הכללי שלו ולא מול מקור. ממצא הוא סיבה לחפש מקור לפני שמשנים משהו.',
+        'Only the first {count} of {total} sentences with no citation were checked.':
+            'נבדקו רק {count} הראשונים מתוך {total} המשפטים ללא מקור.',
+        'Stopped after {done} of {total} sentences.':
+            'נעצר אחרי {done} מתוך {total} משפטים.',
+        '{count} sentence with no citation could not be checked.':
+            'לא ניתן היה לבדוק {count} משפט ללא מקור.',
+        '{count} sentences with no citation could not be checked.':
+            'לא ניתן היה לבדוק {count} משפטים ללא מקור.',
+        'Doubted: “{text}”':
+            'מוטל בספק: ״{text}״',
+        'No citation, may be wrong':
+            'ללא מקור, ייתכן ששגוי',
+        'Checking uncited text':
+            'בדיקת טקסט ללא מקור',
         'Runs one more check on each flagged citation to tell a contradicted key fact from a missing minor detail. Costs one extra model call per flagged citation.':
             'בדיקה נוספת לכל הערת שוליים שסומנה, כדי להבחין בין עובדה מרכזית שהמקור סותר לבין פרט שולי שאינו מופיע בו. כרוכה בקריאה נוספת למודל לכל הערה כזו.',
         'Checking severity…': 'בדיקת חומרה…',
@@ -6223,6 +6964,37 @@ function useToolforgeSourceFetcher() {
             '{count} bronvermelding uit de inleiding is terzijde gelegd: de bron ondersteunt slechts een deel van de bewering, dat in de inleiding mogelijk door de hoofdtekst wordt gedekt.',
         '{count} lead citations were set aside: their sources back only part of their claims, which in the lead the body may cover.':
             '{count} bronvermeldingen uit de inleiding zijn terzijde gelegd: de bronnen ondersteunen slechts een deel van de beweringen, dat in de inleiding mogelijk door de hoofdtekst wordt gedekt.',
+        // Uncited-text check (core/uncited-check.js)
+        'Check uncited text against general knowledge':
+            'Tekst zonder bronvermelding toetsen aan algemene kennis',
+        'With a free provider this check runs on {model}; with a provider that uses an API key of its own, on that provider\'s model.':
+            'Met een gratis aanbieder gebruikt deze controle {model}; met een aanbieder die een eigen API-sleutel gebruikt, het model van die aanbieder.',
+        'Verify All also checks the sentences that have no citation against the model\'s general knowledge, and lists up to three that look wrong, so a source can be found for them. The model can be wrong about a correct sentence, so this is a prompt to look, not a finding. A few extra model calls per article.':
+            'Bij Alle bronvermeldingen controleren worden ook de zinnen zonder bronvermelding getoetst aan de algemene kennis van het model, en worden er maximaal drie getoond die onjuist lijken, zodat er een bron voor gezocht kan worden. Het model kan zich vergissen in een juiste zin, dus dit is een aanleiding om te kijken, geen bevinding. Dit kost enkele extra modelaanroepen per artikel.',
+        'Uncited text':
+            'Tekst zonder bronvermelding',
+        '{count} of {total} sentences may be wrong':
+            '{count} van de {total} zinnen mogelijk onjuist',
+        'nothing found in {total} sentences':
+            'niets gevonden in {total} zinnen',
+        'nothing found in {checked} of {total} sentences':
+            'niets gevonden in {checked} van de {total} zinnen',
+        'Checked with {model}, against its general knowledge rather than a source. A finding is a reason to look for a source before changing anything.':
+            'Gecontroleerd met {model}, op basis van algemene kennis en niet van een bron. Een bevinding is een reden om een bron te zoeken voordat je iets wijzigt.',
+        'Only the first {count} of {total} sentences with no citation were checked.':
+            'Alleen de eerste {count} van de {total} zinnen zonder bronvermelding zijn gecontroleerd.',
+        'Stopped after {done} of {total} sentences.':
+            'Gestopt na {done} van de {total} zinnen.',
+        '{count} sentence with no citation could not be checked.':
+            '{count} zin zonder bronvermelding kon niet worden gecontroleerd.',
+        '{count} sentences with no citation could not be checked.':
+            '{count} zinnen zonder bronvermelding konden niet worden gecontroleerd.',
+        'Doubted: “{text}”':
+            'In twijfel getrokken: “{text}”',
+        'No citation, may be wrong':
+            'Zonder bronvermelding, mogelijk onjuist',
+        'Checking uncited text':
+            'Tekst zonder bronvermelding controleren',
         'Runs one more check on each flagged citation to tell a contradicted key fact from a missing minor detail. Costs one extra model call per flagged citation.':
             'Voert voor elke gemarkeerde bronvermelding een extra controle uit om een tegengesproken kernfeit te onderscheiden van een ontbrekend detail. Dit kost één extra modelaanroep per gemarkeerde bronvermelding.',
         'Checking severity…': 'Ernst controleren…',
@@ -6600,6 +7372,13 @@ function useToolforgeSourceFetcher() {
             // citation's partial or omission verdict. A few calls per
             // article rather than one per citation, so on unless turned off.
             this.leadCheckEnabled = localStorage.getItem('verifier_lead_check') !== 'off';
+            // Uncited-text check (core/uncited-check.js): Verify All also
+            // checks the body sentences no citation covers against the
+            // model's general knowledge. Off until the editor turns it on:
+            // the evidence is the model's memory, not a source, and it is
+            // unvalidated. Its model follows the sidebar's provider:
+            // uncitedModel().
+            this.uncitedCheckEnabled = localStorage.getItem('verifier_uncited_check') === 'on';
             this.sidebarWidth = localStorage.getItem('verifier_sidebar_width') || '400px';
             this.isVisible = localStorage.getItem('verifier_sidebar_visible') === 'true';
             this.buttons = {};
@@ -6652,6 +7431,7 @@ function useToolforgeSourceFetcher() {
             // and how long it took.
             this.reportLead = null;
             this.reportLeadOnly = false;
+            this.reportUncited = null;
             this.reportStopped = null;
             this.reportDurationMs = 0;
 
@@ -6759,6 +7539,8 @@ function useToolforgeSourceFetcher() {
                         <div id="verifier-severity-note">${this.t('Runs one more check on each flagged citation to tell a contradicted key fact from a missing minor detail. Costs one extra model call per flagged citation.')}</div>
                         <div id="verifier-lead-check-container"></div>
                         <div id="verifier-lead-check-note">${this.t('Verify All also checks each sentence of the lead against the rest of the article, since a lead statement may be sourced in the body instead. A lead citation found to support only part of its claim is then set aside rather than counted as a problem. A few extra model calls per article.')}</div>
+                        <div id="verifier-uncited-check-container"></div>
+                        <div id="verifier-uncited-check-note">${this.t('Verify All also checks the sentences that have no citation against the model\'s general knowledge, and lists up to three that look wrong, so a source can be found for them. The model can be wrong about a correct sentence, so this is a prompt to look, not a finding. A few extra model calls per article.')} ${this.t('With a free provider this check runs on {model}; with a provider that uses an API key of its own, on that provider\'s model.', { model: uncitedModelFor(UNCITED_FREE_PROVIDER).name })}</div>
                         <div id="verifier-accuracy-note"></div>
                         <div id="verifier-privacy-note">${this.t('Results are logged for research. Your username is not recorded.')}</div>
                         <div id="verifier-settings-done-container"></div>
@@ -6818,6 +7600,7 @@ function useToolforgeSourceFetcher() {
                             </div>
                             <div id="verifier-report-progress"><div class="verifier-progress-fill"></div></div>
                             <div id="verifier-report-lead"></div>
+                            <div id="verifier-report-uncited"></div>
                             <details id="verifier-report-citations" class="sv-section" open>
                                 <summary><span class="sv-chevron"></span><span class="sv-section-title">${this.t('Citations')}</span><span class="sv-section-status"></span></summary>
                                 <div class="sv-section-body">
@@ -7916,7 +8699,8 @@ function useToolforgeSourceFetcher() {
 
                 /* Sections: one per check, all alike. A header (chevron,
                    name, a few words of status) that opens and closes it. */
-                #verifier-report-lead:empty {
+                #verifier-report-lead:empty,
+                #verifier-report-uncited:empty {
                     display: none;
                 }
                 #verifier-report-view .sv-section {
@@ -8377,6 +9161,13 @@ function useToolforgeSourceFetcher() {
                     color: var(--sv-ink-4);
                     margin-bottom: 10px;
                 }
+                /* Uncited-text check (core/uncited-check.js): its settings.
+                   Its report section is an .sv-section like the lead's. */
+                #verifier-uncited-check-note {
+                    font-size: 12px;
+                    color: var(--sv-ink-4);
+                    margin-bottom: 10px;
+                }
                 #verifier-lead-note {
                     margin-top: 8px;
                     font-size: 12px;
@@ -8609,6 +9400,13 @@ function useToolforgeSourceFetcher() {
                 align: 'inline'
             });
 
+            // Uncited-text check toggle
+            this.buttons.uncitedCheckToggle = new OO.ui.CheckboxInputWidget({ selected: this.uncitedCheckEnabled });
+            this.buttons.uncitedCheckField = new OO.ui.FieldLayout(this.buttons.uncitedCheckToggle, {
+                label: this.t('Check uncited text against general knowledge'),
+                align: 'inline'
+            });
+
             this.buttons.setKey = new OO.ui.ButtonWidget({
                 label: this.t('Set API Key'),
                 flags: ['primary', 'progressive'],
@@ -8690,6 +9488,7 @@ function useToolforgeSourceFetcher() {
             document.getElementById('verifier-claim-scope-container').appendChild(this.buttons.claimScopeSelect.$element[0]);
             document.getElementById('verifier-severity-container').appendChild(this.buttons.severityField.$element[0]);
             document.getElementById('verifier-lead-check-container').appendChild(this.buttons.leadCheckField.$element[0]);
+            document.getElementById('verifier-uncited-check-container').appendChild(this.buttons.uncitedCheckField.$element[0]);
             document.getElementById('verifier-settings-done-container').appendChild(this.buttons.settingsDone.$element[0]);
 
             this.updateProviderInfo();
@@ -9488,6 +10287,11 @@ function useToolforgeSourceFetcher() {
                 this.leadCheckEnabled = !!selected;
                 localStorage.setItem('verifier_lead_check', this.leadCheckEnabled ? 'on' : 'off');
                 this.updateButtonVisibility();
+            });
+
+            this.buttons.uncitedCheckToggle.on('change', (selected) => {
+                this.uncitedCheckEnabled = !!selected;
+                localStorage.setItem('verifier_uncited_check', this.uncitedCheckEnabled ? 'on' : 'off');
             });
 
             this.buttons.setKey.on('click', () => {
@@ -10657,8 +11461,8 @@ function useToolforgeSourceFetcher() {
 
         // Lift Wing is unconditionally routed via Toolforge in core/providers.js.
         // This opt-in override now applies only to keyless HuggingFace calls.
-        llmRouterConfigOverrides() {
-            if (useToolforgeLlmRouter() && this.currentProvider === 'huggingface') {
+        llmRouterConfigOverrides(provider = this.currentProvider) {
+            if (useToolforgeLlmRouter() && provider === 'huggingface') {
                 return { workerBase: TOOLFORGE_LLM_ROUTER_BASE };
             }
             return {};
@@ -11564,6 +12368,217 @@ function useToolforgeSourceFetcher() {
             return text;
         }
 
+        // ========================================
+        // UNCITED-TEXT CHECK (core/uncited.js, core/uncited-check.js)
+        // ========================================
+
+        // The body sentences no citation covers (the whole article's, when it
+        // has no headings), read once per page view like the lead. Null when
+        // there are none.
+        articleUncited() {
+            if (this._articleUncited !== undefined) return this._articleUncited;
+            let uncited = null;
+            try {
+                const root = document.getElementById('mw-content-text');
+                const found = root ? uncitedSentences(root) : null;
+                if (found && found.sentences.length) uncited = found;
+            } catch (e) {
+                console.warn('[Verifier] Could not read the uncited text:', e);
+            }
+            this._articleUncited = uncited;
+            return uncited;
+        }
+
+        // The model the uncited-text check runs on, { provider, model, name }:
+        // the citation checks' own when the editor pays for their provider,
+        // else Lift Wing's (core/uncited-check.js's uncitedModelFor()).
+        uncitedModel() {
+            return uncitedModelFor(this.currentProvider);
+        }
+
+        // A provider's key as getCurrentApiKey() reads the current one's:
+        // built in, stored, or none for a keyless provider.
+        apiKeyFor(providerId) {
+            const provider = this.providers[providerId];
+            if (!provider) return null;
+            if (provider.builtInKey) return provider.builtInKey;
+            return provider.storageKey ? localStorage.getItem(provider.storageKey) : null;
+        }
+
+        // The uncited-text check's section for a new run, the same shape as
+        // the lead check's: a header (chevron, name, status) over its notes
+        // and findings. Closed, for the lead's reason: it sits above the
+        // citations, and its results arriving must not push them about.
+        resetReportUncited() {
+            const el = document.getElementById('verifier-report-uncited');
+            if (!el) return;
+            el.innerHTML = '';
+            if (!this.reportUncited) return;
+            const section = document.createElement('details');
+            section.className = 'sv-section';
+            section.innerHTML = `<summary><span class="sv-chevron"></span>`
+                + `<span class="sv-section-title">${this.escapeHtml(this.t('Uncited text'))}</span>`
+                + `<span class="sv-section-status"></span></summary>`
+                + `<div class="sv-section-body sv-uncited-check"></div>`;
+            el.appendChild(section);
+            this.renderReportUncited();
+        }
+
+        renderReportUncited() {
+            const section = document.querySelector('#verifier-report-uncited .sv-section');
+            if (!section || !this.reportUncited) return;
+            section.querySelector(':scope > summary .sv-section-status').textContent = this.uncitedStatusText(this.reportUncited);
+            const body = section.querySelector('.sv-uncited-check');
+            // Re-rendered as the check moves on; a row the editor opened
+            // stays open.
+            const open = new Set([...body.querySelectorAll('.sv-finding.sv-expanded')].map(row => row.dataset.uncitedIndex));
+            body.innerHTML = this.uncitedCheckHtml(this.reportUncited);
+            body.querySelectorAll('.sv-finding[data-uncited-index]').forEach(row => {
+                if (open.has(row.dataset.uncitedIndex)) this.toggleFinding(row, true);
+                // Opening a row shows its sentence in the article, as a lead
+                // row shows its sentence.
+                row.addEventListener('click', (e) => {
+                    if (this.isFindingSummaryClick(row, e) && !row.classList.contains('sv-expanded')) {
+                        this.scrollToUncitedSentence(Number(row.dataset.uncitedIndex));
+                    }
+                });
+            });
+        }
+
+        // The check's state in a few words, beside its name, from
+        // { sentences, findings, done, state: 'pending' | 'running' | 'done' | 'stopped' }.
+        // 'stopped': the run was stopped before the check began.
+        uncitedStatusText(uncited) {
+            const total = uncited.sentences.length;
+            if (uncited.state === 'stopped') return this.t('not checked (stopped)');
+            if (uncited.state === 'pending') return this.t('runs after the citations');
+            if (uncited.state === 'running') return this.t('checking, {done} of {total}', { done: uncited.done || 0, total });
+            const count = (uncited.findings || []).length;
+            if (count) return this.t('{count} of {total} sentences may be wrong', { count, total });
+            // A call that failed, or a Stop part-way, leaves sentences
+            // unread: "nothing found" then covers only those that were read,
+            // and the header says so, since it is all a closed section shows.
+            const checked = (uncited.done || 0) - (uncited.unchecked || []).length;
+            return checked < total
+                ? this.t('nothing found in {checked} of {total} sentences', { checked: Math.max(0, checked), total })
+                : this.t('nothing found in {total} sentences', { total });
+        }
+
+        // The section's contents, from the check's state alone: its notes,
+        // then a row per finding. Findings arrive at the end, once they can
+        // be ranked. Not counted in the summary, not exported and not
+        // logged: they are the model's doubts, unvalidated, and a prompt to
+        // look for a source.
+        uncitedCheckHtml(uncited) {
+            const total = uncited.sentences.length;
+            const findings = uncited.findings || [];
+            const unchecked = uncited.unchecked || [];
+            const done = uncited.done || 0;
+            const model = uncited.model.name;
+            const notes = [];
+            if (uncited.state === 'running' || uncited.state === 'done') {
+                notes.push(this.t('Checked with {model}, against its general knowledge rather than a source. A finding is a reason to look for a source before changing anything.', { model }));
+            }
+            if (uncited.capped) {
+                notes.push(this.t('Only the first {count} of {total} sentences with no citation were checked.', { count: total, total: uncited.total }));
+            }
+            if (uncited.state === 'done' && done < total) {
+                notes.push(this.t('Stopped after {done} of {total} sentences.', { done, total }));
+            }
+            if (uncited.state === 'done' && unchecked.length) {
+                notes.push(this.t(unchecked.length === 1 ? '{count} sentence with no citation could not be checked.' : '{count} sentences with no citation could not be checked.', { count: unchecked.length }));
+            }
+            return notes.map(n => `<div class="sv-section-note">${this.escapeHtml(n)}</div>`).join('')
+                + (findings.length ? `<div class="sv-rows">${findings.map(f => this.uncitedFindingHtml(f)).join('')}</div>` : '');
+        }
+
+        // A finding's row. The words the model doubts are in its details only
+        // when they appear in the sentence verbatim, so every character shown
+        // is the article's.
+        uncitedFindingHtml(f) {
+            const excerpt = f.excerpt && f.excerptStatus === QUOTE_STATUSES.EXACT
+                ? `<div class="sv-finding-note">${this.escapeHtml(this.t('Doubted: “{text}”', { text: f.excerpt }))}</div>`
+                : '';
+            const section = f.sectionTitle
+                ? `<div class="sv-finding-note">${this.escapeHtml(this.t('Section: {section}', { section: f.sectionTitle }))}</div>`
+                : '';
+            return this.findingHtml({
+                classes: 'sv-uncited-finding verdict-partial',
+                attrs: ` data-uncited-index="${Number(f.index)}"`,
+                verdictHtml: this.verdictLabelHtml(this.t('No citation, may be wrong')),
+                claim: f.text,
+                comment: f.comments,
+                details: excerpt + section,
+            });
+        }
+
+        scrollToUncitedSentence(index) {
+            const uncited = this.reportUncited;
+            const sentence = uncited && uncited.sentences.find(s => s.index === index);
+            const paragraph = sentence && uncited.paragraphs[sentence.paragraphIndex];
+            const block = paragraph && paragraph.block;
+            if (!block || !block.isConnected) return;
+            block.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            this.clearHighlights();
+            this.highlightSentence(block, sentence.text);
+        }
+
+        // The uncited-text phase of Verify All: core/uncited-check.js's
+        // runUncitedCheck() on uncitedModel(), at its provider's pace. A failed call costs its sentences, counted as
+        // unchecked. Not logged, like the lead check: the verification log
+        // has no field for a sentence checked against no source.
+        async runReportUncitedCheck(startTime) {
+            const uncited = this.reportUncited;
+            const { provider, model } = uncited.model;
+            const total = uncited.sentences.length;
+            const phase = this.t('Checking uncited text');
+            const delayBetweenCalls = provider === 'publicai' || provider.startsWith('liftwing') ? 3000 : 1000;
+            uncited.state = 'running';
+            uncited.done = 0;
+            this.updateReportProgress(0, total, phase, startTime);
+            this.renderReportUncited();
+            const callModel = (systemPrompt, userContent) => callProviderAPI(provider, {
+                apiKey: this.apiKeyFor(provider),
+                model,
+                systemPrompt,
+                userContent,
+                maxTokens: groupMaxTokens(provider),
+                ...this.llmRouterConfigOverrides(provider)
+            });
+            let run = null;
+            try {
+                run = await runUncitedCheck({ uncited, articleTitle: this.reportArticleTitle() }, {
+                    callModel,
+                    systemPrompt: withUncitedCommentLanguage(generateUncitedSystemPrompt(), { lang: this.lang, articleLangCode: this.articleLangCode }),
+                    chunkSize: uncitedChunkSize(provider),
+                    retry: { maxRetries: 4, minBackoffMs: 5000, maxBackoffMs: 30000, jitterMs: 0, shouldAbort: () => this.reportCancelled },
+                    pause: () => new Promise(r => setTimeout(r, delayBetweenCalls)),
+                    shouldAbort: () => this.reportCancelled,
+                    onChunkError: e => {
+                        console.warn('[Verifier] Uncited-text check call failed:', e);
+                        return 'error';
+                    },
+                    onChunk: done => {
+                        uncited.done = done;
+                        this.updateReportProgress(done, total, phase, startTime);
+                        this.renderReportUncited();
+                    }
+                });
+            } catch (e) {
+                console.warn('[Verifier] Uncited-text check failed:', e);
+            }
+            if (run) {
+                uncited.findings = run.findings;
+                uncited.unchecked = run.unchecked;
+                uncited.done = run.checked + run.unchecked.length;
+                this.reportTokenUsage.input += run.usage.input || 0;
+                this.reportTokenUsage.output += run.usage.output || 0;
+            }
+            uncited.state = 'done';
+            this.renderReportUncited();
+            this.renderReportSummary();
+        }
+
         getReportUnits() {
             return mergeReportUnits(this.reportResults, this.reportGroupResults);
         }
@@ -11572,6 +12587,7 @@ function useToolforgeSourceFetcher() {
         // body"), as a report with no citation rows.
         async verifyAllCitations({ leadOnly = false } = {}) {
             const lead = this.leadCheckEnabled ? this.articleLead() : null;
+            const uncited = this.uncitedCheckEnabled && !leadOnly ? this.articleUncited() : null;
             if (leadOnly && !lead) {
                 mw.notify(this.t('This article has no body to check the lead against.'), { type: 'warn', autoHide: true });
                 return;
@@ -11590,12 +12606,15 @@ function useToolforgeSourceFetcher() {
             // report but no fetch or model call, so they stay out of the
             // estimate and the collective-check count. The lead check sends a
             // few sentences per call, each with the whole body, so its calls
-            // take about twice a citation's. The severity pass is left out:
-            // how many citations get flagged isn't known until the run ends.
+            // take about twice a citation's. The uncited-text check's calls
+            // carry a few paragraphs and get a short answer, on their own
+            // model's pace. The severity pass is left out: how many citations
+            // get flagged isn't known until the run ends.
             const checkable = citations.filter(c => !c.skipReason);
             const multiGroupCount = new Set(checkable.filter(c => c.groupSize > 1).map(c => c.groupId)).size;
             const leadCalls = lead ? Math.ceil(lead.sentences.length / leadChunkSize(this.currentProvider)) : 0;
-            const estimatedSeconds = checkable.length * 7 + multiGroupCount * 8 + leadCalls * 15;
+            const uncitedCalls = uncited ? Math.ceil(uncited.sentences.length / uncitedChunkSize(this.uncitedModel().provider)) : 0;
+            const estimatedSeconds = checkable.length * 7 + multiGroupCount * 8 + leadCalls * 15 + uncitedCalls * 10;
             const estimatedMinutes = Math.max(1, Math.ceil(estimatedSeconds / 60));
 
             const confirmed = await new Promise(resolve => {
@@ -11634,6 +12653,11 @@ function useToolforgeSourceFetcher() {
                 ? { sentences: lead.sentences, body: lead.body, results: [], state: 'pending', bodyTruncated: lead.body.truncated }
                 : null;
             this.reportLeadOnly = leadOnly;
+            // The uncited-text check's state for this report, or null when it
+            // doesn't run. Its provider is fixed for the run, like the lead's.
+            this.reportUncited = uncited
+                ? { ...uncited, model: this.uncitedModel(), findings: [], unchecked: [], done: 0, state: 'pending' }
+                : null;
 
             this.showReportView();
             this.reportStopped = null;
@@ -11648,6 +12672,7 @@ function useToolforgeSourceFetcher() {
             citationsSection.open = true;
             this.renderReportBar();
             this.resetReportLead();
+            this.resetReportUncited();
             this.applyReportFilters();
             this.updateButtonVisibility();
 
@@ -11886,6 +12911,9 @@ function useToolforgeSourceFetcher() {
             if (this.reportLead && !cancelledVerdicts) {
                 await this.runReportLeadCheck(delayBetweenCalls, startTime);
             }
+            if (this.reportUncited && !this.reportCancelled) {
+                await this.runReportUncitedCheck(startTime);
+            }
             if (this.reportSeverity && !this.reportCancelled) {
                 await this.rankReportBySeverity(delayBetweenCalls);
             }
@@ -11895,6 +12923,10 @@ function useToolforgeSourceFetcher() {
             if (this.reportLead && this.reportLead.state === 'pending') {
                 this.reportLead.state = 'stopped';
                 this.renderReportLead();
+            }
+            if (this.reportUncited && this.reportUncited.state === 'pending') {
+                this.reportUncited.state = 'stopped';
+                this.renderReportUncited();
             }
             // What the run was, for the report to say once: where a stopped
             // run stopped (the citations' section), how long it took (the

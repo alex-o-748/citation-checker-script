@@ -12,7 +12,10 @@
 --    the article body (core/lead-check.js). A lead row's source_url is the
 --    article itself (index.php?curid=<page_id>), so its source_url_hash never
 --    matches a citation row's and uniq_finding needs no change; its
---    prompt_version is LEAD_PROMPT_VERSION.
+--    prompt_version is LEAD_PROMPT_VERSION. Also 'uncited': an uncited body
+--    sentence against the model's own knowledge (core/uncited-check.js),
+--    with the same article source_url and UNCITED_PROMPT_VERSION; it needs
+--    no column of its own (its confidence is CSV-only).
 -- 2. lead_demoted: a lead citation's PARTIALLY SUPPORTED or omission verdict
 --    in an article that got a lead check (core/lead.js's
 --    isLeadDemotedVerdict()). Kept, never published.

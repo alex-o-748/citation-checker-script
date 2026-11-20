@@ -94,6 +94,7 @@ docs/                            # Reference docs + design plans (see docs/READM
 | `articleLead()` / `runReportLeadCheck()` / `renderReportLead()` | The lead check (`core/lead-check.js`): the last phase of Verify All; the report's lead section (see "The lead check" below) |
 | `findingHtml()` / `toggleFinding()` / `handleFindingClick()` | The one row every report finding uses (citations, groups and their sources, lead sentences): head line, claim and comment clamped while closed, everything else in details opened on demand (see "The report view" below) |
 | `renderReportBar()` / `updateReportProgress()` / `renderReportSummary()` | The report's bar (status and Stop while a run is going; Back and Copy report after), and the citations section's status, distribution bar, filter chips and sort order |
+| `articleUncited()` / `runReportUncitedCheck()` / `renderReportUncited()` | The uncited-text check (`core/uncited-check.js`), opt-in: a phase of Verify All after the lead's, on its own model (`uncitedProvider()`); the report's "Uncited text" section, the lead's shape with `findingHtml()` rows (see "Uncited text is checked" below) |
 | `getCountedReportUnits()` | `getReportUnits()` minus set-aside lead citations: what the summary, the severity ranking and the exports count |
 
 ## Benchmark Suite
@@ -556,6 +557,50 @@ Rules to keep if you touch it:
 
 Design, prototype numbers and the alternatives rejected:
 `docs/design-plans/2026-10-22-lead-checks.md`.
+
+### Uncited text is checked against the model's knowledge (`run-sweep.js --uncited-check`, userscript setting; read before touching `core/uncited*.js`)
+
+Every prose sentence is checked by exactly one thing: its citation's source if
+a citation follows it in its paragraph, the body if it is in the lead (the lead
+check, `core/lead-check.js`), and otherwise the model's general knowledge
+(`core/uncited-check.js`). Three rules to keep:
+
+- **"Cited" is fixed by the page, never by the claim scope.** A sentence is
+  cited when a marker sits in it or anywhere after it in its paragraph
+  (`core/uncited.js`). A rule that moved with the scope setting is what the
+  lead check's first draft dropped, and it couldn't be cached per revision.
+- **The check reports exceptions, not verdicts.** The model is asked which
+  statements it has a specific reason to doubt, "none" is the expected answer,
+  and only findings (plus ERROR rows for unchecked sentences) become rows:
+  NOT SUPPORTED / `doubtful`, `check_kind = uncited`, at most 3 per article.
+  Don't add "not flagged" rows: the model never judged those sentences.
+- **The action is always "find a source".** The model's idea of the right value
+  stays in its comment and is never offered as an edit.
+
+The lead is left out whenever the article has a body, so with the lead check
+off (the setting, or no `--lead-check`) uncited lead sentences are checked by
+nothing. A known gap, listed in the design doc.
+
+On the 2026-10-23 smoke test (9 injected errors), Qwen3.6-27B caught 8 with 5
+false flags, while gpt-oss-20b (the userscript's default until #389) caught 7
+with 14.
+Every finding from both models was `high`, so confidence doesn't rank anything
+yet.
+
+**In the userscript it is off by default** (`verifier_uncited_check`). Its
+model follows the sidebar's provider (`uncitedModelFor()` in
+`core/uncited-check.js`): a provider that needs the editor's own key keeps
+its own model, and every free provider gets Lift Wing Qwen3.8
+(`UNCITED_FREE_PROVIDER`), never gpt-oss-20b. On the 2026-11-20 re-run
+Qwen3.8 caught 8 of 9 injected errors with no false flag; GLM 5.2 caught 9
+with one, not enough to spend the shared HF credits on. The batch uses its
+`--provider`. Like the lead check it is a phase of Verify All with
+no action of its own, its calls go into the confirmation's time estimate, and
+its findings are a closed `.sv-section` above the citations, made of
+`findingHtml()` rows. They are not counted in the summary, not in the
+wikitext/plain-text exports, and not logged. Keep them out of all three until
+the evaluation set exists. Design, gaps and the evaluation
+plan: `docs/design-plans/2026-10-23-uncited-text-check.md`.
 
 ## Feedback loop (`feedback-loop/`, read before touching it)
 

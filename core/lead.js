@@ -38,7 +38,8 @@ const LEAD_NON_PROSE_CONTAINER = [
 // Subtrees whose text is never prose: footnote markers, edit links,
 // TemplateStyles CSS, and .noprint inline maintenance templates
 // ([citation needed]) — the same things core/claim.js leaves out of a claim.
-const LEAD_TEXT_NOISE = '.reference, .mw-ref, .mw-editsection, style, script, link, meta, .noprint, .ts-fix-template';
+// Exported for core/uncited.js, which reads body paragraphs the same way.
+export const LEAD_TEXT_NOISE = '.reference, .mw-ref, .mw-editsection, style, script, link, meta, .noprint, .ts-fix-template';
 
 // Footnote lists and bibliographies. Their text is never body.
 //
@@ -198,14 +199,16 @@ function bodySectionText(parts) {
         .join('\n');
 }
 
-// The body's sections in document order: { level, heading, text, appendix }.
+// The body's sections in document order: { level, heading, text, paragraphs }.
 // One pass, walking the body's nodes; Parsoid's nested <section>s and the
 // skin's flat markup come out the same, since headings are met in order.
+// `paragraphs` are the section's own <p> elements, for core/uncited.js;
+// articleBody() leaves them out, so the body it returns stays plain data.
 function collectBodySections(nodes) {
     const sections = [];
     let current = null;
     const start = (level, heading) => {
-        current = { level, heading, parts: [], hasBibliography: false };
+        current = { level, heading, parts: [], paragraphs: [], hasBibliography: false };
         sections.push(current);
     };
     const walk = node => {
@@ -224,6 +227,7 @@ function collectBodySections(nodes) {
         }
         if (node.matches(BODY_FOOTNOTE_LIST)) return;
         if (node.matches(BODY_NOISE)) return;
+        if (node.tagName === 'P' && current) current.paragraphs.push(node);
         for (const child of node.childNodes) walk(child);
         if (!current) return;
         if (BODY_BLOCK_ELEMENTS.has(node.tagName)) current.parts.push('\n');
@@ -243,7 +247,7 @@ function collectBodySections(nodes) {
             appendixLevel = s.level;
             continue;
         }
-        if (text) kept.push({ level: s.level, heading: s.heading, text });
+        if (text) kept.push({ level: s.level, heading: s.heading, text, paragraphs: s.paragraphs });
     }
     return kept;
 }
@@ -270,7 +274,26 @@ function leadWords(text) {
  * Over `maxChars`, see fitBody().
  */
 export function articleBody(root, { maxChars = LEAD_BODY_MAX_CHARS, leadText = '' } = {}) {
-    return fitBody(collectBodySections(splitLeadAndBody(root).body), { maxChars, leadText });
+    const sections = collectBodySections(splitLeadAndBody(root).body)
+        .map(({ level, heading, text }) => ({ level, heading, text }));
+    return fitBody(sections, { maxChars, leadText });
+}
+
+/**
+ * The body's prose paragraphs, in order: `{ block, sectionTitle }`, where
+ * `block` is the <p> and `sectionTitle` the heading of the section it is in.
+ * The same body articleBody() reads (no appendix sections, navigation or
+ * reference lists), and only <p>s outside tables, figures, quotations and
+ * the like, as for lead prose. Empty when the article has no headings.
+ */
+export function bodyParagraphs(root) {
+    const paragraphs = [];
+    for (const section of collectBodySections(splitLeadAndBody(root).body)) {
+        for (const block of section.paragraphs) {
+            if (!block.closest(LEAD_NON_PROSE_CONTAINER)) paragraphs.push({ block, sectionTitle: section.heading });
+        }
+    }
+    return paragraphs;
 }
 
 /**

@@ -84,6 +84,10 @@ const COLUMNS = [
     // what keeps a rerun by stale titles from reporting renamed articles as
     // missing. CSV-only, like fetch_error: findings-store.js has no column.
     ['redirected_from', f => f.redirectedFrom],
+    // The uncited-text check (core/uncited-check.js), check_kind "uncited":
+    // the model's confidence that the sentence is wrong, high or medium.
+    // CSV-only, like the severity columns.
+    ['uncited_confidence', f => f.uncitedConfidence],
     // Last, not first, despite being the row's identifier — csvPageTitles()
     // below reads the FIRST field of every record as the page title, which is
     // what --resume skips on. Moving check_id to column 1 would silently make
@@ -169,6 +173,7 @@ export function cleanCsvPath(path) {
  *
  * Lead-check rows need no rule of their own: a body cut to fit is marked
  * source_truncated, so rule 1 keeps only what survives truncation there too.
+ * Nor do uncited-text rows: the check already kept only its best few.
  *
  * Group IDs are only meaningful within an article revision, so the key
  * includes page identity.
