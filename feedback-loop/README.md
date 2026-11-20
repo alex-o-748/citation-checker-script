@@ -62,7 +62,7 @@ Once a cause has **10 confirmed cases** the tool got wrong (confirmed: accepted 
 3. **Agent.** Headless Claude Code gets a brief: the cause, the visible cases (marked as data, not instructions), where fixes for it live, and the bar. It can read, edit, run `npm test` and `npm run build`; nothing else, no network, no git, a spend cap (`PROPOSER_BUDGET_USD`, default $20). An attempt that touches `benchmark/`, `feedback-loop/` or `.github/` is discarded; one whose tests fail stops there.
 4. **After.** The same benchmarks on the changed code.
 5. **Gate** (`GATE`, fixed before any attempt): on the cause's cases, fixes at least the larger of 2 and 20% more than it breaks; no worse on the held-out cases; at most 5% of the rest of the field set lost (runs are not deterministic); at most 2 points of Supported-vs-rest lost on the main benchmark.
-6. **PR**, only if every check passes, labelled `fix-proposal` and `cause:<id>`, with the gate table and the agent's own summary. **Merging is your decision**: the gate says the change helps on cases editors disputed without hurting the benchmark, not that it is right. Close it freely; the cause waits three weeks before the next try.
+6. **Draft PR**, only if every check passes, labelled `fix-proposal` and `cause:<id>`, with the gate table and the agent's own summary. **Merging is your decision**: the gate says the change helps on cases editors disputed without hurting the benchmark, not that it is right. Close it freely; the cause waits three weeks before the next try.
 
 Every attempt, passed or not, leaves its brief, the agent's log, the changed files and the gate in the run's `fix-proposal` artifact. Run it by hand from Actions (*Feedback fix proposer → Run workflow*), optionally naming a cause or lowering the minimum.
 
@@ -79,7 +79,7 @@ Every attempt, passed or not, leaves its brief, the agent's log, the changed fil
    - `NEON_LOOP_DATABASE_URL`: that connection string.
    - `ANTHROPIC_API_KEY`: already set for the talk-page scraper.
    - Optional variable `ADJUDICATOR_MODEL` to override the default (`claude-opus-5-5`), and `PROPOSER_MODEL` / `PROPOSER_BUDGET_USD` for the fix proposer's agent.
-3. **For fix proposals only:** Settings → Actions → General → Workflow permissions → *Allow GitHub Actions to create and approve pull requests*. Without it, a proposal that passes its gate fails at the last step.
+3. **For fix proposals only:** Settings → Actions → General → Workflow permissions → *Allow GitHub Actions to create and approve pull requests*. Without it, a proposal that passes its gate fails at the last step. The checkbox covers approving too, but nothing uses that: proposals open as **drafts**, which can't be merged until you mark them ready; GitHub doesn't let a PR's author approve it, and the bot is the author; the agent's checkout keeps no token; and `tests/workflow-guard.test.js` fails if any workflow approves, merges or turns on auto-merge.
 4. Scheduled workflows run only from `main`, so nothing happens until this is merged. Then run **Feedback triage** by hand, first with *dry run* ticked, then with a small limit (say 10), and **Feedback digest** by hand to see the first digest.
 
 Triage and the monitor skip quietly, with a notice, until `NEON_LOOP_DATABASE_URL` exists. The bots push to `main` the way the scraper and edit-log jobs already do; if `main` is ever protected, they need the same exemption.

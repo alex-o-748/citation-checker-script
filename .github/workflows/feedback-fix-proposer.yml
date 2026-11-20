@@ -42,9 +42,13 @@ jobs:
       - name: Scratch folder
         run: echo "P=$RUNNER_TEMP/proposal" >> "$GITHUB_ENV"
 
+      # No token left in .git/config: the agent can read files and its code
+      # runs under npm test, so a persisted token would let it push, approve
+      # or merge. Only the last step authenticates, explicitly.
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - uses: actions/setup-node@v4
         with:
@@ -138,10 +142,12 @@ jobs:
           git checkout -b "$branch"
           git add -A
           git commit -q -m "Fix proposal for $CAUSE (feedback loop)"
-          git push -q origin "$branch"
+          git push -q "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git" "$branch"
           gh label create fix-proposal --color 1d76db --description 'Drafted by the feedback loop; passed its gate' 2>/dev/null || true
           gh label create "cause:$CAUSE" --color c5def5 2>/dev/null || true
-          gh pr create --base main --head "$branch" --title "Fix proposal: $CAUSE" \
+          # A draft cannot be merged until the owner marks it ready. Nothing
+          # in this repo approves or merges a PR (tests/workflow-guard.test.js).
+          gh pr create --draft --base main --head "$branch" --title "Fix proposal: $CAUSE" \
             --body-file "$P/pr-body.md" --label fix-proposal --label "cause:$CAUSE"
 
       - name: Keep the attempt
