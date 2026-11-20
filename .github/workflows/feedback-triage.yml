@@ -85,9 +85,10 @@ jobs:
           if-no-files-found: ignore
 
       # Also runs after a halt (exit 2): what was triaged before the model
-      # refused is still worth keeping.
+      # refused is still worth keeping. Only from main: a run started on
+      # another branch would push that branch's commits to main with it.
       - name: Commit to main
-        if: ${{ !cancelled() && steps.triage.outputs.changed == 'true' }}
+        if: ${{ !cancelled() && steps.triage.outputs.changed == 'true' && github.ref == 'refs/heads/main' }}
         env:
           ADDED: ${{ steps.triage.outputs.added }}
           ACCEPTED: ${{ steps.triage.outputs.accepted }}
