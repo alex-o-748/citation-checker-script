@@ -862,3 +862,107 @@ test('classifyFetchError recognises the messages fetchSourceContent really produ
         globalThis.fetch = realFetch;
     }
 });
+
+// --- Undecodable sources (charset decoding failures) ---
+
+// The start of what the Worker returned for the crjs.ru Wayback snapshot cited
+// by ru:Еврейские беженцы [62] (2026-11-05): Windows-1251 decoded as UTF-8.
+const GARBLED_SOURCE = 'XIX ����������� �������� �������������� ��������� ������� � ��������. ������, �������, 25-29 ���� 2010 �. '.repeat(5);
+const CLEAN_SOURCE = 'Вследствие этой репрессивной акции рухнула, правда, и «черта оседлости». '.repeat(5);
+
+test('encodingDamage: wrong-charset text is garbled; clean text and a stray U+FFFD are not', async () => {
+  const { encodingDamage } = await import('../core/worker.js');
+  assert.equal(encodingDamage(GARBLED_SOURCE).garbled, true);
+  assert.equal(encodingDamage(CLEAN_SOURCE).garbled, false);
+  assert.equal(encodingDamage(CLEAN_SOURCE + '�' + CLEAN_SOURCE).garbled, false);
+  assert.equal(encodingDamage(Buffer.from(CLEAN_SOURCE, 'utf8').toString('latin1')).garbled, true, 'UTF-8 read as Latin-1');
+});
+
+test('fetchSourceContent treats undecodable text as a failed fetch, not as content, and does not retry it', async () => {
+  const { UNDECODABLE_SOURCE_ERROR } = await import('../core/worker.js');
+  const mock = mockFetch(async (url) => {
+    if (url.startsWith('https://archive.org/wayback/available')) {
+      return { ok: true, status: 200, json: async () => ({ archived_snapshots: {} }) };
+    }
+    return { ok: true, status: 200, json: async () => ({ content: GARBLED_SOURCE }) };
+  });
+  try {
+    const result = await fetchSourceContent('https://www.crjs.ru/publish/book080a.php', null, { retry: { sleepFn: async () => {} } });
+    assert.equal(result.content, null);
+    assert.equal(result.error, UNDECODABLE_SOURCE_ERROR);
+    assert.equal(result.status, 200);
+    const proxyCalls = mock.calls.filter(c => c.url.includes('?fetch='));
+    assert.equal(proxyCalls.length, 1, 'same bytes would decode the same way; no retry');
+  } finally {
+    mock.restore();
+  }
+});
+
+test('an undecodable archive snapshot falls back to the live page (the lechaim.ru case)', async () => {
+  const mock = mockFetch(async (url) => {
+    const garbled = url.includes(encodeURIComponent('web.archive.org'));
+    return { ok: true, status: 200, json: async () => ({ content: garbled ? GARBLED_SOURCE : CLEAN_SOURCE }) };
+  });
+  try {
+    const result = await fetchSourceContent(
+      'https://web.archive.org/web/20100301035420/http://www.lechaim.ru/ARHIV/103/madievskiy.htm', null);
+    assert.ok(result.content.includes('черта оседлости'));
+    assert.ok(result.content.startsWith('Source URL: http://www.lechaim.ru/ARHIV/103/madievskiy.htm\n'));
+  } finally {
+    mock.restore();
+  }
+});
+
+test('classifyFetchError gives undecodable sources their own bucket', async () => {
+  const { classifyFetchError, isOurFetchFailure, UNDECODABLE_SOURCE_ERROR, FETCH_ERROR_KINDS: K } = await import('../core/worker.js');
+  assert.equal(classifyFetchError(UNDECODABLE_SOURCE_ERROR), K.UNDECODABLE);
+  assert.equal(isOurFetchFailure(K.UNDECODABLE), false);
+});
+
+// --- Too little visible text (title-only pages padded with invisible characters) ---
+
+// What the Worker returned on 2026-11-08 for the S&P Global Ratings source of
+// en:2026 Paraguay banking crisis [8]: the page <title>, then 77 U+200C each
+// followed by a space. 263 characters, about 90 of them visible.
+const TITLE_ONLY_SOURCE = 'Ueno Bank S.A. Downgraded To &#x27;D&#x27; From &#x27;BB&#x27; On Cen | S&P Global Ratings S&P Global Ratings '
+  + '‌ '.repeat(77);
+
+test('visibleLength ignores whitespace and invisible format characters', async () => {
+  const { visibleLength } = await import('../core/worker.js');
+  assert.ok(TITLE_ONLY_SOURCE.length > 100, 'the raw length passed the old check');
+  assert.ok(visibleLength(TITLE_ONLY_SOURCE) < 100);
+  assert.equal(visibleLength('a​b‍c­d﻿e‎f͏ g\n\th'), 8);
+  assert.equal(visibleLength(''), 0);
+  assert.equal(visibleLength(undefined), 0);
+});
+
+test('a title-only page padded with zero-width characters is a failed fetch, not content', async () => {
+  const mock = mockFetch(async (url) => {
+    if (url.startsWith('https://archive.org/wayback/available')) {
+      return { ok: true, status: 200, json: async () => ({ archived_snapshots: {} }) };
+    }
+    return { ok: true, status: 200, json: async () => ({ content: TITLE_ONLY_SOURCE }) };
+  });
+  try {
+    const result = await fetchSourceContent(
+      'https://www.spglobal.com/ratings/en/regulatory/article/-/view/type/HTML/id/3654529', null,
+      { retry: { sleepFn: async () => {} } });
+    assert.equal(result.content, null);
+    assert.match(result.error, /empty or too short/);
+    assert.ok(mock.calls.some(c => c.url.startsWith('https://archive.org/wayback/available')), 'Wayback fallback tried');
+  } finally {
+    mock.restore();
+  }
+});
+
+test('a real page keeps its invisible characters: only the threshold ignores them', async () => {
+  const body = 'The bank reported a regulatory solvency ratio of 13.8%, above the 12% statutory minimum. ';
+  const padded = `${body}‌ ‌ ${body}`;
+  const mock = mockFetch(async () => ({ ok: true, status: 200, json: async () => ({ content: padded }) }));
+  try {
+    const result = await fetchSourceContent('https://example.com/article', null);
+    assert.ok(result.content.endsWith(padded));
+  } finally {
+    mock.restore();
+  }
+});

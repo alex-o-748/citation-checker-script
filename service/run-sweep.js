@@ -72,6 +72,7 @@ import { fetchSourceContent, STUB_FETCH_ERROR } from '../core/worker.js';
 import { createHostGate, DEFAULT_FETCH_CONCURRENCY } from './host-pool.js';
 import { verifyCitation, verifyGroup, verifyLead, verifyUncited, makeModelCaller, ProviderAuthError } from './verifier.js';
 import { isLeadDemotedVerdict } from '../core/lead.js';
+import { isJudgedUnavailable } from '../core/groups.js';
 import { leadChunkSize, LEAD_OUTCOMES } from '../core/lead-check.js';
 import { uncitedChunkSize, UNCITED_MAX_FINDINGS } from '../core/uncited-check.js';
 import { assembleFinding, assembleGroupFinding, assembleLeadFinding, assembleUncitedFinding } from './finding-builder.js';
@@ -360,6 +361,13 @@ function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+// A promise with its resolve exposed, for one task to wait on another.
+function settleable() {
+    let resolve;
+    const promise = new Promise(r => { resolve = r; });
+    return { promise, resolve };
+}
+
 // Splits one article's citations into solo citations and adjacent groups
 // (groupSize > 1), grouped by groupId and sorted by groupIndex — the shape
 // both verifyGroup() and assembleGroupFinding() expect.
@@ -536,10 +544,38 @@ export async function runSweep(opts, {
                 `Rows will carry no page_id, revision_id or permalink, and each article is read at its latest revision.\n`
             );
         }
-        candidates = chosen.map(title => {
+        // A title that has become a #REDIRECT (the article was renamed since
+        // the list was written — the normal case for a rerun of an earlier
+        // batch by its stored titles) is checked under the target's title:
+        // that is what the REST fetch must ask for, and what the CSV's
+        // page_title should say. The listed title goes in redirected_from,
+        // which is how the coverage check knows it was covered.
+        candidates = [];
+        const byTitle = new Map();
+        for (const title of chosen) {
             const info = resolved.get(title);
-            return { pageId: info?.pageId ?? null, title, revisionId: info?.revisionId ?? null };
-        });
+            const redirectedFrom = info?.redirectedFrom ? title : null;
+            const candidate = {
+                pageId: info?.pageId ?? null,
+                title: redirectedFrom ? info.title : title,
+                revisionId: info?.revisionId ?? null,
+                redirectedFrom,
+            };
+            if (redirectedFrom) stderr.write(`sweep: ${title} redirects to ${candidate.title}\n`);
+            // Two listed titles landing on one article (a title and its old
+            // name, or two old names) would check it twice and write every
+            // row twice, which the structure check fails as duplicates.
+            const earlier = byTitle.get(candidate.title);
+            if (earlier) {
+                stderr.write(
+                    `sweep: ${title} is the same article as ${earlier.redirectedFrom ?? earlier.title} ` +
+                    `(${candidate.title}) — checking it once\n`
+                );
+                continue;
+            }
+            byTitle.set(candidate.title, candidate);
+            candidates.push(candidate);
+        }
         const unresolved = candidates.filter(c => !c.pageId).map(c => c.title);
         if (unresolved.length) {
             stderr.write(
@@ -592,6 +628,12 @@ export async function runSweep(opts, {
     // Every title the run was asked for, including ones --resume skips: the
     // post-run coverage check asks which of these produced no rows at all.
     const plannedTitles = candidates.map(candidate => candidate.title);
+    // processArticle() hands back only pageId/title/revisionId, so the
+    // listed title a redirected candidate came from is looked up by the
+    // article's (target) title when its findings are assembled.
+    const redirectedFromByTitle = new Map(
+        candidates.filter(c => c.redirectedFrom).map(c => [c.title, c.redirectedFrom])
+    );
 
     // Runs the post-run checks over the finished CSV. Never throws and never
     // touches the CSV: a checker problem costs the report, not the findings.
@@ -893,6 +935,7 @@ export async function runSweep(opts, {
 
             const wikiCandidate = {
                 wiki: opts.wiki, pageId: article.pageId, title: article.title, revisionId: article.revisionId,
+                redirectedFrom: redirectedFromByTitle.get(article.title) ?? null,
                 isBlp: isBlpByCategories(article.categories, opts.wiki),
             };
             const { solos, groups } = splitCitations(article.citations);
@@ -905,15 +948,28 @@ export async function runSweep(opts, {
             // report it instead.
             const leadChecked = Boolean(opts.leadCheck && article.lead?.body?.text && article.lead.sentences.length);
 
+            // A group's combined check waits for its members' own checks: a
+            // source its own check found no text behind (an error page, a
+            // paywall preview) is unread for the group too
+            // (core/groups.js's isJudgedUnavailable()). Every member's solo
+            // task is yielded before its group's, so by the time a worker
+            // takes the group task, each member is already running or done:
+            // the wait can't deadlock, at any --concurrency.
+            const ownChecks = new Map(groups.flatMap(members => firstPerFootnote(members).map(m => [m, settleable()])));
             for (const citation of [...solos, ...groups.flatMap(firstPerFootnote)]) {
                 funnel.citationsSeen++;
                 if (citation.url) funnel.citationsWithUrl++;
                 if (citation.source?.content) funnel.citationsFetched++;
+                // Fetch-level only: a member's own finding is ranked as soon
+                // as it is verified, before its siblings' verdicts are in.
                 const unreadSources = citation.groupSize > 1 && unreadGroups.has(citation.groupId);
-                yield { kind: 'solo', wikiCandidate, citation, unreadSources, leadChecked };
+                yield { kind: 'solo', wikiCandidate, citation, unreadSources, leadChecked, ownCheck: ownChecks.get(citation) ?? null };
             }
             for (const members of groups) {
-                yield { kind: 'group', wikiCandidate, members, leadChecked };
+                yield {
+                    kind: 'group', wikiCandidate, members, leadChecked,
+                    ownChecks: firstPerFootnote(members).map(m => ownChecks.get(m).promise),
+                };
             }
             if (leadChecked) yield { kind: 'lead', wikiCandidate, lead: article.lead };
             if (opts.uncitedCheck && article.uncited?.sentences?.length) {
@@ -1074,7 +1130,12 @@ export async function runSweep(opts, {
 
     async function worker(tasks) {
         for await (const task of tasks) {
-            if (halted) continue; // drain without dispatching new model calls
+            if (halted) {
+                // Drain without dispatching new model calls, but release any
+                // group task already waiting on this one.
+                task.ownCheck?.resolve();
+                continue;
+            }
 
             if (task.kind === 'solo') {
                 let verification;
@@ -1083,6 +1144,7 @@ export async function runSweep(opts, {
                 try {
                     verification = await verifyCitation(task.citation.claimText, task.citation.source, {
                         callModel, retry: { ...retryOptions, onAttemptFailed }, articleLangCode,
+                        citationText: task.citation.referenceText, sourceUrl: task.citation.url,
                     });
                 } catch (error) {
                     verification = absorbFailure(error, { fetchStatus: task.citation.source?.status ?? null });
@@ -1090,6 +1152,10 @@ export async function runSweep(opts, {
                 } finally {
                     recordVerifyDuration(verifyStartedAt);
                     finish();
+                    if (task.ownCheck) {
+                        task.citation.judgedUnavailable = isJudgedUnavailable(verification?.verdict);
+                        task.ownCheck.resolve();
+                    }
                 }
                 if (!verification) continue;
                 if (verification.usage) {
@@ -1118,6 +1184,8 @@ export async function runSweep(opts, {
                 let verification;
                 const verifyStartedAt = Date.now();
                 const { onAttemptFailed, finish } = trackRetries();
+                await Promise.all(task.ownChecks);
+                if (halted) continue;
                 try {
                     verification = await verifyGroup(task.members, {
                         callModel, retry: { ...retryOptions, onAttemptFailed }, articleLangCode,

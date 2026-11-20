@@ -28,7 +28,7 @@ test('parseCliArgs: verify subcommand with url and citation number', () => {
   assert.equal(result.subcommand, 'verify');
   assert.equal(result.url, 'https://en.wikipedia.org/wiki/Foo');
   assert.equal(result.citationNumber, 3);
-  assert.equal(result.provider, 'huggingface');
+  assert.equal(result.provider, 'liftwing');
   assert.equal(result.noLog, false);
 });
 

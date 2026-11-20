@@ -240,6 +240,17 @@ test('verifyGroup skips the model call when at most one member has a usable sour
     assert.equal(called, false, 'a group with <=1 usable source must not call the model');
 });
 
+test('verifyGroup skips when a member\'s own check judged its fetched page unavailable', async () => {
+    const members = [
+        { groupId: 'g', citationNumber: '1', claimText: 'A long enough claim to check.', url: 'https://a.example', source: { content: 'Source Content:\nreal text', status: 200 } },
+        { groupId: 'g', citationNumber: '2', claimText: 'A long enough claim to check.', url: 'https://b.example', source: { content: 'Source Content:\npaywall', status: 200 }, judgedUnavailable: true },
+    ];
+    let called = false;
+    const result = await verifyGroup(members, { callModel: async () => { called = true; return { text: '{}', usage: {} }; } });
+    assert.deepEqual(result, { skipped: true, groupId: 'g' });
+    assert.equal(called, false);
+});
+
 test('verifyGroup calls the model with assembled sources when two or more are usable', async () => {
     const members = [
         member('5', { groupIndex: 0, url: 'https://a.example', content: withContent('The bridge opened in 1998.') }),

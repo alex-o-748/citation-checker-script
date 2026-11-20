@@ -56,6 +56,27 @@ test('coverage names a title that produced no rows (the Iran-war case: 1,223 row
     assert.match(result.checks.find(c => c.id === 'coverage').summary, /Timeline of the 2026 Iran war/);
 });
 
+// A rerun by titles stored weeks earlier: the sweep followed the redirect and
+// wrote the rows under the new title, with the listed one in redirected_from.
+test('coverage counts a listed title whose redirect target has rows', () => {
+    const titles = ['A', 'Владимир (город, Россия)'];
+    const result = check([
+        finding({ pageTitle: 'A' }),
+        finding({ pageTitle: 'Владимир', redirectedFrom: 'Владимир (город, Россия)' }),
+    ], { titles });
+    const coverage = result.checks.find(c => c.id === 'coverage');
+    assert.equal(coverage.level, LEVELS.PASS, coverage.summary);
+    assert.match(coverage.details.join('\n'), /Владимир \(город, Россия\) → Владимир/);
+    assert.doesNotMatch(coverage.details.join('\n'), /not in the titles list/,
+        'the redirect target is not an article nobody asked for');
+});
+
+test('a redirected title whose target produced no rows is still missing', () => {
+    const titles = ['A', 'Old name'];
+    const result = check([finding({ pageTitle: 'A' })], { titles });
+    assert.match(result.checks.find(c => c.id === 'coverage').summary, /Old name/);
+});
+
 test('coverage fails once more than 5% of titles are missing', () => {
     const result = check([finding({ pageTitle: 'A' })], { titles: ['A', 'B', 'C'] });
     assert.equal(levelOf(result, 'coverage'), LEVELS.FAIL);

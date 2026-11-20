@@ -1,0 +1,72 @@
+name: Feedback commands
+
+# Applies the owner's one-line replies on a feedback digest issue
+# ("a1b2c3d4 ok", "a1b2c3d4 not supported", "a1b2c3d4 drop") to
+# benchmark/dataset_field.json on main, and confirms them in a reply.
+# See feedback-loop/digest.js.
+#
+# Only the repository owner's comments are read, and only on issues labelled
+# feedback-digest. The comment is untrusted text: it reaches the script
+# through an environment variable and is never interpolated into a shell
+# command. The bot's own reply is not the owner's, so it cannot trigger this.
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  issues: write
+
+# Shared with feedback-triage.yml: both write the field set.
+concurrency:
+  group: feedback-field-set
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    if: >-
+      !github.event.issue.pull_request &&
+      contains(github.event.issue.labels.*.name, 'feedback-digest') &&
+      github.event.comment.author_association == 'OWNER'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Apply
+        id: apply
+        env:
+          COMMENT_BODY: ${{ github.event.comment.body }}
+          BY: ${{ github.event.comment.user.login }}
+        run: |
+          node feedback-loop/digest.js apply --field benchmark/dataset_field.json \
+            --by "$BY" --reply-out "$RUNNER_TEMP/reply.md"
+
+      - name: Commit to main
+        if: steps.apply.outputs.changed == 'true' && github.ref == 'refs/heads/main'
+        env:
+          ISSUE: ${{ github.event.issue.number }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add benchmark/dataset_field.json
+          git commit -q -m "Feedback decisions from issue $ISSUE"
+          for delay in 2 4 8 16; do
+            git pull -q --rebase origin main && git push -q origin HEAD:main && exit 0
+            sleep "$delay"
+          done
+          exit 1
+
+      - name: Reply
+        if: steps.apply.outputs.replied == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE: ${{ github.event.issue.number }}
+        run: gh issue comment "$ISSUE" --body-file "$RUNNER_TEMP/reply.md"

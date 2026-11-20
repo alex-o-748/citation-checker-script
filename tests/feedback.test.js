@@ -212,13 +212,13 @@ test('buildFeedbackPayload maps every field onto its column', () => {
     checkId: 'a7f3k2q9',
     rating: -1,
     correctedVerdict: 'SUPPORTED',
-    wikiSection: 'Feedback: Barack Obama [12] (check a7f3k2q9)',
+    wikiSection: 'Feedback: Barack Obama, citation 12, check a7f3k2q9',
     clientId: 'deadbeefcafebabe',
   }), {
     check_id: 'a7f3k2q9',
     rating: -1,
     corrected_verdict: 'SUPPORTED',
-    wiki_section: 'Feedback: Barack Obama [12] (check a7f3k2q9)',
+    wiki_section: 'Feedback: Barack Obama, citation 12, check a7f3k2q9',
     client_id: 'deadbeefcafebabe',
   });
 });
@@ -279,14 +279,14 @@ test('nowikiWrap returns empty string for nothing to wrap', () => {
 test('buildTalkSectionTitle carries article, citation and check id', () => {
   assert.equal(
     buildTalkSectionTitle(CONTEXT),
-    'Feedback: Barack Obama [12] (check a7f3k2q9)',
+    'Feedback: Barack Obama, citation 12, check a7f3k2q9',
   );
 });
 
 test('buildTalkSectionTitle omits the citation when there is none', () => {
   assert.equal(
     buildTalkSectionTitle({ articleTitle: 'Foo', checkId: 'abc' }),
-    'Feedback: Foo (check abc)',
+    'Feedback: Foo, check abc',
   );
 });
 
@@ -297,10 +297,15 @@ test('buildTalkSectionTitle strips heading-breaking characters from the citation
   assert.equal(title.includes(']]'), false);
 });
 
+test('buildTalkSectionTitle contains no brackets, so the section can be wikilinked', () => {
+  const title = buildTalkSectionTitle({ articleTitle: 'Foo', citationNumber: '[12]', checkId: 'a(b)c' });
+  assert.doesNotMatch(title, /[[\](){}]/);
+});
+
 test('buildTalkSectionTitle keeps joined citation numbers for group checks', () => {
   assert.equal(
     buildTalkSectionTitle({ articleTitle: 'Foo', citationNumber: '12, 13', checkId: 'abc' }),
-    'Feedback: Foo [12, 13] (check abc)',
+    'Feedback: Foo, citation 12, 13, check abc',
   );
 });
 
@@ -466,7 +471,7 @@ test('buildCommentUrl opens a new section on the talk page', () => {
 
 test('buildCommentUrl sets the heading via preloadtitle', () => {
   const params = new URL(buildCommentUrl(CONTEXT)).searchParams;
-  assert.equal(params.get('preloadtitle'), 'Feedback: Barack Obama [12] (check a7f3k2q9)');
+  assert.equal(params.get('preloadtitle'), 'Feedback: Barack Obama, citation 12, check a7f3k2q9');
 });
 
 test('buildCommentUrl passes the whole body as a single preload parameter', () => {

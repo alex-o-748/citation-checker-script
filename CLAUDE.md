@@ -32,7 +32,7 @@ benchmark/
   render_compare.js              # JSON / Markdown / self-contained HTML renderers for ComparisonResult
   wice.js                        # Pure WiCE -> dataset-row transform (external benchmark; see below)
   convert_wice.js                # Fetch + convert WiCE into dataset_wice.json (gitignored, regenerate with npm run wice:convert)
-  dataset.json                   # Current dataset (189 entries: v1: 76 + v2: 34 + v3: 79; counts drift as rows are added)
+  dataset.json                   # Current dataset (263 entries: v1: 76 + v2: 34 + v3: 79 + v4: 74; counts drift as rows are added)
   dataset_v1.json                # Frozen v1 snapshot for reproducing original analysis
   dataset_v3.json                # Frozen v3 snapshot (post strict-rubric audit, 2026-04-30)
   results.json                   # Raw benchmark results
@@ -43,7 +43,8 @@ benchmark/
   analysis_v3.json               # Frozen v3 analysis snapshot
 Benchmarking_data_Citations.csv  # Source ground truth data (Dataset version + WMF override columns)
 service/                         # Toolforge batch pipeline: select -> extract -> fetch -> verify -> store (see Batch Pipeline below)
-.github/workflows/               # Scheduled talk-page scraper (not test/build CI)
+feedback-loop/                   # Editor feedback -> confirmed field-set rows + a daily log monitor (see Feedback loop below)
+.github/workflows/               # Scheduled jobs: talk-page scraper, edit-log sweep, feedback triage + monitor (not test/build CI)
 docs/                            # Reference docs + design plans (see docs/README.md)
 ```
 
@@ -90,8 +91,10 @@ docs/                            # Reference docs + design plans (see docs/READM
 | `buildFeedbackControls()` | Yes/No/Comment row under a result; ratings go to Neon, comments to the talk page (see `docs/worker-logging-reference.md`) |
 | `assessSeverity()` / `showSingleSeverity()` / `rankReportBySeverity()` | Opt-in severity pass (`core/severity.js`'s `runSeverityPass()`) for a flagged verdict: in the single-check view, and as a second phase of Verify All (see "Severity ranking" below) |
 | `applyReportSort()` / `renderReportSeverity()` | Report order: article order, or "Most serious first" by `compareSeverity()` on a severity-ranked report. Moves whole cards and group blocks; never hides one |
-| `articleLead()` / `runReportLeadCheck()` / `renderReportLead()` | The lead check (`core/lead-check.js`): the last phase of Verify All, or all of "Check the lead against the body"; the report's lead section (see "The lead check" below) |
-| `articleUncited()` / `runReportUncitedCheck()` / `renderReportUncited()` | The uncited-text check (`core/uncited-check.js`), opt-in: a phase of Verify All after the lead's, or all of "Check uncited text", on its own model (`uncitedProvider()`); the report's "Uncited text" section (see "Uncited text is checked" below) |
+| `articleLead()` / `runReportLeadCheck()` / `renderReportLead()` | The lead check (`core/lead-check.js`): the last phase of Verify All; the report's lead section (see "The lead check" below) |
+| `findingHtml()` / `toggleFinding()` / `handleFindingClick()` | The one row every report finding uses (citations, groups and their sources, lead sentences): head line, claim and comment clamped while closed, everything else in details opened on demand (see "The report view" below) |
+| `renderReportBar()` / `updateReportProgress()` / `renderReportSummary()` | The report's bar (status and Stop while a run is going; Back and Copy report after), and the citations section's status, distribution bar, filter chips and sort order |
+| `articleUncited()` / `runReportUncitedCheck()` / `renderReportUncited()` | The uncited-text check (`core/uncited-check.js`), opt-in: a phase of Verify All after the lead's, on its own model (`uncitedProvider()`); the report's "Uncited text" section, the lead's shape with `findingHtml()` rows (see "Uncited text is checked" below) |
 | `getCountedReportUnits()` | `getReportUnits()` minus set-aside lead citations: what the summary, the severity ranking and the exports count |
 
 ## Benchmark Suite
@@ -201,6 +204,27 @@ back well under any length threshold.
 
 If the Worker's cap changes again, change `WORKER_CONTENT_CAP`.
 
+### Undecodable sources are a failed fetch, never content (read before touching `encodingDamage`)
+
+Until 2026-11-05 both fetchers decoded every page as UTF-8, so a Windows-1251 /
+KOI8-R page — older Russian sites, and Wayback snapshots of them, whose raw
+`id_` endpoint carries no charset header — reached the model as a wall of
+U+FFFD with a 200 and "content retrieved". The model then sometimes said
+SOURCE UNAVAILABLE and sometimes reported a passage that is in the source
+verbatim as "not mentioned" (ru:Еврейские беженцы [62], reported by an editor).
+
+- **The fix is in the fetchers**: `src/charset.js` in `alex-o-748/public-ai-proxy`
+  and in `alex-o-748/tf-source-fetcher` (same rule in both: BOM > header >
+  `<meta>` > valid-UTF-8 > a Windows-1251/KOI8-R/Windows-1252 guess).
+- **`core/worker.js` is the backstop.** `encodingDamage()` flags text that is
+  mostly U+FFFD (or UTF-8-read-as-Latin-1 mojibake), and `fetchViaProxy()`
+  returns it as `{ content: null, error: UNDECODABLE_SOURCE_ERROR }`. It is not
+  retried (same bytes, same result), but `fetchSourceContent()`'s archive → live
+  and live → Wayback fallbacks run, and with nothing readable the check ends as
+  SOURCE UNAVAILABLE. `classifyFetchError()` buckets it as `undecodable`.
+- `service/run-encoding-audit.js` re-fetches every source URL in a findings CSV
+  and counts what still comes back garbled — run it over a regenerated batch.
+
 ### The positive class is the failing citation (read before quoting a TPR/FPR)
 
 **Positive = ground truth is anything but `Supported`** — `Partially supported`,
@@ -239,6 +263,16 @@ Two things used to be re-stated by every front end, and drifted:
 - **The five steps of a check** — fetch the source, build the prompts, call the model, parse the verdict, verify the quote. `core/pipeline.js`'s `verifyCitation()` is that sequence. `cli/verify.js` is now argv parsing, exit codes and stdout around one call to it; the web tool is React around the same call. It never throws for an expected failure — a dead source, a 429, unreadable model output all come back as `{ ok: false, stage }` (`VERIFY_STAGES`), because each front end maps those onto a different surface (exit codes, a toast).
 
 `pipeline.js` is deliberately **not** in `scripts/sync-main.js`'s `CORE_ORDER`. `main.js`'s flow is interleaved with sidebar state — cancellation ids, the per-source cache, the manual-paste override, group verification — and does not collapse into a single call yet. It still shares the parts below the pipeline (`prompts.js`, `providers.js`, `parsing.js`, `quote.js`), so there is no second prompt or second parser, only a second sequencer.
+
+### The model is told what the source is (read before touching `generateUserPrompt`)
+
+Since `PROMPT_VERSION` v3 (2026-11-15), the user prompt can carry three lines between the claim and the source text. These are the footnote as the article shows it (`Citation (as given in the article): …`), the cited URL, and today's date. Without them, a claim "named market leader in the Handelszeitung" failed on handelszeitung.ch, and an article's own "on Thursday" could not be resolved (`docs/design-plans/2026-11-08-fixable-causes-of-disputed-verdicts.md` §1).
+
+- **Where it comes from.** `core/urls.js`'s `extractReferenceText()` reads it, and `collectCitations()` carries it as `referenceText`. Chrome is removed by element where it has one (backlinks, CSS, COinS, `.reference-accessdate`, `.Abrufdatum`). English and Russian archive phrases are removed by pattern. sfn short cites get their full citation, and sub-references get their main reference.
+- **What it is evidence for.** The system prompt allows it to show who published the source, who wrote it and when. It is not evidence for anything else in the claim, and the source's own text wins if the two disagree. Don't let a citation line support the claim's substance: an editor's footnote can carry a `|quote=`, and the prompt rule is the only thing keeping the model off it.
+- **Every argument is optional.** A caller passing none gets the old two-part prompt byte for byte, so existing `core/` consumers keep working. Every front end in this repo now passes them. The benchmark reads `citation_text` from `dataset.json` (`benchmark/add_citation_text.js` backfills it), and `BENCHMARK_TODAY` pins the date for a replay.
+- **Measured** (`docs/citation-details-benchmark-2026-11-15.md`; the 2026-11-17 re-run on 263 rows supersedes the first reading): on Supported vs everything else, v3 is within a point of the old prompt on GPT-OSS-20b and Qwen3.8. Removing "and for nothing else in the claim" costs GPT-OSS about 2 points in all four of its runs, so keep the clause. Few benchmark rows test the target case, so the field replay of rated date rows is still the deciding check.
+- **Published interface.** `generateUserPrompt`'s third argument, `generateGroupUserPrompt`'s `{ today }`, the `citation` on `assembleGroupSources()`/`groupSourceEntries()` entries, `verifyCitation({ citationText, today })` and `extractReferenceText`/`todayIsoDate` are additions. The web tool's hand-written `.d.ts` needs them before it can use them.
 
 ### Downstream consumer: the standalone web tool
 
@@ -294,6 +328,14 @@ Since 2026-10 `run-sweep.js` stores every finding in ToolsDB by default, and `ru
 - **The CSV is still the record; the store follows it.** A failed ToolsDB write is counted and reported, never fatal to the sweep, and the summary prints the `run-import-findings.js` command that backfills it. Halting a day-long batch over a database hiccup costs more than the row.
 - **The pick fails if it can't read ToolsDB**, rather than continuing without the filter: silently re-picking checked articles is the failure the filter exists to prevent.
 - **Apply migrations 003, 004 and 005 (`service/migrations/`) before the first store**, and 006 before the first store or import of any kind once the lead check is deployed, not only a `--lead-check` sweep: it adds `check_kind` and `lead_demoted`, and `buildUpsertQuery()` names both on every row, so without it every write fails with an unknown column (the sweep still finishes and writes its CSV; backfill with `run-import-findings.js` after migrating). 003 (citation_number INT → text) had never been applied to the live table when storing became the default; the first backfill lost ~10% of rows to `Incorrect integer value: 'a'` / `'2, 3'` until it was. 005 makes it TEXT, since a collective row joins every member's number and overflowed 64 characters. 004 widens `reason_type` (the pipeline writes 23-byte reasons into a 16-byte column) and `group_id` (Cyrillic ref names), and makes `provider` `NOT NULL DEFAULT ''`: it is part of the unique key, and MariaDB never matches NULLs there, so every re-store of a no-model row (SOURCE UNAVAILABLE, SKIPPED) used to insert a duplicate. `buildUpsertQuery()` writes `''` for "no model ran" to match.
+
+### `--titles-file` follows redirects (read before touching `resolveTitleInfo`)
+
+Reruns re-check an earlier batch by the titles stored in ToolsDB, and articles get renamed in between. `service/wikipedia-pageids.js`'s `resolveTitleInfo()` used to resolve a renamed title to its leftover `#REDIRECT` stub, which has no citations, so the sweep logged `skipped <title> — no_citations` and never checked the article (3 of 1,023 in the November 2026 ruwiki rerun). It now queries with `redirects=1` and returns `{ pageId, revisionId, title, redirectedFrom }`.
+
+- `run-sweep.js --titles-file` checks a redirected title **under the target's title** (REST fetch, `page_title`), logs `sweep: <old> redirects to <new>`, and writes the listed title to the CSV's `redirected_from` column (CSV-only; no ToolsDB column). Two listed titles that land on one article are checked once.
+- The coverage check counts a listed title as covered when it appears in `redirected_from`, so `run-checks.js --titles-file` over the original list stays honest without network access. A CSV written before this column existed gets the usual "missing columns" structure warning.
+- `run-replay.js` gets the target's page id too, which is the right one: on a rename the page id moves with the article, so it is the page its pinned oldid belongs to.
 
 ### Post-run checks (`service/sweep-checks.js`, read before adding a halt-or-record decision)
 
@@ -503,6 +545,12 @@ Rules to keep if you touch it:
   costs a few calls per Verify All, not one per citation. Lead results are
   **not logged**: the Worker has no field to tell a lead sentence from a
   citation.
+- **In the report it is a section above the citations**, with the same header
+  as theirs, and closed: its results arriving never move the citation rows.
+  Open, it holds its rows, the covered sentences and the set-aside citations.
+  It runs only as part of Verify All: the main view's separate "Check the
+  lead against the body" button was removed (2026-11-11).
+  See "The report view" below.
 - **Not yet validated.** `benchmark/dataset_lead.json` (separate from
   `dataset.json`, like WiCE) is built by `npm run lead:extract`; its labels are
   for people to make.
@@ -530,24 +578,55 @@ check, `core/lead-check.js`), and otherwise the model's general knowledge
   stays in its comment and is never offered as an edit.
 
 On the 2026-10-23 smoke test (9 injected errors), Qwen3.6-27B caught 8 with 5
-false flags, while gpt-oss-20b (the userscript's default) caught 7 with 14.
+false flags, while gpt-oss-20b (the userscript's default until #389) caught 7
+with 14.
 Every finding from both models was `high`, so confidence doesn't rank anything
 yet.
 
 **In the userscript it is off by default** (`verifier_uncited_check`), with its
 own model setting (`verifier_uncited_model`): Lift Wing
 (`UNCITED_DEFAULT_PROVIDER`) unless the editor picks "Same as citation
-checks". It is a separate setting from the sidebar provider because that
-provider's default is gpt-oss-20b, the model this check should not run on.
-Findings are a report section of their own. They are not counted in the
-summary, not in the wikitext/plain-text exports, and not logged. Keep them out
-of all three until the evaluation set exists. Design, gaps and the evaluation
+checks". It is separate from the sidebar provider so that an editor who
+switches the citation checks to gpt-oss-20b, which did worst here, still gets
+Lift Wing for this check. Like the lead check it is a phase of Verify All with
+no action of its own, its calls go into the confirmation's time estimate, and
+its findings are a closed `.sv-section` above the citations, made of
+`findingHtml()` rows. They are not counted in the summary, not in the
+wikitext/plain-text exports, and not logged. Keep them out of all three until
+the evaluation set exists. Design, gaps and the evaluation
 plan: `docs/design-plans/2026-10-23-uncited-text-check.md`.
+
+## Feedback loop (`feedback-loop/`, read before touching it)
+
+Editor ratings in Neon become confirmed regression rows in
+`benchmark/dataset_field.json`, and the verification log becomes a daily trend.
+Operating notes and setup: `feedback-loop/README.md`. Design:
+`docs/design-plans/2026-11-15-feedback-loop.md`. Four workflows:
+
+- `feedback-triage.yml` (nightly) re-reads newly rated checks with an independent model and commits them to the field set on `main`: agreed labels are accepted as they land, the rest wait out of scoring.
+- `feedback-digest.yml` (weekly) opens one issue with five accepted labels to spot-check and the rows waiting for a decision; `feedback-commands.yml` applies the owner's one-line replies (`a1b2c3d4 ok`, `a1b2c3d4 not supported`, `a1b2c3d4 drop`).
+- `feedback-monitor.yml` (daily) keeps one issue current, and comments only when the set of alerts changes.
+- `feedback-fix-proposer.yml` (weekly) takes the commonest confirmed cause (`proposer.js`), has headless Claude Code draft a fix, benchmarks before and after with the production model, and opens a PR only if the pre-registered `GATE` passes.
+
+Rules the code depends on:
+
+- **`client_id` never leaves `sql/cases.sql`.** It is used there for rater counts and rating speed only; the field set is committed publicly, and a stable token would link one person's ratings across articles. A test fails if it reaches a case.
+- **The blind call sees the claim and the source, nothing else.** No tool verdict, no editor feedback: its independence is what makes agreement with the editor evidence. A test fails if either leaks into its prompt.
+- **Labels are decided by `proposeLabel()`, never by a model.** *Agreed* requires the editor and the blind reading to match and the evidence to verify with `core/quote.js`; anything else goes to the owner.
+- **A row the owner edited is never overwritten** (`isOwnerDecided()`), even with `--retriage`.
+- **Rows are never deleted.** A missing check id looks untriaged and would be read again; `drop` leaves a marker (`excluded_reason: 'dropped by the owner'`).
+- **Auto-accept answers to the spot-checks.** Two wrong labels in the owner's last ten pause it (`autoAcceptState()`), and agreed rows are then held like the rest. Don't add a path that accepts a label around that check.
+- **Only the repository owner's comments are applied**, and the comment body reaches `digest.js` through an environment variable, never interpolated into a shell command.
+- **Each rationale pattern is written once**, in `causes.js`, in regex syntax JS and Postgres share; `causeSql()` compiles it for the monitor. Don't copy a pattern into SQL by hand.
+- **The field set is never pooled with `dataset.json`**: its rows were chosen by disagreement.
+- **`GATE` in `proposer.js` is fixed before an attempt, never tuned to let one through.** Loosening it for a particular proposal makes the gate meaningless.
+- **The proposer's agent never sees its held-out cases and never touches the judge.** It works on a field set without the cause's newest quarter, and an attempt that edits `benchmark/`, `feedback-loop/` or `.github/` is discarded. It has no network, git or GitHub access; the workflow opens the PR, and merging is the owner's.
+- Database access is `psql` in the workflows (a read-only role, `NEON_LOOP_DATABASE_URL`); the Node code reads and writes files and needs no driver.
 
 ## Development Workflow
 
 - **Tests:** `node --test` via `npm test` from the repo root, runs everything in `tests/**/*.test.js`. New helpers should get a sibling `*.test.js` file. Behavioral validation also goes through the benchmark suite against the human-labeled citation dataset.
-- **No test/build CI** is wired up (the only GitHub Actions workflow is a scheduled talk-page scraper).
+- **No test/build CI** is wired up. The GitHub Actions workflows are scheduled jobs (talk-page scraper, edit-log sweep, feedback triage and monitor) plus the comment-triggered opencode agent.
 - **No linter** configured
 - **Branching:** Feature branches off `main`, merged via pull requests
 - **Deployment:** Deployed as a Wikipedia User Script (`User:Alaexis/AI_Source_Verification`) with USync for auto-updates
@@ -561,6 +640,70 @@ plan: `docs/design-plans/2026-10-23-uncited-text-check.md`.
 - The system prompt contains carefully tuned few-shot examples — changes affect benchmark accuracy
 - Claim extraction uses "between citations" logic by design (not full sentences) for precision
 - `extractClaimText(refElement, { scope })` (`core/claim.js`) supports two claim scopes. `scope: 'paragraph'` (the default, used by `main.js` and the CLI/benchmark) is the full "between citations" span, which can include multiple sentences when the previous citation is more than one sentence back. `scope: 'sentence'` narrows that span to only its final sentence (via `lastSentence()`) — `core/citations.js`'s `collectCitations(root, { claimScope })` threads this through, and `service/claim-extractor.js`'s `processArticle()` defaults `claimScope` to `'sentence'` for the batch pipeline. This matters because in an unattended batch run, a multi-sentence claim where only the first sentence lacks support reads as a false NOT SUPPORTED on the whole span — there's no editor present to notice that only part of the claim is a "citation needed" case, not an "unsupported" one. The interactive userscript defaults to paragraph scope, where a human reads the full claim and isn't misled by that ambiguity — but it also exposes a "Claim scope" setting (Settings panel, persisted to `localStorage` as `verifier_claim_scope`) letting an editor switch to sentence scope for both single-citation checks and "Verify All Citations", for the same false-positive reason batch mode defaults to it.
+
+### The report view (read before adding a check, a field or a style to the report)
+
+Verify All's report kept growing a new block per feature: severity added a
+badge and a subclaim list to every card, the lead check a section of its own,
+and the uncited-text check (`claude/article-accuracy-model-checks-6babki`) a
+third, each with its own text styles and colours. It was rebuilt (2026-11-10)
+from three pieces, and a new check reuses all of them:
+
+- **The bar** (`#verifier-report-bar`). While a run is going: what it is doing,
+  a thin progress line and Stop. After: Back and a Copy report menu (Wikitext,
+  Plain text). **The report view holds no run buttons.** Back returns to the
+  main view, where Verify All Citations is, with "Back to Report" beside
+  it. (Before this there was no way out of
+  a report at all: `showSingleCitationView()` was never called.)
+- **One section per check** (`.sv-section`, a `<details>`): a chevron, the
+  check's name and a few words of status, then its rows. The citations'
+  section also holds the distribution bar, the filter chips and, on a
+  severity-ranked report, the sort order. The lead's section sits above it and
+  starts closed, so its results arriving never move the citation rows.
+- **One row per finding** (`findingHtml()`): a head line (reference, verdict,
+  then a few quiet words such as the reason and the severity label), the claim
+  on one line and the model's comment on three. Everything else is in its
+  **details**, opened by a click: the full claim and comment, the quote, the
+  failing subclaims, caveats (a truncated source), and the links (Edit
+  section, the source by its host, Was this right?). A group is one row whose
+  details list its sources as rows. **A new field goes in the details, not on
+  every closed row.**
+
+Rules to keep:
+
+- **One type scale.** In the report: 13px and 12px, weights 400 and 600,
+  upright, and three text colours (ink, `--sv-ink-4` for everything
+  secondary, the accent for what can be clicked). No italics, small capitals
+  or third size. `tests/styles.test.js` fails on any other value.
+- **A verdict's colour appears once per row**, as its stripe, plus the
+  distribution bar and the chips' dots that are its legend. Not a tinted pill,
+  coloured text or a coloured border as well: that is what made the report
+  look like it had more colours than it does. Also tested.
+- **Totals are said once.** A finished run has no "Completed" line: the
+  section's status says what was checked (or where a stopped run stopped), the
+  chips count the verdicts, a note at the end of the list counts the rows the
+  filters hide, and the footer has the revision, tokens and time taken.
+- **The sidebar is the report's only scroll area.** The citation list used to
+  have its own 50vh scrollbar with the lead section under it, so the wheel
+  moved whichever was under the pointer and ran on past the list into the
+  lead section. `tests/styles.test.js` fails if anything in the report scrolls
+  on its own again, a quote in a row included.
+- **Opening a row shows its citation in the article**, with exactly the
+  claim's words highlighted; closing it doesn't. An open row closes only from
+  its head line, so its text can be read and selected. **One row is open at a
+  time**: opening one closes any other, except the group it belongs to.
+- **The highlight is the claim, not the paragraph** (`highlightClaim()`, in
+  both views). It paints the span `core/claim.js`'s `claimBounds()` names, the
+  same one `extractClaimText()` reads (narrowed to the last sentence under
+  sentence scope), with the CSS Custom Highlight API, so the article's markup
+  is never touched. Where that API is missing or the words can't be found,
+  the whole paragraph is highlighted, as before.
+- **Shared markup is restyled, not forked.** The quote, the subclaim list and
+  the feedback controls are the single check's own (`quoteHtml()`,
+  `severitySubclaimsHtml()`, `buildFeedbackControls()`); rules scoped to
+  `#verifier-report-view` bring them onto the report's type scale.
+
+The single-check view (a citation clicked in the article) is unchanged.
 
 ### Sentence splitting differs between the batch and the userscript (read before touching `lastSentence`)
 
@@ -743,6 +886,18 @@ short to judge, which are forgiven but must never reach `verifiedText`.
 unverifiable quote is worth flagging: omission and SOURCE UNAVAILABLE verdicts
 have nothing to quote, so a stray quote there is ignored rather than warned
 about.
+
+**It also decides whether a located quote is shown at all** (`displayedQuote()`,
+since `PROMPT_VERSION` v4). v4 puts `source_quote` first in the JSON, so the
+model quotes before it decides. On an omission it then often quotes a passage
+that is in the source but proves nothing: Qwen3.8 did on ~90% of its NOT
+SUPPORTED verdicts, nearly all labelled `omission`
+(`docs/quote-first-benchmark-2026-11-17.md`). Under a NOT SUPPORTED verdict
+such a block reads as the passage refuting the claim. So `buildQuoteView()`'s
+`display`, `verifyCitation()`'s `quoteDisplay` and the CLI's quote line are
+empty for those verdicts, while the log and the batch CSV still record the
+quote and its status. Don't drop the gate without moving the quote back after
+the verdict.
 
 The **verification log is the exception**: `logVerification()` records
 `source_quote` and `quote_status` on every row regardless of outcome. The UI

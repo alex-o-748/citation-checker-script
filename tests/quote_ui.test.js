@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
-import { verifyQuote, quoteExpectedFor } from '../core/quote.js';
+import { verifyQuote, quoteExpectedFor, displayedQuote } from '../core/quote.js';
 import { extractSourceText } from '../core/prompts.js';
 
 const MAIN_JS = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'main.js');
@@ -32,13 +32,13 @@ function harness() {
   ].map((sig) => extractMethod(src, sig)).join('\n');
 
   const dom = new JSDOM('<!DOCTYPE html><body></body>');
-  const Harness = new Function('document', 'verifyQuote', 'extractSourceText', 'quoteExpectedFor', `
+  const Harness = new Function('document', 'verifyQuote', 'extractSourceText', 'quoteExpectedFor', 'displayedQuote', `
     class Harness {
       t(en) { return en; }
 ${methods}
     }
     return Harness;
-  `)(dom.window.document, verifyQuote, extractSourceText, quoteExpectedFor);
+  `)(dom.window.document, verifyQuote, extractSourceText, quoteExpectedFor, displayedQuote);
   return new Harness();
 }
 
@@ -144,14 +144,38 @@ test('an unlocatable quote is silent regardless of verdict', () => {
   }
 });
 
-test('a verified quote is shown even on a verdict that did not require one', () => {
-  const html = harness().quoteHtml({
-    quote: 'opened to traffic in August 2002',
-    display: 'opened to traffic in August 2002',
-    verified: true,
-    expected: false,
-  });
-  assert.match(html, /class="sv-quote"/);
+// PROMPT_VERSION v4 has the model quote before it decides, so on an omission
+// it often quotes a passage that is in the source but proves nothing. Under a
+// NOT SUPPORTED verdict that block would read as the passage refuting the
+// claim, so buildQuoteView() leaves it out of `display` (core/quote.js's
+// displayedQuote()). quoteHtml() itself still renders whatever it is given.
+test('a located quote is shown for a verdict a passage decides, and not for an omission', () => {
+  const h = harness();
+  const quote = 'opened to traffic in August 2002';
+  for (const [verdict, reason_type, shown] of [
+    ['SUPPORTED', null, true],
+    ['PARTIALLY SUPPORTED', null, true],
+    ['NOT SUPPORTED', 'contradiction', true],
+    ['NOT SUPPORTED', 'omission', false],
+    ['SOURCE UNAVAILABLE', null, false],
+  ]) {
+    const view = h.buildQuoteView({ source_quote: quote, verdict, reason_type }, SOURCE_INFO);
+    assert.equal(view.verified, true, 'the quote is still checked');
+    assert.equal(view.quote, quote, 'and kept for the log');
+    assert.equal(Boolean(h.quoteHtml(view)), shown, `${verdict}/${reason_type}`);
+  }
+});
+
+test('a stored report result carries the verdict gate through quoteViewOf', () => {
+  // Report rows store buildQuoteView's display as quoteDisplay, so an
+  // omission's quote is absent from the report and both exports too.
+  const h = harness();
+  const view = h.buildQuoteView(
+    { source_quote: 'opened to traffic in August 2002', verdict: 'NOT SUPPORTED', reason_type: 'omission' },
+    SOURCE_INFO
+  );
+  const stored = { sourceQuote: view.quote, quoteDisplay: view.display, quoteVerified: view.verified, quoteStatus: view.status };
+  assert.equal(h.quoteHtml(h.quoteViewOf(stored)), '');
 });
 
 // --- partially verified quotes (the PDF line-break case) ---

@@ -67,6 +67,7 @@ function placeholders(s) {
 test('Spanish is a registered UI language', () => {
   assert.ok(LANGS.includes('es'), 'es missing from MESSAGES');
   assert.ok(LANGS.includes('fr'), 'fr missing from MESSAGES');
+  assert.ok(LANGS.includes('nl'), 'nl missing from MESSAGES');
 });
 
 test('every language table covers the same keys', () => {
@@ -204,6 +205,7 @@ test('every this.t() key in main.js has a translation in every language', () => 
 test('detectUiLang picks the wiki content language', () => {
   assert.equal(loadI18n(wikiWithLang('es', 'en')).detectUiLang(), 'es');
   assert.equal(loadI18n(wikiWithLang('fr', 'en')).detectUiLang(), 'fr');
+  assert.equal(loadI18n(wikiWithLang('nl', 'en')).detectUiLang(), 'nl');
   assert.equal(loadI18n(wikiWithLang('en', 'es')).detectUiLang(), 'en');
   assert.equal(loadI18n(wikiWithLang('de', 'de')).detectUiLang(), 'en');
 });
@@ -216,6 +218,7 @@ test('detectUiLang falls back to the user language and then to English', () => {
 
 test('detectUiLang resolves regional variants but not unrelated codes sharing a prefix', () => {
   assert.equal(loadI18n(wikiWithLang('es-419', 'en')).detectUiLang(), 'es');
+  assert.equal(loadI18n(wikiWithLang('nl-be', 'en')).detectUiLang(), 'nl');
   assert.equal(loadI18n(wikiWithLang('ES', 'en')).detectUiLang(), 'es', 'matching should be case-insensitive');
   assert.equal(loadI18n(wikiWithLang('fr-ca', 'en')).detectUiLang(), 'fr');
   // frr (North Frisian), frp (Arpitan) and est (Estonian-ish codes) merely
@@ -230,6 +233,10 @@ test('t() translates, falls back to English, and interpolates', () => {
   assert.equal(es.t('Verify Claim'), 'Verificar la afirmación');
   assert.equal(es.t('Provider: {name}', { name: 'Claude' }), 'Proveedor: Claude');
   assert.equal(es.t('a string nobody translated'), 'a string nobody translated');
+
+  const nl = new Harness('nl');
+  assert.equal(nl.t('Verify Claim'), 'Bewering controleren');
+  assert.equal(nl.t('Provider: {name}', { name: 'Claude' }), 'Aanbieder: Claude');
 
   const en = new Harness('en');
   assert.equal(en.t('Verify Claim'), 'Verify Claim');

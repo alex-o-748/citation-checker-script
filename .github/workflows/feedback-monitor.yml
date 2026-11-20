@@ -1,0 +1,78 @@
+name: Verification monitor
+
+# Daily: count what the verification log says — verdict mix per model, fetch
+# failures by host, the patterns of docs/design-plans/2026-11-08-fixable-causes-of-disputed-verdicts.md —
+# and keep one issue up to date. A comment (and so a notification) is posted
+# only when the set of alerts changes. See feedback-loop/README.md.
+#
+# Needs the NEON_LOOP_DATABASE_URL secret (a read-only role); skips quietly
+# without it. No model calls, no API key.
+
+on:
+  schedule:
+    - cron: '43 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: verification-monitor
+  cancel-in-progress: true
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Query the verification log
+        id: query
+        env:
+          NEON_LOOP_DATABASE_URL: ${{ secrets.NEON_LOOP_DATABASE_URL }}
+        run: |
+          if [ -z "$NEON_LOOP_DATABASE_URL" ]; then
+            echo "::notice::NEON_LOOP_DATABASE_URL is not set; nothing to monitor."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          command -v psql >/dev/null || { sudo apt-get update -q && sudo apt-get install -y -q postgresql-client; }
+          node feedback-loop/monitor.js sql > "$RUNNER_TEMP/monitor.sql"
+          psql "$NEON_LOOP_DATABASE_URL" -X -q -At -v ON_ERROR_STOP=1 -f "$RUNNER_TEMP/monitor.sql" > "$RUNNER_TEMP/snapshot.json"
+
+      - name: Find the monitor issue
+        id: issue
+        if: steps.query.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          n=$(gh issue list --label verification-monitor --state open --json number --jq '.[0].number // empty')
+          echo "number=$n" >> "$GITHUB_OUTPUT"
+          if [ -n "$n" ]; then gh issue view "$n" --json body --jq .body > "$RUNNER_TEMP/previous.md"; else : > "$RUNNER_TEMP/previous.md"; fi
+
+      - name: Render
+        if: steps.query.outputs.skip != 'true'
+        run: |
+          node feedback-loop/monitor.js report --snapshot "$RUNNER_TEMP/snapshot.json" \
+            --previous-body "$RUNNER_TEMP/previous.md" \
+            --out "$RUNNER_TEMP/body.md" --comment-out "$RUNNER_TEMP/comment.md"
+
+      - name: Update the issue
+        if: steps.query.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          N: ${{ steps.issue.outputs.number }}
+        run: |
+          if [ -z "$N" ]; then
+            gh label create verification-monitor --color 5319e7 --description 'Daily verification monitor' 2>/dev/null || true
+            gh issue create --title 'Verification monitor' --label verification-monitor --body-file "$RUNNER_TEMP/body.md"
+          else
+            gh issue edit "$N" --body-file "$RUNNER_TEMP/body.md"
+            if [ -f "$RUNNER_TEMP/comment.md" ]; then gh issue comment "$N" --body-file "$RUNNER_TEMP/comment.md"; fi
+          fi

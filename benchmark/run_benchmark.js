@@ -32,7 +32,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
-import { generateSystemPrompt as coreGenerateSystemPrompt, generateUserPrompt, extractSourceText } from '../core/prompts.js';
+import { generateSystemPrompt as coreGenerateSystemPrompt, generateUserPrompt, extractSourceText, todayIsoDate, PROMPT_VERSION } from '../core/prompts.js';
 import {
     callOpenAICompatibleChat,
     callClaudeAPI,
@@ -91,13 +91,6 @@ export const PROVIDERS = {
         type: 'publicai'
     },
     // Wikimedia Lift Wing models
-    'liftwing-qwen3.6-27b': {
-        name: 'Qwen3.6-27B (Lift Wing)',
-        model: 'llm-qwen36-27b',
-        endpoint: 'https://llm-router.toolforge.org/liftwing',
-        requiresKey: false,
-        type: 'liftwing'
-    },
     'liftwing-qwen3.8-27b': {
         name: 'Qwen3.8-27B (Lift Wing)',
         model: 'llm-qwen38-27b',
@@ -259,7 +252,7 @@ export const PROVIDERS = {
     'hf-glm-5.2': {
         name: 'GLM-5.2 (HF Inference)',
         model: 'zai-org/GLM-5.2:novita',
-        endpoint: 'https://router.huggingface.co/v1',
+        endpoint: 'https://router.huggingface.co/v1/chat/completions',
         requiresKey: false,
         keyEnv: 'HF_TOKEN',
         type: 'huggingface'
@@ -325,6 +318,13 @@ const CONCURRENCY = (() => {
 // The benchmark already has clean `source_text`, so it just passes that
 // directly — core's else-branch uses the input verbatim and produces
 // byte-identical output to the strip path.
+//
+// Since PROMPT_VERSION v3 the user prompt also carries the citation as the
+// article shows it, the source URL and today's date, as every front end now
+// sends them. `citation_text` comes from benchmark/add_citation_text.js; a row
+// without one (or a frozen snapshot that predates it) gets no citation line.
+// The date is the run's; BENCHMARK_TODAY=YYYY-MM-DD pins it for a replay.
+const PROMPT_TODAY = process.env.BENCHMARK_TODAY || todayIsoDate();
 
 /**
  * Resolve the system prompt at run time. Defaults to core/prompts.js
@@ -780,6 +780,8 @@ async function main() {
         run_at: new Date().toISOString(),
         prompt_date: process.env.BENCHMARK_PROMPT_DATE || todayIso(),
         prompt_source: process.env.BENCHMARK_PROMPT_OVERRIDE_FILE || 'core/prompts.js',
+        prompt_version: process.env.BENCHMARK_PROMPT_OVERRIDE_FILE ? null : PROMPT_VERSION,
+        prompt_today: PROMPT_TODAY,
         dataset_extracted_at: datasetMetadata.extracted_at || null,
         dataset_version_filter: VERSION_FILTER
     };
@@ -828,7 +830,11 @@ async function main() {
     await Promise.all(
         [...tasksByHost.entries()].map(([host, hostTasks]) =>
             runPool(hostTasks, CONCURRENCY, async ({ entry, provider }) => {
-                const userPrompt = generateUserPrompt(entry.claim_text, entry.source_text);
+                const userPrompt = generateUserPrompt(entry.claim_text, entry.source_text, {
+                    citation: entry.citation_text ?? null,
+                    sourceUrl: entry.source_url ?? null,
+                    today: PROMPT_TODAY,
+                });
 
                 const result = await callProvider(provider, systemPrompt, userPrompt);
                 const quoteCheck = verifyQuote(extractSourceText(entry.source_text), result.source_quote);

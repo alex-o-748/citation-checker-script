@@ -17,7 +17,7 @@
 
 import {
     generateSystemPrompt, generateUserPrompt, extractSourceText,
-    generateGroupSystemPrompt, generateGroupUserPrompt, assembleGroupSources,
+    generateGroupSystemPrompt, generateGroupUserPrompt, assembleGroupSources, todayIsoDate,
     withCommentLanguage,
 } from '../core/prompts.js';
 import { callProviderAPI, groupMaxTokens } from '../core/providers.js';
@@ -126,12 +126,20 @@ export function makeModelCaller({ provider, apiKey, model, workerBase }) {
  * "Write in Russian (русский)" instruction rather than settling for the
  * generic "match the source" fallback. This batch path had no comment
  * localization at all before 2026-09-13's ruwiki pilot.
+ *
+ * `citationText` (the footnote's text, service/claim-extractor.js's
+ * `referenceText`), `sourceUrl` (the cited URL) and `today` (YYYY-MM-DD,
+ * defaulting to the local date) tell the model what the source is — see
+ * core/prompts.js's generateUserPrompt(). All optional.
  */
 export async function verifyCitation(claimText, source, {
     callModel,
     signal,
     retry = {},
     articleLangCode,
+    citationText = null,
+    sourceUrl = null,
+    today = todayIsoDate(),
 } = {}) {
     if (typeof callModel !== 'function') {
         throw new TypeError('verifyCitation requires a callModel(systemPrompt, userContent) function');
@@ -177,7 +185,7 @@ export async function verifyCitation(claimText, source, {
     }
 
     const systemPrompt = withCommentLanguage(generateSystemPrompt(), { lang: articleLangCode, articleLangCode });
-    const userContent = generateUserPrompt(claimText, source.content);
+    const userContent = generateUserPrompt(claimText, source.content, { citation: citationText, sourceUrl, today });
 
     const retryOptions = { ...retry };
     if (signal && !retryOptions.shouldAbort) {
@@ -259,9 +267,13 @@ function groupEntries(members) {
     return groupSourceEntries(members, m => ({
         key: m.url ? sourceCacheKey(m.url, m.pageNum) : `__nourl_${m.citationNumber}`,
         url: m.url || null,
+        citation: m.referenceText ?? null,
         content: m.source?.content ?? null,
         error: m.source?.error ?? null,
         status: m.source?.status ?? null,
+        // Set by run-sweep.js once the member's own check is in
+        // (core/groups.js's isJudgedUnavailable()).
+        judgedUnavailable: Boolean(m.judgedUnavailable),
     }));
 }
 
@@ -293,6 +305,7 @@ export async function verifyGroup(members, {
     signal,
     retry = {},
     articleLangCode,
+    today = todayIsoDate(),
 } = {}) {
     if (typeof callModel !== 'function') {
         throw new TypeError('verifyGroup requires a callModel(systemPrompt, userContent) function');
@@ -320,7 +333,7 @@ export async function verifyGroup(members, {
     }
 
     const systemPrompt = withCommentLanguage(generateGroupSystemPrompt(), { lang: articleLangCode, articleLangCode });
-    const userContent = generateGroupUserPrompt(claimText, assembledText);
+    const userContent = generateGroupUserPrompt(claimText, assembledText, { today });
 
     const retryOptions = { ...retry };
     if (signal && !retryOptions.shouldAbort) {

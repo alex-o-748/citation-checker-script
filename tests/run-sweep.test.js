@@ -16,7 +16,7 @@ import {
     DEFAULT_MAX_CONSECUTIVE_FAILURES,
 } from '../service/run-sweep.js';
 import { ProviderAuthError } from '../service/verifier.js';
-import { rowsToCsv } from '../service/csv-report.js';
+import { parseCsv, rowsToCsv } from '../service/csv-report.js';
 import { DEFAULT_FETCH_CONCURRENCY } from '../service/host-pool.js';
 
 test('parseCliArgs defaults match run-replay.js\'s conventions (liftwing, no key needed)', () => {
@@ -250,6 +250,56 @@ test('a group with only one usable source is skipped and contributes no collecti
     assert.equal(written.length, 3, 'still one per-source finding each for citations 1, 2, 3');
 });
 
+// A model that calls https://c.example/x's page a paywall when it sees it on
+// its own, and would happily rate it as evidence inside a group.
+function paywallAwareModel(calls) {
+    return () => async (_system, user) => {
+        calls.push(user);
+        const solo = !/all cited for this claim/.test(user);
+        const verdict = solo && user.includes('text of https://c.example/x') ? 'SOURCE UNAVAILABLE' : 'SUPPORTED';
+        return {
+            text: JSON.stringify({ support_score: verdict === 'SUPPORTED' ? 90 : 0, verdict, source_quote: '', comments: 'ok' }),
+            usage: { input: 10, output: 5 },
+        };
+    };
+}
+
+for (const concurrency of [1, 4]) {
+    test(`a member its own check judged unavailable leaves too few sources: the group is skipped (--concurrency ${concurrency})`, async () => {
+        const calls = [];
+        const written = [];
+        const code = await runSweep(baseOpts({ concurrency }), baseIo({
+            // Slow model calls, so at --concurrency 4 the group task is taken
+            // while its members' own checks are still in flight.
+            makeModelCallerFn: () => {
+                const inner = paywallAwareModel(calls)();
+                return async (...args) => { await sleep(10); return inner(...args); };
+            },
+            appendFindingFn: async (_path, finding) => { written.push(finding); },
+        }));
+
+        assert.equal(code, 0);
+        assert.equal(calls.length, 3, 'three solo calls, no group call');
+        assert.equal(written.filter(f => f.isCollective).length, 0);
+        assert.equal(written.length, 3);
+    });
+}
+
+test('a halt while a group waits on its members releases it instead of hanging', async () => {
+    let calls = 0;
+    const code = await runSweep(baseOpts({ concurrency: 4 }), baseIo({
+        makeModelCallerFn: () => async () => {
+            calls++;
+            await sleep(5);
+            throw new ProviderAuthError('liftwing: bad key', { status: 401 });
+        },
+    }));
+    // Reaching this line at all is the test: a group left waiting would
+    // keep its worker, and runSweep(), from ever returning.
+    assert.equal(code, 3);
+    assert.ok(calls >= 1);
+});
+
 test('a failed ToolsDB write is counted, not fatal: the CSV still gets every row', async () => {
     let csvRows = 0;
     const stderrChunks = [];
@@ -380,6 +430,69 @@ test('a title that does not resolve is named in a warning rather than silently s
     assert.equal(code, 0);
     assert.equal(fetchCount, 2, 'an unresolved title is still checked, just without a permalink');
     assert.match(stderrChunks.join(''), /WARNING — 1 of 2 title\(s\) did not resolve.*Mispelled Artcle/s);
+});
+
+// The November 2026 ruwiki rerun: a title renamed since it was stored
+// resolved to its #REDIRECT stub, which has no citations, and the article was
+// logged "no_citations" and never checked.
+test('a --titles-file title that redirects is checked under the target title', async () => {
+    const stderrChunks = [];
+    const fetched = [];
+    let written;
+    let checkedTitles;
+    const code = await runSweep(baseOpts({ titlesFile: 'articles.txt', max: undefined }), baseIo({
+        readTitlesFile: async () => 'Владимир (город, Россия)\nTest Article\n',
+        resolveTitleInfoFn: async () => new Map([
+            ['Владимир (город, Россия)', { pageId: 31, revisionId: 555, title: 'Владимир', redirectedFrom: 'Владимир (город, Россия)' }],
+            ['Test Article', { pageId: 7, revisionId: 70, title: 'Test Article', redirectedFrom: null }],
+        ]),
+        fetchArticle: async ({ title, revisionId }) => {
+            fetched.push({ title, revisionId });
+            return { html: okArticleHtml, status: 200, error: null };
+        },
+        appendFindingFn: async (_path, finding) => { (written ??= []).push(finding); },
+        runChecksFn: async (_out, { titles }) => {
+            checkedTitles = titles;
+            return { result: { status: 'pass', checks: [] }, paths: { md: 'x-checks.md', review: 'x-review.csv' } };
+        },
+        stderr: { write: chunk => stderrChunks.push(chunk) },
+    }));
+
+    assert.equal(code, 0);
+    assert.deepEqual(fetched, [
+        { title: 'Владимир', revisionId: 555 },
+        { title: 'Test Article', revisionId: 70 },
+    ], 'the REST fetch asks for the article, not the redirect stub');
+    const redirected = written.filter(f => f.pageId === 31);
+    assert.equal(redirected.length, 4);
+    for (const f of redirected) {
+        assert.equal(f.pageTitle, 'Владимир');
+        assert.equal(f.redirectedFrom, 'Владимир (город, Россия)');
+    }
+    for (const f of written.filter(f => f.pageId === 7)) assert.equal(f.redirectedFrom, null);
+    assert.match(stderrChunks.join(''), /sweep: Владимир \(город, Россия\) redirects to Владимир\n/);
+    const [header, firstRow] = parseCsv(rowsToCsv(redirected));
+    assert.equal(firstRow[header.indexOf('redirected_from')], 'Владимир (город, Россия)',
+        'the listed title is recorded in the CSV');
+    assert.equal(firstRow[header.indexOf('page_title')], 'Владимир');
+    assert.deepEqual(checkedTitles, ['Владимир', 'Test Article']);
+});
+
+test('two listed titles that land on one article check it once', async () => {
+    const stderrChunks = [];
+    let fetchCount = 0;
+    const code = await runSweep(baseOpts({ titlesFile: 'articles.txt', max: undefined }), baseIo({
+        readTitlesFile: async () => 'New name\nOld name\n',
+        resolveTitleInfoFn: async () => new Map([
+            ['New name', { pageId: 5, revisionId: 50, title: 'New name', redirectedFrom: null }],
+            ['Old name', { pageId: 5, revisionId: 50, title: 'New name', redirectedFrom: 'Old name' }],
+        ]),
+        fetchArticle: async () => { fetchCount++; return { html: okArticleHtml, status: 200, error: null }; },
+        stderr: { write: chunk => stderrChunks.push(chunk) },
+    }));
+    assert.equal(code, 0);
+    assert.equal(fetchCount, 1);
+    assert.match(stderrChunks.join(''), /Old name is the same article as New name \(New name\) — checking it once/);
 });
 
 test('--titles-file with no explicit --max processes every listed title, not the default 5', async () => {

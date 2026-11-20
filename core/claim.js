@@ -86,6 +86,21 @@ export function textBetween(startAfter, endBefore, root) {
     return text;
 }
 
+// The text nodes textBetween() reads, in the same order and with the same
+// non-prose rule: for a caller that has to point at the text in the page
+// rather than copy it.
+export function textNodesBetween(startAfter, endBefore, root) {
+    let node = startAfter ? followingSkippingSubtree(startAfter, root) : root.firstChild;
+    const nodes = [];
+    while (node && node !== endBefore) {
+        if (node.nodeType === TEXT_NODE) nodes.push(node);
+        node = isNonProse(node) && !node.contains(endBefore)
+            ? followingSkippingSubtree(node, root)
+            : following(node, root);
+    }
+    return nodes;
+}
+
 // True iff the DOM range strictly between two .reference wrapper elements (in
 // document order: refA before refB) contains no non-whitespace text. This is
 // the rule that defines whether two adjacent citations attach to the same
@@ -265,21 +280,16 @@ export function isClaimTooShort(claimText, minLength = MIN_CLAIM_LENGTH) {
 // language's abbreviations, so "А. С. Пушкин" or "Dr. Smith" isn't cut in two.
 // It is injected rather than imported because sentencex is a native Node
 // module and this file also runs in the browser, inlined into main.js.
-export function extractClaimText(refElement, { scope = 'paragraph', splitLastSentence = lastSentence } = {}) {
+// Where a citation's claim lies in the page: the text between `startAfter`
+// (the previous citation that cites something else, or null for the start of
+// the container) and `endBefore` (the citation itself), within `root`. Null
+// when the citation is in no container, or is not in a .reference wrapper.
+// extractClaimText() reads its claim from here, and the userscript highlights
+// the same span, so the two can never disagree about what the claim is.
+export function claimBounds(refElement) {
     const container = refElement.closest('p, li, td, div, section');
-    if (!container) {
-        return '';
-    }
-
-    // Get the current reference wrapper element
     const currentRef = refElement.closest('.reference');
-    if (!currentRef) {
-        // Fallback: return container text
-        return container.textContent
-            .replace(/\[\d+\]/g, '')
-            .replace(/\s+/g, ' ')
-            .trim();
-    }
+    if (!container || !currentRef) return null;
 
     // Find all references in the same container
     const refsInContainer = Array.from(container.querySelectorAll('.reference'));
@@ -301,11 +311,31 @@ export function extractClaimText(refElement, { scope = 'paragraph', splitLastSen
         }
     }
 
-    // Extract the text from the boundary to the current reference. With no
-    // previous-ref boundary, that means the whole container up to this point.
-    let claimText = claimStartNode
-        ? textBetween(claimStartNode, currentRef, commonAncestor(claimStartNode, currentRef))
-        : textBetween(null, currentRef, container);
+    // From the boundary to the current reference. With no previous-ref
+    // boundary, that means the whole container up to this point.
+    return claimStartNode
+        ? { startAfter: claimStartNode, endBefore: currentRef, root: commonAncestor(claimStartNode, currentRef) }
+        : { startAfter: null, endBefore: currentRef, root: container };
+}
+
+export function extractClaimText(refElement, { scope = 'paragraph', splitLastSentence = lastSentence } = {}) {
+    const container = refElement.closest('p, li, td, div, section');
+    if (!container) {
+        return '';
+    }
+
+    // Get the current reference wrapper element
+    const currentRef = refElement.closest('.reference');
+    if (!currentRef) {
+        // Fallback: return container text
+        return container.textContent
+            .replace(/\[\d+\]/g, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+    }
+
+    const bounds = claimBounds(refElement);
+    let claimText = textBetween(bounds.startAfter, bounds.endBefore, bounds.root);
 
     // Clean up the text. Whitespace must be normalized BEFORE the marker
     // strip (Wikipedia's {{failed verification}} et al. use white-space:nowrap

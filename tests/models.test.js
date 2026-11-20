@@ -41,6 +41,7 @@ test('storage keys are unique across providers', () => {
 });
 
 test('the default provider exists and needs no key', () => {
+  assert.equal(DEFAULT_PROVIDER, 'liftwing');
   const p = getProvider(DEFAULT_PROVIDER);
   assert.ok(p, `${DEFAULT_PROVIDER} is not a known provider`);
   assert.equal(p.requiresKey, false);

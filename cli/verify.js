@@ -6,13 +6,15 @@
 import { parseArgs } from 'node:util';
 import { JSDOM } from 'jsdom';
 import { extractClaimText, isClaimTooShort, MIN_CLAIM_LENGTH } from '../core/claim.js';
-import { extractReferenceUrl, extractPageNumber } from '../core/urls.js';
+import { extractReferenceUrl, extractPageNumber, extractReferenceText } from '../core/urls.js';
 import { logVerification } from '../core/worker.js';
-import { modelFor } from '../core/models.js';
+import { DEFAULT_PROVIDER, modelFor } from '../core/models.js';
 import { verifyCitation, VERIFY_STAGES } from '../core/pipeline.js';
+import { quoteExpectedFor } from '../core/quote.js';
+import { canonicalizeVerdict } from '../core/verdicts.js';
 import { parseCompareArgs, COMPARE_HELP_TEXT, runCompare } from './compare.js';
 
-const KNOWN_PROVIDERS = ['publicai', 'huggingface', 'claude', 'gemini', 'openai'];
+const KNOWN_PROVIDERS = ['liftwing', 'publicai', 'huggingface', 'claude', 'gemini', 'openai'];
 
 // Experimental: opt-in override that routes the huggingface provider's proxy
 // call through the tf-llm-router Toolforge tool
@@ -56,7 +58,7 @@ function parseVerifyArgs(args) {
     const { values, positionals } = parseArgs({
         args,
         options: {
-            provider: { type: 'string', default: 'huggingface' },
+            provider: { type: 'string', default: DEFAULT_PROVIDER },
             'no-log': { type: 'boolean', default: false },
             'live-llm-router': { type: 'boolean', default: false },
             help:     { type: 'boolean', short: 'h', default: false },
@@ -169,6 +171,7 @@ export function classifyProviderError(err) {
 }
 
 const PROVIDER_ENV_VARS = {
+    liftwing:    null, // Qwen3.8 via Toolforge, no user key
     publicai:    null, // routed through the worker proxy; no client-side key
     huggingface: null, // proxy by default; HF_API_KEY (optional) opts into direct
     claude:      'CLAUDE_API_KEY',
@@ -196,10 +199,10 @@ Arguments:
 
 Options:
   --provider <name>  LLM provider to use. One of:
-                       huggingface (default; routed via the worker proxy,
-                                    no API key needed; set HF_API_KEY to
-                                    call HF directly and unlock any
-                                    HF-hosted model)
+                       liftwing    (default; Qwen3.8 via Toolforge,
+                                    no API key needed)
+                       huggingface (routed via the worker proxy; set HF_API_KEY
+                                    to call HF directly)
                        publicai    (routed via the worker proxy,
                                     no API key needed)
                        claude      (requires CLAUDE_API_KEY)
@@ -329,6 +332,7 @@ export async function runVerify(opts, { stdout = process.stdout, stderr = proces
     //    so no global shim is needed.
     const sourceUrl = extractReferenceUrl(refAnchor, document);
     const pageNum = extractPageNumber(refAnchor, document);
+    const citationText = extractReferenceText(refAnchor, document);
     if (!sourceUrl) {
         stderr.write(`ccs: citation [${citationNumber}] has no fetchable URL\n`);
         return 6;
@@ -356,6 +360,7 @@ export async function runVerify(opts, { stdout = process.stdout, stderr = proces
         claimText: claim,
         sourceUrl,
         pageNum,
+        citationText,
         provider,
         model: modelFor(provider),
         apiKey,
@@ -395,12 +400,14 @@ export async function runVerify(opts, { stdout = process.stdout, stderr = proces
 
     // 12. Print the result. The quote is printed only once it has been found
     //     in the fetched source (core/quote.js) — an unlocated quote is
-    //     reported as such rather than shown.
+    //     reported as such rather than shown — and only for a verdict a
+    //     passage can decide: an omission's quote is left out, as in the
+    //     userscript (core/quote.js, displayedQuote()).
     stdout.write(`Verdict:    ${result.verdict}\n`);
     stdout.write(`Support score: ${result.supportScore ?? 'n/a'}\n`);
     stdout.write(`Claim:      ${claim}\n`);
     stdout.write(`Source:     ${sourceUrl}\n`);
-    if (result.sourceQuote) {
+    if (result.sourceQuote && quoteExpectedFor(canonicalizeVerdict(result.verdict), result.reasonType)) {
         stdout.write(result.quote.verified
             ? `Quote:      "${result.sourceQuote}"\n`
             : `Quote:      (not found in source: ${result.quote.status})\n`);

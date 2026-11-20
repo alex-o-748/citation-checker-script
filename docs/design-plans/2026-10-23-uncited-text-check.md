@@ -1,6 +1,6 @@
 # Checking uncited text against the model's knowledge
 
-> **Status (2026-10-24):** In progress on `claude/article-accuracy-model-checks-6babki`, stacked on the lead-check branch (`claude/clever-darwin-9yn9ef`, [#387](https://github.com/alex-o-748/citation-checker-script/pull/387)). Built: extraction, the check, the batch pipeline, and the userscript behind a setting that is **off by default** and runs on its own model (§ The userscript). The labeled evaluation set is not built. The numbers come from a smoke test on 7 enwiki articles with 9 injected errors (§ What the smoke test found); they show the shape works and which model to use, and nothing about accuracy.
+> **Status (2026-11-20):** In progress on `claude/article-accuracy-model-checks-6babki`, stacked on the lead-check branch (`claude/clever-darwin-9yn9ef`, [#387](https://github.com/alex-o-748/citation-checker-script/pull/387)). Built: extraction, the check, the batch pipeline, and the userscript behind a setting that is **off by default** and runs on its own model (§ The userscript). The labeled evaluation set is not built. The numbers come from a smoke test on 7 enwiki articles with 9 injected errors (§ What the smoke test found); they show the shape works and which model to use, and nothing about accuracy.
 
 ## The problem
 
@@ -177,42 +177,52 @@ memory rather than a source, and it is unvalidated. Under it is a choice of
 model (`verifier_uncited_model`), disabled while the setting is off:
 
 - **Lift Wing (recommended)**, the default: `UNCITED_DEFAULT_PROVIDER`. It is
-  keyless like the default provider, and it did far better in the smoke test.
+  keyless, and it did far better in the smoke test.
 - **Same as citation checks**: the provider the sidebar is set to.
 
-The model is a separate setting, not the sidebar's provider, because that
-provider's default (gpt-oss-20b) is the one this check should not run on.
+The model is a separate setting from the sidebar's provider. Lift Wing has
+been the sidebar's default too since 2026-10-24 (#389), but an editor who
+switches the citation checks to gpt-oss-20b, the model that did worst here,
+still gets Lift Wing for this check.
 
-With it on:
+It follows the rules #387's report rebuild set for an extra check:
 
-- **Verify All ends with an uncited-text phase**, after the lead check, on the
-  chosen model at that model's pace (3 s between Lift Wing calls). The
-  confirmation dialog says it will run and on which model.
-- **"Check uncited text"** runs it alone, as "Check the lead against the
-  body" does for the lead.
-- **The report gets an "Uncited text" section** after "Lead vs body". It shows
-  a status line naming the model, the cap, stop and unchecked notes, and one
-  card per finding: "No citation, may be wrong", the section, the sentence with
-  the doubted words marked, and the model's comment. A line above the cards
-  says the model works from general knowledge, not a source, and to find a
-  reliable source before changing anything. Clicking a card highlights the
-  paragraph in the article.
-- **Words are marked only where they appear in the sentence verbatim.** An
-  excerpt found only after normalization, or not found, marks nothing, so
-  everything shown is the article's text.
-- **Not counted, not exported, not logged.** The summary pills count citation
+- **A phase of Verify All, never an action of its own.** It runs after the lead
+  check, on the chosen model at that model's pace (3 s between Lift Wing
+  calls). "Check the lead against the body" was taken off the start screen for
+  the same reason, so there is no "Check uncited text" either.
+- **The confirmation gives only the time estimate**, and its calls are
+  counted in it, as the lead check's are.
+- **A section of the lead's shape**, between "Lead vs body" and the citations:
+  a header (chevron, "Uncited text", a few words of status), closed so that its
+  results arriving never move the citation rows. Its status reads "runs after
+  the citations", "checking, 2 of 12", "1 of 12 sentences may be wrong",
+  "nothing found in 12 sentences", or "not checked (stopped)".
+- **Its findings are ordinary report rows** (`findingHtml()`): "No citation,
+  may be wrong", the sentence and the model's comment. Opening one shows the
+  doubted words and the section, and highlights the sentence in the article,
+  as a lead row does. A note above the rows names the model and says it works
+  from general knowledge, not a source, so a finding is a reason to look for a
+  source before changing anything. Further notes give the sentence cap, a stop
+  part-way, and sentences left unchecked.
+- **Doubted words are shown only where they appear in the sentence
+  verbatim.** An excerpt found only after normalization, or not found, shows
+  nothing, so every character shown is the article's.
+- **Not counted, not exported, not logged.** The summary counts citation
   verdicts only. The wikitext and plain-text reports leave the section out:
   unvalidated doubts don't belong on a talk page. The verification log has no
   field for a sentence checked against no source (the lead check has the same
   gap).
 
-Tested in Chromium with real OOUI (2026-10-24):
-- the settings: off by default, the dropdown disabled until the setting is on,
-  both persisted, the button appearing;
-- "Check uncited text" on Ada Lovelace against live Qwen3.8;
-- Verify All on a small article with stubbed calls, which ran citations, then
-  the lead check, then the uncited check on Lift Wing, while the citations ran
-  on gpt-oss.
+Tested in Chromium with real OOUI (2026-11-20), on the rebuilt report:
+- Verify All on a small article with stubbed calls. It ran citations, then the
+  lead check, then the uncited check. The section sat between the lead's and
+  the citations', closed, and opening its row highlighted exactly the
+  sentence. Run in light, dark, and Hebrew (RTL).
+- The settings (2026-10-24): off by default, the dropdown disabled until the
+  setting is on, both persisted.
+- A live run on Ada Lovelace against Qwen3.8 (2026-10-24, on the earlier
+  report): § What the smoke test found.
 
 `tests/uncited_ui.test.js` pins the shipped methods.
 
@@ -275,7 +285,8 @@ What that says:
 
 **Consequences:** the batch runs this check on Lift Wing, its default
 provider, and so does the userscript unless the editor chooses otherwise
-(`UNCITED_DEFAULT_PROVIDER`). It is never silently on gpt-oss-20b.
+(`UNCITED_DEFAULT_PROVIDER`), whatever provider the citation checks use. It is
+never silently on gpt-oss-20b.
 
 ## Code
 
@@ -291,7 +302,7 @@ provider, and so does the userscript unless the editor chooses otherwise
 | `service/csv-report.js` | `uncited_confidence` |
 | `service/sweep-checks.js` | The handling above, `uncitedFormatProblems()`, the `uncited_check` run check |
 | `service/run-extract.js` | An uncited line in the funnel, so a past batch can be measured with no model calls |
-| `main.js` | The setting, `articleUncited()`, `runReportUncitedCheck()`, the report section, "Check uncited text", and strings in all four tables (§ The userscript) |
+| `main.js` | The setting, `articleUncited()`, `runReportUncitedCheck()`, the report section, and strings in all five tables (§ The userscript) |
 | `scripts/sync-main.js` | `uncited.js` and `uncited-check.js` in `CORE_ORDER` |
 
 Both core modules are browser-safe and prefix their top-level names, ready for
@@ -326,8 +337,9 @@ never merged into `dataset.json`.
    sweep with `--uncited-check` on Lift Wing, and hand-check every finding.
 4. **The evaluation set** above, and a model comparison on it.
 5. **Userscript**, behind a setting that is off by default and on its own
-   model (§ The userscript). Done, ahead of 4, because it is opt-in. Turning
-   it on by default, exporting its findings, or logging them waits on 4.
+   model, as a phase of Verify All with a report section like the lead's
+   (§ The userscript). Done, ahead of 4, because it is opt-in. Turning it on by
+   default, exporting its findings, or logging them waits on 4.
 
 ## Alternatives considered
 

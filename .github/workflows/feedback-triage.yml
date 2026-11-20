@@ -1,0 +1,105 @@
+name: Feedback triage
+
+# Nightly: export rated checks from Neon, re-read new ones with an
+# independent model, and add them to benchmark/dataset_field.json on main.
+# Agreed labels are accepted as they land; the rest wait, out of scoring, for
+# the weekly digest (feedback-digest.yml). See feedback-loop/README.md.
+#
+# Needs (Settings > Secrets and variables > Actions):
+#   NEON_LOOP_DATABASE_URL  secret: a read-only role's connection string
+#   ANTHROPIC_API_KEY       secret: already used by the talk-page scraper
+#   ADJUDICATOR_MODEL       variable, optional: overrides the default model
+
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: Cases to triage this run (disputed first)
+        default: '40'
+      dry_run:
+        description: Fetch and tag only, no model calls, nothing committed
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+# Shared with feedback-commands.yml: both write the field set.
+concurrency:
+  group: feedback-field-set
+  cancel-in-progress: false
+
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Export rated checks from Neon
+        id: export
+        env:
+          NEON_LOOP_DATABASE_URL: ${{ secrets.NEON_LOOP_DATABASE_URL }}
+        run: |
+          if [ -z "$NEON_LOOP_DATABASE_URL" ]; then
+            echo "::notice::NEON_LOOP_DATABASE_URL is not set; nothing to triage."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          command -v psql >/dev/null || { sudo apt-get update -q && sudo apt-get install -y -q postgresql-client; }
+          psql "$NEON_LOOP_DATABASE_URL" -X -q -At -v ON_ERROR_STOP=1 -v since=2000-01-01 \
+            -f feedback-loop/sql/cases.sql > "$RUNNER_TEMP/cases.json"
+          node -e 'console.log(`${JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).length} rated checks`)' "$RUNNER_TEMP/cases.json"
+
+      - name: Triage
+        id: triage
+        if: steps.export.outputs.skip != 'true'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ADJUDICATOR_MODEL: ${{ vars.ADJUDICATOR_MODEL }}
+        run: |
+          node feedback-loop/run-triage.js --cases "$RUNNER_TEMP/cases.json" \
+            --limit "${{ inputs.limit || '40' }}" \
+            --report "$RUNNER_TEMP/triage-report.md" \
+            ${{ inputs.dry_run && '--dry-run' || '' }}
+
+      - name: Report
+        if: ${{ !cancelled() && steps.export.outputs.skip != 'true' }}
+        run: |
+          if [ -f "$RUNNER_TEMP/triage-report.md" ]; then cat "$RUNNER_TEMP/triage-report.md" >> "$GITHUB_STEP_SUMMARY"; fi
+
+      - name: Keep the report
+        if: ${{ !cancelled() && steps.export.outputs.skip != 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: feedback-triage-report
+          path: ${{ runner.temp }}/triage-report.md
+          if-no-files-found: ignore
+
+      # Also runs after a halt (exit 2): what was triaged before the model
+      # refused is still worth keeping. Only from main: a run started on
+      # another branch would push that branch's commits to main with it.
+      - name: Commit to main
+        if: ${{ !cancelled() && steps.triage.outputs.changed == 'true' && github.ref == 'refs/heads/main' }}
+        env:
+          ADDED: ${{ steps.triage.outputs.added }}
+          ACCEPTED: ${{ steps.triage.outputs.accepted }}
+          HELD: ${{ steps.triage.outputs.held }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add benchmark/dataset_field.json
+          git commit -q -m "Feedback triage $(date -u +%F): $ADDED added, $ACCEPTED accepted, $HELD waiting"
+          for delay in 2 4 8 16; do
+            git pull -q --rebase origin main && git push -q origin HEAD:main && exit 0
+            sleep "$delay"
+          done
+          exit 1

@@ -4,6 +4,7 @@ import {
     verifyQuote,
     normalizeForMatch,
     quoteExpectedFor,
+    displayedQuote,
     QUOTE_STATUSES,
     QUOTE_STATUS_LIST,
     VERIFIED_STATUSES,
@@ -136,6 +137,38 @@ test('quoteExpectedFor: contradiction expects a quote, omission does not', () =>
 
 test('quoteExpectedFor: source unavailable never expects a quote', () => {
     assert.equal(quoteExpectedFor('SOURCE UNAVAILABLE', null), false);
+});
+
+// --- displayedQuote ---
+//
+// Since PROMPT_VERSION v4 the model quotes before it decides, and on an
+// omission it often quotes a passage that is in the source but proves
+// nothing. displayedQuote() is what keeps that passage off the screen.
+
+const LOCATED = { verifiedText: 'The bridge opened in 2002.' };
+
+test('displayedQuote: shows the located text for verdicts a passage decides', () => {
+    assert.equal(displayedQuote(LOCATED, 'SUPPORTED', null), LOCATED.verifiedText);
+    assert.equal(displayedQuote(LOCATED, 'PARTIALLY SUPPORTED', null), LOCATED.verifiedText);
+    assert.equal(displayedQuote(LOCATED, 'NOT SUPPORTED', 'contradiction'), LOCATED.verifiedText);
+});
+
+test('displayedQuote: hides a located quote on an omission or an unavailable source', () => {
+    assert.equal(displayedQuote(LOCATED, 'NOT SUPPORTED', 'omission'), '');
+    assert.equal(displayedQuote(LOCATED, 'NOT SUPPORTED', null), '', 'no reason_type is not a contradiction');
+    assert.equal(displayedQuote(LOCATED, 'SOURCE UNAVAILABLE', null), '');
+});
+
+test('displayedQuote: accepts the verdict in any case, as models and stored results carry it', () => {
+    assert.equal(displayedQuote(LOCATED, 'Not supported', 'contradiction'), LOCATED.verifiedText);
+    assert.equal(displayedQuote(LOCATED, 'not_supported', 'omission'), '');
+    assert.equal(displayedQuote(LOCATED, 'Supported', null), LOCATED.verifiedText);
+});
+
+test('displayedQuote: never shows more than verifyQuote located', () => {
+    const check = verifyQuote('The bridge opened in 2002.', 'A sentence the source never contained.');
+    assert.equal(displayedQuote(check, 'SUPPORTED', null), '');
+    assert.equal(displayedQuote(null, 'SUPPORTED', null), '');
 });
 
 // --- PDF / OCR line-break hyphenation -----------------------------------

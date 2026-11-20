@@ -7,7 +7,10 @@ import {
     shouldSkipCollective,
     hasUnreadSource,
     mergeReportUnits,
+    isJudgedUnavailable,
+    JUDGED_UNAVAILABLE_REASON,
 } from '../core/groups.js';
+import { assembleGroupSources } from '../core/prompts.js';
 
 const withContent = body => `Source URL: https://example.com\n\nSource Content:\n${body}`;
 
@@ -67,7 +70,7 @@ test('groupSourceEntries defaults missing fields to null', () => {
         [{ citationNumber: '9' }],
         () => ({ key: 'k' })
     );
-    assert.deepEqual(entries, [{ citationNumbers: ['9'], url: null, content: null, error: null, status: null }]);
+    assert.deepEqual(entries, [{ citationNumbers: ['9'], url: null, citation: null, content: null, error: null, status: null }]);
 });
 
 test('shouldSkipCollective is true with zero available sources', () => {
@@ -161,4 +164,67 @@ test('hasUnreadSource: any source with no usable text, including a header with a
         [{ citationNumber: 3 }, { citationNumber: 3 }],
         () => ({ key: 'same', content: withContent('a') })
     )), false);
+});
+
+// Garbage [44][45], 2026-11-17: ProQuest returned a login page, Springer a
+// paywall preview. Both fetched fine, both members' own checks said SOURCE
+// UNAVAILABLE, and the combined check still ran and said PARTIALLY SUPPORTED
+// on the preview's abstract.
+test('a source its own check judged unavailable counts as unread for the group', () => {
+    const entries = groupSourceEntries([
+        { citationNumber: '44', url: 'https://proquest.example/x' },
+        { citationNumber: '45', url: 'https://springer.example/y' },
+    ], m => ({
+        key: m.url, url: m.url,
+        content: withContent(m.citationNumber === '44' ? 'Login required.' : 'Abstract: thrift stores, flea markets…'),
+        status: 200, error: null,
+        judgedUnavailable: true,
+    }));
+    assert.ok(shouldSkipCollective(entries), 'no source left to combine');
+    assert.ok(hasUnreadSource(entries));
+    for (const e of entries) {
+        assert.equal(e.content, null);
+        assert.equal(e.status, null, 'not shown to the model as "HTTP 200"');
+        assert.equal(e.error, JUDGED_UNAVAILABLE_REASON);
+    }
+});
+
+test('with two readable sources left, the collective still runs and labels the judged-unavailable one', () => {
+    const entries = groupSourceEntries([
+        { citationNumber: '1', url: 'https://a.example' },
+        { citationNumber: '2', url: 'https://b.example' },
+        { citationNumber: '3', url: 'https://paywall.example' },
+    ], m => ({
+        key: m.url, url: m.url, content: withContent(`PAGE ${m.citationNumber}`), status: 200,
+        judgedUnavailable: m.citationNumber === '3',
+    }));
+    assert.equal(shouldSkipCollective(entries), false);
+    assert.ok(hasUnreadSource(entries));
+    const { text } = assembleGroupSources(entries);
+    assert.match(text, /PAGE 1/);
+    assert.match(text, /PAGE 2/);
+    assert.doesNotMatch(text, /PAGE 3/, "the preview's text is not sent");
+    assert.ok(text.includes(`[This source could not be retrieved: ${JUDGED_UNAVAILABLE_REASON}]`));
+});
+
+test('one member judging a shared source unavailable is enough, whichever member comes first', () => {
+    for (const first of [true, false]) {
+        const entries = groupSourceEntries([
+            { citationNumber: '1', url: 'https://a.example' },
+            { citationNumber: '2', url: 'https://a.example' },
+        ], m => ({
+            key: m.url, url: m.url, content: withContent('text'), status: 200,
+            judgedUnavailable: (m.citationNumber === '1') === first,
+        }));
+        assert.equal(entries.length, 1);
+        assert.equal(entries[0].content, null);
+    }
+});
+
+test('isJudgedUnavailable: only a SOURCE UNAVAILABLE verdict, never an ERROR', () => {
+    assert.ok(isJudgedUnavailable('SOURCE UNAVAILABLE'));
+    assert.ok(isJudgedUnavailable('Source unavailable'));
+    for (const v of ['ERROR', 'SKIPPED', 'SUPPORTED', 'PARTIALLY SUPPORTED', 'NOT SUPPORTED', null, undefined]) {
+        assert.equal(isJudgedUnavailable(v), false, String(v));
+    }
 });

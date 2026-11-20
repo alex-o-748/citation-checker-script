@@ -125,6 +125,9 @@ export function toCitation(row) {
         claimText: row.claim_text,
         citationNumber: row.citation_number ?? null,
         url: row.source_url ?? null,
+        // benchmark/add_citation_text.js's footnote text; absent on rows
+        // and snapshots extracted before it existed.
+        referenceText: row.citation_text ?? null,
         groupId: null,
         source: hasSource
             ? {
@@ -173,6 +176,12 @@ export async function runReplay(opts, {
     stderr.write(`replay: ${rows.length} row(s) from ${opts.dataset}\n`);
 
     const titles = [...new Set(rows.map(r => r.article_title))];
+    // Redirects are followed (service/wikipedia-pageids.js), which is what
+    // replay wants: a row's oldid was a revision of the article, and on a
+    // rename the article keeps its page id while the old title becomes a new
+    // redirect page. The redirect stub's id would pair the pinned oldid with
+    // a page it never belonged to. The row's own title and oldid are still
+    // what the finding records.
     let pageIds;
     try {
         pageIds = await resolvePageIdsFn(titles);
@@ -180,7 +189,10 @@ export async function runReplay(opts, {
         stderr.write(`replay: could not resolve page IDs: ${error.message}\n`);
         return 1;
     }
-    stderr.write(`replay: resolved ${pageIds.size}/${titles.length} article title(s) to page IDs\n`);
+    // Counted over the requested titles, not pageIds.size: the map also keys
+    // normalized and redirect-target forms, which would overcount.
+    const resolvedCount = titles.filter(title => pageIds.has(title)).length;
+    stderr.write(`replay: resolved ${resolvedCount}/${titles.length} article title(s) to page IDs\n`);
 
     let connection = null;
     let queryFn = null;
@@ -220,7 +232,9 @@ export async function runReplay(opts, {
 
             let verification;
             try {
-                verification = await verifyCitation(citation.claimText, citation.source, { callModel });
+                verification = await verifyCitation(citation.claimText, citation.source, {
+                    callModel, citationText: citation.referenceText, sourceUrl: citation.url,
+                });
             } catch (error) {
                 // Halts on ANY error, not just ProviderAuthError — see the
                 // matching comment on run-sweep.js's describeHalt() for why a

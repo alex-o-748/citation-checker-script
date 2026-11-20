@@ -68,11 +68,12 @@ export function uncitedChunkSize(provider) {
 }
 
 // The provider a front end runs this check on unless the editor picks the
-// one their citation checks use. Not the keyless default provider
-// (core/models.js's DEFAULT_PROVIDER, gpt-oss-20b): on the 2026-10-23 smoke
-// test it flagged 14 of 98 correct sentences against Lift Wing Qwen's 5, and
-// confidently denied true facts. Keyless too, so nothing is lost by it.
-// docs/design-plans/2026-10-23-uncited-text-check.md.
+// one their citation checks use. The same as core/models.js's
+// DEFAULT_PROVIDER since 2026-10-24, but kept apart from the sidebar's choice
+// on purpose: an editor who switches the citation checks to gpt-oss-20b still
+// gets Lift Wing here. On the 2026-10-23 smoke test gpt-oss-20b flagged 14 of
+// 98 correct sentences against Lift Wing Qwen's 5, and confidently denied
+// true facts. docs/design-plans/2026-10-23-uncited-text-check.md.
 export const UNCITED_DEFAULT_PROVIDER = 'liftwing';
 
 // The paragraph text shown before a chunk's first statement, at most.
