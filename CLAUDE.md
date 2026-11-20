@@ -577,6 +577,10 @@ check, `core/lead-check.js`), and otherwise the model's general knowledge
 - **The action is always "find a source".** The model's idea of the right value
   stays in its comment and is never offered as an edit.
 
+The lead is left out whenever the article has a body, so with the lead check
+off (the setting, or no `--lead-check`) uncited lead sentences are checked by
+nothing. A known gap, listed in the design doc.
+
 On the 2026-10-23 smoke test (9 injected errors), Qwen3.6-27B caught 8 with 5
 false flags, while gpt-oss-20b (the userscript's default until #389) caught 7
 with 14.

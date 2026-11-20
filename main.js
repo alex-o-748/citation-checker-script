@@ -4922,20 +4922,33 @@ function generateUncitedUserPrompt({ articleTitle, opening, paragraphs, statemen
     return lines.join('\n');
 }
 
-function uncitedExtractJson(text) {
+// The issue list in a model's answer, or null. The answer may wrap its JSON
+// in a fence or in prose, and the prose may itself hold brackets or braces
+// ("Statement [3] looks wrong: {...}"), so each '{' or '[' is tried as the
+// start, up to the last matching closer, until one parses into a list. A
+// bare array is accepted too: some models drop the wrapper.
+function uncitedIssueList(text) {
     const trimmed = (text || '').trim();
     const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
     const body = fenced ? fenced[1].trim() : trimmed;
-    const object = body.indexOf('{');
-    const array = body.indexOf('[');
-    // A bare array is accepted too: some models drop the wrapper.
-    if (array !== -1 && (object === -1 || array < object)) {
-        const end = body.lastIndexOf(']');
-        if (end > array) return body.slice(array, end + 1);
+    const listOf = parsed => (Array.isArray(parsed)
+        ? parsed
+        : (parsed && typeof parsed === 'object'
+            ? (Array.isArray(parsed.issues) ? parsed.issues : Object.values(parsed).find(Array.isArray))
+            : null));
+    for (let start = 0; start < body.length; start++) {
+        const open = body[start];
+        if (open !== '{' && open !== '[') continue;
+        const end = body.lastIndexOf(open === '{' ? '}' : ']');
+        if (end <= start) continue;
+        try {
+            const list = listOf(JSON.parse(body.slice(start, end + 1)));
+            if (Array.isArray(list)) return list;
+        } catch {
+            // Not JSON from here; try the next opening bracket.
+        }
     }
-    const end = body.lastIndexOf('}');
-    if (object !== -1 && end > object) return body.slice(object, end + 1);
-    return body;
+    return null;
 }
 
 /**
@@ -4943,24 +4956,15 @@ function uncitedExtractJson(text) {
  * `{ ok: false, error: 'parse_error' }`. Each issue is
  * `{ id, excerpt, comments, confidence }`. An empty list is a valid answer.
  *
- * Lenient about shape (`{"issues": [...]}`, a bare array, string ids) and
- * strict about content: an issue without a usable id, or with a confidence
- * other than high or medium, is left out. A model that reports a statement
- * as "low" confidence was told not to report it at all.
+ * Lenient about shape (`{"issues": [...]}`, a bare array, string ids, prose
+ * around the JSON, brackets in that prose) and strict about content: an issue
+ * without a usable id, or with a confidence other than high or medium, is
+ * left out. A model that reports a statement as "low" confidence was told not
+ * to report it at all.
  */
 function parseUncitedCheckResult(text) {
-    let parsed;
-    try {
-        parsed = JSON.parse(uncitedExtractJson(text));
-    } catch {
-        return { ok: false, error: 'parse_error' };
-    }
-    const raw = Array.isArray(parsed)
-        ? parsed
-        : (parsed && typeof parsed === 'object'
-            ? (Array.isArray(parsed.issues) ? parsed.issues : Object.values(parsed).find(Array.isArray))
-            : null);
-    if (!Array.isArray(raw)) return { ok: false, error: 'parse_error' };
+    const raw = uncitedIssueList(text);
+    if (!raw) return { ok: false, error: 'parse_error' };
 
     const issues = [];
     for (const item of raw) {
@@ -5376,6 +5380,8 @@ function useToolforgeSourceFetcher() {
             '{count} phrases sur {total} peut-être fausses',
         'nothing found in {total} sentences':
             'rien trouvé dans {total} phrases',
+        'nothing found in {checked} of {total} sentences':
+            'rien trouvé dans {checked} phrases sur {total}',
         'Checked with {model}, against its general knowledge rather than a source. A finding is a reason to look for a source before changing anything.':
             'Vérifié avec {model}, à partir de ses connaissances générales et non d\'une source. Un signalement est une raison de chercher une source avant de modifier quoi que ce soit.',
         'Only the first {count} of {total} sentences with no citation were checked.':
@@ -5784,6 +5790,8 @@ function useToolforgeSourceFetcher() {
             '{count} de {total} oraciones pueden ser erróneas',
         'nothing found in {total} sentences':
             'nada encontrado en {total} oraciones',
+        'nothing found in {checked} of {total} sentences':
+            'nada encontrado en {checked} de {total} oraciones',
         'Checked with {model}, against its general knowledge rather than a source. A finding is a reason to look for a source before changing anything.':
             'Revisado con {model}, a partir de su conocimiento general y no de una fuente. Un hallazgo es motivo para buscar una fuente antes de cambiar nada.',
         'Only the first {count} of {total} sentences with no citation were checked.':
@@ -6188,6 +6196,8 @@ function useToolforgeSourceFetcher() {
             'возможно, неверно: {count} из {total}',
         'nothing found in {total} sentences':
             'ничего не найдено (предложений: {total})',
+        'nothing found in {checked} of {total} sentences':
+            'ничего не найдено (проверено предложений: {checked} из {total})',
         'Checked with {model}, against its general knowledge rather than a source. A finding is a reason to look for a source before changing anything.':
             'Проверено моделью {model} по её общим знаниям, а не по источнику. Найденное — повод поискать источник, прежде чем что-либо менять.',
         'Only the first {count} of {total} sentences with no citation were checked.':
@@ -6600,6 +6610,8 @@ function useToolforgeSourceFetcher() {
             '{count} מתוך {total} משפטים עלולים להיות שגויים',
         'nothing found in {total} sentences':
             'לא נמצא דבר ב־{total} משפטים',
+        'nothing found in {checked} of {total} sentences':
+            'לא נמצא דבר ב־{checked} מתוך {total} משפטים',
         'Checked with {model}, against its general knowledge rather than a source. A finding is a reason to look for a source before changing anything.':
             'נבדק באמצעות {model}, מול הידע הכללי שלו ולא מול מקור. ממצא הוא סיבה לחפש מקור לפני שמשנים משהו.',
         'Only the first {count} of {total} sentences with no citation were checked.':
@@ -6976,6 +6988,8 @@ function useToolforgeSourceFetcher() {
             '{count} van de {total} zinnen mogelijk onjuist',
         'nothing found in {total} sentences':
             'niets gevonden in {total} zinnen',
+        'nothing found in {checked} of {total} sentences':
+            'niets gevonden in {checked} van de {total} zinnen',
         'Checked with {model}, against its general knowledge rather than a source. A finding is a reason to look for a source before changing anything.':
             'Gecontroleerd met {model}, op basis van algemene kennis en niet van een bron. Een bevinding is een reden om een bron te zoeken voordat je iets wijzigt.',
         'Only the first {count} of {total} sentences with no citation were checked.':
@@ -12483,8 +12497,13 @@ function useToolforgeSourceFetcher() {
             if (uncited.state === 'pending') return this.t('runs after the citations');
             if (uncited.state === 'running') return this.t('checking, {done} of {total}', { done: uncited.done || 0, total });
             const count = (uncited.findings || []).length;
-            return count
-                ? this.t('{count} of {total} sentences may be wrong', { count, total })
+            if (count) return this.t('{count} of {total} sentences may be wrong', { count, total });
+            // A call that failed, or a Stop part-way, leaves sentences
+            // unread: "nothing found" then covers only those that were read,
+            // and the header says so, since it is all a closed section shows.
+            const checked = (uncited.done || 0) - (uncited.unchecked || []).length;
+            return checked < total
+                ? this.t('nothing found in {checked} of {total} sentences', { checked: Math.max(0, checked), total })
                 : this.t('nothing found in {total} sentences', { total });
         }
 

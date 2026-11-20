@@ -136,6 +136,9 @@ test('the section header says where the check is, in the lead check\'s words whe
     assert.equal(h.uncitedStatusText(state({ state: 'running', done: 2 })), 'checking, 2 of 3');
     assert.equal(h.uncitedStatusText(state({ state: 'done', done: 3 })), 'nothing found in 3 sentences');
     assert.equal(h.uncitedStatusText(state({ state: 'done', done: 3, findings: [{ index: 0 }, { index: 2 }] })), '2 of 3 sentences may be wrong');
+    assert.equal(h.uncitedStatusText(state({ state: 'done', done: 3, unchecked: [{ index: 0 }, { index: 1 }, { index: 2 }] })),
+        'nothing found in 0 of 3 sentences', 'every call failed: not "nothing found in 3"');
+    assert.equal(h.uncitedStatusText(state({ state: 'done', done: 1 })), 'nothing found in 1 of 3 sentences', 'stopped part-way');
 });
 
 function render(h, doc, uncited) {

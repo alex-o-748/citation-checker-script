@@ -177,20 +177,33 @@ export function generateUncitedUserPrompt({ articleTitle, opening, paragraphs, s
     return lines.join('\n');
 }
 
-function uncitedExtractJson(text) {
+// The issue list in a model's answer, or null. The answer may wrap its JSON
+// in a fence or in prose, and the prose may itself hold brackets or braces
+// ("Statement [3] looks wrong: {...}"), so each '{' or '[' is tried as the
+// start, up to the last matching closer, until one parses into a list. A
+// bare array is accepted too: some models drop the wrapper.
+function uncitedIssueList(text) {
     const trimmed = (text || '').trim();
     const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
     const body = fenced ? fenced[1].trim() : trimmed;
-    const object = body.indexOf('{');
-    const array = body.indexOf('[');
-    // A bare array is accepted too: some models drop the wrapper.
-    if (array !== -1 && (object === -1 || array < object)) {
-        const end = body.lastIndexOf(']');
-        if (end > array) return body.slice(array, end + 1);
+    const listOf = parsed => (Array.isArray(parsed)
+        ? parsed
+        : (parsed && typeof parsed === 'object'
+            ? (Array.isArray(parsed.issues) ? parsed.issues : Object.values(parsed).find(Array.isArray))
+            : null));
+    for (let start = 0; start < body.length; start++) {
+        const open = body[start];
+        if (open !== '{' && open !== '[') continue;
+        const end = body.lastIndexOf(open === '{' ? '}' : ']');
+        if (end <= start) continue;
+        try {
+            const list = listOf(JSON.parse(body.slice(start, end + 1)));
+            if (Array.isArray(list)) return list;
+        } catch {
+            // Not JSON from here; try the next opening bracket.
+        }
     }
-    const end = body.lastIndexOf('}');
-    if (object !== -1 && end > object) return body.slice(object, end + 1);
-    return body;
+    return null;
 }
 
 /**
@@ -198,24 +211,15 @@ function uncitedExtractJson(text) {
  * `{ ok: false, error: 'parse_error' }`. Each issue is
  * `{ id, excerpt, comments, confidence }`. An empty list is a valid answer.
  *
- * Lenient about shape (`{"issues": [...]}`, a bare array, string ids) and
- * strict about content: an issue without a usable id, or with a confidence
- * other than high or medium, is left out. A model that reports a statement
- * as "low" confidence was told not to report it at all.
+ * Lenient about shape (`{"issues": [...]}`, a bare array, string ids, prose
+ * around the JSON, brackets in that prose) and strict about content: an issue
+ * without a usable id, or with a confidence other than high or medium, is
+ * left out. A model that reports a statement as "low" confidence was told not
+ * to report it at all.
  */
 export function parseUncitedCheckResult(text) {
-    let parsed;
-    try {
-        parsed = JSON.parse(uncitedExtractJson(text));
-    } catch {
-        return { ok: false, error: 'parse_error' };
-    }
-    const raw = Array.isArray(parsed)
-        ? parsed
-        : (parsed && typeof parsed === 'object'
-            ? (Array.isArray(parsed.issues) ? parsed.issues : Object.values(parsed).find(Array.isArray))
-            : null);
-    if (!Array.isArray(raw)) return { ok: false, error: 'parse_error' };
+    const raw = uncitedIssueList(text);
+    if (!raw) return { ok: false, error: 'parse_error' };
 
     const issues = [];
     for (const item of raw) {

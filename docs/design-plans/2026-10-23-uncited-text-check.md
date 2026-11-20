@@ -76,6 +76,11 @@ Known gaps, all in the safe direction (a sentence missed, never misreported):
   citation. The earlier sentences of a multi-sentence span count as cited here
   but are checked by nothing in the batch. That is a property of sentence
   scope, not of this rule.
+- **With the lead check off**, uncited lead sentences are checked by nothing:
+  this check leaves the lead out whenever the article has a body, whether or
+  not the lead check runs (the userscript's lead setting, the batch's
+  `--lead-check`). Reading the lead here when no lead check runs would close
+  it, at the cost of a result that depends on that setting.
 - **Articles with no citations at all** are skipped by the sweep before any
   check runs (`ARTICLE_OUTCOMES.NO_CITATIONS`). Picked batches rarely contain
   them. They are the case this check would help most, and a separate change.

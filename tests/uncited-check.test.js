@@ -116,6 +116,13 @@ test('parse: the object form, a bare array, a fenced answer, string ids', () => 
     }
 });
 
+test('parse: brackets or braces in prose before the JSON don\'t hide the answer', () => {
+    const issue = { id: 3, excerpt: 'x', comments: 'c', confidence: 'high' };
+    assert.deepEqual(parseUncitedCheckResult(`Statement [3] looks wrong: ${JSON.stringify({ issues: [issue] })}`),
+        { ok: true, issues: [issue] });
+    assert.deepEqual(parseUncitedCheckResult('Checked {1..4}. {"issues": []}'), { ok: true, issues: [] });
+});
+
 test('parse: nothing found is a valid answer; low confidence and unusable ids are left out', () => {
     assert.deepEqual(parseUncitedCheckResult('{"issues": []}'), { ok: true, issues: [] });
     const parsed = parseUncitedCheckResult(JSON.stringify({ issues: [
