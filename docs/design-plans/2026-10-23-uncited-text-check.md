@@ -186,16 +186,15 @@ with no setting of its own:
 - **A provider that needs the editor's own key** (Claude, Gemini, OpenAI):
   that provider's model. It is as strong as anything here, and the editor is
   paying for it already.
-- **Any free provider** (Lift Wing, Hugging Face, PublicAI): **GLM 5.2**
-  (`STRONG_FREE_MODEL` in `core/models.js`, `zai-org/GLM-5.2:novita` through
-  the Worker's `/hf`). This check leans on what the model knows, and on the
-  smoke test GLM 5.2 did best of the five models tried (§ What the smoke test
-  found). Its calls draw on the shared Hugging Face credits that the switch to
-  Lift Wing (#389) was made to spare. That cost is a few calls per Verify All,
-  and only for editors who turn the check on.
+- **Any free provider** (Lift Wing, Hugging Face, PublicAI): **Lift Wing
+  Qwen3.8** (`UNCITED_FREE_PROVIDER`), never the free provider's own model,
+  since gpt-oss-20b did worst here.
 
-(Until 2026-11-20 it was a dropdown: Lift Wing by default, or "Same as citation
-checks". GLM 5.2 wasn't reachable through the proxies when that was written.)
+GLM 5.2 was briefly the free choice (2026-11-20), until the re-run below
+showed Qwen3.8 almost as good: 8 of 9 injected errors and no false flag,
+against GLM's 9 and one. Not enough to spend the shared Hugging Face credits
+#389 moved the defaults off. (Before that it was a dropdown: Lift Wing by
+default, or "Same as citation checks".)
 
 It follows the rules #387's report rebuild set for an extra check:
 
@@ -309,11 +308,11 @@ GLM is the first model to give a `medium` (on Graz → Vienna), and its comments
 named the right facts; one of Qwen3.8's credited Augustus De Morgan with what
 Babbage did. Seven articles prove nothing, but every run points the same way.
 
-**Consequences:** the userscript runs this check on GLM 5.2 for any free
-provider and on the editor's own model for a paid one (§ The userscript). It
-is never silently on gpt-oss-20b. The batch uses its `--provider`, Lift Wing
-by default; moving it to GLM 5.2 is a separate decision, since a batch's calls
-would come out of the same shared HF credits at a much larger scale.
+**Consequences:** the userscript runs this check on Lift Wing Qwen3.8 for any
+free provider and on the editor's own model for a paid one (§ The userscript).
+It is never silently on gpt-oss-20b. The batch uses its `--provider`, Lift
+Wing by default. GLM 5.2 is the model to revisit once the evaluation set can
+tell one point of recall from noise.
 
 ## Code
 
@@ -330,7 +329,6 @@ would come out of the same shared HF credits at a much larger scale.
 | `service/sweep-checks.js` | The handling above, `uncitedFormatProblems()`, the `uncited_check` run check |
 | `service/run-extract.js` | An uncited line in the funnel, so a past batch can be measured with no model calls |
 | `main.js` | The setting, `articleUncited()`, `uncitedModel()`, `runReportUncitedCheck()`, the report section, and strings in all five tables (§ The userscript) |
-| `core/models.js` | `STRONG_FREE_MODEL` (GLM 5.2), the free fallback `uncitedModelFor()` picks |
 | `scripts/sync-main.js` | `uncited.js` and `uncited-check.js` in `CORE_ORDER` |
 
 Both core modules are browser-safe and prefix their top-level names, ready for

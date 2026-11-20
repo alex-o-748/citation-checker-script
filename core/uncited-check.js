@@ -27,7 +27,7 @@
 import { withRetry, isSourceTooLargeError, isOutputBudgetError } from './retry.js';
 import { normalizeForMatch, QUOTE_STATUSES } from './quote.js';
 import { COMMENT_LANGUAGE_NAMES } from './prompts.js';
-import { PROVIDERS, STRONG_FREE_MODEL } from './models.js';
+import { PROVIDERS } from './models.js';
 
 // Bump whenever the prompt text changes, same contract as PROMPT_VERSION:
 // tests/uncited-check.test.js pins a hash of the prompt against it.
@@ -68,20 +68,22 @@ export function uncitedChunkSize(provider) {
     return UNCITED_CHUNK_SIZES[provider] ?? UNCITED_CHUNK_SIZE_DEFAULT;
 }
 
-// The model this check runs on, given the provider the citation checks use.
-// An editor who pays for a provider (one that needs their own key) gets that
-// provider's model: it is as strong as anything here. Everyone else gets
-// STRONG_FREE_MODEL rather than their free provider's own model, because this
-// check leans on what the model knows: on the 2026-10-23 smoke test
-// gpt-oss-20b flagged 14 of 98 correct sentences against Qwen3.6's 5, and
-// both denied true facts. Returns `{ provider, model, name }`.
-// docs/design-plans/2026-10-23-uncited-text-check.md.
+// The provider this check runs on for an editor on a free provider: keyless
+// Lift Wing Qwen3.8. On the 2026-11-20 smoke test it caught 8 of 9 injected
+// errors with no false flag; GLM 5.2 caught 9 with one, too small a gain for
+// what it would cost the shared Hugging Face credits. gpt-oss-20b, a free
+// provider an editor can pick, flagged 14 of 98 correct sentences on the
+// 2026-10-23 run, so a free provider's own model is not used.
+export const UNCITED_FREE_PROVIDER = 'liftwing';
+
+// The model this check runs on, given the provider the citation checks use:
+// that provider's own model when the editor pays for it (a provider that needs
+// their own key), else UNCITED_FREE_PROVIDER's. Returns
+// `{ provider, model, name }`. docs/design-plans/2026-10-23-uncited-text-check.md.
 export function uncitedModelFor(providerId) {
-    const provider = PROVIDERS[providerId];
-    if (provider && provider.requiresKey) {
-        return { provider: providerId, model: provider.model, name: provider.name };
-    }
-    return { ...STRONG_FREE_MODEL };
+    const id = PROVIDERS[providerId]?.requiresKey ? providerId : UNCITED_FREE_PROVIDER;
+    const provider = PROVIDERS[id];
+    return { provider: id, model: provider.model, name: provider.name };
 }
 
 // The paragraph text shown before a chunk's first statement, at most.

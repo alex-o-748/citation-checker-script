@@ -11,7 +11,9 @@ import {
 } from '../core/uncited-check.js';
 import { QUOTE_STATUSES } from '../core/quote.js';
 import { groupMaxTokens } from '../core/providers.js';
-import { PROVIDERS, STRONG_FREE_MODEL } from '../core/models.js';
+import { PROVIDERS } from '../core/models.js';
+
+const LIFTWING = { provider: 'liftwing', model: PROVIDERS.liftwing.model, name: PROVIDERS.liftwing.name };
 
 const MAIN_JS = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'main.js');
 const SRC = fs.readFileSync(MAIN_JS, 'utf8');
@@ -92,7 +94,7 @@ test('the setting is off by default, and the model follows the sidebar\'s provid
     const { h } = harness();
     for (const free of ['liftwing', 'huggingface', 'publicai', 'liftwing-safeguard']) {
         h.currentProvider = free;
-        assert.deepEqual(h.uncitedModel(), { ...STRONG_FREE_MODEL }, `${free} is free, so GLM 5.2`);
+        assert.deepEqual(h.uncitedModel(), LIFTWING, `${free} is free, so Lift Wing`);
     }
     for (const paid of ['claude', 'gemini', 'openai']) {
         h.currentProvider = paid;
@@ -129,7 +131,7 @@ const sentences = [
     { index: 1, paragraphIndex: 0, sectionTitle: 'History', text: 'It is <b>painted</b> red.' },
     { index: 2, paragraphIndex: 1, sectionTitle: null, text: 'It cost 40 million.' },
 ];
-const state = extra => ({ sentences, total: 3, model: { ...STRONG_FREE_MODEL }, findings: [], unchecked: [], done: 0, state: 'pending', ...extra });
+const state = extra => ({ sentences, total: 3, model: LIFTWING, findings: [], unchecked: [], done: 0, state: 'pending', ...extra });
 
 test('the section header says where the check is, in the lead check\'s words where they fit', () => {
     const { h } = harness();
@@ -159,7 +161,7 @@ test('a finding is a report row: its verdict, the sentence, the comment, and the
             { index: 2, text: sentences[2].text, sectionTitle: null, excerpt: 'cost 400 million', excerptStatus: 'not-found', comments: '', confidence: 'medium' },
         ],
     }));
-    assert.match(done.querySelector('.sv-section-note').textContent, /^Checked with GLM 5\.2, against its general knowledge rather than a source\./);
+    assert.match(done.querySelector('.sv-section-note').textContent, /^Checked with Lift Wing, against its general knowledge rather than a source\./);
     const rows = [...done.querySelectorAll('.sv-rows > .sv-finding')];
     assert.deepEqual(rows.map(r => r.dataset.uncitedIndex), ['0', '1', '2']);
     assert.ok(rows.every(r => r.classList.contains('sv-uncited-finding') && r.classList.contains('verdict-partial')));
@@ -183,7 +185,7 @@ test('notes: none before it runs; the model once it does; the cap, a stop part-w
         unchecked: [{ index: 1, text: 'x', error: 'error' }],
     })).querySelectorAll('.sv-section-note')].map(n => n.textContent);
     assert.equal(notes.length, 4);
-    assert.match(notes[0], /^Checked with GLM 5\.2/);
+    assert.match(notes[0], /^Checked with Lift Wing/);
     assert.deepEqual(notes.slice(1), [
         'Only the first 3 of 160 sentences with no citation were checked.',
         'Stopped after 2 of 3 sentences.',
@@ -209,7 +211,7 @@ test('the section is a closed .sv-section like the lead check\'s, and only exist
     assert.equal(section.querySelector('.sv-section-status').textContent, 'checking, 1 of 3');
 });
 
-test('with a free provider the phase runs on GLM 5.2 through the HF route, and renders its findings and tokens', async () => {
+test('with a free provider the phase runs on Lift Wing, and renders its findings and tokens', async () => {
     const calls = [];
     const callProviderAPI = async (provider, config) => {
         calls.push({ provider, config });
@@ -219,16 +221,16 @@ test('with a free provider the phase runs on GLM 5.2 through the HF route, and r
         };
     };
     const { h, doc } = harness(ARTICLE, { callProviderAPI });
-    h.currentProvider = 'liftwing';
+    h.currentProvider = 'huggingface';
     h.reportUncited = { ...h.articleUncited(), model: h.uncitedModel(), findings: [], unchecked: [], done: 0, state: 'pending' };
     h.resetReportUncited();
     await h.runReportUncitedCheck(Date.now());
 
     assert.equal(calls.length, 1);
-    assert.equal(calls[0].provider, 'huggingface');
-    assert.equal(calls[0].config.model, STRONG_FREE_MODEL.model);
-    assert.equal(calls[0].config.apiKey, null, 'keyless: the proxy\'s key, unless the editor stored an HF key');
-    assert.equal(calls[0].config.workerBase, 'https://router.example', 'the HF route\'s override applies, whatever the sidebar\'s provider');
+    assert.equal(calls[0].provider, 'liftwing');
+    assert.equal(calls[0].config.model, PROVIDERS.liftwing.model);
+    assert.equal(calls[0].config.apiKey, null, 'keyless');
+    assert.equal(calls[0].config.workerBase, undefined);
     assert.match(calls[0].config.userContent, /^Article: Morrison Bridge$/m);
     assert.match(calls[0].config.userContent, /1\. "It was designed by Gustave Eiffel\."/);
     assert.equal(calls[0].config.systemPrompt, generateUncitedSystemPrompt());

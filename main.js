@@ -105,19 +105,6 @@ const PROVIDER_IDS = Object.freeze(Object.keys(PROVIDERS));
 // once, so existing users stop consuming exhausted shared HF credits.
 const DEFAULT_PROVIDER = 'liftwing';
 
-// A stronger model than the keyless default, still free to the editor: GLM
-// 5.2 through Hugging Face (the Worker's /hf, or the editor's own HF key if
-// they stored one). Not a sidebar provider; a check that needs more than the
-// citation checks' model reaches for it (core/uncited-check.js's
-// uncitedModelFor()). It tied gpt-oss-20b and beat Qwen3.8 on the citation
-// benchmark (docs/three-way-benchmark-2026-11-17.md). Its calls draw on the
-// same shared HF credits the move to Lift Wing was made to spare.
-const STRONG_FREE_MODEL = Object.freeze({
-    provider: 'huggingface',
-    model: 'zai-org/GLM-5.2:novita',
-    name: 'GLM 5.2',
-});
-
 function getProvider(id) {
     return PROVIDERS[id] ?? null;
 }
@@ -4825,20 +4812,22 @@ function uncitedChunkSize(provider) {
     return UNCITED_CHUNK_SIZES[provider] ?? UNCITED_CHUNK_SIZE_DEFAULT;
 }
 
-// The model this check runs on, given the provider the citation checks use.
-// An editor who pays for a provider (one that needs their own key) gets that
-// provider's model: it is as strong as anything here. Everyone else gets
-// STRONG_FREE_MODEL rather than their free provider's own model, because this
-// check leans on what the model knows: on the 2026-10-23 smoke test
-// gpt-oss-20b flagged 14 of 98 correct sentences against Qwen3.6's 5, and
-// both denied true facts. Returns `{ provider, model, name }`.
-// docs/design-plans/2026-10-23-uncited-text-check.md.
+// The provider this check runs on for an editor on a free provider: keyless
+// Lift Wing Qwen3.8. On the 2026-11-20 smoke test it caught 8 of 9 injected
+// errors with no false flag; GLM 5.2 caught 9 with one, too small a gain for
+// what it would cost the shared Hugging Face credits. gpt-oss-20b, a free
+// provider an editor can pick, flagged 14 of 98 correct sentences on the
+// 2026-10-23 run, so a free provider's own model is not used.
+const UNCITED_FREE_PROVIDER = 'liftwing';
+
+// The model this check runs on, given the provider the citation checks use:
+// that provider's own model when the editor pays for it (a provider that needs
+// their own key), else UNCITED_FREE_PROVIDER's. Returns
+// `{ provider, model, name }`. docs/design-plans/2026-10-23-uncited-text-check.md.
 function uncitedModelFor(providerId) {
-    const provider = PROVIDERS[providerId];
-    if (provider && provider.requiresKey) {
-        return { provider: providerId, model: provider.model, name: provider.name };
-    }
-    return { ...STRONG_FREE_MODEL };
+    const id = PROVIDERS[providerId]?.requiresKey ? providerId : UNCITED_FREE_PROVIDER;
+    const provider = PROVIDERS[id];
+    return { provider: id, model: provider.model, name: provider.name };
 }
 
 // The paragraph text shown before a chunk's first statement, at most.
@@ -7551,7 +7540,7 @@ function useToolforgeSourceFetcher() {
                         <div id="verifier-lead-check-container"></div>
                         <div id="verifier-lead-check-note">${this.t('Verify All also checks each sentence of the lead against the rest of the article, since a lead statement may be sourced in the body instead. A lead citation found to support only part of its claim is then set aside rather than counted as a problem. A few extra model calls per article.')}</div>
                         <div id="verifier-uncited-check-container"></div>
-                        <div id="verifier-uncited-check-note">${this.t('Verify All also checks the sentences that have no citation against the model\'s general knowledge, and lists up to three that look wrong, so a source can be found for them. The model can be wrong about a correct sentence, so this is a prompt to look, not a finding. A few extra model calls per article.')} ${this.t('With a free provider this check runs on {model}; with a provider that uses an API key of its own, on that provider\'s model.', { model: STRONG_FREE_MODEL.name })}</div>
+                        <div id="verifier-uncited-check-note">${this.t('Verify All also checks the sentences that have no citation against the model\'s general knowledge, and lists up to three that look wrong, so a source can be found for them. The model can be wrong about a correct sentence, so this is a prompt to look, not a finding. A few extra model calls per article.')} ${this.t('With a free provider this check runs on {model}; with a provider that uses an API key of its own, on that provider\'s model.', { model: uncitedModelFor(UNCITED_FREE_PROVIDER).name })}</div>
                         <div id="verifier-accuracy-note"></div>
                         <div id="verifier-privacy-note">${this.t('Results are logged for research. Your username is not recorded.')}</div>
                         <div id="verifier-settings-done-container"></div>
@@ -12402,7 +12391,7 @@ function useToolforgeSourceFetcher() {
 
         // The model the uncited-text check runs on, { provider, model, name }:
         // the citation checks' own when the editor pays for their provider,
-        // else STRONG_FREE_MODEL (core/uncited-check.js's uncitedModelFor()).
+        // else Lift Wing's (core/uncited-check.js's uncitedModelFor()).
         uncitedModel() {
             return uncitedModelFor(this.currentProvider);
         }
