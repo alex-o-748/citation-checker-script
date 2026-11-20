@@ -567,6 +567,7 @@ Operating notes and setup: `feedback-loop/README.md`. Design:
 - `feedback-triage.yml` (nightly) re-reads newly rated checks with an independent model and commits them to the field set on `main`: agreed labels are accepted as they land, the rest wait out of scoring.
 - `feedback-digest.yml` (weekly) opens one issue with five accepted labels to spot-check and the rows waiting for a decision; `feedback-commands.yml` applies the owner's one-line replies (`a1b2c3d4 ok`, `a1b2c3d4 not supported`, `a1b2c3d4 drop`).
 - `feedback-monitor.yml` (daily) keeps one issue current, and comments only when the set of alerts changes.
+- `feedback-fix-proposer.yml` (weekly) takes the commonest confirmed cause (`proposer.js`), has headless Claude Code draft a fix, benchmarks before and after with the production model, and opens a PR only if the pre-registered `GATE` passes.
 
 Rules the code depends on:
 
@@ -579,6 +580,8 @@ Rules the code depends on:
 - **Only the repository owner's comments are applied**, and the comment body reaches `digest.js` through an environment variable, never interpolated into a shell command.
 - **Each rationale pattern is written once**, in `causes.js`, in regex syntax JS and Postgres share; `causeSql()` compiles it for the monitor. Don't copy a pattern into SQL by hand.
 - **The field set is never pooled with `dataset.json`**: its rows were chosen by disagreement.
+- **`GATE` in `proposer.js` is fixed before an attempt, never tuned to let one through.** Loosening it for a particular proposal makes the gate meaningless.
+- **The proposer's agent never sees its held-out cases and never touches the judge.** It works on a field set without the cause's newest quarter, and an attempt that edits `benchmark/`, `feedback-loop/` or `.github/` is discarded. It has no network, git or GitHub access; the workflow opens the PR, and merging is the owner's.
 - Database access is `psql` in the workflows (a read-only role, `NEON_LOOP_DATABASE_URL`); the Node code reads and writes files and needs no driver.
 
 ## Development Workflow
