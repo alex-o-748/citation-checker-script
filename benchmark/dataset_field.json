@@ -3,17 +3,275 @@
     "name": "Field regression set",
     "description": "Checks editors rated in the userscript, re-fetched and independently re-read. Selected by disagreement, so not representative: never pool with dataset.json. See feedback-loop/README.md.",
     "adjudicator_version": "adj-v1",
-    "updated_at": "2026-11-19T11:48:29.079Z",
+    "updated_at": "2026-11-20T08:09:29.920Z",
     "counts": {
-      "rows": 39,
+      "rows": 43,
       "scoreable": 22,
       "agreed": 20,
       "owner_decided": 2,
-      "needs_owner": 17,
+      "needs_owner": 21,
       "excluded": 3
     }
   },
   "rows": [
+    {
+      "id": "field_fa8376f7",
+      "article_url": "https://zh.wikipedia.org/w/index.php?title=%E5%97%9C%E7%9C%BC%E5%B1%9E&oldid=83460524",
+      "article_title": "嗜眼属",
+      "citation_number": "1",
+      "claim_text": "嗜眼属（学名：Philophthalmus），也称嗜眼吸虫属，是嗜眼科下的一属吸虫。",
+      "claim_container": null,
+      "source_url": "https://web.archive.org/web/20240328072413/http://dailyparasite.blogspot.com/2012/05/philophthalmus-sp.html",
+      "source_text": "Parasite of the Day: Philophthalmus sp. \"So, naturalists observe, a flea has smaller fleas that on him prey; and these have smaller still to bite &#8217;em; and so proceed ad infinitum.\" - Jonathan Swift May 16, 2012 Philophthalmus sp. We have featured many parasitic flukes on this blog, and a part of their life-cycle consists of the free-living stage (called a cercaria) being expelled from its mollusc host (where they are produced asexually), and proceeding to infect the next host. There, they form a cyst and wait to be eaten by the final host. But today's parasite, also a fluke, does something slightly different. Unlike most other trematodes that penetrate and embed themselves inside the host's body, Philophthalmus attaches itself to hard surfaces, which just so happen to be objects that are likely to be swallowed by shorebirds - such as the surface of a shellfish. From my personal experience, this tendency also made them a bit of a nuisance in the lab as they tended to stick to pipette tips and the bottom of plastic petri dishes and had to be scraped off (see the accompanying photo). Not all of the objects that are available for attachment by Philophthalmus would necessarily end up going down the gullet of a bird, however. There is an abundance of small rocks and seaweed in the intertidal environment where Philophthalmus is found - but those are not the usual fare of shorebirds that prefer a more appetising diet of seafood like snails and crabs. A pair of scientists from University of Otago set out to see if Philophthalmus shows preferences for certain types of substrates. First, they surveyed and calculated the exposed surface area of various objects on the mudflats (such as snails, crabs, seaweed, rocks, etc), then estimated the number of Philophthalmus cysts that would be expected to be attached to each of them if the cercariae just distributed themselves evenly across the environment and stuck to whatever they come across first. They also did a series of laboratory experiments to test if Philophthalmus cercariae show any preference for specific types of objects. They found that instead of attaching themselves to whatever that just happened to be laying around, there were a higher number of Philophthalmus cysts on snails than expected given their comparatively small surface area. This makes sense in terms of the parasite's life-cycle as the shell of a live snail is more likely to deliver Philophthalmus to the mouth of a bird than say, bits of rock and seaweed. Additionally, in laboratory experiments, when Philophthalmus cercariae were presented with the type of substrate usually present on the mudflats, they showed a very high tendency to stick themselves to snails, but shunned rocks and the shells of cockles. So why the preference for snails but not cockle shells? Some birds do eat cockles and for some parasites that is how they complete their life-cycle, but when birds such as the oystercatcher eats a cockle, they usually crack open the valves to swallow the flesh (where the parasites are embedded ), leaving the shell behind. Snails, however, are more likely to be eaten whole (with the attached Philophthalmus cysts). Oddly enough, the Otago scientists found very few cysts attached to crabs - which is another staple food for birds. However, a crab tends to go through several molts during its life, and every time it does so, it would leave behind any Philophthalmus cysts which are attached to its carapace, and birds don't usually go around picking up empty crab shells to eat. It is worth pointing out that it would be equally useless for Philophthalmus to attach itself to the shell of a dead snail. Therefore, it is possible that these cercariae are able to detect chemical cues that allow them to distinguish between dead and live snails. Other cercariae are known to be able to respond to a wide range of stimuli , and there no reason to think that Philophthalmus would be all that different - perhaps that would be the next stage of research into this species...so watch this space (or species as the case may be)... Reference: Neal, A.T., and R. Poulin. 2012. Substratum preference of Philophthalmus sp. cercariae for cyst formation under natural and experimental conditions. Journal of Parasitology 98 : 293-298 Posted by Tommy Leung at 9:20&#8239;PM Email This BlogThis! Share to Twitter Share to Facebook Share to Pinterest Labels: snail , trematode No comments: Post a Comment Newer Post Older Post Home Subscribe to: Post Comments (Atom) Tip of the iceberg: an introduction Have you just came across this blog about parasites? To get a brief story on what you've been missing out on, see: Here for the 2018 end-of-year round-up Here for the 2017 end-of-year round-up Here for the 2016 end-of-year round-up Here for the 2015 end-of-year round-up Here for the 2014 end-of-year round-up Here for the 2013 end-of-year round-up Here for the 2012 end-of-year round-up Here for the 2011 end-of-year round-up Here for the 2010 end-of-year round-up Hint: You're just looking at the tip of the iceberg... Parasites and Palaeontology Dinosaurs and other prehistoric animals were also infected with all kinds of different parasites - see this page to find out more! PLEASE NOTE We do not give any medical or veterinary advice. If you think you or your pets have a parasite, please seek the appropriate care you need from your own doctor or veterinarian. Administrators Susan Perkins Tommy Leung Why Parasite of the Day? (If it's not every day...) The United Nations declared 2010 the International Year of Biodiversity. In celebration of the enormous diversity of parasites and to highlight their importance, we created this blog, which showcased a species of parasite every day. Now that 2010 is over, we will continue to add more parasites from time to time, and write about any newly published research on parasite species that we have posted about yet. See this post from the start of 2011 where we discuss the sheer scale of parasite biodiversity, and this post from the end of 2011 pretty much summarizes the mission of this blog. Labels acanthocephalan (18) ant (14) Apicomplexa (25) arthropod (108) aspidogastrean (3) bacteria (14) barnacle (9) bat (7) bee (6) behavior (32) biocontrol (7) bird (52) bivalve (15) blood feeder (73) bot fly (7) brain (7) brood parasite (9) cestode (38) ciliate (2) Conferences (12) copepod (38) crab (15) crocodilian (6) crustacean (72) dog (9) ectoparasite (62) edible (7) elephant (4) eye (11) fish (75) frog (12) fungus (35) hemiparasite (4) holoparasite (14) horse (4) host manipulation (38) human (17) hyperparasite (11) insect (94) isopod (16) leech (13) livestock (14) lizard (8) malaria (9) marsupial (7) microsporidian (5) mite (13) mollusc (27) monogenean (8) mosquito (3) myxozoa (7) nematode (89) nematomorph (6) parasitoid (17) pentastomid (5) plant (26) polychaete (2) poultry (6) protozoan (52) rat (5) reptile (29) rodent (7) shark (27) snail (25) tapeworm (38) tick (8) tongue (1) trematode (88) trypanosome (6) turtle (9) vector (12) virus (3) wasp (18) whale (15) ZOOL329 (28) Search This Blog Blog Archive &#9658;&#160; 2024 (3) &#9658;&#160; March (1) &#9658;&#160; February (1) &#9658;&#160; January (1) &#9658;&#160; 2023 (12) &#9658;&#160; December (1) &#9658;&#160; November (1) &#9658;&#160; October (1) &#9658;&#160; September (1) &#9658;&#160; August (1) &#9658;&#160; July (1) &#9658;&#160; June (1) &#9658;&#160; May (1) &#9658;&#160; April (1) &#9658;&#160; March (1) &#9658;&#160; February (1) &#9658;&#160; January (1) &#9658;&#160; 2022 (12) &#9658;&#160; December (1) &#9658;&#160; November (1) &#9658;&#160; October (1) &#9658;&#160; September (1) &#9658;&#160; August (1) &#9658;&#160; July (1) &#9658;&#160; June (1) &#9658;&#160; May (1) &#9658;&#160; April (1) &#9658;&#160; March (1) &#9658;&#160; February (1) &#9658;&#160; January (1) &#9658;&#160; 2021 (12) &#9658;&#160; December (1) &#9658;&#160; November (1) &#9658;&#160; October (1) &#9658;&#160; September (1) &#9658;&#160; August (1) &#9658;&#160; July (1) &#9658;&#160; June (1) &#9658;&#160; May (1) &#9658;&#160; April (1) &#9658;&#160; March (1) &#9658;&#160; February (1) &#9658;&#160; January (1) &#9658;&#160; 2020 (13) &#9658;&#160; December (1) &#9658;&#160; November (1) &#9658;&#160; October (1) &#9658;&#160; September (2) &#9658;&#160; August (1) &#9658;&#160; July (1) &#9658;&#160; June (1) &#9658;&#160; May (1) &#9658;&#160; April (1) &#9658;&#160; March (1) &#9658;&#160; February (1) &#9658;&#160; January (1) &#9658;&#160; 2019 (13) &#9658;&#160; December (1) &#9658;&#160; November (1) &#9658;&#160; October (1) &#9658;&#160; September (1) &#9658;&#160; August (1) &#9658;&#160; July (1) &#9658;&#160; June (1) &#9658;&#160; May (1) &#9658;&#160; April (1) &#9658;&#160; March (1) &#9658;&#160; February (2) &#9658;&#160; January (1) &#9658;&#160; 2018 (16) &#9658;&#160; December (2) &#9658;&#160; November (1) &#9658;&#160; October (1) &#9658;&#160; September (1) &#9658;&#160; August (3) &#9658;&#160; July (1) &#9658;&#160; June (1) &#9658;&#160; May (1) &#9658;&#160; April (1) &#9658;&#160; March (1) &#9658;&#160; February (2) &#9658;&#160; January (1) &#9658;&#160; 2017 (20) &#9658;&#160; December (2) &#9658;&#160; November (2) &#9658;&#160; October (1) &#9658;&#160; September (1) &#9658;&#160; August (1) &#9658;&#160; July (2) &#9658;&#160; June (2) &#9658;&#160; May (1) &#9658;&#160; April (2) &#9658;&#160; March (2) &#9658;&#160; February (2) &#9658;&#160; January (2) &#9658;&#160; 2016 (26) &#9658;&#160; December (2) &#9658;&#160; November (2) &#9658;&#160; October (2) &#9658;&#160; September (2) &#9658;&#160; August (4) &#9658;&#160; July (2) &#9658;&#160; June (2) &#9658;&#160; May (2) &#9658;&#160; April (2) &#9658;&#160; March (2) &#9658;&#160; February (2) &#9658;&#160; January (2) &#9658;&#160; 2015 (29) &#9658;&#160; December (2) &#9658;&#160; November (2) &#9658;&#160; October (2) &#9658;&#160; September (2) &#9658;&#160; August (7) &#9658;&#160; July (2) &#9658;&#160; June (2) &#9658;&#160; May (2) &#9658;&#160; April (2) &#9658;&#160; March (2) &#9658;&#160; February (2) &#9658;&#160; January (2) &#9658;&#160; 2014 (29) &#9658;&#160; December (2) &#9658;&#160; November (2) &#9658;&#160; October (2) &#9658;&#160; September (2) &#9658;&#160; August (7) &#9658;&#160; July (2) &#9658;&#160; June (2) &#9658;&#160; May (2) &#9658;&#160; April (2) &#9658;&#160; March (2) &#9658;&#160; February (2) &#9658;&#160; January (2) &#9658;&#160; 2013 (26) &#9658;&#160; December (2) &#9658;&#160; November (2) &#9658;&#160; October (2) &#9658;&#160; September (2) &#9658;&#160; August (4) &#9658;&#160; July (2) &#9658;&#160; June (2) &#9658;&#160; May (2) &#9658;&#160; April (2) &#9658;&#160; March (2) &#9658;&#160; February (2) &#9658;&#160; January (2) &#9660;&#160; 2012 (36) &#9658;&#160; December (3) &#9658;&#160; November (2) &#9658;&#160; October (2) &#9658;&#160; September (3) &#9658;&#160; August (4) &#9658;&#160; July (5) &#9658;&#160; June (3) &#9660;&#160; May (3) Macrodasyceras hirsutum Philophthalmus sp. Cuscuta chinensis &#9658;&#160; April (3) &#9658;&#160; March (3) &#9658;&#160; February (2) &#9658;&#160; January (3) &#9658;&#160; 2011 (38) &#9658;&#160; December (4) &#9658;&#160; November (3) &#9658;&#160; October (3) &#9658;&#160; September (3) &#9658;&#160; August (4) &#9658;&#160; July (3) &#9658;&#160; June (2) &#9658;&#160; May (3) &#9658;&#160; April (4) &#9658;&#160; March (2) &#9658;&#160; February (2) &#9658;&#160; January (5) &#9658;&#160; 2010 (365) &#9658;&#160; December (31) &#9658;&#160; November (30) &#9658;&#160; October (31) &#9658;&#160; September (30) &#9658;&#160; August (31) &#9658;&#160; July (31) &#9658;&#160; June (30) &#9658;&#160; May (31) &#9658;&#160; April (30) &#9658;&#160; March (31) &#9658;&#160; February (28) &#9658;&#160; January (31) CONTRIBUTORS 2010-2011 Laura Allen, AMNH Mike Barger, Peru State College Daniel Benesh, Max Planck Kate Bowell, Fort Collins Museum & Discovery Science Center Alistair Dove, The Georgia Aquarium Bryan Falk, AMNH Andrew Forbes, University of California, Davis Andrés Gómez, AMNH Anja Gonchar, Saint-Petersburg State University Craig Gritzen, University of Utah. Steve Jordan, Bucknell University Mike Kinsella, HelmWest Laboratory Sarah Knutie, University of Utah Matt Leslie, Scripps Institute of Oceanography Tommy Leung, University of New England Jessica Light, Texas A&M University Alejandro Oceguera-Figueroa, AMNH Kevin Olival, Wildlife Trust Pete Olson, Natural History Museum, London Sarah Orlofske, University of Colorado, Boulder Kristin Philllips, AMNH Maria Pickering, University of Connecticut Florian Reyda, SUNY Oneonta Mark Siddall, AMNH Holly Tuten, Clemson University Crystal Wiles, SUNY Oneonta Take Your Parasites With You! Check out \" This Week in Parasitism \" - a weekly podcast about parasites! Parasites Down Under For those who are in Australasia and have an interest in parasitology, consider joining the Australian Society for Parasitology here: http://parasite.org.au/ They can also be found on Facebook: http://www.facebook.com/ASParasitology And on Twitter: https://twitter.com/AS_Para Got Parasites? Got parasites? The American Society of Parasitologists is interested. We invite you to share with us your observations, ideas and questions about parasites. Our members and The Journal of Parasitology represent a wide range of research interests including ecology, evolution, systematics, immunology, biochemistry and molecular biology. Please post any aspect of parasitology you wish to share with us on our Facebook Group Page. Please go to our home page at http://asp.unl.edu/ and look for the ASP on Facebook link. We look forward to hearing from you soon. The Membership Committee of ASP Marius Fuentes Spain Hugo Mejia-Madrid Mexico Mike Moser USA If you like this... Animal Review Bug Girl's Blog caterpillarblog Creaturecast Deep Sea News DeepTypeFlow MYRMECOS Not Exactly Rocket Science Nothing in biology makes sense! Oikos Blog Parasite Ecology Science Made Cool Small Things Considered The Artful Amoeba The Echinoblog The Life You (And I) Never Knew The Loom The Tree of Life This Is What A Scientist Looks Like This Week in Evolution virology blog weirdbuglady What's In John's Freezer? Additional Reading - A Few Books About Parasites that We Like Bush, Albert, Gerald Esch and Jacqueline Fernandez. Parasitism: The Diversity and Ecology of Animal Parasites. Cambridge University Press. Combes, Claude. The Art of Being a Parasite. University of Chicago Press. De Kruif, Paul. Microbe Hunters. Houghton Mifflin Harcourt. Desowitz, Robert. New Guinea Tapeworms and Jewish Grandmothers. Norton & Company. Desowitz, Robert. The Malaria Capers: Tales of Parasites and People. Norton and Compay. Karlen, Arno. Biography of a Germ. Pantheon Books. Moore, Janice. Parasites and the Behavior of Animals. Oxford University Press. Poulin, Robert. Evolutionary Ecology of Parasites. Princeton University Press. Poulin, Robert. Parasite Biodiversity. Smithsonian Institution Press. Rohde, Klaus. Marine Parasitology. CSIRO Publishing. Zimmer, Carl. Parasite Rex. Simon & Schuster. Zuk, Marlene. Riddled with Life: Friendly Worms, Ladybug Sex, and the Parasites That Make Us Who We Are. Mariner Books Some Parasite Gear that we Like Parasite Pals Bog Leech's Parasite Buttons, Magnets, etc. Infectious Awareables Scarves and Ties Giant Microbes stuffed toys Grand Total We had over 113,000 unique visitors to the blog in 2010 and more than 161,000 page loads! Thanks to all! Followers",
+      "source_truncated": false,
+      "ground_truth": "Supported",
+      "dataset_version": "field",
+      "extraction_status": "complete",
+      "needs_manual_review": true,
+      "excluded_reason": null,
+      "provenance": {
+        "from": "editor feedback on a logged check (Neon: feedback + verification_logs)",
+        "source_fetched_at": "2026-11-20T08:09:29.917Z",
+        "source_sha256": "3b66e1aecbf89cc5e8afda5c46b5cb372722cae93ab66b0fc67357c7817e1a99"
+      },
+      "field": {
+        "check_id": "fa8376f7",
+        "wiki": "zh.wikipedia.org",
+        "revision_id": 83460524,
+        "checked_at": "2026-11-07T12:53:30.962351+00:00",
+        "tool": {
+          "provider": "liftwing-safeguard",
+          "model": "llm-gpt-oss-safeguard-20b",
+          "verdict": "SOURCE UNAVAILABLE",
+          "reason_type": null,
+          "support_score": 0,
+          "comments": "源文本中没有可用的内容来验证该中文声明。",
+          "source_quote": "",
+          "quote_status": "empty"
+        },
+        "feedback": {
+          "rating": -1,
+          "corrected_verdict": "SUPPORTED",
+          "editor_verdict": "SUPPORTED",
+          "inconsistent": false,
+          "feedback_at": "2026-11-07T12:54:16.297781+00:00",
+          "feedback_rows": 2,
+          "quick_rating": false,
+          "heavy_session": false,
+          "wiki_section": null
+        },
+        "hints": [],
+        "adjudication": {
+          "version": "adj-v1",
+          "model": "claude-opus-5-5",
+          "blind": {
+            "verdict": "PARTIALLY SUPPORTED",
+            "reasonType": null,
+            "evidenceQuote": "But today's parasite, also a fluke, does something slightly different. Unlike most other trematodes that penetrate and embed themselves inside the host's body, Philophthalmus attaches itself to hard surfaces",
+            "explanation": "The source shows that Philophthalmus is a fluke (trematode), which supports the claim that it is a genus of flukes. It never mentions the family Philophthalmidae (嗜眼科) or the alternative name, so the family placement is unsupported.",
+            "quoteStatus": "exact",
+            "verifiedQuote": "But today's parasite, also a fluke, does something slightly different. Unlike most other trematodes that penetrate and embed themselves inside the host's body, Philophthalmus attaches itself to hard surfaces"
+          },
+          "attribution": {
+            "cause": "readable_called_unavailable",
+            "claimedCause": "readable_called_unavailable",
+            "toolVerdictCorrect": false,
+            "editorCorrect": false,
+            "explanation": "The retrieved text is a readable 15,589-character blog post about Philophthalmus, yet the checker called it unavailable instead of judging the claim. The source identifies Philophthalmus as a fluke (trematode) but never names the family Philophthalmidae or the alternative Chinese name. That makes the claim at most partially supported, not fully SUPPORTED as the editor said."
+          },
+          "toolQuoteNow": "empty",
+          "sourceDrift": false,
+          "usage": {
+            "input": 8773,
+            "output": 672,
+            "calls": 2
+          }
+        },
+        "label": {
+          "status": "needs_owner",
+          "proposed_ground_truth": "Supported",
+          "suggested_by": "editor",
+          "reasons": [
+            "the independent reading says PARTIALLY SUPPORTED, the editor SUPPORTED"
+          ],
+          "held": false
+        },
+        "triaged_at": "2026-11-20T08:09:29.917Z"
+      }
+    },
+    {
+      "id": "field_6f2a8fa4",
+      "article_url": "https://en.wikipedia.org/w/index.php?title=Draft%3AColiemore_Harbour&oldid=1384375344",
+      "article_title": "Coliemore Harbour",
+      "citation_number": "16",
+      "claim_text": "The piers were designed by engineer Bindon Blood Stoney and constructed by local contractor John Cunningham, with Cunningham Road and Cunningham Drive in Dalkey named after him.",
+      "claim_container": null,
+      "source_url": "https://www.dia.ie/works/view/50266",
+      "source_text": "Dictionary of Irish Architects Selected: CO. DUBLIN, DALKEY, COLIEMORE HARBOUR Name: STONEY, BINDON BLOOD Building: CO. DUBLIN, DALKEY, COLIEMORE HARBOUR Date: 1868 Nature: New fishing boat piers in course of construction. Plans by BBS. Contrtactor: John Cunningham. Cost:£1853. Refs: IB 10, 15 Sep 1868, 233; B 26, 19 Sep 1868, 692",
+      "source_truncated": false,
+      "ground_truth": "Partially supported",
+      "dataset_version": "field",
+      "extraction_status": "complete",
+      "needs_manual_review": true,
+      "excluded_reason": null,
+      "provenance": {
+        "from": "editor feedback on a logged check (Neon: feedback + verification_logs)",
+        "source_fetched_at": "2026-11-20T08:09:24.039Z",
+        "source_sha256": "33ff55eb85f04099f551ec02215aa6e1b4ba7f89618f58132932ecd111782f55"
+      },
+      "field": {
+        "check_id": "6f2a8fa4",
+        "wiki": "en.wikipedia.org",
+        "revision_id": 1384375344,
+        "checked_at": "2026-11-07T23:31:48.124964+00:00",
+        "tool": {
+          "provider": "liftwing",
+          "model": "llm-qwen38-27b",
+          "verdict": "PARTIALLY SUPPORTED",
+          "reason_type": "omission",
+          "support_score": 60,
+          "comments": "The source confirms that Bindon Blood Stoney (BBS) made the plans and John Cunningham was the contractor for the piers. However, the source does not mention Cunningham Road or Cunningham Drive, nor does it state that they were named after him.",
+          "source_quote": "Plans by BBS. Contrtactor: John Cunningham.",
+          "quote_status": "exact"
+        },
+        "feedback": {
+          "rating": -1,
+          "corrected_verdict": "PARTIALLY SUPPORTED",
+          "editor_verdict": "PARTIALLY SUPPORTED",
+          "inconsistent": true,
+          "feedback_at": "2026-11-07T23:37:01.678501+00:00",
+          "feedback_rows": 2,
+          "quick_rating": false,
+          "heavy_session": false,
+          "wiki_section": null
+        },
+        "hints": [],
+        "adjudication": {
+          "version": "adj-v1",
+          "model": "claude-opus-5-5",
+          "blind": {
+            "verdict": "PARTIALLY SUPPORTED",
+            "reasonType": null,
+            "evidenceQuote": "New fishing boat piers in course of construction. Plans by BBS. Contrtactor: John Cunningham.",
+            "explanation": "The source confirms that the piers were designed by Bindon Blood Stoney and built by contractor John Cunningham. It does not say Cunningham was local, and it does not mention Cunningham Road or Cunningham Drive in Dalkey being named after him.",
+            "quoteStatus": "exact",
+            "verifiedQuote": "New fishing boat piers in course of construction. Plans by BBS. Contrtactor: John Cunningham."
+          },
+          "attribution": {
+            "cause": "tool_correct",
+            "claimedCause": "tool_correct",
+            "toolVerdictCorrect": true,
+            "editorCorrect": true,
+            "explanation": "The short DIA entry confirms that Bindon Blood Stoney drew up the plans and John Cunningham was the contractor. It says nothing about Cunningham being local or about Cunningham Road and Cunningham Drive in Dalkey being named after him, so PARTIALLY SUPPORTED is right, as the independent reviewer also found. The editor's thumbs-down is puzzling, since the verdict the editor chose is the same one the checker gave."
+          },
+          "toolQuoteNow": "exact",
+          "sourceDrift": false,
+          "usage": {
+            "input": 2404,
+            "output": 634,
+            "calls": 2
+          }
+        },
+        "label": {
+          "status": "needs_owner",
+          "proposed_ground_truth": "Partially supported",
+          "suggested_by": "editor",
+          "reasons": [
+            "the editor's feedback contradicts itself"
+          ],
+          "held": false
+        },
+        "triaged_at": "2026-11-20T08:09:24.039Z"
+      }
+    },
+    {
+      "id": "field_2df56b2d",
+      "article_url": "https://en.wikipedia.org/w/index.php?title=Draft%3AMichael_W._Flamm&oldid=1373226508",
+      "article_title": "Michael W. Flamm",
+      "citation_number": "3",
+      "claim_text": "Michael W. Flamm (born April 10, 1964) is an American historian and author best known for his work on post-1945 United States political history.",
+      "claim_container": null,
+      "source_url": "https://time.com/3962718/buckley-uber/",
+      "source_text": "Uber&#x27;s History: Did Bill Buckley Come Up With the Idea in 1965? History Open follow modal Personalized Content History Follow this section to personalize your feed and get instant alerts. Follow Go to your personalized feed WHY FOLLOW? Custom Feed: See the stories that matter most to you. Smart Alerts: Get notified about major news as it happens. Update your preferences in Account Settings Close Did Bill Buckley Dream Up Uber Before There Even Was an Uber? ADD TIME ON GOOGLE by Michael W. Flamm / History News Network Open follow modal Personalized Content Michael W. Flamm / History News Network Follow this author to personalize your feed and get instant alerts. Follow Go to your personalized feed WHY FOLLOW? Custom Feed: See the stories that matter most to you. Smart Alerts: Get notified about major news as it happens. Update your preferences in Account Settings Close Jul 17, 2015 7:00 PM UTC 1962 studio portrait William F Buckley Jr. 1962 studio portrait William F Buckley Jr. Getty Images by Michael W. Flamm / History News Network Open follow modal Personalized Content Michael W. Flamm / History News Network Follow this author to personalize your feed and get instant alerts. Follow Go to your personalized feed WHY FOLLOW? Custom Feed: See the stories that matter most to you. Smart Alerts: Get notified about major news as it happens. Update your preferences in Account Settings Close Jul 17, 2015 7:00 PM UTC History News Network This post is in partnership with the History News Network , the website that puts the news into historical perspective. A version of the article below was originally published at HNN. Correction appended 3:50 p.m. Uber is ubiquitous. From New York to Paris to Mexico City it seeks to transform personal transportation and business delivery in the face of strong opposition from taxi companies and local or state governments. But lost in the blizzard of coverage about the company’s rapid rise to global prominence is the question of who deserves actual credit for the original idea. The surprising answer is the late William F. Buckley Jr., the energetic founder of National Review and the intellectual godfather of modern conservatism, who announced his candidacy for mayor of New York fifty years ago this month. During the campaign, Buckley contended that too often liberals had delivered too many benefits to special interests or voting blocs at the expense of individual citizens. “If, for instance, you give taxi owners the right to limit the number of taxis available in the city,” he told the National Press Club, “people who need taxis to get from where they are to where they want to go can’t find taxis when they most want them.” Advertisement Buckley’s solution was to allow anyone with a driver’s license and without a criminal record to operate a car as a taxi. He also argued that passengers should have the ability to reserve a taxi by telephone for pickup at a designated time and place. It was, in essence, the Uber concept minus the sophisticated technology. Who knows – if Buckley had won the election or taken steps to ensure that he retained the intellectual copyright for his taxi proposal his heirs might now have a legal claim or stock options. At his introductory press conference, Buckley said that he planned to run on the Conservative Party ticket because liberal Congressman John Lindsay had already locked up the Republican nomination. Buckley also stressed that he had entered the race to promote ideas, not get votes. When asked how many he expected to receive, Buckley quipped, “Conservatively speaking, one.” And what would you do, prodded a reporter, if you won? “Demand a recount,” replied Buckley with a grin. Advertisement But in fact he had larger ambitions. A young man – he was not yet forty – of great intelligence, wealth, and ego, Buckley hoped to deny Lindsay, a personal and political rival, the election so that conservatives could resume their march to power in the Republican Party, which the defeat of Goldwater in 1964 had interrupted. Keeping the Democratic Party in control of City Hall also meant that liberals would retain responsibility – and receive blame – for governing New York, which was in a state of crisis due to rising crime, taxes, and unemployment as well as racial tensions from the violent unrest in Harlem and Brooklyn the previous summer. In a column entitled “Mayor, Anyone?” Buckley disparaged Lindsay’s qualifications and his ten-point proposal to revive the city’s economy, which he ridiculed as “sheer and utter rhetorical hokum.” Buckley then introduced his own ten-point program to save New York, which he himself characterized as “half in fun.” Advertisement Taxi Cabs Through the Years View of a hansom cab, parked at the sidewalk, near Madison Square, New York, 1905. PhotoQuest—Getty Images Woman passenger in a 1910 taxi cab, New York. National Motor Museum—Heritage Images/Getty Images Miss Maude Odell, one of the first women taxi drivers in New York. She is cranking car (Hub Taxicab Corporation), 1923. Corbis Advertisement A new stream-lined taxi-cab in New York City in 1934. The new vehicle was roomier and more comfortable for passengers than earlier versions. Planet News Archive—SSPL/Getty Images G.H. Brodie, Assistant to the President of Packard Motor Car Co.; Sam Abramson, President of Yale Taxi Co. in New York; and Robert King, President of Packard Federal Corp. (left to right), pictured with the first postwar taxi, in 1946. One of its features was fitting five forward-facing passengers without the usual &quot;jump seats.&quot; Bettmann—Corbis Representative models of the three makes of autos which meet the new specifications for service as New York taxi cabs get a going-over by officials at the Police Division of Licenses Headquarters, July 15, 1954. Left to right, the new stock model small taxis expected to be on the streets by July 16th are: A Chevrolet, a Plymouth, and a Ford. Bettmann—Corbis Advertisement Two women getting into the first British-built Austin taxi licensed in New York, 1960. Hulton Archive—Getty Images Taxis are seen in mid-Manhattan, New York, Nov. 17, 1970. Marty Lederhandler—AP Photo A checkered cab is pulled over on New York&#x27;s Central Park South, May 4, 1982, right around the time that the Checkered Motor Co. announced it was going out of production. G. Paul Burnett—AP Photo Advertisement Taxis move through a traffic lane in New York City, 1995 James Leynse—Corbis In 2011, the Taxi and Limousine Commission along with New York City Mayor Michael Bloomberg annouced the Nissan NV200 has been chosen as the winner of the Taxi of Tomorrow competition and will become the City’s exclusive taxicab for a decade. City of New York—Getty Imagea Some of the ideas Buckley presented were standard conservative fare, such as establishing enterprise zones in poor communities. Others were reflective of Buckley’s libertarian streak, such as legalizing gambling and drugs (for adults). To reduce traffic congestion and promote better health, Buckley even suggested constructing an elevated bikeway twenty feet wide, which would run twenty feet above Second Avenue from 125th Street to 1st Street. Perhaps he should also receive credit for the High Line Park on Manhattan’s West Side. Advertisement Given the state of the city in 1965, opening the taxi trade to individual competition was not a priority for residents in general or Buckley in particular. Public safety – not personal transportation – was the main issue. But in his mind yellow taxis were an important symbol of how government cartels corrupted the free market, represented state power run amok, and rewarded special interests. Buckley was, nonetheless, a pragmatist who was willing to implement his taxi plan gradually to avoid what has happened recently in New York – the “shock devaluation” of taxi medallions. On Election Day, Buckley earned a respectable 13 percent of the votes cast after polling as high as 20 percent earlier in the fall. He came in third behind Democrat Abe Beame, the city comptroller, and Lindsay, who won and became the first Republican to occupy City Hall in twenty years. Historians disagree as to whether Buckley ultimately helped or hurt Lindsay in the election. But they agree that 1965 was an important moment in the emergence of what Richard Nixon would later call the “Silent Majority,” as large numbers of working-class white ethnics began to desert the Democratic Party. Advertisement “Something was stirring,” wrote Buckley in The Unmaking of a Mayor , his own account of his unlikely run. He was referring to his unexpected appeal among police officers, firefighters, small-business owners, delivery men, office secretaries, elevator operators, and construction workers – “the people who made the city go” according to an aide. But a half century later not even Buckley could have anticipated the dramatic impact that his modest proposal to reform the taxi trade has had in more than 300 cities around the world. Michael W. Flamm is professor of history at Ohio Wesleyan University and author of the forthcoming “In the Heat of the Summer: From the Harlem Riot of 1964 to the War on Crime and America’s Prison Crisis.” Correction: The original version of this story misstated the author’s first name. He is Michael W. Flamm.",
+      "source_truncated": false,
+      "ground_truth": "Supported",
+      "dataset_version": "field",
+      "extraction_status": "complete",
+      "needs_manual_review": true,
+      "excluded_reason": null,
+      "provenance": {
+        "from": "editor feedback on a logged check (Neon: feedback + verification_logs)",
+        "source_fetched_at": "2026-11-20T08:09:21.579Z",
+        "source_sha256": "9bcbbe2d10a4af098886d83c2e26a8577513a4402ea4da43ef2125edd7ceb154"
+      },
+      "field": {
+        "check_id": "2df56b2d",
+        "wiki": "en.wikipedia.org",
+        "revision_id": 1373226508,
+        "checked_at": "2026-11-07T23:38:57.431782+00:00",
+        "tool": {
+          "provider": "liftwing",
+          "model": "llm-qwen38-27b",
+          "verdict": "NOT SUPPORTED",
+          "reason_type": "omission",
+          "support_score": 10,
+          "comments": "The source text identifies Michael W. Flamm as a professor of history at Ohio Wesleyan University and an author, but it does not mention his birth date (April 10, 1964), his nationality (American), or that he is best known for post-1945 US political history. The article is about William F. Buckley Jr., not Flamm's biography.",
+          "source_quote": "",
+          "quote_status": "empty"
+        },
+        "feedback": {
+          "rating": -1,
+          "corrected_verdict": "SUPPORTED",
+          "editor_verdict": "SUPPORTED",
+          "inconsistent": false,
+          "feedback_at": "2026-11-07T23:43:06.609889+00:00",
+          "feedback_rows": 2,
+          "quick_rating": false,
+          "heavy_session": false,
+          "wiki_section": null
+        },
+        "hints": [
+          "citation_metadata",
+          "uncheckable_omission"
+        ],
+        "adjudication": {
+          "version": "adj-v1",
+          "model": "claude-opus-5-5",
+          "blind": {
+            "verdict": "PARTIALLY SUPPORTED",
+            "reasonType": null,
+            "evidenceQuote": "Michael W. Flamm is professor of history at Ohio Wesleyan University and author of the forthcoming “In the Heat of the Summer: From the Harlem Riot of 1964 to the War on Crime and America’s Prison Crisis.”",
+            "explanation": "The source confirms that Flamm is a historian and an author. It does not give his birth date (April 10, 1964), and it does not say he is best known for work on post-1945 U.S. political history.",
+            "quoteStatus": "exact",
+            "verifiedQuote": "Michael W. Flamm is professor of history at Ohio Wesleyan University and author of the forthcoming “In the Heat of the Summer: From the Harlem Riot of 1964 to the War on Crime and America’s Prison Crisis.”"
+          },
+          "attribution": {
+            "cause": "verdict_inconsistent",
+            "claimedCause": "verdict_inconsistent",
+            "toolVerdictCorrect": false,
+            "editorCorrect": false,
+            "explanation": "The checker's own explanation concedes that the source identifies Flamm as a history professor and author, yet it returned NOT SUPPORTED instead of PARTIALLY SUPPORTED. The source, an author bio in a Time piece, does not give the birth date or say he is best known for post-1945 political history, so the editor's SUPPORTED goes too far."
+          },
+          "toolQuoteNow": "empty",
+          "sourceDrift": false,
+          "usage": {
+            "input": 5413,
+            "output": 750,
+            "calls": 2
+          }
+        },
+        "label": {
+          "status": "needs_owner",
+          "proposed_ground_truth": "Supported",
+          "suggested_by": "editor",
+          "reasons": [
+            "the independent reading says PARTIALLY SUPPORTED, the editor SUPPORTED"
+          ],
+          "held": false
+        },
+        "triaged_at": "2026-11-20T08:09:21.579Z"
+      }
+    },
     {
       "id": "field_20e5e17a",
       "article_url": "https://en.wikipedia.org/w/index.php?title=Draft%3AMichael_W._Flamm&oldid=1373226508",
@@ -3340,6 +3598,91 @@
           "held": false
         },
         "triaged_at": "2026-11-18T21:04:31.222Z"
+      }
+    },
+    {
+      "id": "field_ebf0b4c2",
+      "article_url": "https://de.wikipedia.org/w/index.php?title=Pangram&oldid=271888383",
+      "article_title": "Pangram",
+      "citation_number": "4",
+      "claim_text": "Das Unternehmen firmierte zunächst unter dem Namen Checkfor.ai. Die Markteinführung des Detektors wurde am 12. Oktober 2023 angekündigt.",
+      "claim_container": null,
+      "source_url": "https://www.pangram.com/de/blog/announcing-checkforai",
+      "source_text": "Die KI-Erkennung ist jetzt noch viel besser geworden: Wir stellen Checkfor.ai vor | Pangram Zum Hauptinhalt springen Preise Vertrieb kontaktieren Anmelden Kostenlos testen Kostenlos testen Screenshot der ursprünglichen Checkfor.ai-Website. HINWEIS: Wir haben unseren Namen in Pangram Labs geändert! Weitere Informationen findest du in unserem Blogbeitrag . Heute stellen wir Checkfor.ai vor, ein Tool, mit dem sich KI-generierte Inhalte durch einfaches Kopieren und Einfügen erkennen lassen. Unsere Mission ist es, die digitale Welt vor minderwertigen, KI-generierten Inhalten zu schützen, die authentische menschliche Stimmen gefährden. Mit unserem Produkt können Content-Anbieter, Bewertungsplattformen, Pädagogen und Kreative überprüfen, ob ihre Inhalte von einem echten Menschen verfasst wurden. Warum glauben wir, dass wir dieses anspruchsvolle Problem lösen können? Wir sind ein kleines Team aus erfahrenen Forschern und Ingenieuren im Bereich des maschinellen Lernens, die genau wissen, wie man funktionsfähige Modelle in Produktionsumgebungen implementiert. Unser Team hat bereits praxistaugliche Produkte für maschinelles Lernen bei Google, Tesla Autopilot und Nuro auf den Markt gebracht. Zuverlässigkeit und Vertrauen stehen für uns an erster Stelle, und wir geben uns nicht damit zufrieden, wenn die Genauigkeit unseres Testdatensatzes 99 % erreicht. Unser Ziel ist es nicht nur, der beste Detektor seiner Klasse zu sein, sondern zuverlässig genug für risikoreiche, reale Einsätze zu sein, die niedrige Falsch-Positiv- und Falsch-Negativ-Raten erfordern. Wir beschäftigen uns erst seit etwa einem Monat mit diesem Problem, haben aber bereits große Fortschritte erzielt. Auch wenn unser Detektor noch nicht perfekt ist, sind wir der Meinung, dass er den Detektoren der Konkurrenz bereits deutlich überlegen ist, insbesondere bei kreativen Texten und von Nutzern veröffentlichten Online-Inhalten. Wir freuen uns darauf, die Leistungsfähigkeit des Tools weiter zu verbessern und in den kommenden Wochen einige spannende Ergebnisse zu präsentieren. Probier es doch mal bei Checkfor.ai aus ! Max Spero CEO, Mitbegründer Max ist ein erfahrener Machine-Learning-Ingenieur. Zuletzt arbeitete er bei Nuro an autonomen Fahrzeugen und leitete dort den Bereich „Active Learning“. Er kann auf eine langjährige Erfahrung bei der erfolgreichen Einführung von Machine-Learning-Produkten bei Google, Two Sigma und Yelp zurückblicken. Max hat einen Bachelor of Science in Theoretischer Informatik und einen Master of Science in Künstlicher Intelligenz von der Stanford University. Neben seiner Leidenschaft für das Bauen ist er auch ein aktives Mitglied der „Magic: The Gathering“-Cube-Community. Mehr von Max Spero → Bradley Emi CTO, Mitbegründer Bradley ist KI-Forscher und Experte für die Entwicklung von Deep-Learning-Produkten in der Industrie. Zuletzt leitete er die Deep-Learning-Forschungsgruppe bei Absci, einem Unternehmen für generative KI in der Arzneimittelforschung, und war zuvor Mitglied des Kernteams für Computer Vision bei Tesla Autopilot. Mehr von Bradley Emi → Klicken Sie mit der rechten Maustaste und wählen Sie „Nach KI suchen“ – überall in Chrome und Firefox. Pangram zu Chrome hinzufügen Pangram zu Firefox hinzufügen Weiterführende Literatur Nachrichten Erkennt Pangram „Gemini 3“? Kann Pangram die neueste Veröffentlichung von Google erkennen? Elyas Masrour ▪ 19. November 2025 Nachrichten Stellungnahme zu Bidens Verordnung zur Sicherheit künstlicher Intelligenz Die Biden-Regierung hat heute neue Standards für die Sicherheit und den Schutz im Bereich der künstlichen Intelligenz veröffentlicht, darunter eine Richtlinie zur Erkennung von KI-Inhalten. Max Spero ▪ 31. Oktober 2023 Produktaktualisierungen Pangram ist der einzige KI-Detektor, der bei der Erkennung von KI-Inhalten besser abschneidet als menschliche Experten Wir freuen uns über die neuen Forschungsergebnisse von Jenna Russell, Marzena Karpinska und Mohit Iyyer, Forscher der University of Maryland und von Microsoft, die zeigen, dass „Pangram“ das beste System zur Erkennung künstlicher Intelligenz ist. Bradley Emi ▪ 29. Januar 2025 Nachrichten Wir stellen Open Pangram vor Wir geben die Veröffentlichung von Versionen von Pangram bekannt, die auf der von uns in unserem ICLR-2026-Beitrag vorgestellten EditLens-Technologie basieren und über offene Gewichtung und frei verfügbaren Quellcode verfügen. Katherine Thai ▪ 24. März 2026 Nachrichten Wie funktioniert Pangram? Eine leicht verständliche Erklärung, wie der KI-Detektor von Pangram lernt, von Menschen verfasste Texte von KI-generierten Texten zu unterscheiden. Annamieka Aerts ▪ 17. Juli 2026 Nachrichten Warum gibt es bei Pangram eine Mindestwortzahl? Vielleicht ist Ihnen in letzter Zeit aufgefallen, dass der KI-Detektor von Pangram eine Mindestwortzahl für die Vorhersage „KI“ oder „Mensch“ vorsieht. Warum ist das so? Elyas Masrour ▪ 23. Mai 2025",
+      "source_truncated": false,
+      "ground_truth": "Supported",
+      "dataset_version": "field",
+      "extraction_status": "complete",
+      "needs_manual_review": true,
+      "excluded_reason": null,
+      "provenance": {
+        "from": "editor feedback on a logged check (Neon: feedback + verification_logs)",
+        "source_fetched_at": "2026-11-20T08:08:55.850Z",
+        "source_sha256": "2744c2805984fbe4efc65db6750fcaed946c185b01900b2d6919b518a3a108e9"
+      },
+      "field": {
+        "check_id": "ebf0b4c2",
+        "wiki": "de.wikipedia.org",
+        "revision_id": 271888383,
+        "checked_at": "2026-11-19T14:32:42.781543+00:00",
+        "tool": {
+          "provider": "liftwing",
+          "model": "llm-qwen38-27b",
+          "verdict": "NOT SUPPORTED",
+          "reason_type": "omission",
+          "support_score": 40,
+          "comments": "Der Text bestätigt, dass das Produkt unter dem Namen Checkfor.ai vorgestellt wurde und der Firmenname später in Pangram Labs geändert wurde. Dies stützt den ersten Teil der Behauptung (Firmierung unter Checkfor.ai). Der Text enthält jedoch kein Datum für die Ankündigung (12. Oktober 2023) und widerspricht implizit der Aussage, dass das Unternehmen „zunächst“ unter diesem Namen firmierte, da der Name des Unternehmens (Pangram Labs) vom Produktnamen (Checkfor.ai) zu unterscheiden ist und die Umbenennung des Unternehmens separat erwähnt wird. Da das spezifische Datum fehlt, ist die Behauptung nicht vollständig gestützt.",
+          "source_quote": "HINWEIS: Wir haben unseren Namen in Pangram Labs geändert! ... Heute stellen wir Checkfor.ai vor, ein Tool, mit dem sich KI-generierte Inhalte durch einfaches Kopieren und Einfügen erkennen lassen.",
+          "quote_status": "normalized"
+        },
+        "feedback": {
+          "rating": -1,
+          "corrected_verdict": "SUPPORTED",
+          "editor_verdict": "SUPPORTED",
+          "inconsistent": false,
+          "feedback_at": "2026-11-19T14:58:00.583812+00:00",
+          "feedback_rows": 2,
+          "quick_rating": false,
+          "heavy_session": false,
+          "wiki_section": null
+        },
+        "hints": [],
+        "adjudication": {
+          "version": "adj-v1",
+          "model": "claude-opus-5-5",
+          "blind": {
+            "verdict": "PARTIALLY SUPPORTED",
+            "reasonType": null,
+            "evidenceQuote": "HINWEIS: Wir haben unseren Namen in Pangram Labs geändert! ... Heute stellen wir Checkfor.ai vor, ein Tool, mit dem sich KI-generierte Inhalte durch einfaches Kopieren und Einfügen erkennen lassen.",
+            "explanation": "The source supports that the company first operated as Checkfor.ai (later renamed Pangram Labs) and that this post announced the detector's launch. The retrieved text gives no date for the announcement, so the date of 12 October 2023 is not supported; the dates shown belong only to other, related blog posts.",
+            "quoteStatus": "normalized",
+            "verifiedQuote": "HINWEIS: Wir haben unseren Namen in Pangram Labs geändert! … Heute stellen wir Checkfor.ai vor, ein Tool, mit dem sich KI-generierte Inhalte durch einfaches Kopieren und Einfügen erkennen lassen."
+          },
+          "attribution": {
+            "cause": "evidence_not_fetched",
+            "claimedCause": "evidence_not_fetched",
+            "toolVerdictCorrect": false,
+            "editorCorrect": true,
+            "explanation": "The source confirms that the product and company launched as Checkfor.ai, were later renamed Pangram Labs, and that this post is the launch announcement. The only missing element is the announcement date, which is the blog post's own publication date and was most likely in a byline or header the retrieval did not capture. The retrieved text shows only dates of other posts, so the checker could not see it, and NOT SUPPORTED was too harsh given that its own explanation accepts most of the claim."
+          },
+          "toolQuoteNow": "normalized",
+          "sourceDrift": false,
+          "usage": {
+            "input": 4898,
+            "output": 941,
+            "calls": 2
+          }
+        },
+        "label": {
+          "status": "needs_owner",
+          "proposed_ground_truth": "Supported",
+          "suggested_by": "editor",
+          "reasons": [
+            "the independent reading says PARTIALLY SUPPORTED, the editor SUPPORTED"
+          ],
+          "held": false
+        },
+        "triaged_at": "2026-11-20T08:08:55.850Z"
       }
     }
   ]
