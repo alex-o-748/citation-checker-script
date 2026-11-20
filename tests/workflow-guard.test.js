@@ -32,6 +32,13 @@ test('no workflow approves, merges or auto-merges a pull request', () => {
     }
 });
 
+test('a workflow that pushes to main does so only when it runs on main', () => {
+    for (const [file, text] of workflows) {
+        if (!/HEAD:main/.test(text)) continue;
+        assert.match(text, /github\.ref == 'refs\/heads\/main'/, `${file} pushes to main from any branch`);
+    }
+});
+
 test('the fix proposer opens drafts and leaves no token for the agent', () => {
     const [, text] = workflows.find(([f]) => f === 'feedback-fix-proposer.yml');
     const creates = text.match(/gh pr create[^\n]*/g) || [];
