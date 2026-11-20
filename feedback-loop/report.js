@@ -9,7 +9,7 @@
 // before they are shown"), a source passage is shown only as the verified
 // text core/quote.js located, never as the quote a model returned.
 
-import { CAUSE_BRIEF_SECTION } from './adjudicate.js';
+import { CAUSE_BRIEF_SECTION, ATTRIBUTION_DESCRIPTIONS } from './adjudicate.js';
 import { causeRule } from './causes.js';
 
 const ZWSP = '​';
@@ -83,6 +83,35 @@ function caseBlock(result) {
     return lines.join('\n');
 }
 
+// The brief's section headings, by number. tests/feedback-loop-report.test.js
+// checks each is still a heading in the brief, so a renamed one fails there
+// instead of leaving a dead link.
+export const BRIEF_PATH = 'docs/design-plans/2026-11-08-fixable-causes-of-disputed-verdicts.md';
+export const BRIEF_HEADINGS = Object.freeze({
+    1: "1. The model isn't told what the source is",
+    2: '2. Unusable pages are judged as if they were the source (and the reverse)',
+    3: '3. The rationale contradicts the verdict',
+    4: "4. Omissions the editor can't check",
+    5: '5. Claims that are the wrong size',
+});
+
+// GitHub's heading anchor: lower case, punctuation dropped, spaces to hyphens.
+export function githubAnchor(heading) {
+    return heading.toLowerCase().replace(/[^\p{L}\p{N}\s_-]/gu, '').replace(/ /g, '-');
+}
+
+export function briefLink(section) {
+    const repo = process.env.GITHUB_REPOSITORY || 'alex-o-748/citation-checker-script';
+    return `https://github.com/${repo}/blob/main/${BRIEF_PATH}#${githubAnchor(BRIEF_HEADINGS[section])}`;
+}
+
+// "the source contains ..." -> "The source contains ...", for a table cell.
+export function causeMeaning(cause) {
+    const d = ATTRIBUTION_DESCRIPTIONS[cause];
+    if (!d) return '';
+    return md(d.charAt(0).toUpperCase() + d.slice(1));
+}
+
 function causeTable(results) {
     const groups = new Map();
     for (const r of results) {
@@ -93,9 +122,10 @@ function causeTable(results) {
     if (!groups.size) return '_No cases._';
     const rows = [...groups.entries()].sort((a, b) => b[1].length - a[1].length).map(([cause, ids]) => {
         const section = CAUSE_BRIEF_SECTION[cause];
-        return `| ${causeLabel(cause === '(not adjudicated)' ? null : cause)} | ${section ? `cause ${section}` : '—'} | ${ids.length} | ${ids.map(id => `\`${id}\``).join(' ')} |`;
+        const brief = section && BRIEF_HEADINGS[section] ? `[cause ${section}](${briefLink(section)})` : '—';
+        return `| ${causeLabel(cause === '(not adjudicated)' ? null : cause)} | ${causeMeaning(cause)} | ${brief} | ${ids.length} | ${ids.map(id => `\`${id}\``).join(' ')} |`;
     });
-    return ['| Cause | Brief | Cases | Check ids |', '|---|---|---|---|', ...rows].join('\n');
+    return ['| Cause | Means | Brief | Cases | Check ids |', '|---|---|---|---|---|', ...rows].join('\n');
 }
 
 function hintTable(results) {

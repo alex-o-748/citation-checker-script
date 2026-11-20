@@ -170,7 +170,7 @@ test('the report shows verified evidence, never the raw model quote', () => {
     assert.match(report, /> droughts could become more frequent/);
     assert.ok(!report.includes('RAW MODEL QUOTE'));
     assert.match(report, /## Accepted \(1\)/);
-    assert.match(report, /`missed_evidence` \| cause 4 \| 2 \|/);
+    assert.match(report, /`missed_evidence` \| The source contains the passage that decides the verdict[^|]*\| \[cause 4\]\([^)]*#4-omissions-the-editor-cant-check\) \| 2 \|/);
     assert.match(report, /`fail0001` — fetch failed: HTTP 403/);
     assert.match(report, /Skipped, `group` \(1\): `grp00001`/);
     assert.match(report, /claude-test: 4 calls/);
