@@ -115,7 +115,7 @@ test('apiKeyFor reads a provider\'s stored key, and none for a keyless one', () 
     assert.equal(h.apiKeyFor('nonexistent'), null);
 });
 
-test('articleUncited reads the page\'s uncited body sentences once, and is null when everything is cited', () => {
+test('articleUncited reads the page\'s uncited body sentences once, and is empty (never null) when everything is cited', () => {
     const { h } = harness(ARTICLE);
     const uncited = h.articleUncited();
     assert.deepEqual(uncited.sentences.map(s => s.text), ['It was designed by Gustave Eiffel.', 'It is painted red.']);
@@ -123,7 +123,16 @@ test('articleUncited reads the page\'s uncited body sentences once, and is null 
     assert.equal(h.articleUncited(), uncited, 'cached');
 
     const cited = harness(`<div class="mw-parser-output"><p>Lead.</p><h2>History</h2><p>It opened in 1998.${ref(1)}</p></div>`).h;
-    assert.equal(cited.articleUncited(), null);
+    const none = cited.articleUncited();
+    assert.deepEqual(none.sentences, [], 'the section still shows, saying there was nothing to check');
+    assert.equal(none.readError, undefined);
+    assert.equal(cited.uncitedStatusText({ ...none, state: 'done' }), 'no uncited sentences to check');
+
+    const { h: unread, doc } = harness('');
+    doc.getElementById('mw-content-text').remove();
+    const err = unread.articleUncited();
+    assert.equal(err.readError, true, 'no article text: said, not hidden');
+    assert.equal(unread.uncitedStatusText({ ...err, state: 'done' }), 'could not read the article text');
 });
 
 const sentences = [
@@ -143,6 +152,22 @@ test('the section header says where the check is, in the lead check\'s words whe
     assert.equal(h.uncitedStatusText(state({ state: 'done', done: 3, unchecked: [{ index: 0 }, { index: 1 }, { index: 2 }] })),
         'nothing found in 0 of 3 sentences', 'every call failed: not "nothing found in 3"');
     assert.equal(h.uncitedStatusText(state({ state: 'done', done: 1 })), 'nothing found in 1 of 3 sentences', 'stopped part-way');
+    assert.equal(h.uncitedStatusText({ sentences: [], total: 0, state: 'pending' }), 'no uncited sentences to check',
+        'said from the start, not "runs after the citations"');
+});
+
+test('with no uncited sentences the phase makes no call and the section says so', async () => {
+    const calls = [];
+    const { h, doc } = harness('', { callProviderAPI: async () => { calls.push(1); return { text: '[]' }; } });
+    h.reportUncited = { sentences: [], paragraphs: [], total: 0, capped: false, model: LIFTWING, findings: [], unchecked: [], done: 0, state: 'pending' };
+    h.resetReportUncited();
+    await h.runReportUncitedCheck(Date.now());
+    assert.equal(calls.length, 0);
+    assert.deepEqual(h.progress, []);
+    const section = doc.querySelector('#verifier-report-uncited .sv-section');
+    assert.ok(section, 'the section is shown');
+    assert.equal(section.querySelector('.sv-section-status').textContent, 'no uncited sentences to check');
+    assert.equal(section.querySelector('.sv-section-note'), null, 'no "Checked with…" note: nothing was checked');
 });
 
 function render(h, doc, uncited) {
