@@ -5385,6 +5385,10 @@ function useToolforgeSourceFetcher() {
             '{count} phrases sur {total} peut-être fausses',
         'nothing found in {total} sentences':
             'rien trouvé dans {total} phrases',
+        'no uncited sentences to check':
+            'aucune phrase sans référence à vérifier',
+        'could not read the article text':
+            'impossible de lire le texte de l’article',
         'nothing found in {checked} of {total} sentences':
             'rien trouvé dans {checked} phrases sur {total}',
         'Checked with {model}, against its general knowledge rather than a source. A finding is a reason to look for a source before changing anything.':
@@ -5791,6 +5795,10 @@ function useToolforgeSourceFetcher() {
             '{count} de {total} oraciones pueden ser erróneas',
         'nothing found in {total} sentences':
             'nada encontrado en {total} oraciones',
+        'no uncited sentences to check':
+            'no hay oraciones sin referencia que verificar',
+        'could not read the article text':
+            'no se pudo leer el texto del artículo',
         'nothing found in {checked} of {total} sentences':
             'nada encontrado en {checked} de {total} oraciones',
         'Checked with {model}, against its general knowledge rather than a source. A finding is a reason to look for a source before changing anything.':
@@ -6193,6 +6201,10 @@ function useToolforgeSourceFetcher() {
             'возможно, неверно: {count} из {total}',
         'nothing found in {total} sentences':
             'ничего не найдено (предложений: {total})',
+        'no uncited sentences to check':
+            'нет предложений без сносок',
+        'could not read the article text':
+            'не удалось прочитать текст статьи',
         'nothing found in {checked} of {total} sentences':
             'ничего не найдено (проверено предложений: {checked} из {total})',
         'Checked with {model}, against its general knowledge rather than a source. A finding is a reason to look for a source before changing anything.':
@@ -6603,6 +6615,10 @@ function useToolforgeSourceFetcher() {
             '{count} מתוך {total} משפטים עלולים להיות שגויים',
         'nothing found in {total} sentences':
             'לא נמצא דבר ב־{total} משפטים',
+        'no uncited sentences to check':
+            'אין משפטים ללא מקור לבדיקה',
+        'could not read the article text':
+            'לא ניתן היה לקרוא את טקסט הערך',
         'nothing found in {checked} of {total} sentences':
             'לא נמצא דבר ב־{checked} מתוך {total} משפטים',
         'Checked with {model}, against its general knowledge rather than a source. A finding is a reason to look for a source before changing anything.':
@@ -6977,6 +6993,10 @@ function useToolforgeSourceFetcher() {
             '{count} van de {total} zinnen mogelijk onjuist',
         'nothing found in {total} sentences':
             'niets gevonden in {total} zinnen',
+        'no uncited sentences to check':
+            'geen zinnen zonder bron om te controleren',
+        'could not read the article text':
+            'kon de artikeltekst niet lezen',
         'nothing found in {checked} of {total} sentences':
             'niets gevonden in {checked} van de {total} zinnen',
         'Checked with {model}, against its general knowledge rather than a source. A finding is a reason to look for a source before changing anything.':
@@ -12375,18 +12395,21 @@ function useToolforgeSourceFetcher() {
         // The body sentences no citation covers (the whole article's, when it
         // has no headings), read once per page view like the lead. Null when
         // there are none.
+        // Always an object, so that with the setting on the report always
+        // has the section: one with no sentences says why (none uncited, or
+        // `readError`) rather than leaving the editor to wonder where it went.
         articleUncited() {
             if (this._articleUncited !== undefined) return this._articleUncited;
             let uncited = null;
             try {
                 const root = document.getElementById('mw-content-text');
-                const found = root ? uncitedSentences(root) : null;
-                if (found && found.sentences.length) uncited = found;
+                if (root) uncited = uncitedSentences(root);
             } catch (e) {
                 console.warn('[Verifier] Could not read the uncited text:', e);
             }
-            this._articleUncited = uncited;
-            return uncited;
+            this._articleUncited = uncited
+                || { sentences: [], paragraphs: [], opening: '', total: 0, capped: false, usesLead: false, readError: true };
+            return this._articleUncited;
         }
 
         // The model the uncited-text check runs on, { provider, model, name }:
@@ -12450,6 +12473,8 @@ function useToolforgeSourceFetcher() {
         // 'stopped': the run was stopped before the check began.
         uncitedStatusText(uncited) {
             const total = uncited.sentences.length;
+            if (uncited.readError) return this.t('could not read the article text');
+            if (total === 0) return this.t('no uncited sentences to check');
             if (uncited.state === 'stopped') return this.t('not checked (stopped)');
             if (uncited.state === 'pending') return this.t('runs after the citations');
             if (uncited.state === 'running') return this.t('checking, {done} of {total}', { done: uncited.done || 0, total });
@@ -12476,7 +12501,7 @@ function useToolforgeSourceFetcher() {
             const done = uncited.done || 0;
             const model = uncited.model.name;
             const notes = [];
-            if (uncited.state === 'running' || uncited.state === 'done') {
+            if (total && (uncited.state === 'running' || uncited.state === 'done')) {
                 notes.push(this.t('Checked with {model}, against its general knowledge rather than a source. A finding is a reason to look for a source before changing anything.', { model }));
             }
             if (uncited.capped) {
@@ -12529,6 +12554,11 @@ function useToolforgeSourceFetcher() {
         // has no field for a sentence checked against no source.
         async runReportUncitedCheck(startTime) {
             const uncited = this.reportUncited;
+            if (!uncited.sentences.length) {
+                uncited.state = 'done';
+                this.renderReportUncited();
+                return;
+            }
             const { provider, model } = uncited.model;
             const total = uncited.sentences.length;
             const phase = this.t('Checking uncited text');
