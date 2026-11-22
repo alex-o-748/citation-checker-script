@@ -277,6 +277,7 @@ Runnable entry points, each a thin wiring layer over the components above:
 | `service/run-sweep.js` | **All six stages**, writing a CSV and upserting every finding into ToolsDB (`--no-store` for CSV only) | Wiki Replicas, Wikipedia REST, model API, ToolsDB, source fetcher (opt-in) |
 | `service/run-checks.js` | Post-run checks over a findings CSV (`run-sweep.js` also runs them at the end of every sweep; see below) | None |
 | `service/run-import-findings.js` | Upserts findings CSVs into ToolsDB: backfills batches run before storing was the default, or after failed writes. Idempotent | ToolsDB |
+| `service/run-edit-followup.js` | Not a pipeline stage: reads a Neon `verification_logs` export and the article histories after each check, and reports how often flagged citations were changed by a human edit against Supported ones from the same runs. See `docs/edits-after-checks.md` before quoting it | Wikipedia Action API |
 
 ### ToolsDB is the record of what has been checked (read before adding a per-batch exclude list)
 
