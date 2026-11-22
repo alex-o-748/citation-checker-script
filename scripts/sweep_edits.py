@@ -31,8 +31,9 @@ DEFAULT_LOOKBACK_HOURS = 48
 DEFAULT_LOG_PATH = "data/edit-log.ndjson"
 
 RCLIMIT = 500  # ceiling for non-bot clients; do not raise
-REQUEST_SLEEP = 0.1  # ~100ms between paginated requests
-MAX_RETRIES = 4  # at least 3 attempts on 429/5xx
+REQUEST_SLEEP = 0.5  # between paginated requests; a 48h enwiki window is hundreds of pages
+MAX_RETRIES = 6  # attempts on 429/5xx
+MAX_BACKOFF = 120  # seconds; cap on any single wait
 REQUEST_TIMEOUT = 30
 
 USER_AGENT = (
@@ -85,7 +86,7 @@ def load_existing(log_path: str):
 
 def fetch_with_retry(session, url, params):
     """GET with exponential backoff on HTTP 429 and 5xx."""
-    delay = 2
+    delay = 5
     last_exc = None
     for attempt in range(MAX_RETRIES):
         try:
@@ -96,12 +97,18 @@ def fetch_with_retry(session, url, params):
         if resp is not None:
             if resp.status_code == 429 or resp.status_code >= 500:
                 last_exc = RuntimeError(f"HTTP {resp.status_code}")
+                # Honor the server's own wait time when it gives one.
+                try:
+                    retry_after = float(resp.headers.get("Retry-After", ""))
+                except ValueError:
+                    retry_after = 0
+                delay = min(max(delay, retry_after), MAX_BACKOFF)
             else:
                 resp.raise_for_status()
                 return resp
         if attempt < MAX_RETRIES - 1:
             time.sleep(delay)
-            delay *= 2
+            delay = min(delay * 2, MAX_BACKOFF)
     raise RuntimeError(f"request failed after {MAX_RETRIES} attempts: {last_exc}")
 
 
