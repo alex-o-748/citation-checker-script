@@ -261,24 +261,38 @@ function refAround(text, position) {
     return { start: open, end: closeEnd + 1 };
 }
 
-const CLAIM_CONTEXT_CHARS = 200;
+const CLAIM_WINDOW_CHARS = 1500;
+const CLAIM_MAX_CHARS = 300;
+// A sentence ends at . ! ? followed by space and something that can open the
+// next one: a capital, a quote, a link, a bracket.
+const SENTENCE_BREAK = /[.!?]["'\u201d\u2019)]*\s+(?=[\p{Lu}\p{Lt}"'\u201c\u2018\[(])/gu;
 
+/**
+ * The claim a ref supports, as compared between revisions: the sentence the
+ * ref ends, with refs and maintenance tags taken out.
+ *
+ * It must not depend on the refs around it. Bounding it at the previous ref
+ * (which is what this did first) meant that removing a flagged ref moved
+ * the next citation's boundary back a sentence, so every removal also read
+ * as a reworded claim on its neighbour, and inflated the Supported baseline.
+ * Stripping refs first and then cutting at a sentence break makes the claim
+ * the same whether its neighbours' refs are there or not.
+ */
 function claimBefore(text, refStart) {
-    let from = Math.max(0, refStart - CLAIM_CONTEXT_CHARS);
-    // Stop at the previous ref or paragraph break: text before those is
-    // another citation's claim.
-    for (const marker of ['</ref>', '/>', '\n']) {
-        const at = text.lastIndexOf(marker, refStart - 1);
-        if (at !== -1 && at + marker.length > from && at + marker.length <= refStart) from = at + marker.length;
-    }
-    // Refs and maintenance tags aren't claim text: a {{fv}} put after the
-    // previous citation's ref must not read as this claim being reworded.
-    return text.slice(from, refStart)
+    let from = Math.max(0, refStart - CLAIM_WINDOW_CHARS);
+    const paragraph = text.lastIndexOf('\n', refStart - 1);
+    if (paragraph !== -1 && paragraph + 1 > from) from = paragraph + 1;
+    let context = text.slice(from, refStart)
         .replace(/<ref\b[^>]*\/>/gi, '')
         .replace(/<ref\b[^>]*>[\s\S]*?<\/ref\s*>/gi, '')
-        .replace(TAG_TEMPLATE, '')
-        .replace(/\s+/g, ' ')
-        .trim();
+        .replace(TAG_TEMPLATE, '');
+    // The window can open inside a ref; drop anything up to its close.
+    const strayClose = context.lastIndexOf('</ref');
+    if (strayClose !== -1) context = context.slice(context.indexOf('>', strayClose) + 1);
+    context = context.replace(/\s+/g, ' ').trim();
+    let sentenceStart = 0;
+    for (const match of context.matchAll(SENTENCE_BREAK)) sentenceStart = match.index + match[0].length;
+    return context.slice(sentenceStart).slice(-CLAIM_MAX_CHARS).trim();
 }
 
 /**
@@ -399,7 +413,11 @@ function rate(numerator, denominator) {
  * Aggregates analyzed runs into rates per verdict class and window, and the
  * flagged-minus-supported gap.
  */
-export function summarize(analyzed, { windowsHours = DEFAULT_WINDOWS_HOURS, topEditors = 10 } = {}) {
+export function summarize(analyzed, {
+    windowsHours = DEFAULT_WINDOWS_HOURS,
+    topEditors = 10,          // 0 lists every editor over the threshold
+    minEditorEdits = 1,       // edits that changed a flagged citation
+} = {}) {
     const statuses = {};
     const classes = {};
     for (const cls of CLASS_ORDER) {
@@ -411,7 +429,20 @@ export function summarize(analyzed, { windowsHours = DEFAULT_WINDOWS_HOURS, topE
     let okRuns = 0;
     const maxHours = Math.max(...windowsHours);
 
-    for (const { status, citations, editsByWindow } of analyzed) {
+    // Per editor, within the longest window: what they changed among the
+    // flagged citations, and among the Supported ones beside them. An editor
+    // who changes both alike is rewriting the article, not acting on flags.
+    const editorStats = user => {
+        if (!editorCounts.has(user)) {
+            editorCounts.set(user, {
+                user, flaggedEdits: new Set(), flaggedCitationsChanged: 0, flaggedSourcesChanged: 0,
+                supportedCitationsChanged: 0, articles: new Set(),
+            });
+        }
+        return editorCounts.get(user);
+    };
+
+    for (const [runIndex, { status, citations, editsByWindow }] of analyzed.entries()) {
         statuses[status] = (statuses[status] ?? 0) + 1;
         if (status !== 'ok') continue;
         okRuns++;
@@ -434,8 +465,18 @@ export function summarize(analyzed, { windowsHours = DEFAULT_WINDOWS_HOURS, topE
                     if (!countsWithin(c.strong, h) && c.any.kind === 'claim') w.claim++;
                 }
             }
-            if (c.verdictClass === VERDICT_CLASSES.FLAGGED && countsWithin(c.any, maxHours) && c.any.user) {
-                editorCounts.set(c.any.user, (editorCounts.get(c.any.user) ?? 0) + 1);
+            if (countsWithin(c.any, maxHours) && c.any.user) {
+                const e = editorStats(c.any.user);
+                if (c.verdictClass === VERDICT_CLASSES.FLAGGED) {
+                    e.flaggedCitationsChanged++;
+                    e.flaggedEdits.add(c.any.revid);
+                    e.articles.add(runIndex);
+                } else if (c.verdictClass === VERDICT_CLASSES.SUPPORTED) {
+                    e.supportedCitationsChanged++;
+                }
+            }
+            if (c.verdictClass === VERDICT_CLASSES.FLAGGED && countsWithin(c.strong, maxHours) && c.strong.user) {
+                editorStats(c.strong.user).flaggedSourcesChanged++;
             }
         }
     }
@@ -459,8 +500,19 @@ export function summarize(analyzed, { windowsHours = DEFAULT_WINDOWS_HOURS, topE
         };
     }
 
-    const editors = [...editorCounts].sort((a, b) => b[1] - a[1]).slice(0, topEditors)
-        .map(([user, flaggedCitationsChanged]) => ({ user, flaggedCitationsChanged }));
+    const editorRows = [...editorCounts.values()]
+        .map(e => ({
+            user: e.user,
+            flaggedEdits: e.flaggedEdits.size,
+            flaggedCitationsChanged: e.flaggedCitationsChanged,
+            flaggedSourcesChanged: e.flaggedSourcesChanged,
+            supportedCitationsChanged: e.supportedCitationsChanged,
+            runs: e.articles.size,
+        }))
+        .filter(e => e.flaggedEdits >= minEditorEdits)
+        .sort((a, b) => b.flaggedEdits - a.flaggedEdits || b.flaggedCitationsChanged - a.flaggedCitationsChanged
+            || a.user.localeCompare(b.user));
+    const editors = topEditors > 0 ? editorRows.slice(0, topEditors) : editorRows;
 
     return {
         windowsHours: [...windowsHours],
@@ -544,8 +596,17 @@ export function renderMarkdown(summary, { skipped = {}, notes = [] } = {}) {
 
     if (editors.length) {
         lines.push(`## Who changed flagged citations (within ${Math.max(...windowsHours)} h)`, '');
-        lines.push('| Editor | Flagged citations changed |', '|---|---|');
-        for (const e of editors) lines.push(`| ${e.user} | ${e.flaggedCitationsChanged} |`);
+        lines.push(
+            'Any signal, claim edits included. **Supported changed** is the same editor\'s changes to Supported '
+            + 'citations in the same runs: close to the flagged count means rewriting, not acting on flags.',
+            '',
+        );
+        lines.push('| Editor | Edits | Runs | Flagged changed | of which source removed/replaced or tagged | Supported changed |');
+        lines.push('|---|---|---|---|---|---|');
+        for (const e of editors) {
+            lines.push(`| ${e.user} | ${e.flaggedEdits} | ${e.runs} | ${e.flaggedCitationsChanged} `
+                + `| ${e.flaggedSourcesChanged} | ${e.supportedCitationsChanged} |`);
+        }
         lines.push('');
     }
 

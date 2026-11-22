@@ -58,6 +58,10 @@ Options:
                            busy article (default: 200).
   --all-namespaces         Include checks run on drafts, sandboxes and other
                            non-article pages (default: articles only).
+  --top-editors <n>        Editors to list in the report (default: 10; 0 = all
+                           over --min-editor-edits).
+  --min-editor-edits <n>   List only editors with at least n edits that
+                           changed a flagged citation (default: 1).
   --cache-dir <dir>        Keep fetched revisions here; a re-run with other
                            windows or filters then makes no requests.
   --out <prefix>           Output path prefix (default: edit-followup-<date>).
@@ -84,6 +88,8 @@ export function parseCliArgs(argv) {
             'max-runs': { type: 'string' },
             'max-revisions': { type: 'string', default: '200' },
             'all-namespaces': { type: 'boolean', default: false },
+            'top-editors': { type: 'string', default: '10' },
+            'min-editor-edits': { type: 'string', default: '1' },
             'cache-dir': { type: 'string' },
             out: { type: 'string' },
             'delay-ms': { type: 'string', default: '200' },
@@ -126,6 +132,8 @@ export function parseCliArgs(argv) {
         maxRuns: intOption('max-runs', values['max-runs']),
         maxRevisions: intOption('max-revisions', values['max-revisions']),
         allNamespaces: values['all-namespaces'],
+        topEditors: intOption('top-editors', values['top-editors']),
+        minEditorEdits: intOption('min-editor-edits', values['min-editor-edits']),
         cacheDir: values['cache-dir'] ?? null,
         out: values.out ?? `edit-followup-${new Date().toISOString().slice(0, 10)}`,
         delayMs: intOption('delay-ms', values['delay-ms']),
@@ -390,7 +398,11 @@ export async function runFollowup(options, {
         if ((index + 1) % 25 === 0) log(`  ${index + 1}/${runs.length} runs`);
     }
 
-    const summary = summarize(results.map(r => r.result), { windowsHours: options.windowsHours });
+    const summary = summarize(results.map(r => r.result), {
+        windowsHours: options.windowsHours,
+        topEditors: options.topEditors ?? 10,
+        minEditorEdits: options.minEditorEdits ?? 1,
+    });
     const notes = [];
     if (options.excludedEditors?.length) notes.push(`Runs where ${options.excludedEditors.join(', ')} edited after the check are excluded.`);
     if (truncatedRuns) notes.push(`${truncatedRuns} busy runs hit --max-revisions; their longest windows may be undercounted.`);

@@ -33,9 +33,12 @@ Since 2026-09-23, every row carries `revision_id`.
    - **removed**: the URL occurs fewer times (dropped or replaced);
    - **tagged**: `{{failed verification}}`, `{{better source needed}}` or a
      similar tag appeared right after a ref holding the URL;
-   - **claim**: the URL stayed, but the wikitext just before its ref changed
-     (a reworded claim). Refs and maintenance tags are stripped before
-     comparing, so tagging the previous citation doesn't count.
+   - **claim**: the URL stayed, but the sentence its ref ends was reworded.
+     Refs and maintenance tags are stripped before the sentence is cut out,
+     so tagging or removing a neighbouring citation doesn't count. (The first
+     version bounded the claim at the previous ref instead, so every removal
+     of a flagged source also counted as a claim edit on the next citation,
+     usually a Supported one, which inflated the baseline. Fixed 2026-11-22.)
 4. **Baseline.** Supported citations from the same runs go through the same
    steps. Same article, same edits, same hours: an article that is busy anyway
    raises both rates, and only the verdict separates them. **The gap between
@@ -76,7 +79,11 @@ node service/run-edit-followup.js checks.csv --cache-dir .followup-cache --exclu
 ```
 
 It writes `<out>.md`, `<out>.json` and `<out>-citations.csv` (one row per
-citation, no usernames). With `--cache-dir`, a re-run with other windows or
+citation, no usernames). The report's editor table lists the top 10 by edits
+that changed a flagged citation; `--top-editors 0 --min-editor-edits 4` lists
+everyone with at least 4. Its **Supported changed** column is the same
+editor's changes to Supported citations in the same runs: when it is close to
+the flagged count, the editor was rewriting the article, not acting on flags. With `--cache-dir`, a re-run with other windows or
 filters only re-resolves revision IDs.
 
 Run it from Toolforge or a laptop. Wikipedia rate-limits shared cloud IPs

@@ -108,7 +108,7 @@ test('citationState: counts refs, tags right after the ref, and the claim before
     const state = citationState(text, 'https://example.com/a');
     assert.equal(state.count, 2);
     assert.equal(state.tagged, 1);
-    assert.deepEqual(state.claims, ['Para one. The sky is green.', 'Grass is blue.']);
+    assert.deepEqual(state.claims, ['The sky is green.', 'Grass is blue.'], 'the sentence the ref ends');
 });
 
 test('citationState: a tag after a cluster of refs belongs to every ref in it; a later tag does not', () => {
@@ -125,6 +125,16 @@ test('citationState: a tag added after the previous ref is not a change to the n
     const after = `A.${ref('https://example.com/a')}{{failed verification|date=Nov 2026}} B is true.${ref('https://example.com/b')}`;
     const change = compareStates(citationState(before, 'https://example.com/b'), citationState(after, 'https://example.com/b'));
     assert.equal(change.any, false);
+});
+
+test('citationState: removing a neighbouring ref does not change the next claim', () => {
+    // Bounding the claim at the previous ref made every removal of a flagged
+    // source also read as a reworded claim on the citation after it.
+    const before = `Intro.\nThe sky is green.${ref('https://example.com/a')} Water is wet.${ref('https://example.com/b')}\n`;
+    const after = `Intro.\nThe sky is green. Water is wet.${ref('https://example.com/b')}\n`;
+    const url = 'https://example.com/b';
+    assert.deepEqual(citationState(before, url).claims, ['Water is wet.']);
+    assert.equal(compareStates(citationState(before, url), citationState(after, url)).any, false);
 });
 
 test('citationState: text written in front of a ref that had no claim is not a reworded claim', () => {
@@ -243,13 +253,29 @@ test('summarize: rates per window and the flagged-minus-supported gap', () => {
     assert.equal(summary.classes.supported.windows[6].strongRate, 0.5);
     assert.equal(summary.gap[1].strong, 0.5);
     assert.equal(summary.gap[6].strong, 0.5);
-    assert.deepEqual(summary.editors, [{ user: 'Editor', flaggedCitationsChanged: 2 }]);
+    assert.deepEqual(summary.editors, [{
+        // Both fixtures' edits are revision 101: one edit, counted once.
+        user: 'Editor', flaggedEdits: 1, flaggedCitationsChanged: 2, flaggedSourcesChanged: 2,
+        supportedCitationsChanged: 1, runs: 2,
+    }]);
 
     const markdown = renderMarkdown(summary, { skipped: { group: 4 }, notes: ['A note.'] });
     assert.match(markdown, /\| 1 h \| 50\.0% \(1\) \| 0\.0% \(0\) \| \+50\.0 pts/);
     assert.match(markdown, /page_missing: 1/);
     assert.match(markdown, /group: 4/);
     assert.match(markdown, /A note\./);
+});
+
+test('summarize: editors over a threshold, all of them with topEditors 0', () => {
+    const run = runFixture();
+    const byUser = (user, n) => Array.from({ length: n }, (_, i) =>
+        analyzeRun(run, [rev(100, -60, 'X', article()), rev(200 + i, 20, user, article({ a: false }))]));
+    const results = [...byUser('Many', 4), ...byUser('Few', 3), ...byUser('Other', 5)];
+    const all = summarize(results, { windowsHours: [1], topEditors: 0, minEditorEdits: 4 });
+    assert.deepEqual(all.editors.map(e => [e.user, e.flaggedEdits]), [['Other', 5], ['Many', 4]]);
+    const top = summarize(results, { windowsHours: [1], topEditors: 1 });
+    assert.deepEqual(top.editors.map(e => e.user), ['Other']);
+    assert.match(renderMarkdown(all), /\| Many \| 4 \| 4 \| 4 \| 4 \| 0 \|/);
 });
 
 test('citationsToCsv: one row per citation, no usernames', () => {
@@ -373,7 +399,10 @@ test('lookUpBots: bot group membership, cached, IPs and unknown names are not bo
 // --- the CLI ----------------------------------------------------------------------------
 
 test('parseCliArgs: defaults, sorted windows, repeatable --exclude-editor, and errors', () => {
-    const opts = parseCliArgs(['checks.csv', '--windows', '24,1', '--exclude-editor', 'A', '--exclude-editor', 'B']);
+    const opts = parseCliArgs(['checks.csv', '--windows', '24,1', '--exclude-editor', 'A', '--exclude-editor', 'B',
+        '--top-editors', '0', '--min-editor-edits', '4']);
+    assert.equal(opts.topEditors, 0);
+    assert.equal(opts.minEditorEdits, 4);
     assert.equal(opts.input, 'checks.csv');
     assert.deepEqual(opts.windowsHours, [1, 24]);
     assert.deepEqual(opts.excludedEditors, ['A', 'B']);
