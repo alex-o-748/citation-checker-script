@@ -18,7 +18,7 @@ real number that it says nothing about use.
 
 Neon's `verification_logs` records, for every check, the article, the exact
 `revision_id` checked, the time, the citation's source URL and the verdict.
-Since 2026-09-23, every row carries `revision_id`.
+`revision_id` has been logged since 2026-08-07 (on every check from 2026-08-14); checks before that can't be analyzed this way yet.
 
 1. **Runs.** Checks are grouped by article and checked revision. A citation
    checked twice in a run keeps its latest verdict.

@@ -50,8 +50,11 @@ export const EXPORT_SQL = `SELECT to_char(ts AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"H
        citation_number, source_url, verdict
 FROM verification_logs
 WHERE revision_id IS NOT NULL
-  AND ts >= now() - interval '60 days'
 ORDER BY ts`;
+// No date filter: revision_id has been logged since 2026-08-07, and an
+// earlier version of this query kept only the last 60 days, which silently
+// dropped ~21,000 enwiki checks from 7 August to 22 September. Narrow a run
+// with --since / --until instead.
 
 export const VERDICT_CLASSES = Object.freeze({
     FLAGGED: 'flagged',          // NOT SUPPORTED, PARTIALLY SUPPORTED
