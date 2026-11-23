@@ -336,8 +336,18 @@ export function createApp({
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
     const env = process.env;
+    const dev = env.WIKI_CHECKS === 'off';
+    // Outside development, both files are required: without them the app
+    // would serve the hand-made sample, or forget every answer on restart.
+    for (const name of ['CARDS_FILE', 'EVENTS_FILE']) {
+        if (!env[name] && !dev) {
+            console.error(`inaccuracies: set ${name} (or WIKI_CHECKS=off for local development)`);
+            process.exit(1);
+        }
+    }
     const deck = createDeck({ file: env.CARDS_FILE || join(HERE, 'dev', 'sample-cards.json') });
     const store = createStore({ file: env.EVENTS_FILE || null });
+    if (!deck.all().length) console.error(`inaccuracies: no cards in ${env.CARDS_FILE || 'the sample'}`);
     const app = createApp({
         deck,
         store,

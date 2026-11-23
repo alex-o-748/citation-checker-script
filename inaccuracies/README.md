@@ -59,10 +59,47 @@ The builder reuses its previous output: model decisions are cached per card and 
 
 Every API call carries `X-Session`, a random id the page makes and keeps in `localStorage`. That id is all that's stored about anyone.
 
-## Deploying on Toolforge (not done yet)
+## Deploying on Toolforge
 
-1. Create the tool `inaccuracies` and copy this folder to `$HOME/www/js`. Run `npm install`, then `toolforge webservice node18 start`. The code avoids anything newer than Node 18.
-2. Set `CARDS_FILE`, `EVENTS_FILE` (somewhere under `$HOME`), `BASE_URL` and `PROJECT_PAGE`, and add fonts to `FONT_DIR`.
-3. Schedule the card builder daily (`toolforge jobs run --schedule`).
-4. **Open question: how the app tool reads the builder's output.** The builder reads `citation_findings`, which lives in the batch tool's private ToolsDB database. Options: run the builder in the batch tool and copy `cards.json` across; have the builder also write a `_p` table, which every tool can read, and teach the app to read it; or run the builder in this tool from batch CSVs.
-5. Before launch: create `PROJECT_PAGE` on the wiki and post the heads-up (see the design doc's guardrails).
+Two tools take part. The **batch tool** you already run builds the cards, because it holds `citation_findings`, the repo and its dependencies. A new **`inaccuracies` tool** serves the app. The cards file passes between them through the batch tool's home directory.
+
+The code is on branch `ccr-9be554df-3rlar1` until it is merged; check out `main` below once it is.
+
+**1. In the batch tool: build cards daily.**
+
+```bash
+become <batch-tool>
+cd ~/citation-checker-script && git pull     # the checkout the sweeps run from
+mkdir -p ~/inaccuracies && chmod o+rx ~ ~/inaccuracies
+toolforge jobs run build-cards-once --image node20 --wait \
+  --command "cd ~/citation-checker-script && node service/run-build-cards.js --from-toolsdb --wiki enwiki --out ~/inaccuracies/cards.json"
+cat ~/build-cards-once.err                   # the counts, and why each finding was dropped
+chmod o+r ~/inaccuracies/cards.json
+toolforge jobs run build-cards --image node20 --schedule "23 4 * * *" \
+  --command "cd ~/citation-checker-script && node service/run-build-cards.js --from-toolsdb --wiki enwiki --out ~/inaccuracies/cards.json && chmod o+r ~/inaccuracies/cards.json"
+```
+
+**2. Create the `inaccuracies` tool** at toolsadmin.wikimedia.org (it takes a few minutes to appear), then:
+
+```bash
+become inaccuracies
+git clone https://github.com/alex-o-748/citation-checker-script.git ~/src
+ln -s ~/src/inaccuracies ~/www/js            # the Node webservice runs `npm start` here
+head -c 300 /data/project/<batch-tool>/inaccuracies/cards.json   # this tool can read the cards
+toolforge envvars create CARDS_FILE /data/project/<batch-tool>/inaccuracies/cards.json
+toolforge envvars create EVENTS_FILE /data/project/inaccuracies/events.jsonl
+toolforge envvars create BASE_URL https://inaccuracies.toolforge.org
+toolforge envvars create PROJECT_PAGE User:Alaexis/Inaccuracies
+toolforge webservice node20 shell            # then, inside: cd ~/www/js && npm install && exit
+toolforge webservice node20 start
+```
+
+`npm install` runs inside the webservice shell so the preview renderer (`@resvg/resvg-js`) gets the binary for the image it will run on. For serif and sans text in the previews, put `.ttf` files (Source Serif 4 and Inter, both OFL) in `~/fonts` and add `FONT_DIR=/data/project/inaccuracies/fonts`.
+
+**3. Check it**: open https://inaccuracies.toolforge.org, then `toolforge webservice logs`. A new value of an envvar reaches the app only after `toolforge webservice restart`.
+
+**4. Before telling anyone**: play 30 cards yourself, create `PROJECT_PAGE` on the wiki, and post the heads-up (the design doc's guardrails).
+
+**Updating**: `git pull` in `~/src` as the `inaccuracies` tool, then `toolforge webservice restart`. The cards file needs no restart: the app reloads it when it changes.
+
+If the `head` in step 2 is refused, the cards file isn't readable across tools: check the `chmod`s in step 1.
