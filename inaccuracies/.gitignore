@@ -1,0 +1,4 @@
+node_modules/
+dev/events.jsonl
+# The repo root ignores *.html (benchmark output); this one is the app.
+!public/index.html

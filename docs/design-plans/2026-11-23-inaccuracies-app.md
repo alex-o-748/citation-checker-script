@@ -1,6 +1,6 @@
 # Inaccuracies: an app for anyone to catch and fix places where Wikipedia disagrees with its own sources
 
-> **Status (2026-11-23):** Proposed. Nothing built. "Inaccuracies" is a working name.
+> **Status (2026-11-23):** In progress on branch `ccr-9be554df-3rlar1`. The card builder (`service/run-build-cards.js`, `service/cards/`) and the app (`inaccuracies/`) are built and tested, and the app runs locally on a hand-made sample. Not deployed, and the builder hasn't yet run on real findings. "Inaccuracies" is a working name. Where the build differs from this design: see *As built*, at the end.
 
 ## Why
 
@@ -287,3 +287,16 @@ What decides whether it's working:
 | Finding sources as the headline | Citation Hunt and CNfirmed already do this, and it's less of a hook. It's a later path |
 | Live checks ("paste any article") | That's the `citation-checker` web tool. It would cost a model call per visitor and show findings nobody had filtered |
 | A custom domain off Toolforge | A nicer link, but it loses direct ToolsDB access and the signal that it's hosted by Wikimedia |
+
+## As built (2026-11-23)
+
+Where the first build differs from the design above, and why:
+
+- **Cards are handed over as a JSON file** (`CARDS_FILE`), not a `_p` ToolsDB table. A file is the simplest thing both sides can test. How the app tool gets the file on Toolforge is the open deployment question in `inaccuracies/README.md`.
+- **Answers and fixes are an append-only event log** (`EVENTS_FILE`, JSON lines), not a ToolsDB table. The app is one process, so a log needs no database. And every count can be recomputed by replaying it, so a wrong rule is fixed without patching data.
+- **The source label is the site's host name** (an archive snapshot is labelled by the site it archived), not the publication and date. Neither ToolsDB nor the batch CSV stores the citation text.
+- **Talk-page notes aren't hashtag-tracked.** On `section=new`, MediaWiki makes the edit summary from the heading, so the hashtag can't ride along. The app records a note when the person says they posted it.
+- **Readers, topics and model decisions are cached in the cards file.** Each rebuild re-reads every article: that is the freshness check. It calls the model only for a finding it hasn't seen under the current `CONFLICT_PROMPT_VERSION`.
+- **The search text has at least three words**, preferring the words before the flagged ones ("founded in 1999" rather than "1999 by"), because it reads as a phrase.
+- **A warm-up card comes from the chosen topic** when one has been fixed, and otherwise from any topic.
+- **Two smaller departures:** fix detection is `POST /api/check`, and the home screen's counters come with `GET /api/topics` rather than a separate `/api/stats`.
