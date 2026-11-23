@@ -112,9 +112,10 @@ WHERE wiki = 'enwiki'
 
 **Only contradictions with a verified quote**, because that's the only kind of finding someone who isn't an editor can check in a minute: two sentences and one difference. An omission means reading the whole source, and omissions are where truncated fetches produce false flags. A verified quote means every word on the card is in the source (`core/quote.js`).
 
-Then each article is fetched once, at its current revision, and that one fetch settles four things:
+Then each article is fetched once at its current revision, plus one API call for its protection, and that settles five things:
 
 - **Is the sentence still there?** If not, the card is never made.
+- **Can a new editor publish there?** Any edit protection (semi, extended-confirmed or full) or pending changes leaves the article out. Someone logged out, or with a new account, either can't publish there, or their edit waits for review where the app can't see it. Protection comes from `prop=info&inprop=protection`, and pending changes from `prop=flagged`. Talk pages are rarely protected, so these articles could come back later as cards with only *Ask the article's editors*.
 - **Is it a biography of a living person** (`Category:Living people`)? Those are left out at launch, as is the Medicine & Health topic.
 - **Which section is it in?** The edit link needs the section number.
 - **Is the quote in the wiki's language?** At launch, enwiki cards need English sources.
@@ -125,7 +126,7 @@ A second supply, for later: PARTIALLY SUPPORTED findings where the severity pass
 
 | Field | How it is made | Cost |
 |---|---|---|
-| **Conflict spans**: the words in the sentence and in the quote that disagree | One model call per candidate, through the LLM Router. Both spans must be found verbatim (with `core/quote.js` normalization), or the card is dropped. Its own prompt with a hash-pinned version, like the repo's other prompts | One call per card, once |
+| **Conflict spans**: the words in the sentence and in the quote that disagree | One model call per candidate, through the LLM Router. Both spans must be found verbatim (with `core/quote.js` normalization), or the card is dropped. The same call answers whether both statements could be true at once (see *A difference is not always an error*). Its own prompt with a hash-pinned version, like the repo's other prompts | One call per card, once |
 | **Find text** | The shortest snippet around the flagged words that occurs exactly once in both the section's wikitext and its rendered text. That way, searching the editor for it always works, links and templates included | One wikitext fetch per article |
 | **Topics** | Lift Wing's `outlink-topic-model` (64 WikiProject topics). It is language-agnostic, so ruwiki works too. Called one request at a time, because its model card warns against parallel requests | One call per article, cached |
 | **Monthly readers** | Pageviews API | One call per article |
@@ -133,11 +134,28 @@ A second supply, for later: PARTIALLY SUPPORTED findings where the severity pass
 
 **The model points at words and never writes the fix.** The rule from the source-quote design, that every character shown came from the source, extends to the highlights. And no text written by a model is ever offered as an edit. The uncited-text check has the same rule for a different reason. Here it is so that the edit is the person's own, which is also what makes it defensible to editors wary of LLM-written content.
 
+### A difference is not always an error
+
+The tap checks *where* the two texts differ. It can't check whether the difference means the article is wrong. On 15 real contradiction rows from the benchmark (people had labeled the claim unsupported, and the model's comment described a contradiction), people would have known what to tap on 12. But "make it match the source" was the right fix on only 4:
+
+| Kind | Rows | Why the fix would fail |
+|---|---|---|
+| **The right fix** | 186 Combat Zone Wrestling (1999 / 1998), 112 Aida Turturro (2013 / 2011), 11 Immigration to the US (6% / 5%), 71 Tamil Tigers (April 1984 / March 1985) | It wouldn't |
+| **A number that changes over time** | 104 Rax Roast Beef, 162 OneNote, 168 California's 55th district, 102 Ohio University, 185 Graham Craig | The source is older than the article, a different year, or (row 168) about a different area. "More than 500M downloads" is still true at 1B+ |
+| **Not a contradiction** | 177 Final Fantasy, 75 First Chechen War, 109 Wes Olson, 99 Latin music | One year's award winners can't refute a career total. 50,000–100,000 sits inside 40,000–120,000. A 2016 book says nothing about a first book. "Hit the mainstream" is a different claim |
+| **Thin source** | 10, 188 | The source is a headline, or the passage isn't there |
+
+So the card builder keeps a card only when **both statements can't be true at once**. The conflict-span call asks: "Could both be true at a different time, place, scope or edition?" Only a *no* makes a card. On these 15 rows, that keeps exactly the four right fixes. Claims with "as of" or "currently" are left out at launch, whatever the answer. With both rules, "where do they differ?" and "what's wrong?" become the same question, and the tap stays honest.
+
+The judgments above were made from the stored text, on benchmark rows rather than the batch's card filter. The owner's 30-card play-through (*Phases*, step 0) is the real test of how many cards survive.
+
+An *Update it* card could come later: for a number that changes over time, where the source is newer than the article's "as of" date.
+
 Launch topics are friendly groups of the model's labels: Sports, Film & TV, Music, Books, Video games, Food & drink, History (with Military and warfare), Politics, Business, Science, Technology and Places. A topic goes live only once it has enough cards (see *Is there enough?*).
 
 ### Freshness
 
-Findings are computed at a pinned revision, often weeks before anyone sees the card. A card showing an error someone already fixed wastes the visitor's time and makes the app look broken. So a daily job re-checks every open card against the current revision, and the app checks once more, with one API call, when a card is opened.
+Findings are computed at a pinned revision, often weeks before anyone sees the card. A card showing an error someone already fixed wastes the visitor's time and makes the app look broken. So a daily job re-checks every open card against the current revision and the article's protection, which is often added in the middle of a dispute. The app checks once more, with one API call, when a card is opened.
 
 ### Is there enough?
 
@@ -180,7 +198,7 @@ Once a note is posted, the card closes as *asked*. The freshness job retires it 
 
 All of these are cheap:
 
-1. **The selection filter**: contradictions only, verified quotes, whole sources. No BLPs and no medicine at launch.
+1. **The selection filter**: contradictions only, where both statements can't be true at once. Verified quotes and whole sources only. No protected articles, no BLPs, no medicine, and no "as of" claims at launch.
 2. **The tap**: *Fix it* appears only after the person has found the wrong words themselves.
 3. **Freshness**: every card is re-checked against the current revision before it is shown.
 4. **The summary** quotes the source and carries the hashtag.
@@ -247,6 +265,8 @@ What decides whether it's working:
 - Accounts, points, leaderboards, streaks, notifications.
 - Model calls while anyone is using the app.
 - Omissions, truncated sources, group findings, BLPs, medicine, sources in another language.
+- Protected articles, and articles under pending changes. They could come back as cards with only *Ask the article's editors*.
+- Claims with "as of" or "currently", and other numbers that change over time.
 - Edits through OAuth.
 
 ## Open questions
