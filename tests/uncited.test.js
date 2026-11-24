@@ -133,7 +133,21 @@ test('a fully cited article has nothing to check', () => {
     );
     assert.deepEqual(uncitedSentences(cited), {
         sentences: [], paragraphs: [], opening: 'Lead.', total: 0, capped: false, usesLead: false,
+        stats: { paragraphs: 1, sentences: 2, cited: 2, short: 0, leadIns: 0, uncited: 0 },
     });
+});
+
+test('stats count every sentence read and why each was or was not sent', () => {
+    const root = JSDOM.fragment(
+        '<section data-mw-section-id="0"><p>The lead is not counted here.</p></section>'
+        + '<section data-mw-section-id="1"><h2>History</h2>'
+        + '<p>It opened in 1998.' + ref(1) + ' It was designed by Anna Holt. Yes. Awards it received include:</p>'
+        + '<p>It is painted red. It cost 40 million.</p></section>'
+    );
+    const { stats, total } = uncitedSentences(root);
+    assert.deepEqual(stats, { paragraphs: 2, sentences: 6, cited: 1, short: 1, leadIns: 1, uncited: 3 });
+    assert.equal(stats.uncited, total);
+    assert.equal(stats.cited + stats.short + stats.leadIns + stats.uncited, stats.sentences);
 });
 
 test('the sentence cap keeps the first sentences in article order and says so', () => {
