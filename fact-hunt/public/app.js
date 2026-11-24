@@ -17,6 +17,7 @@ const STRINGS = {
     sourceSays: 'Its source says',
     readSource: 'Read it in the source',
     same: 'They say the same thing',
+    noDifference: 'Can’t find a difference?',
     skip: 'Skip',
     left: '{n} left',
     warmUp: 'Warm-up: someone already fixed this one. Find what was wrong.',
@@ -367,7 +368,10 @@ function cardScreen({ banner = null } = {}) {
         wikiPanel(card, { tappable: true, onTap: i => { state.tapped = i; answer({ kind: 'tap', token: i }); } }),
         sourcePanel(card),
         h('div', { class: 'spacer' }),
-        h('div', { class: 'actions' }, h('button', { type: 'button', class: 'button secondary', onclick: () => answer({ kind: 'same' }) }, t('same'))),
+        // The way out, not the main action: tapping a word is. A quiet link,
+        // so it never reads as the button to press.
+        h('p', { class: 'way-out' }, t('noDifference'), ' ',
+            h('button', { type: 'button', class: 'inline-button', onclick: () => answer({ kind: 'same' }) }, t('same'))),
     );
 }
 
