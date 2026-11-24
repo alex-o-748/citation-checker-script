@@ -147,7 +147,7 @@ test('both system prompts specify the source_quote field', () => {
 
 test('every few-shot example in both prompts includes a source_quote key', () => {
   for (const prompt of [generateSystemPrompt(), generateGroupSystemPrompt()]) {
-    const examples = prompt.match(/^\{"support_score[^\n]*\}$/gm) || [];
+    const examples = prompt.match(/^\{"(?:source_quote|support_score)"[^\n]*\}$/gm) || [];
     assert.ok(examples.length >= 3, 'examples should be discoverable');
     for (const example of examples) {
       const parsed = JSON.parse(example);
@@ -163,7 +163,7 @@ test('few-shot quotes are copied verbatim from their own example source text', (
   for (const prompt of [generateSystemPrompt(), generateGroupSystemPrompt()]) {
     const blocks = prompt.split('<example>').slice(1).map(b => b.split('</example>')[0]);
     for (const block of blocks) {
-      const jsonLine = (block.match(/^\{"support_score[^\n]*\}$/m) || [])[0];
+      const jsonLine = (block.match(/^\{"(?:source_quote|support_score)"[^\n]*\}$/m) || [])[0];
       if (!jsonLine) continue;
       const quote = JSON.parse(jsonLine).source_quote;
       if (!quote) continue;
@@ -178,9 +178,31 @@ test('few-shot quotes are copied verbatim from their own example source text', (
   }
 });
 
+// PROMPT_VERSION v4: the quote is written before the score and the verdict,
+// so the model finds the passage before it decides. Models copy the examples'
+// field order, so the schema and every example have to agree on it
+// (docs/quote-first-benchmark-2026-11-17.md).
+test('source_quote comes first in the schema and every example of both prompts', () => {
+  for (const prompt of [generateSystemPrompt(), generateGroupSystemPrompt()]) {
+    const schema = prompt.split('Respond in JSON format:')[1];
+    assert.ok(schema, 'schema should be present');
+    const firstKey = schema.match(/"([a-z_]+)":/)[1];
+    assert.equal(firstKey, 'source_quote', 'schema should list source_quote first');
+    const examples = prompt.match(/^\{"[a-z_]+"[^\n]*\}$/gm) || [];
+    assert.ok(examples.length >= 3, 'examples should be discoverable');
+    for (const example of examples) {
+      assert.deepEqual(
+        Object.keys(JSON.parse(example)).slice(0, 3),
+        ['source_quote', 'support_score', 'verdict'],
+        `example out of order: ${example.slice(0, 60)}`
+      );
+    }
+  }
+});
+
 test('omission and source-unavailable examples carry an empty source_quote', () => {
   const prompt = generateSystemPrompt();
-  const examples = (prompt.match(/^\{"support_score[^\n]*\}$/gm) || []).map(e => JSON.parse(e));
+  const examples = (prompt.match(/^\{"(?:source_quote|support_score)"[^\n]*\}$/gm) || []).map(e => JSON.parse(e));
   const omission = examples.find(e => e.reason_type === 'omission');
   const unavailable = examples.find(e => e.verdict === 'SOURCE UNAVAILABLE');
   assert.equal(omission.source_quote, '');
@@ -198,7 +220,7 @@ test('omission and source-unavailable examples carry an empty source_quote', () 
 // then replace EXPECTED_HASH below with the value this test's failure
 // message reports.
 test('PROMPT_VERSION is bumped whenever the system prompt text changes', () => {
-  const EXPECTED_HASH = '0d151a226f7f1e0262e1ded8cb158b1e7876472f8ef858cecef7c611a3870b89';
+  const EXPECTED_HASH = 'ef1c86e951d4b0946309b240c5e317d1a6ba99a1a0fa08f77561634f3320d274';
   const actual = createHash('sha256').update(generateSystemPrompt(), 'utf8').digest('hex');
   assert.equal(
     actual,
@@ -246,8 +268,8 @@ test('withCommentLanguage always exempts source_quote and pins the English verdi
   assert.match(out, /SUPPORTED, PARTIALLY SUPPORTED, NOT SUPPORTED, SOURCE UNAVAILABLE, contradiction, omission/);
 });
 
-test('COMMENT_LANGUAGE_NAMES covers fr, es, ru, and he', () => {
-  assert.deepEqual(Object.keys(COMMENT_LANGUAGE_NAMES).sort(), ['es', 'fr', 'he', 'ru']);
+test('COMMENT_LANGUAGE_NAMES covers fr, es, ru, he, and nl', () => {
+  assert.deepEqual(Object.keys(COMMENT_LANGUAGE_NAMES).sort(), ['es', 'fr', 'he', 'nl', 'ru']);
 });
 
 // --- Cross-check against main.js's own copy ---
@@ -287,6 +309,7 @@ test('withCommentLanguage matches main.js\'s own localizeSystemPrompt() for ever
     { lang: 'fr', articleLangCode: 'fr' },
     { lang: 'es', articleLangCode: 'es' },
     { lang: 'he', articleLangCode: 'he' },
+    { lang: 'nl', articleLangCode: 'nl' },
     { lang: undefined, articleLangCode: 'he' },
     { lang: undefined, articleLangCode: 'de' },
     { lang: undefined, articleLangCode: 'ru' }, // batch pipeline's actual shape: no UI lang, just the wiki's

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import { createMetrics, describeSource, outcomeFor, OUTCOMES } from '../api/metrics.js';
 import { createRateLimiter, createVerifyServer } from '../api/server.js';
+import { API_PROVIDER } from '../api/verify.js';
 
 test('outcomeFor maps every status the API returns onto one outcome', () => {
   assert.equal(outcomeFor(200), OUTCOMES.OK);
@@ -120,7 +121,9 @@ test('server records /v1/verify traffic and serves it at /metrics.json and /stat
     const response = await fetch(`${base}/metrics.json`);
     assert.equal(response.status, 200);
     const snap = await response.json();
-    assert.equal(snap.service.provider, 'huggingface');
+    // Compare with the provider the API calls, not a name: that has moved
+    // before. The default's own value is pinned in tests/models.test.js.
+    assert.equal(snap.service.provider, API_PROVIDER);
     assert.equal(typeof snap.service.model, 'string');
     assert.deepEqual(snap.windows['1h'].outcomes,
       { ok: 2, source_unavailable: 1, upstream_error: 0, rate_limited: 1, rejected: 1 });

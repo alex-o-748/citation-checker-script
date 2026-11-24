@@ -7,7 +7,10 @@ import {
     isAuthOrBillingError,
     ProviderAuthError,
     makeModelCaller,
+    verifyLead,
+    verifyUncited,
 } from '../service/verifier.js';
+import { fitBody } from '../core/lead.js';
 
 const okResponse = (body) => async () => ({
     text: JSON.stringify(body),
@@ -237,6 +240,17 @@ test('verifyGroup skips the model call when at most one member has a usable sour
     assert.equal(called, false, 'a group with <=1 usable source must not call the model');
 });
 
+test('verifyGroup skips when a member\'s own check judged its fetched page unavailable', async () => {
+    const members = [
+        { groupId: 'g', citationNumber: '1', claimText: 'A long enough claim to check.', url: 'https://a.example', source: { content: 'Source Content:\nreal text', status: 200 } },
+        { groupId: 'g', citationNumber: '2', claimText: 'A long enough claim to check.', url: 'https://b.example', source: { content: 'Source Content:\npaywall', status: 200 }, judgedUnavailable: true },
+    ];
+    let called = false;
+    const result = await verifyGroup(members, { callModel: async () => { called = true; return { text: '{}', usage: {} }; } });
+    assert.deepEqual(result, { skipped: true, groupId: 'g' });
+    assert.equal(called, false);
+});
+
 test('verifyGroup calls the model with assembled sources when two or more are usable', async () => {
     const members = [
         member('5', { groupIndex: 0, url: 'https://a.example', content: withContent('The bridge opened in 1998.') }),
@@ -431,4 +445,97 @@ test('verifyGroup asks callModel for the larger group output budget', async () =
         },
     });
     assert.deepEqual(opts, { kind: 'group' });
+});
+
+const leadInput = {
+    sentences: [
+        { index: 0, paragraphIndex: 0, text: 'The bridge opened in 1998.' },
+        { index: 1, paragraphIndex: 0, text: 'It cost $200 million.' },
+    ],
+    body: fitBody([{ level: 2, heading: 'History', text: 'The bridge opened to traffic in 1998.' }]),
+};
+
+test('verifyLead checks every lead sentence against the body, with the comment-language directive', async () => {
+    const prompts = [];
+    const callModel = async (systemPrompt, userContent, opts) => {
+        prompts.push({ systemPrompt, userContent, opts });
+        return {
+            text: JSON.stringify([
+                { id: 1, verdict: 'SUPPORTED', source_quote: 'The bridge opened to traffic in 1998.', section: 'History' },
+                { id: 2, verdict: 'NOT SUPPORTED', reason_type: 'omission', source_quote: '' },
+            ]),
+            usage: { input: 50, output: 20 },
+        };
+    };
+    const run = await verifyLead(leadInput, { callModel, articleTitle: 'Morrison Bridge', articleLangCode: 'ru' });
+    assert.equal(prompts.length, 1);
+    assert.deepEqual(prompts[0].opts, { kind: 'lead' });
+    assert.match(prompts[0].systemPrompt, /Write the "comments" field in Russian/);
+    assert.match(prompts[0].userContent, /^Article: Morrison Bridge$/m);
+    assert.deepEqual(run.results.map(r => [r.outcome, r.section, r.quoteStatus]), [
+        ['covered', 'History', 'exact'],
+        ['not_covered', null, 'empty'],
+    ]);
+});
+
+test('verifyLead halts on an auth error, and hands any other failure to onChunkError', async () => {
+    const denied = async () => { throw new Error('API request failed (402): balance exhausted'); };
+    await assert.rejects(verifyLead(leadInput, { callModel: denied, retry: { maxRetries: 1 } }), ProviderAuthError);
+
+    const flaky = async () => { throw new Error('API request failed (503): unavailable'); };
+    const seen = [];
+    const run = await verifyLead(leadInput, {
+        callModel: flaky,
+        retry: { maxRetries: 1 },
+        onChunkError: error => { seen.push(error.message); return 'retries_exhausted'; },
+    });
+    assert.equal(seen.length, 1);
+    assert.deepEqual(run.results.map(r => r.error), ['retries_exhausted', 'retries_exhausted']);
+    await assert.rejects(verifyLead(leadInput, { callModel: flaky, retry: { maxRetries: 1 } }), /503/,
+        'with no policy for it, the failure is thrown');
+});
+
+test('verifyLead requires a callModel function, and asks nothing of an article with no body', async () => {
+    await assert.rejects(() => verifyLead(leadInput, {}), TypeError);
+    const callModel = async () => { throw new Error('must not be called'); };
+    const run = await verifyLead({ sentences: leadInput.sentences, body: fitBody([]) }, { callModel });
+    assert.deepEqual(run.results, []);
+});
+
+const uncitedInput = {
+    sentences: [
+        { index: 0, paragraphIndex: 0, sectionTitle: 'History', text: 'It was designed by Gustave Eiffel.', start: 38 },
+        { index: 1, paragraphIndex: 0, sectionTitle: 'History', text: 'It is painted red.', start: 73 },
+    ],
+    paragraphs: [{ index: 0, sectionTitle: 'History', text: 'The bridge opened to traffic in 1998. It was designed by Gustave Eiffel. It is painted red.' }],
+    opening: 'The Morrison Bridge is a bridge.',
+};
+
+test('verifyUncited asks for the uncited output budget, in the wiki\'s language, and returns the best findings', async () => {
+    const prompts = [];
+    const callModel = async (systemPrompt, userContent, opts) => {
+        prompts.push({ systemPrompt, userContent, opts });
+        return {
+            text: JSON.stringify({ issues: [{ id: 1, excerpt: 'Gustave Eiffel', comments: 'Не он.', confidence: 'medium' }] }),
+            usage: { input: 80, output: 10 },
+        };
+    };
+    const run = await verifyUncited(uncitedInput, { callModel, articleTitle: 'Morrison Bridge', articleLangCode: 'ru', maxFindings: 1 });
+    assert.equal(prompts.length, 1);
+    assert.deepEqual(prompts[0].opts, { kind: 'uncited' });
+    assert.match(prompts[0].systemPrompt, /Write the "comments" field in Russian/);
+    assert.match(prompts[0].userContent, /^Article: Morrison Bridge$/m);
+    assert.match(prompts[0].userContent, /^Earlier in the paragraph, for context:\nThe bridge opened to traffic in 1998\.$/m);
+    assert.deepEqual(run.findings.map(f => [f.index, f.confidence, f.excerptStatus]), [[0, 'medium', 'exact']]);
+});
+
+test('verifyUncited halts on an auth error, and hands any other failure to onChunkError', async () => {
+    const denied = async () => { throw new Error('API request failed (401): invalid key'); };
+    await assert.rejects(verifyUncited(uncitedInput, { callModel: denied, retry: { maxRetries: 1 } }), ProviderAuthError);
+    const flaky = async () => { throw new Error('API request failed (503): unavailable'); };
+    const run = await verifyUncited(uncitedInput, {
+        callModel: flaky, retry: { maxRetries: 1 }, onChunkError: () => 'retries_exhausted',
+    });
+    assert.deepEqual(run.unchecked.map(u => u.error), ['retries_exhausted', 'retries_exhausted']);
+    await assert.rejects(() => verifyUncited(uncitedInput, {}), TypeError);
 });

@@ -70,8 +70,12 @@ import { runBatch, ARTICLE_OUTCOMES } from './claim-extractor.js';
 import { fetchArticleHtml, hostForWiki, langCodeForWiki } from '../core/wikipedia.js';
 import { fetchSourceContent, STUB_FETCH_ERROR } from '../core/worker.js';
 import { createHostGate, DEFAULT_FETCH_CONCURRENCY } from './host-pool.js';
-import { verifyCitation, verifyGroup, makeModelCaller, ProviderAuthError } from './verifier.js';
-import { assembleFinding, assembleGroupFinding } from './finding-builder.js';
+import { verifyCitation, verifyGroup, verifyLead, verifyUncited, makeModelCaller, ProviderAuthError } from './verifier.js';
+import { isLeadDemotedVerdict } from '../core/lead.js';
+import { isJudgedUnavailable } from '../core/groups.js';
+import { leadChunkSize, LEAD_OUTCOMES } from '../core/lead-check.js';
+import { uncitedChunkSize, UNCITED_MAX_FINDINGS } from '../core/uncited-check.js';
+import { assembleFinding, assembleGroupFinding, assembleLeadFinding, assembleUncitedFinding } from './finding-builder.js';
 import { assessSeverity, needsSeverity, assembleGroupText, groupHasUnreadSource } from './severity-assessor.js';
 import { upsertFinding } from './findings-store.js';
 import { openToolsDbConnection, openReconnectingQuery } from './toolsdb.js';
@@ -79,7 +83,7 @@ import { resolveTitleInfo } from './wikipedia-pageids.js';
 import { csvHeaderLine, appendFinding, csvPageTitles, cleanCsvPath, writeCleanCsv } from './csv-report.js';
 import { PROMPT_VERSION } from '../core/prompts.js';
 import { PROVIDER_MODELS, PROVIDER_ENV_VARS } from './provider-config.js';
-import { isRetryableError } from '../core/retry.js';
+import { isRetryableError, isOutputBudgetError } from '../core/retry.js';
 import { runChecksOnFile, summaryLines } from './run-checks.js';
 
 // reason_type on an ERROR row whose model call kept failing transiently.
@@ -93,7 +97,7 @@ export const RETRIES_EXHAUSTED = 'retries_exhausted';
 // Real incident, 2026-10-04: one such call halted a ruwiki sweep with gpt-oss
 // after 2 articles.
 export const OUTPUT_BUDGET_EXHAUSTED = 'output_budget_exhausted';
-export const isOutputBudgetError = error => /ran out of output budget/.test(error?.message ?? '');
+export { isOutputBudgetError };
 
 // reason_type on an ERROR row whose model finished normally (finish_reason
 // "stop") but returned no text. Same standing as the budget case: the service
@@ -137,6 +141,9 @@ export function parseCliArgs(argv) {
             'no-store':          { type: 'boolean', default: false },
             resume:              { type: 'boolean', default: false },
             severity:            { type: 'boolean', default: false },
+            'lead-check':        { type: 'boolean', default: false },
+            'uncited-check':     { type: 'boolean', default: false },
+            'uncited-max-findings': { type: 'string', default: String(UNCITED_MAX_FINDINGS) },
             'skip-checks':       { type: 'boolean', default: false },
             out:                 { type: 'string', default: 'findings.csv' },
             help:                { type: 'boolean', short: 'h', default: false },
@@ -166,6 +173,9 @@ export function parseCliArgs(argv) {
         store: !values['no-store'],
         resume: values.resume,
         severity: values.severity,
+        leadCheck: values['lead-check'],
+        uncitedCheck: values['uncited-check'],
+        uncitedMaxFindings: Number(values['uncited-max-findings']),
         skipChecks: values['skip-checks'],
         out: values.out,
     };
@@ -263,6 +273,29 @@ Options:
                          severity_subclaims (see core/severity.js). Off by
                          default because it adds model calls in proportion to
                          the flag rate.
+  --lead-check          Check every lead sentence against the article's body
+                         (core/lead-check.js): one lead_body row per sentence,
+                         reporting what the lead says that the body doesn't
+                         cover or contradicts. In those articles, a lead
+                         citation's PARTIALLY SUPPORTED or omission verdict is
+                         marked lead_demoted (left out of the clean CSV and
+                         the severity pass): in the lead, "the source doesn't
+                         mention it" is the lead check's question. A few model
+                         calls per article, each carrying the body. Off by
+                         default; an article with no headings gets neither.
+  --uncited-check       Check the body sentences no citation covers against
+                         the model's own knowledge (core/uncited-check.js):
+                         one uncited row (NOT SUPPORTED, reason_type
+                         doubtful) per sentence the model has a specific
+                         reason to think is wrong, best first, at most
+                         --uncited-max-findings per article. Sentences it
+                         doesn't report get no row. The lead is left out
+                         (the lead check reads it); an article with no
+                         headings is read whole. Off by default.
+  --uncited-max-findings <n>
+                        Findings kept per article by --uncited-check
+                         (default: ${UNCITED_MAX_FINDINGS}). Raise it to measure the
+                         ranking: the kept rows are the top n.
   --out <path>          CSV output path (default: findings.csv)
                         A cleaned copy is also written beside it as
                         <name>-clean.csv.
@@ -326,6 +359,13 @@ function makeLiveFetchSource() {
 
 function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// A promise with its resolve exposed, for one task to wait on another.
+function settleable() {
+    let resolve;
+    const promise = new Promise(r => { resolve = r; });
+    return { promise, resolve };
 }
 
 // Splits one article's citations into solo citations and adjacent groups
@@ -424,6 +464,11 @@ export async function runSweep(opts, {
         stderr.write(`sweep: --max-consecutive-failures must be a positive integer (got: ${opts.maxConsecutiveFailures})\n`);
         return 2;
     }
+    const uncitedMaxFindings = opts.uncitedMaxFindings ?? UNCITED_MAX_FINDINGS;
+    if (!Number.isInteger(uncitedMaxFindings) || uncitedMaxFindings < 1) {
+        stderr.write(`sweep: --uncited-max-findings must be a positive integer (got: ${opts.uncitedMaxFindings})\n`);
+        return 2;
+    }
 
     // Defaulted here rather than in the destructuring above so a real run
     // (no fetchArticle injected) resolves the REST host from --wiki instead
@@ -499,10 +544,38 @@ export async function runSweep(opts, {
                 `Rows will carry no page_id, revision_id or permalink, and each article is read at its latest revision.\n`
             );
         }
-        candidates = chosen.map(title => {
+        // A title that has become a #REDIRECT (the article was renamed since
+        // the list was written — the normal case for a rerun of an earlier
+        // batch by its stored titles) is checked under the target's title:
+        // that is what the REST fetch must ask for, and what the CSV's
+        // page_title should say. The listed title goes in redirected_from,
+        // which is how the coverage check knows it was covered.
+        candidates = [];
+        const byTitle = new Map();
+        for (const title of chosen) {
             const info = resolved.get(title);
-            return { pageId: info?.pageId ?? null, title, revisionId: info?.revisionId ?? null };
-        });
+            const redirectedFrom = info?.redirectedFrom ? title : null;
+            const candidate = {
+                pageId: info?.pageId ?? null,
+                title: redirectedFrom ? info.title : title,
+                revisionId: info?.revisionId ?? null,
+                redirectedFrom,
+            };
+            if (redirectedFrom) stderr.write(`sweep: ${title} redirects to ${candidate.title}\n`);
+            // Two listed titles landing on one article (a title and its old
+            // name, or two old names) would check it twice and write every
+            // row twice, which the structure check fails as duplicates.
+            const earlier = byTitle.get(candidate.title);
+            if (earlier) {
+                stderr.write(
+                    `sweep: ${title} is the same article as ${earlier.redirectedFrom ?? earlier.title} ` +
+                    `(${candidate.title}) — checking it once\n`
+                );
+                continue;
+            }
+            byTitle.set(candidate.title, candidate);
+            candidates.push(candidate);
+        }
         const unresolved = candidates.filter(c => !c.pageId).map(c => c.title);
         if (unresolved.length) {
             stderr.write(
@@ -555,6 +628,12 @@ export async function runSweep(opts, {
     // Every title the run was asked for, including ones --resume skips: the
     // post-run coverage check asks which of these produced no rows at all.
     const plannedTitles = candidates.map(candidate => candidate.title);
+    // processArticle() hands back only pageId/title/revisionId, so the
+    // listed title a redirected candidate came from is looked up by the
+    // article's (target) title when its findings are assembled.
+    const redirectedFromByTitle = new Map(
+        candidates.filter(c => c.redirectedFrom).map(c => [c.title, c.redirectedFrom])
+    );
 
     // Runs the post-run checks over the finished CSV. Never throws and never
     // touches the CSV: a checker problem costs the report, not the findings.
@@ -654,6 +733,13 @@ export async function runSweep(opts, {
         citationsSeen: 0, citationsWithUrl: 0, citationsFetched: 0,
         verified: 0, flagged: 0, published: 0,
         groupsChecked: 0, groupsSkipped: 0, groupsFlagged: 0,
+        leadArticles: 0, leadSentences: 0, leadNotCovered: 0, leadContradicted: 0, leadUnchecked: 0,
+        leadDemoted: 0,
+        uncitedArticles: 0, uncitedSentences: 0, uncitedFound: 0, uncitedDropped: 0, uncitedUnchecked: 0,
+        uncitedCapped: 0,
+        // A call that finds nothing writes no row, so its tokens are counted
+        // here or nowhere.
+        uncitedCalls: 0, uncitedTokensIn: 0, uncitedTokensOut: 0,
     };
     // Severity pass tallies, by tier ('T1'...'disagreement', or 'error').
     const severityCounts = {};
@@ -858,6 +944,7 @@ export async function runSweep(opts, {
 
             const wikiCandidate = {
                 wiki: opts.wiki, pageId: article.pageId, title: article.title, revisionId: article.revisionId,
+                redirectedFrom: redirectedFromByTitle.get(article.title) ?? null,
                 isBlp: isBlpByCategories(article.categories, opts.wiki),
             };
             const { solos, groups } = splitCitations(article.citations);
@@ -865,16 +952,37 @@ export async function runSweep(opts, {
             // a sibling source that couldn't be fetched leaves its "absent"
             // subclaims unproven, the same as for the group's combined one.
             const unreadGroups = new Set(groups.filter(groupHasUnreadSource).map(members => members[0].groupId));
+            // Demotion applies only where a lead check runs: without one, a
+            // demoted lead citation would be a real failure with nothing to
+            // report it instead.
+            const leadChecked = Boolean(opts.leadCheck && article.lead?.body?.text && article.lead.sentences.length);
 
+            // A group's combined check waits for its members' own checks: a
+            // source its own check found no text behind (an error page, a
+            // paywall preview) is unread for the group too
+            // (core/groups.js's isJudgedUnavailable()). Every member's solo
+            // task is yielded before its group's, so by the time a worker
+            // takes the group task, each member is already running or done:
+            // the wait can't deadlock, at any --concurrency.
+            const ownChecks = new Map(groups.flatMap(members => firstPerFootnote(members).map(m => [m, settleable()])));
             for (const citation of [...solos, ...groups.flatMap(firstPerFootnote)]) {
                 funnel.citationsSeen++;
                 if (citation.url) funnel.citationsWithUrl++;
                 if (citation.source?.content) funnel.citationsFetched++;
+                // Fetch-level only: a member's own finding is ranked as soon
+                // as it is verified, before its siblings' verdicts are in.
                 const unreadSources = citation.groupSize > 1 && unreadGroups.has(citation.groupId);
-                yield { kind: 'solo', wikiCandidate, citation, unreadSources };
+                yield { kind: 'solo', wikiCandidate, citation, unreadSources, leadChecked, ownCheck: ownChecks.get(citation) ?? null };
             }
             for (const members of groups) {
-                yield { kind: 'group', wikiCandidate, members };
+                yield {
+                    kind: 'group', wikiCandidate, members, leadChecked,
+                    ownChecks: firstPerFootnote(members).map(m => ownChecks.get(m).promise),
+                };
+            }
+            if (leadChecked) yield { kind: 'lead', wikiCandidate, lead: article.lead };
+            if (opts.uncitedCheck && article.uncited?.sentences?.length) {
+                yield { kind: 'uncited', wikiCandidate, uncited: article.uncited };
             }
         }
     }
@@ -886,8 +994,8 @@ export async function runSweep(opts, {
     // that outlasted its retries is recorded (severity_error
     // retries_exhausted) and counts toward --max-consecutive-failures; an
     // auth/billing or non-transient error halts the run after this finding.
-    async function rankFinding({ claimText, sourceInfo, sourceTruncated, unreadSources = false, verification, wikiCandidate, context }) {
-        if (!opts.severity || !needsSeverity(verification)) return null;
+    async function rankFinding({ claimText, sourceInfo, sourceTruncated, unreadSources = false, verification, wikiCandidate, context, leadDemoted = false }) {
+        if (!opts.severity || !needsSeverity(verification) || leadDemoted) return null;
         const { onAttemptFailed, finish } = trackRetries();
         let severity;
         try {
@@ -917,9 +1025,126 @@ export async function runSweep(opts, {
         return severity;
     }
 
+    // Whether a citation finding is demoted (core/lead.js): in lead prose, in
+    // an article that gets a lead check, and partial or an omission.
+    function demotes(task, citation, verification) {
+        const demoted = Boolean(task.leadChecked && citation?.inLead
+            && isLeadDemotedVerdict(verification.verdict, verification.reasonType));
+        if (demoted) funnel.leadDemoted++;
+        return demoted;
+    }
+
+    // The lead check for one article: every lead sentence against its body,
+    // one row per sentence. A failed call is recorded on its sentences under
+    // the same policy as a citation's (retries_exhausted and the
+    // consecutive-failure breaker; per-call failures recorded and passed
+    // over); an auth/billing or non-transient error halts the run.
+    async function checkLead(task) {
+        const verifyStartedAt = Date.now();
+        const { onAttemptFailed, finish } = trackRetries();
+        let run;
+        try {
+            run = await verifyLead(task.lead, {
+                callModel,
+                articleTitle: task.wikiCandidate.title,
+                chunkSize: leadChunkSize(opts.provider),
+                retry: { ...retryOptions, onAttemptFailed },
+                articleLangCode,
+                // --delay-ms applies between a lead check's calls as between
+                // any other two model calls.
+                pause: () => sleep(opts.delayMs),
+                onChunkError: error => {
+                    if (!countTransientFailure(error)) return null;
+                    const perCall = isPerCallModelFailure(error);
+                    if (perCall) perCallFailures++; else transientFailures++;
+                    return perCall ? perCallReasonType(error) : RETRIES_EXHAUSTED;
+                },
+            });
+        } catch (error) {
+            if (!halted) { halted = true; haltError = error; }
+            return;
+        } finally {
+            recordVerifyDuration(verifyStartedAt);
+            finish();
+        }
+        funnel.leadArticles++;
+        if (run.results.some(r => r.verdict)) {
+            consecutiveFailures = 0;
+            await sleep(opts.delayMs);
+        }
+        for (const result of run.results) {
+            funnel.leadSentences++;
+            if (result.outcome === LEAD_OUTCOMES.NOT_COVERED) funnel.leadNotCovered++;
+            else if (result.outcome === LEAD_OUTCOMES.CONTRADICTED) funnel.leadContradicted++;
+            else if (!result.verdict) funnel.leadUnchecked++;
+            await record(assembleLeadFinding({
+                candidate: task.wikiCandidate, result,
+                provider: opts.provider, model: opts.model, promptVersion: run.promptVersion,
+            }));
+        }
+    }
+
+    // The uncited-text check for one article: its uncited body sentences
+    // against the model's knowledge, one row per finding kept (and one ERROR
+    // row per sentence a failed call left unchecked). Same failure policy as
+    // checkLead().
+    async function checkUncited(task) {
+        const verifyStartedAt = Date.now();
+        const { onAttemptFailed, finish } = trackRetries();
+        let run;
+        try {
+            run = await verifyUncited(task.uncited, {
+                callModel,
+                articleTitle: task.wikiCandidate.title,
+                chunkSize: uncitedChunkSize(opts.provider),
+                maxFindings: uncitedMaxFindings,
+                retry: { ...retryOptions, onAttemptFailed },
+                articleLangCode,
+                // --delay-ms applies between its calls, as for the lead check.
+                pause: () => sleep(opts.delayMs),
+                onChunkError: error => {
+                    if (!countTransientFailure(error)) return null;
+                    const perCall = isPerCallModelFailure(error);
+                    if (perCall) perCallFailures++; else transientFailures++;
+                    return perCall ? perCallReasonType(error) : RETRIES_EXHAUSTED;
+                },
+            });
+        } catch (error) {
+            if (!halted) { halted = true; haltError = error; }
+            return;
+        } finally {
+            recordVerifyDuration(verifyStartedAt);
+            finish();
+        }
+        funnel.uncitedArticles++;
+        funnel.uncitedSentences += run.checked;
+        funnel.uncitedFound += run.findings.length;
+        funnel.uncitedDropped += run.dropped;
+        funnel.uncitedUnchecked += run.unchecked.length;
+        if (task.uncited.capped) funnel.uncitedCapped++;
+        funnel.uncitedCalls += run.calls;
+        funnel.uncitedTokensIn += run.usage.input;
+        funnel.uncitedTokensOut += run.usage.output;
+        if (run.checked > 0) {
+            consecutiveFailures = 0;
+            await sleep(opts.delayMs);
+        }
+        for (const result of [...run.findings, ...run.unchecked]) {
+            await record(assembleUncitedFinding({
+                candidate: task.wikiCandidate, result,
+                provider: opts.provider, model: opts.model, promptVersion: run.promptVersion,
+            }));
+        }
+    }
+
     async function worker(tasks) {
         for await (const task of tasks) {
-            if (halted) continue; // drain without dispatching new model calls
+            if (halted) {
+                // Drain without dispatching new model calls, but release any
+                // group task already waiting on this one.
+                task.ownCheck?.resolve();
+                continue;
+            }
 
             if (task.kind === 'solo') {
                 let verification;
@@ -928,6 +1153,7 @@ export async function runSweep(opts, {
                 try {
                     verification = await verifyCitation(task.citation.claimText, task.citation.source, {
                         callModel, retry: { ...retryOptions, onAttemptFailed }, articleLangCode,
+                        citationText: task.citation.referenceText, sourceUrl: task.citation.url,
                     });
                 } catch (error) {
                     verification = absorbFailure(error, { fetchStatus: task.citation.source?.status ?? null });
@@ -935,6 +1161,10 @@ export async function runSweep(opts, {
                 } finally {
                     recordVerifyDuration(verifyStartedAt);
                     finish();
+                    if (task.ownCheck) {
+                        task.citation.judgedUnavailable = isJudgedUnavailable(verification?.verdict);
+                        task.ownCheck.resolve();
+                    }
                 }
                 if (!verification) continue;
                 if (verification.usage) {
@@ -943,6 +1173,7 @@ export async function runSweep(opts, {
                     await sleep(opts.delayMs);
                 }
                 if (recordVerdict(verification.verdict)) funnel.flagged++;
+                const leadDemoted = demotes(task, task.citation, verification);
 
                 const content = task.citation.source?.content ?? null;
                 const severity = await rankFinding({
@@ -950,18 +1181,20 @@ export async function runSweep(opts, {
                     sourceInfo: content,
                     sourceTruncated: Boolean(content?.includes('\nTruncated: true')),
                     unreadSources: task.unreadSources,
-                    verification, wikiCandidate: task.wikiCandidate, context: task.citation,
+                    verification, wikiCandidate: task.wikiCandidate, context: task.citation, leadDemoted,
                 });
 
                 await record(assembleFinding({
                     candidate: task.wikiCandidate, citation: task.citation, verification,
                     provider: opts.provider, model: opts.model, promptVersion: PROMPT_VERSION,
-                    severity,
+                    severity, leadDemoted,
                 }));
-            } else {
+            } else if (task.kind === 'group') {
                 let verification;
                 const verifyStartedAt = Date.now();
                 const { onAttemptFailed, finish } = trackRetries();
+                await Promise.all(task.ownChecks);
+                if (halted) continue;
                 try {
                     verification = await verifyGroup(task.members, {
                         callModel, retry: { ...retryOptions, onAttemptFailed }, articleLangCode,
@@ -985,6 +1218,7 @@ export async function runSweep(opts, {
                     await sleep(opts.delayMs);
                 }
                 if (recordVerdict(verification.verdict)) funnel.groupsFlagged++;
+                const leadDemoted = demotes(task, task.members[0], verification);
 
                 const severity = await rankFinding({
                     claimText: task.members[0].claimText,
@@ -992,14 +1226,18 @@ export async function runSweep(opts, {
                     sourceInfo: assembleGroupText(task.members),
                     sourceTruncated: task.members.some(m => m.source?.content?.includes('\nTruncated: true')),
                     unreadSources: groupHasUnreadSource(task.members),
-                    verification, wikiCandidate: task.wikiCandidate, context: task.members[0],
+                    verification, wikiCandidate: task.wikiCandidate, context: task.members[0], leadDemoted,
                 });
 
                 await record(assembleGroupFinding({
                     candidate: task.wikiCandidate, members: task.members, verification,
                     provider: opts.provider, model: opts.model, promptVersion: PROMPT_VERSION,
-                    severity,
+                    severity, leadDemoted,
                 }));
+            } else if (task.kind === 'lead') {
+                await checkLead(task);
+            } else if (task.kind === 'uncited') {
+                await checkUncited(task);
             }
         }
     }
@@ -1039,6 +1277,17 @@ export async function runSweep(opts, {
         `(<=1 usable source), ${funnel.groupsFlagged} flagged.\n` +
         `sweep: verdicts: ${JSON.stringify(verdictCounts)}\n` +
         (opts.severity ? `sweep: severity tiers: ${JSON.stringify(severityCounts)}\n` : '') +
+        (opts.leadCheck
+            ? `sweep: lead check: ${funnel.leadSentences} lead sentence(s) in ${funnel.leadArticles} article(s) -> ` +
+              `${funnel.leadNotCovered} not covered in the body, ${funnel.leadContradicted} contradicting it, ` +
+              `${funnel.leadUnchecked} unchecked; ${funnel.leadDemoted} lead citation verdict(s) demoted.\n`
+            : '') +
+        (opts.uncitedCheck
+            ? `sweep: uncited check: ${funnel.uncitedSentences} uncited sentence(s) in ${funnel.uncitedArticles} article(s) -> ` +
+              `${funnel.uncitedFound} finding(s) kept, ${funnel.uncitedDropped} past the per-article limit, ` +
+              `${funnel.uncitedUnchecked} unchecked; ${funnel.uncitedCapped} article(s) had more than the sentence cap; ` +
+              `${funnel.uncitedCalls} call(s), ${funnel.uncitedTokensIn} tokens in, ${funnel.uncitedTokensOut} out.\n`
+            : '') +
         `sweep: wrote ${findingsWritten} finding(s) to ${opts.out}` +
         `${toolsDbQuery ? ` and ${storeStats.written} to ToolsDB` : ''}` +
         `${resumeSkipped ? ` (${resumeSkipped} article(s) skipped as already done)` : ''}.\n` +

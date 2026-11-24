@@ -1,0 +1,215 @@
+{
+  "generated": "2026-11-17T11:31:30.021Z",
+  "overview": {
+    "datasetVersion": "all",
+    "truncation": "all",
+    "excludedResults": 15,
+    "totalEntries": 249,
+    "totalCalls": 747,
+    "providers": [
+      "hf-gpt-oss-20b",
+      "hf-glm-5.2",
+      "liftwing-qwen3.8-27b"
+    ]
+  },
+  "providers": {
+    "hf-gpt-oss-20b": {
+      "name": "Hf-gpt-oss-20b",
+      "model": "openai/gpt-oss-20b",
+      "sampleCount": 249,
+      "metrics": {
+        "total": 249,
+        "valid": 249,
+        "errors": 0,
+        "quotes": {
+          "eligible": 107,
+          "offered": 107,
+          "verified": 87,
+          "offerRate": 1,
+          "fidelity": 0.8130841121495327,
+          "accuracyWhenQuoteVerified": 0.7931034482758621,
+          "accuracyWhenQuoteUnverified": 0.7,
+          "verifiedRows": 87,
+          "unverifiedRows": 20,
+          "gap": 0.09310344827586214
+        },
+        "exactMatches": 162,
+        "partialMatches": 18,
+        "exactAccuracy": 0.6506024096385542,
+        "lenientAccuracy": 0.7228915662650602,
+        "binaryAccuracy": 0.7269076305220884,
+        "supportedVsRestCorrect": 206,
+        "supportedVsRestAccuracy": 0.8273092369477911,
+        "confusionMatrix": {
+          "Supported": {
+            "Supported": 55,
+            "Partially supported": 12,
+            "Not supported": 23,
+            "Source unavailable": 1
+          },
+          "Partially supported": {
+            "Supported": 6,
+            "Partially supported": 28,
+            "Not supported": 36,
+            "Source unavailable": 2
+          },
+          "Not supported": {
+            "Supported": 1,
+            "Partially supported": 5,
+            "Not supported": 79,
+            "Source unavailable": 1
+          },
+          "Source unavailable": {
+            "Supported": 0,
+            "Partially supported": 0,
+            "Not supported": 0,
+            "Source unavailable": 0
+          }
+        },
+        "latency": {
+          "avg": 7842.076305220883,
+          "min": 627,
+          "max": 94931
+        },
+        "support_score": {
+          "avg": 40.86065573770492,
+          "avgWhenCorrect": 47.00617283950617,
+          "avgWhenWrong": 27.06896551724138,
+          "calibration": 19.93720732226479
+        }
+      }
+    },
+    "hf-glm-5.2": {
+      "name": "Hf-glm-5.2",
+      "model": "zai-org/GLM-5.2:novita",
+      "sampleCount": 249,
+      "metrics": {
+        "total": 249,
+        "valid": 247,
+        "errors": 2,
+        "quotes": {
+          "eligible": 150,
+          "offered": 150,
+          "verified": 143,
+          "offerRate": 1,
+          "fidelity": 0.9533333333333334,
+          "accuracyWhenQuoteVerified": 0.6783216783216783,
+          "accuracyWhenQuoteUnverified": 0.5714285714285714,
+          "verifiedRows": 143,
+          "unverifiedRows": 7,
+          "gap": 0.10689310689310694
+        },
+        "exactMatches": 168,
+        "partialMatches": 35,
+        "exactAccuracy": 0.680161943319838,
+        "lenientAccuracy": 0.8218623481781376,
+        "binaryAccuracy": 0.8380566801619433,
+        "supportedVsRestCorrect": 202,
+        "supportedVsRestAccuracy": 0.8178137651821862,
+        "confusionMatrix": {
+          "Supported": {
+            "Supported": 55,
+            "Partially supported": 29,
+            "Not supported": 5,
+            "Source unavailable": 2
+          },
+          "Partially supported": {
+            "Supported": 6,
+            "Partially supported": 46,
+            "Not supported": 17,
+            "Source unavailable": 2
+          },
+          "Not supported": {
+            "Supported": 3,
+            "Partially supported": 11,
+            "Not supported": 67,
+            "Source unavailable": 4
+          },
+          "Source unavailable": {
+            "Supported": 0,
+            "Partially supported": 0,
+            "Not supported": 0,
+            "Source unavailable": 0
+          }
+        },
+        "latency": {
+          "avg": 5521.253012048192,
+          "min": 2095,
+          "max": 16070
+        },
+        "support_score": {
+          "avg": 51.83555555555556,
+          "avgWhenCorrect": 48.470238095238095,
+          "avgWhenWrong": 44.55696202531646,
+          "calibration": 3.9132760699216362
+        }
+      }
+    },
+    "liftwing-qwen3.8-27b": {
+      "name": "Liftwing-qwen3.8-27b",
+      "model": "llm-qwen38-27b",
+      "sampleCount": 249,
+      "metrics": {
+        "total": 249,
+        "valid": 249,
+        "errors": 0,
+        "quotes": {
+          "eligible": 93,
+          "offered": 93,
+          "verified": 85,
+          "offerRate": 1,
+          "fidelity": 0.9139784946236559,
+          "accuracyWhenQuoteVerified": 0.8588235294117647,
+          "accuracyWhenQuoteUnverified": 0.5,
+          "verifiedRows": 85,
+          "unverifiedRows": 8,
+          "gap": 0.35882352941176465
+        },
+        "exactMatches": 123,
+        "partialMatches": 15,
+        "exactAccuracy": 0.4939759036144578,
+        "lenientAccuracy": 0.5542168674698795,
+        "binaryAccuracy": 0.7108433734939759,
+        "supportedVsRestCorrect": 207,
+        "supportedVsRestAccuracy": 0.8313253012048193,
+        "confusionMatrix": {
+          "Supported": {
+            "Supported": 64,
+            "Partially supported": 1,
+            "Not supported": 17,
+            "Source unavailable": 9
+          },
+          "Partially supported": {
+            "Supported": 14,
+            "Partially supported": 13,
+            "Not supported": 36,
+            "Source unavailable": 9
+          },
+          "Not supported": {
+            "Supported": 1,
+            "Partially supported": 0,
+            "Not supported": 46,
+            "Source unavailable": 39
+          },
+          "Source unavailable": {
+            "Supported": 0,
+            "Partially supported": 0,
+            "Not supported": 0,
+            "Source unavailable": 0
+          }
+        },
+        "latency": {
+          "avg": 8720.164658634538,
+          "min": 2512,
+          "max": 116538
+        },
+        "support_score": {
+          "avg": 52.39247311827957,
+          "avgWhenCorrect": 60.32520325203252,
+          "avgWhenWrong": 18.452380952380953,
+          "calibration": 41.872822299651574
+        }
+      }
+    }
+  }
+}

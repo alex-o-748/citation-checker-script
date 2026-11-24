@@ -1,7 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { assembleFinding, assembleGroupFinding, FINDING_TTL_DAYS } from '../service/finding-builder.js';
+import { assembleFinding, assembleGroupFinding, assembleLeadFinding, assembleUncitedFinding, articleSourceUrl, CHECK_KINDS, FINDING_TTL_DAYS } from '../service/finding-builder.js';
+import { LEAD_PROMPT_VERSION } from '../core/lead-check.js';
+import { UNCITED_PROMPT_VERSION } from '../core/uncited-check.js';
 import { buildUpsertQuery } from '../service/findings-store.js';
 
 const candidate = { wiki: 'enwiki', pageId: 42, title: 'Test Article', revisionId: 987654321 };
@@ -378,4 +380,123 @@ test('assembled group findings feed buildUpsertQuery without error', () => {
     });
     const { sql, params } = buildUpsertQuery(finding);
     assert.equal((sql.match(/\?/g) || []).length, params.length);
+});
+
+const leadResult = (extra = {}) => ({
+    index: 0, text: 'Test Article is a bridge opened in 1998.', verdict: 'NOT SUPPORTED', reasonType: 'omission',
+    supportScore: 5, sourceQuote: '', quoteStatus: 'empty', quoteText: null, section: null, comments: 'Not in the body.',
+    outcome: 'not_covered', bodyTruncated: false, usage: { input: 900, output: 40 }, error: null, ...extra,
+});
+
+test('a lead-check result assembles into a lead_body row against the article itself', () => {
+    const fetchedAt = new Date('2026-10-23T00:00:00Z');
+    const finding = assembleLeadFinding({
+        candidate: { ...candidate, isBlp: false }, result: leadResult({ section: 'History', bodyTruncated: true }),
+        provider: 'liftwing', model: 'm', fetchedAt, checkId: 'abc',
+    });
+    assert.equal(finding.checkKind, CHECK_KINDS.LEAD_BODY);
+    assert.equal(finding.claimText, 'Test Article is a bridge opened in 1998.');
+    assert.equal(finding.citationNumber, null);
+    assert.equal(finding.sourceUrl, 'https://en.wikipedia.org/w/index.php?curid=42');
+    assert.equal(finding.sourceUrl, articleSourceUrl(candidate), 'by page, so a re-sweep updates it in place');
+    assert.equal(finding.promptVersion, LEAD_PROMPT_VERSION);
+    assert.equal(finding.verdict, 'NOT SUPPORTED');
+    assert.equal(finding.reasonType, 'omission');
+    assert.equal(finding.rationale, 'Not in the body.');
+    assert.equal(finding.bodySection, 'History');
+    assert.equal(finding.sourceTruncated, true, 'a body cut to fit is a truncated source');
+    assert.equal(finding.sectionTitle, null, 'it is in the lead');
+    assert.equal(finding.inLead, true);
+    assert.equal(finding.leadDemoted, false);
+    assert.equal(finding.provider, 'liftwing');
+    assert.equal(finding.tokensIn, 900);
+    assert.equal(finding.published, false);
+    assert.equal(finding.checkId, 'abc');
+    // The lead and a citation can carry the same sentence; the URL keeps them apart in uniq_finding.
+    const { params } = buildUpsertQuery(finding);
+    assert.equal(params.at(-2), 'lead_body');
+});
+
+test('a lead sentence the check could not answer is an ERROR row with its reason, and no model credited', () => {
+    const finding = assembleLeadFinding({
+        candidate, result: leadResult({ verdict: null, reasonType: null, usage: null, error: 'retries_exhausted' }),
+        provider: 'liftwing', model: 'm',
+    });
+    assert.equal(finding.verdict, 'ERROR');
+    assert.equal(finding.reasonType, 'retries_exhausted');
+    assert.equal(finding.provider, null);
+    assert.match(finding.rationale, /retries_exhausted/);
+});
+
+test('citation findings carry in_lead and lead_demoted', () => {
+    const citation = {
+        claimText: 'c', citationNumber: '1', url: 'https://example.com/a', inLead: true,
+        source: { content: 'x', status: 200 },
+    };
+    const verification = { verdict: 'PARTIALLY SUPPORTED', usage: { input: 1, output: 1 } };
+    const plain = assembleFinding({ candidate, citation: { ...citation, inLead: false }, verification, provider: 'p', model: 'm', promptVersion: 'v2' });
+    assert.equal(plain.checkKind, CHECK_KINDS.CITATION);
+    assert.equal(plain.inLead, false);
+    assert.equal(plain.leadDemoted, false);
+    const demoted = assembleFinding({ candidate, citation, verification, provider: 'p', model: 'm', promptVersion: 'v2', leadDemoted: true });
+    assert.equal(demoted.inLead, true);
+    assert.equal(demoted.leadDemoted, true);
+    const group = assembleGroupFinding({
+        candidate, members: [{ ...citation, groupId: 'g' }, { ...citation, citationNumber: '2', groupId: 'g' }],
+        verification: { ...verification, skipped: false, groupId: 'g' }, provider: 'p', model: 'm', promptVersion: 'v2', leadDemoted: true,
+    });
+    assert.equal(group.inLead, true);
+    assert.equal(group.leadDemoted, true);
+});
+
+// --- uncited-text check ---
+
+const uncitedResult = (extra = {}) => ({
+    index: 3, text: 'It was designed by Gustave Eiffel.', sectionTitle: 'History', excerpt: 'Gustave Eiffel',
+    excerptStatus: 'exact', comments: 'It was designed by Anna Holt.', confidence: 'high',
+    usage: { input: 400, output: 30 }, ...extra,
+});
+
+test('an uncited-text finding assembles into a NOT SUPPORTED / doubtful row against the article', () => {
+    const finding = assembleUncitedFinding({
+        candidate: { ...candidate, isBlp: true }, result: uncitedResult(), provider: 'liftwing', model: 'm', checkId: 'u1',
+    });
+    assert.equal(finding.checkKind, CHECK_KINDS.UNCITED);
+    assert.equal(finding.verdict, 'NOT SUPPORTED');
+    assert.equal(finding.reasonType, 'doubtful');
+    assert.equal(finding.supportScore, null, 'the model gives no score, only a confidence');
+    assert.equal(finding.uncitedConfidence, 'high');
+    assert.equal(finding.claimText, 'It was designed by Gustave Eiffel.');
+    assert.equal(finding.rationale, 'It was designed by Anna Holt.');
+    assert.equal(finding.sourceQuote, 'Gustave Eiffel', 'the doubted words, from the article: the row\'s source');
+    assert.equal(finding.quoteStatus, 'exact');
+    assert.equal(finding.sourceUrl, articleSourceUrl(candidate));
+    assert.equal(finding.sectionTitle, 'History');
+    assert.equal(finding.citationNumber, null);
+    assert.equal(finding.inLead, false);
+    assert.equal(finding.sourceTruncated, false);
+    assert.equal(finding.isBlp, true);
+    assert.equal(finding.promptVersion, UNCITED_PROMPT_VERSION);
+    assert.equal(finding.provider, 'liftwing');
+    assert.equal(finding.tokensIn, 400);
+    assert.equal(finding.published, false);
+    const { params } = buildUpsertQuery(finding);
+    assert.equal(params.at(-2), 'uncited');
+});
+
+test('an uncited sentence a failed call left unchecked is an ERROR row with no model credited', () => {
+    const finding = assembleUncitedFinding({
+        candidate, result: { index: 3, text: 'It is painted red.', sectionTitle: 'History', error: 'retries_exhausted' },
+        provider: 'liftwing', model: 'm',
+    });
+    assert.equal(finding.verdict, 'ERROR');
+    assert.equal(finding.reasonType, 'retries_exhausted');
+    assert.equal(finding.provider, null);
+    assert.equal(finding.uncitedConfidence, null);
+    assert.match(finding.rationale, /retries_exhausted/);
+});
+
+test('other rows carry no uncited confidence', () => {
+    const lead = assembleLeadFinding({ candidate, result: leadResult(), provider: 'p', model: 'm' });
+    assert.equal(lead.uncitedConfidence, null);
 });

@@ -14,8 +14,10 @@
 
 import { collectCitations } from '../core/citations.js';
 import { attachArticleContext, articleCategories } from '../core/article-context.js';
+import { leadSentences, articleBody, markLeadCitations } from '../core/lead.js';
+import { uncitedSentences } from '../core/uncited.js';
 import { fetchArticleHtml } from '../core/wikipedia.js';
-import { sentencexLastSentence } from './sentences.js';
+import { sentencexLastSentence, sentencexSplitSentences } from './sentences.js';
 import { hostOf, runHostPool } from './host-pool.js';
 
 // Why an article yielded nothing, as a machine-readable code. Same reasoning as
@@ -55,6 +57,9 @@ export async function processArticle(candidate, {
     // ending the sentence. See service/sentences.js.
     langCode = 'en',
     splitLastSentence = sentencexLastSentence(langCode),
+    // Splits lead paragraphs for the lead check (core/lead.js), and body
+    // paragraphs for the uncited-text check (core/uncited.js).
+    splitSentences = sentencexSplitSentences(langCode),
     // How many sources to fetch at once. 1 is the old serial behavior; the
     // runners pass --fetch-concurrency. Never more than one per host either
     // way — see service/host-pool.js.
@@ -90,10 +95,17 @@ export async function processArticle(candidate, {
     // Categories ride on the article record, not each citation: the severity
     // pass reads Category:Living people off them (see core/article-context.js).
     const categories = articleCategories(root);
+    // The lead check's input: every lead sentence and the body they summarize
+    // (core/lead.js). Read here, from the same parsed HTML, so the sweep
+    // never re-fetches or re-parses the article for it.
+    const lead = extractLead(root, splitSentences);
+    // The uncited-text check's input: body sentences no citation covers.
+    const uncited = extractUncited(root, splitSentences);
     if (citations.length === 0) {
-        return { ...base, outcome: ARTICLE_OUTCOMES.NO_CITATIONS, categories, citations: [] };
+        return { ...base, outcome: ARTICLE_OUTCOMES.NO_CITATIONS, categories, lead, uncited, citations: [] };
     }
     attachArticleContext(citations, root);
+    markLeadCitations(citations, root);
 
     // Every source this article needs, fetched up front and concurrently
     // (see service/host-pool.js), then attached below in citation order.
@@ -120,6 +132,7 @@ export async function processArticle(candidate, {
             claimText: citation.claimText,
             url: citation.url,
             pageNum: citation.pageNum,
+            referenceText: citation.referenceText,
             groupId: citation.groupId,
             groupSize: citation.groupSize,
             groupIndex: citation.groupIndex,
@@ -127,11 +140,27 @@ export async function processArticle(candidate, {
             skipReason: citation.skipReason,
             sectionTitle: citation.sectionTitle,
             paragraphText: citation.paragraphText,
+            inLead: citation.inLead,
             source,
         });
     }
 
-    return { ...base, outcome: ARTICLE_OUTCOMES.OK, categories, citations: results };
+    return { ...base, outcome: ARTICLE_OUTCOMES.OK, categories, lead, uncited, citations: results };
+}
+
+// Plain data only: the DOM elements leadSentences() carries for the
+// userscript's highlighting would keep the whole parsed article alive.
+function extractLead(root, splitSentences) {
+    const sentences = leadSentences(root, { splitSentences })
+        .map(({ index, paragraphIndex, text }) => ({ index, paragraphIndex, text }));
+    const body = articleBody(root, { leadText: sentences.map(s => s.text).join(' ') });
+    return { sentences, body };
+}
+
+// Plain data only, for the same reason: each paragraph's <p> is dropped.
+function extractUncited(root, splitSentences) {
+    const { paragraphs, ...rest } = uncitedSentences(root, { splitSentences });
+    return { ...rest, paragraphs: paragraphs.map(({ index, sectionTitle, text }) => ({ index, sectionTitle, text })) };
 }
 
 // Cache key must include the page number: the same PDF cited at two different

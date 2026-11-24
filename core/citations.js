@@ -10,7 +10,7 @@
 // itself is the root.
 
 import { extractClaimText, getCitationGroup, isClaimTooShort, MIN_CLAIM_LENGTH, CLAIM_TOO_SHORT } from './claim.js';
-import { extractReferenceUrl, extractPageNumber, subreferenceParent } from './urls.js';
+import { extractReferenceUrl, extractPageNumber, extractReferenceText, subreferenceParent } from './urls.js';
 
 // Defined in core/claim.js; re-exported here because this is where callers
 // have always imported it from.
@@ -92,6 +92,12 @@ export function collectCitations(root, { minClaimLength = MIN_CLAIM_LENGTH, clai
             claimText,
             url: extractReferenceUrl(refElement, doc),
             pageNum: extractPageNumber(refElement, doc),
+            // The footnote as the editor reads it (title, publication,
+            // author, date), for the verification prompt: without it the
+            // model can't tell a claim "in the Handelszeitung" is sourced to
+            // handelszeitung.ch, or that "on Thursday" is the article's own
+            // dateline. Null when the footnote can't be found.
+            referenceText: extractReferenceText(refElement, doc),
             // A citation whose preceding text is too short to be a claim is
             // kept and flagged, not dropped: it used to be silently skipped
             // here, which made it invisible in both the userscript report and

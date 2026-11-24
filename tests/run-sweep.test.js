@@ -16,7 +16,7 @@ import {
     DEFAULT_MAX_CONSECUTIVE_FAILURES,
 } from '../service/run-sweep.js';
 import { ProviderAuthError } from '../service/verifier.js';
-import { rowsToCsv } from '../service/csv-report.js';
+import { parseCsv, rowsToCsv } from '../service/csv-report.js';
 import { DEFAULT_FETCH_CONCURRENCY } from '../service/host-pool.js';
 
 test('parseCliArgs defaults match run-replay.js\'s conventions (liftwing, no key needed)', () => {
@@ -250,6 +250,56 @@ test('a group with only one usable source is skipped and contributes no collecti
     assert.equal(written.length, 3, 'still one per-source finding each for citations 1, 2, 3');
 });
 
+// A model that calls https://c.example/x's page a paywall when it sees it on
+// its own, and would happily rate it as evidence inside a group.
+function paywallAwareModel(calls) {
+    return () => async (_system, user) => {
+        calls.push(user);
+        const solo = !/all cited for this claim/.test(user);
+        const verdict = solo && user.includes('text of https://c.example/x') ? 'SOURCE UNAVAILABLE' : 'SUPPORTED';
+        return {
+            text: JSON.stringify({ support_score: verdict === 'SUPPORTED' ? 90 : 0, verdict, source_quote: '', comments: 'ok' }),
+            usage: { input: 10, output: 5 },
+        };
+    };
+}
+
+for (const concurrency of [1, 4]) {
+    test(`a member its own check judged unavailable leaves too few sources: the group is skipped (--concurrency ${concurrency})`, async () => {
+        const calls = [];
+        const written = [];
+        const code = await runSweep(baseOpts({ concurrency }), baseIo({
+            // Slow model calls, so at --concurrency 4 the group task is taken
+            // while its members' own checks are still in flight.
+            makeModelCallerFn: () => {
+                const inner = paywallAwareModel(calls)();
+                return async (...args) => { await sleep(10); return inner(...args); };
+            },
+            appendFindingFn: async (_path, finding) => { written.push(finding); },
+        }));
+
+        assert.equal(code, 0);
+        assert.equal(calls.length, 3, 'three solo calls, no group call');
+        assert.equal(written.filter(f => f.isCollective).length, 0);
+        assert.equal(written.length, 3);
+    });
+}
+
+test('a halt while a group waits on its members releases it instead of hanging', async () => {
+    let calls = 0;
+    const code = await runSweep(baseOpts({ concurrency: 4 }), baseIo({
+        makeModelCallerFn: () => async () => {
+            calls++;
+            await sleep(5);
+            throw new ProviderAuthError('liftwing: bad key', { status: 401 });
+        },
+    }));
+    // Reaching this line at all is the test: a group left waiting would
+    // keep its worker, and runSweep(), from ever returning.
+    assert.equal(code, 3);
+    assert.ok(calls >= 1);
+});
+
 test('a failed ToolsDB write is counted, not fatal: the CSV still gets every row', async () => {
     let csvRows = 0;
     const stderrChunks = [];
@@ -380,6 +430,69 @@ test('a title that does not resolve is named in a warning rather than silently s
     assert.equal(code, 0);
     assert.equal(fetchCount, 2, 'an unresolved title is still checked, just without a permalink');
     assert.match(stderrChunks.join(''), /WARNING — 1 of 2 title\(s\) did not resolve.*Mispelled Artcle/s);
+});
+
+// The November 2026 ruwiki rerun: a title renamed since it was stored
+// resolved to its #REDIRECT stub, which has no citations, and the article was
+// logged "no_citations" and never checked.
+test('a --titles-file title that redirects is checked under the target title', async () => {
+    const stderrChunks = [];
+    const fetched = [];
+    let written;
+    let checkedTitles;
+    const code = await runSweep(baseOpts({ titlesFile: 'articles.txt', max: undefined }), baseIo({
+        readTitlesFile: async () => 'Владимир (город, Россия)\nTest Article\n',
+        resolveTitleInfoFn: async () => new Map([
+            ['Владимир (город, Россия)', { pageId: 31, revisionId: 555, title: 'Владимир', redirectedFrom: 'Владимир (город, Россия)' }],
+            ['Test Article', { pageId: 7, revisionId: 70, title: 'Test Article', redirectedFrom: null }],
+        ]),
+        fetchArticle: async ({ title, revisionId }) => {
+            fetched.push({ title, revisionId });
+            return { html: okArticleHtml, status: 200, error: null };
+        },
+        appendFindingFn: async (_path, finding) => { (written ??= []).push(finding); },
+        runChecksFn: async (_out, { titles }) => {
+            checkedTitles = titles;
+            return { result: { status: 'pass', checks: [] }, paths: { md: 'x-checks.md', review: 'x-review.csv' } };
+        },
+        stderr: { write: chunk => stderrChunks.push(chunk) },
+    }));
+
+    assert.equal(code, 0);
+    assert.deepEqual(fetched, [
+        { title: 'Владимир', revisionId: 555 },
+        { title: 'Test Article', revisionId: 70 },
+    ], 'the REST fetch asks for the article, not the redirect stub');
+    const redirected = written.filter(f => f.pageId === 31);
+    assert.equal(redirected.length, 4);
+    for (const f of redirected) {
+        assert.equal(f.pageTitle, 'Владимир');
+        assert.equal(f.redirectedFrom, 'Владимир (город, Россия)');
+    }
+    for (const f of written.filter(f => f.pageId === 7)) assert.equal(f.redirectedFrom, null);
+    assert.match(stderrChunks.join(''), /sweep: Владимир \(город, Россия\) redirects to Владимир\n/);
+    const [header, firstRow] = parseCsv(rowsToCsv(redirected));
+    assert.equal(firstRow[header.indexOf('redirected_from')], 'Владимир (город, Россия)',
+        'the listed title is recorded in the CSV');
+    assert.equal(firstRow[header.indexOf('page_title')], 'Владимир');
+    assert.deepEqual(checkedTitles, ['Владимир', 'Test Article']);
+});
+
+test('two listed titles that land on one article check it once', async () => {
+    const stderrChunks = [];
+    let fetchCount = 0;
+    const code = await runSweep(baseOpts({ titlesFile: 'articles.txt', max: undefined }), baseIo({
+        readTitlesFile: async () => 'New name\nOld name\n',
+        resolveTitleInfoFn: async () => new Map([
+            ['New name', { pageId: 5, revisionId: 50, title: 'New name', redirectedFrom: null }],
+            ['Old name', { pageId: 5, revisionId: 50, title: 'New name', redirectedFrom: 'Old name' }],
+        ]),
+        fetchArticle: async () => { fetchCount++; return { html: okArticleHtml, status: 200, error: null }; },
+        stderr: { write: chunk => stderrChunks.push(chunk) },
+    }));
+    assert.equal(code, 0);
+    assert.equal(fetchCount, 1);
+    assert.match(stderrChunks.join(''), /Old name is the same article as New name \(New name\) — checking it once/);
 });
 
 test('--titles-file with no explicit --max processes every listed title, not the default 5', async () => {
@@ -1292,4 +1405,232 @@ test('--skip-checks skips them', async () => {
     await runSweep(opts, baseIo({ runChecksFn: async () => { ran = true; return checksOutcome('pass'); } }));
     assert.equal(ran, false);
     assert.equal(parseCliArgs(['node', 'sweep.js']).skipChecks, false);
+});
+
+// --- --lead-check ---
+
+// A Parsoid-shaped article with a lead (one cited sentence, one uncited) and
+// a body section, for the lead check.
+const leadArticleHtml = '<!DOCTYPE html><body>'
+    + '<section data-mw-section-id="0"><p>The bridge opened in 1998 and cost a fortune.'
+    + '<sup id="cite_ref-1" class="reference"><a href="./Test#cite_note-1">[1]</a></sup> It is the longest in the state.</p></section>'
+    + '<section data-mw-section-id="1"><h2>History</h2><p>The bridge opened to traffic in 1998.'
+    + '<sup id="cite_ref-2" class="reference"><a href="./Test#cite_note-2">[2]</a></sup></p></section>'
+    + `<ol class="references"><li id="cite_note-1">${link('https://a.example/x')}</li>`
+    + `<li id="cite_note-2">${link('https://b.example/x')}</li></ol></body>`;
+
+// Citation checks come back PARTIALLY SUPPORTED; a lead check says sentence 1
+// is covered and sentence 2 is not.
+const leadModel = calls => () => async (systemPrompt, userContent, opts) => {
+    calls?.push(opts?.kind ?? 'verdict');
+    if (opts?.kind === 'lead') {
+        return {
+            text: JSON.stringify([
+                { id: 1, verdict: 'SUPPORTED', support_score: 90, source_quote: 'The bridge opened to traffic in 1998.', section: 'History' },
+                { id: 2, verdict: 'NOT SUPPORTED', reason_type: 'omission', support_score: 5, source_quote: '' },
+            ]),
+            usage: { input: 300, output: 40 },
+        };
+    }
+    return {
+        text: JSON.stringify({ support_score: 60, verdict: 'PARTIALLY SUPPORTED', source_quote: '', comments: 'part' }),
+        usage: { input: 10, output: 5 },
+    };
+};
+
+test('parseCliArgs: --lead-check is off by default', () => {
+    assert.equal(parseCliArgs(['node', 'sweep.js']).leadCheck, false);
+    assert.equal(parseCliArgs(['node', 'sweep.js', '--lead-check']).leadCheck, true);
+    assert.match(HELP_TEXT, /--lead-check/);
+});
+
+test('--lead-check adds one lead_body row per lead sentence and demotes the lead citation\'s partial verdict', async () => {
+    const written = [];
+    const calls = [];
+    const stderrChunks = [];
+    const code = await runSweep(baseOpts({ leadCheck: true, severity: true }), baseIo({
+        fetchArticle: async () => ({ html: leadArticleHtml, status: 200, error: null }),
+        makeModelCallerFn: leadModel(calls),
+        appendFindingFn: async (_path, finding) => { written.push(finding); },
+        stderr: { write: s => stderrChunks.push(s) },
+    }));
+    assert.equal(code, 0);
+
+    const lead = written.filter(f => f.checkKind === 'lead_body');
+    assert.deepEqual(lead.map(f => [f.claimText, f.verdict, f.reasonType, f.bodySection]), [
+        ['The bridge opened in 1998 and cost a fortune.', 'SUPPORTED', null, 'History'],
+        ['It is the longest in the state.', 'NOT SUPPORTED', 'omission', null],
+    ]);
+    assert.ok(lead.every(f => f.sourceUrl === 'https://en.wikipedia.org/w/index.php?curid=7'));
+
+    const citations = written.filter(f => f.checkKind === 'citation');
+    assert.deepEqual(citations.map(f => [f.citationNumber, f.inLead, f.leadDemoted, f.severityTier]), [
+        ['1', true, true, null],
+        ['2', false, false, citations[1].severityTier],
+    ], 'the lead citation is demoted and never ranked; the body citation is ranked as usual');
+    assert.equal(calls.filter(k => k === 'lead').length, 1);
+
+    const out = stderrChunks.join('');
+    assert.match(out, /lead check: 2 lead sentence\(s\) in 1 article\(s\) -> 1 not covered in the body, 0 contradicting it, 0 unchecked; 1 lead citation verdict\(s\) demoted/);
+});
+
+test('without --lead-check nothing is demoted and no lead rows are written', async () => {
+    const written = [];
+    const calls = [];
+    await runSweep(baseOpts(), baseIo({
+        fetchArticle: async () => ({ html: leadArticleHtml, status: 200, error: null }),
+        makeModelCallerFn: leadModel(calls),
+        appendFindingFn: async (_path, finding) => { written.push(finding); },
+    }));
+    assert.ok(written.every(f => f.checkKind === 'citation' && !f.leadDemoted));
+    assert.equal(written.find(f => f.citationNumber === '1').inLead, true, 'still marked as being in the lead');
+    assert.ok(!calls.includes('lead'));
+});
+
+test('an article with no headings gets no lead check, so its lead citations are not demoted', async () => {
+    const written = [];
+    const calls = [];
+    await runSweep(baseOpts({ leadCheck: true }), baseIo({
+        makeModelCallerFn: leadModel(calls),
+        appendFindingFn: async (_path, finding) => { written.push(finding); },
+    }));
+    assert.ok(!calls.includes('lead'));
+    assert.ok(written.every(f => f.checkKind === 'citation' && !f.leadDemoted));
+});
+
+test('a lead-check call that keeps failing is recorded on its sentences, and an auth error halts', async () => {
+    const written = [];
+    const failing = message => () => async (systemPrompt, userContent, opts) => {
+        if (opts?.kind === 'lead') throw new Error(message);
+        return { text: JSON.stringify({ support_score: 90, verdict: 'SUPPORTED', source_quote: '', comments: 'ok' }), usage: { input: 1, output: 1 } };
+    };
+    const noSleep = { sleepFn: async () => {} };
+    const code = await runSweep(baseOpts({ leadCheck: true }), baseIo({
+        fetchArticle: async () => ({ html: leadArticleHtml, status: 200, error: null }),
+        makeModelCallerFn: failing('Lift Wing API request failed (503): unavailable'),
+        appendFindingFn: async (_path, finding) => { written.push(finding); },
+        retryOptions: noSleep,
+    }));
+    assert.equal(code, 0);
+    assert.deepEqual(written.filter(f => f.checkKind === 'lead_body').map(f => [f.verdict, f.reasonType]), [
+        ['ERROR', RETRIES_EXHAUSTED], ['ERROR', RETRIES_EXHAUSTED],
+    ]);
+
+    const halted = await runSweep(baseOpts({ leadCheck: true }), baseIo({
+        fetchArticle: async () => ({ html: leadArticleHtml, status: 200, error: null }),
+        makeModelCallerFn: failing('Lift Wing API request failed (403): forbidden'),
+        retryOptions: noSleep,
+    }));
+    assert.equal(halted, 3, 'auth/billing halts the run, exit 3');
+});
+
+// --- --uncited-check ---
+
+// A Parsoid-shaped article: an uncited lead (the lead check's, never this
+// check's), and a body paragraph with one cited and two uncited sentences.
+const uncitedArticleHtml = '<!DOCTYPE html><body>'
+    + '<section data-mw-section-id="0"><p>The bridge is a famous bridge with an uncited lead.</p></section>'
+    + '<section data-mw-section-id="1"><h2>History</h2><p>The bridge opened to traffic in 1998.'
+    + '<sup id="cite_ref-1" class="reference"><a href="./Test#cite_note-1">[1]</a></sup>'
+    + ' It was designed by Gustave Eiffel. It is painted red.</p></section>'
+    + `<ol class="references"><li id="cite_note-1">${link('https://a.example/x')}</li></ol></body>`;
+
+// Citation checks come back SUPPORTED; the uncited check doubts statement 1.
+const uncitedModel = calls => () => async (systemPrompt, userContent, opts) => {
+    calls?.push({ kind: opts?.kind ?? 'verdict', userContent });
+    if (opts?.kind === 'uncited') {
+        return {
+            text: JSON.stringify({ issues: [{ id: 1, excerpt: 'Gustave Eiffel', comments: 'Eiffel did not design it.', confidence: 'high' }] }),
+            usage: { input: 200, output: 30 },
+        };
+    }
+    return {
+        text: JSON.stringify({ support_score: 90, verdict: 'SUPPORTED', source_quote: '', comments: 'ok' }),
+        usage: { input: 10, output: 5 },
+    };
+};
+
+test('parseCliArgs: --uncited-check is off by default, keeping 3 findings per article', () => {
+    assert.equal(parseCliArgs(['node', 'sweep.js']).uncitedCheck, false);
+    assert.equal(parseCliArgs(['node', 'sweep.js']).uncitedMaxFindings, 3);
+    const on = parseCliArgs(['node', 'sweep.js', '--uncited-check', '--uncited-max-findings', '10']);
+    assert.equal(on.uncitedCheck, true);
+    assert.equal(on.uncitedMaxFindings, 10);
+    assert.match(HELP_TEXT, /--uncited-check/);
+    assert.match(HELP_TEXT, /--uncited-max-findings/);
+});
+
+test('--uncited-check writes one uncited row per finding, and none for what the model did not report', async () => {
+    const written = [];
+    const calls = [];
+    const stderrChunks = [];
+    const code = await runSweep(baseOpts({ uncitedCheck: true, uncitedMaxFindings: 3 }), baseIo({
+        fetchArticle: async () => ({ html: uncitedArticleHtml, status: 200, error: null }),
+        makeModelCallerFn: uncitedModel(calls),
+        appendFindingFn: async (_path, finding) => { written.push(finding); },
+        stderr: { write: s => stderrChunks.push(s) },
+    }));
+    assert.equal(code, 0);
+
+    const uncited = written.filter(f => f.checkKind === 'uncited');
+    assert.deepEqual(uncited.map(f => [f.claimText, f.verdict, f.reasonType, f.uncitedConfidence, f.sectionTitle]), [
+        ['It was designed by Gustave Eiffel.', 'NOT SUPPORTED', 'doubtful', 'high', 'History'],
+    ]);
+    assert.equal(uncited[0].sourceUrl, 'https://en.wikipedia.org/w/index.php?curid=7');
+    assert.equal(written.filter(f => f.checkKind === 'citation').length, 1, 'citation checks run as usual');
+
+    const uncitedCalls = calls.filter(c => c.kind === 'uncited');
+    assert.equal(uncitedCalls.length, 1);
+    assert.match(uncitedCalls[0].userContent, /1\. "It was designed by Gustave Eiffel\."\n2\. "It is painted red\."/);
+    assert.doesNotMatch(uncitedCalls[0].userContent, /\d\. "The bridge is a famous bridge/, 'the lead is context, never a statement');
+
+    assert.match(stderrChunks.join(''), /uncited check: 2 uncited sentence\(s\) in 1 article\(s\) -> 1 finding\(s\) kept, 0 past the per-article limit, 0 unchecked; 0 article\(s\) had more than the sentence cap; 1 call\(s\), 200 tokens in, 30 out/);
+});
+
+test('without --uncited-check no uncited call is made', async () => {
+    const calls = [];
+    const written = [];
+    await runSweep(baseOpts(), baseIo({
+        fetchArticle: async () => ({ html: uncitedArticleHtml, status: 200, error: null }),
+        makeModelCallerFn: uncitedModel(calls),
+        appendFindingFn: async (_path, finding) => { written.push(finding); },
+    }));
+    assert.ok(!calls.some(c => c.kind === 'uncited'));
+    assert.ok(written.every(f => f.checkKind === 'citation'));
+});
+
+test('--uncited-max-findings must be a positive integer', async () => {
+    const stderrChunks = [];
+    const code = await runSweep(baseOpts({ uncitedCheck: true, uncitedMaxFindings: 0 }), baseIo({
+        stderr: { write: s => stderrChunks.push(s) },
+    }));
+    assert.equal(code, 2);
+    assert.match(stderrChunks.join(''), /--uncited-max-findings must be a positive integer/);
+});
+
+test('an uncited-check call that keeps failing is recorded on its sentences, and an auth error halts', async () => {
+    const written = [];
+    const failing = message => () => async (systemPrompt, userContent, opts) => {
+        if (opts?.kind === 'uncited') throw new Error(message);
+        return { text: JSON.stringify({ support_score: 90, verdict: 'SUPPORTED', source_quote: '', comments: 'ok' }), usage: { input: 1, output: 1 } };
+    };
+    const noSleep = { sleepFn: async () => {} };
+    const code = await runSweep(baseOpts({ uncitedCheck: true }), baseIo({
+        fetchArticle: async () => ({ html: uncitedArticleHtml, status: 200, error: null }),
+        makeModelCallerFn: failing('Lift Wing API request failed (503): unavailable'),
+        appendFindingFn: async (_path, finding) => { written.push(finding); },
+        retryOptions: noSleep,
+    }));
+    assert.equal(code, 0);
+    assert.deepEqual(written.filter(f => f.checkKind === 'uncited').map(f => [f.claimText, f.verdict, f.reasonType]), [
+        ['It was designed by Gustave Eiffel.', 'ERROR', RETRIES_EXHAUSTED],
+        ['It is painted red.', 'ERROR', RETRIES_EXHAUSTED],
+    ]);
+
+    const halted = await runSweep(baseOpts({ uncitedCheck: true }), baseIo({
+        fetchArticle: async () => ({ html: uncitedArticleHtml, status: 200, error: null }),
+        makeModelCallerFn: failing('Lift Wing API request failed (402): payment required'),
+        retryOptions: noSleep,
+    }));
+    assert.equal(halted, 3, 'auth/billing halts the run, exit 3');
 });

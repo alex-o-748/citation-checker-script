@@ -1,0 +1,55 @@
+name: Feedback digest
+
+# Weekly: one issue with what the owner should look at — a random sample of
+# auto-accepted labels to spot-check, and the rows waiting for a decision.
+# The owner answers by comment, one line per check (feedback-commands.yml
+# applies it). Last week's digest is closed when this week's opens; replies
+# to a closed digest still work. See feedback-loop/README.md.
+#
+# Reads benchmark/dataset_field.json from main: no secrets, no model calls.
+
+on:
+  schedule:
+    - cron: '23 7 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: feedback-digest
+  cancel-in-progress: true
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Render
+        id: render
+        run: |
+          echo "week=$(date -u +%G-W%V)" >> "$GITHUB_OUTPUT"
+          node feedback-loop/digest.js render --field benchmark/dataset_field.json \
+            --week "$(date -u +%G-W%V)" --out "$RUNNER_TEMP/digest.md"
+
+      - name: Open this week's digest, close last week's
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ITEMS: ${{ steps.render.outputs.items }}
+          WEEK: ${{ steps.render.outputs.week }}
+        run: |
+          old=$(gh issue list --label feedback-digest --state open --json number --jq '.[].number')
+          if [ "${ITEMS:-0}" -gt 0 ]; then
+            gh label create feedback-digest --color 0e8a16 --description 'Weekly feedback digest: answer by comment' 2>/dev/null || true
+            url=$(gh issue create --title "Feedback digest — $WEEK" --label feedback-digest --body-file "$RUNNER_TEMP/digest.md")
+            for n in $old; do gh issue close "$n" --comment "Superseded by $url. Replies here are still applied."; done
+          else
+            for n in $old; do gh issue close "$n" --comment "Nothing left to review this week."; done
+          fi

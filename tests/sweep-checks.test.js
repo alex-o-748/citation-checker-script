@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-    createSweepChecker, reviewRows, renderMarkdown, formatProblems, junkInClaim, isTableLikeClaim,
+    createSweepChecker, reviewRows, renderMarkdown, formatProblems, uncitedFormatProblems, junkInClaim, isTableLikeClaim,
     scriptShare, LEVELS, SUSPECT_CAP, THRESHOLDS,
 } from '../service/sweep-checks.js';
 import { parseCsv, rowsToCsv } from '../service/csv-report.js';
@@ -54,6 +54,27 @@ test('coverage names a title that produced no rows (the Iran-war case: 1,223 row
     const result = check(many(40, i => finding({ pageTitle: `Article ${i}` })), { titles });
     assert.equal(levelOf(result, 'coverage'), LEVELS.WARN);
     assert.match(result.checks.find(c => c.id === 'coverage').summary, /Timeline of the 2026 Iran war/);
+});
+
+// A rerun by titles stored weeks earlier: the sweep followed the redirect and
+// wrote the rows under the new title, with the listed one in redirected_from.
+test('coverage counts a listed title whose redirect target has rows', () => {
+    const titles = ['A', 'Владимир (город, Россия)'];
+    const result = check([
+        finding({ pageTitle: 'A' }),
+        finding({ pageTitle: 'Владимир', redirectedFrom: 'Владимир (город, Россия)' }),
+    ], { titles });
+    const coverage = result.checks.find(c => c.id === 'coverage');
+    assert.equal(coverage.level, LEVELS.PASS, coverage.summary);
+    assert.match(coverage.details.join('\n'), /Владимир \(город, Россия\) → Владимир/);
+    assert.doesNotMatch(coverage.details.join('\n'), /not in the titles list/,
+        'the redirect target is not an article nobody asked for');
+});
+
+test('a redirected title whose target produced no rows is still missing', () => {
+    const titles = ['A', 'Old name'];
+    const result = check([finding({ pageTitle: 'A' })], { titles });
+    assert.match(result.checks.find(c => c.id === 'coverage').summary, /Old name/);
 });
 
 test('coverage fails once more than 5% of titles are missing', () => {
@@ -267,4 +288,126 @@ test('an empty CSV fails', () => {
 
 test('THRESHOLDS is frozen, so a test cannot quietly loosen it for the next one', () => {
     assert.ok(Object.isFrozen(THRESHOLDS));
+});
+
+// A lead_body row as service/finding-builder.js's assembleLeadFinding() shapes it.
+const leadRow = (claimText, overrides = {}) => finding({
+    checkKind: 'lead_body', citationNumber: null, claimText, inLead: true,
+    sourceUrl: 'https://en.wikipedia.org/w/index.php?curid=7', promptVersion: 'l1', ...overrides,
+});
+
+test('lead rows are not duplicates of each other, not fetches, and get a check of their own', () => {
+    const findings = [
+        ...many(20, () => finding()),
+        leadRow('The bridge opened in 1998.'),
+        leadRow('It is the longest in the state.', { verdict: 'NOT SUPPORTED', reasonType: 'omission', supportScore: 5, sourceQuote: null, quoteStatus: 'empty' }),
+        leadRow('It cost $200 million.', { verdict: 'NOT SUPPORTED', reasonType: 'contradiction', supportScore: 10 }),
+        finding({ inLead: true, leadDemoted: true, verdict: 'PARTIALLY SUPPORTED', supportScore: 60 }),
+    ];
+    const result = check(findings, { titles: ['Test Article'] });
+    assert.equal(levelOf(result, 'structure'), LEVELS.PASS, 'three lead rows with no citation number are not duplicates');
+    assert.equal(result.metrics.citationsWithUrl, 21, 'the article URL on lead rows is not counted as a fetch');
+    assert.equal(levelOf(result, 'provenance'), LEVELS.PASS, 'the lead-check prompt version is not a second verdict prompt');
+    assert.match(result.checks.find(c => c.id === 'provenance').summary, /lead-check prompt l1/);
+    assert.equal(levelOf(result, 'lead_check'), LEVELS.PASS);
+    assert.match(result.checks.find(c => c.id === 'lead_check').summary,
+        /3 lead sentence\(s\) checked against the body; 0 \(0\.0%\) got no verdict .*; 1 lead citation verdict\(s\) demoted/);
+    assert.deepEqual(result.metrics.leadOutcomes, { SUPPORTED: 1, 'NOT SUPPORTED/omission': 1, 'NOT SUPPORTED/contradiction': 1 });
+    const strata = Object.fromEntries(result.sample.map(s => [s.stratum, s.population]));
+    assert.equal(strata.lead_not_covered, 1);
+    assert.equal(strata.lead_contradicted, 1);
+    assert.equal(strata.lead_demoted, 1);
+    assert.equal(strata.partially_supported, 0, 'a demoted citation is sampled as demoted, not as a partial');
+});
+
+test('a repeated lead sentence is still a duplicate', () => {
+    const result = check([...many(5, () => finding()), leadRow('Same sentence.'), leadRow('Same sentence.')]);
+    assert.equal(levelOf(result, 'structure'), LEVELS.FAIL);
+    assert.match(result.suspects.find(s => s.check === 'duplicate').examples[0].detail, /lead sentence "Same sentence\." appears more than once/);
+});
+
+test('lead rows with no verdict warn, then fail', () => {
+    const errorRow = text => leadRow(text, { verdict: 'ERROR', reasonType: 'retries_exhausted', supportScore: null, provider: null, model: null, tokensIn: null, tokensOut: null });
+    const some = check([...many(40, () => finding()), ...many(19, i => leadRow(`Lead ${i}.`)), errorRow('Lost.')]);
+    assert.equal(levelOf(some, 'lead_check'), LEVELS.PASS);
+    const more = check([...many(40, () => finding()), ...many(18, i => leadRow(`Lead ${i}.`)), errorRow('Lost 1.'), errorRow('Lost 2.')]);
+    assert.equal(levelOf(more, 'lead_check'), LEVELS.WARN);
+    const most = check([...many(40, () => finding()), ...many(5, i => leadRow(`Lead ${i}.`)), ...many(5, i => errorRow(`Lost ${i}.`))]);
+    assert.equal(levelOf(most, 'lead_check'), LEVELS.FAIL);
+});
+
+test('flagged lead rows and demoted lead citations are not expected to carry a severity tier', () => {
+    const findings = [
+        finding({ verdict: 'NOT SUPPORTED', reasonType: 'omission', supportScore: 5, sourceQuote: null, quoteStatus: 'empty', severityTier: 'T2' }),
+        leadRow('Not in the body.', { verdict: 'NOT SUPPORTED', reasonType: 'omission', supportScore: 5, sourceQuote: null, quoteStatus: 'empty' }),
+        finding({ inLead: true, leadDemoted: true, verdict: 'PARTIALLY SUPPORTED', supportScore: 60 }),
+    ];
+    assert.equal(levelOf(check(findings), 'severity'), LEVELS.PASS);
+});
+
+test('a run without the lead check has no lead_check entry', () => {
+    assert.equal(levelOf(check(many(5, () => finding())), 'lead_check'), undefined);
+});
+
+// --- uncited-text check ---
+
+// An uncited row as service/finding-builder.js's assembleUncitedFinding() shapes it.
+const uncitedRow = (claimText, overrides = {}) => finding({
+    checkKind: 'uncited', citationNumber: null, claimText, verdict: 'NOT SUPPORTED', reasonType: 'doubtful',
+    supportScore: null, uncitedConfidence: 'high', sourceQuote: 'designed by Gustave Eiffel', quoteStatus: 'exact',
+    rationale: 'Someone else designed it.', sourceUrl: 'https://en.wikipedia.org/w/index.php?curid=7',
+    promptVersion: 'u1', sectionTitle: 'History', ...overrides,
+});
+const uncitedError = (claimText, pageTitle = 'Test Article') => uncitedRow(claimText, {
+    pageTitle, verdict: 'ERROR', reasonType: 'retries_exhausted', uncitedConfidence: null, rationale: 'x',
+    sourceQuote: null, quoteStatus: null, provider: null, model: null, tokensIn: null, tokensOut: null,
+});
+
+test('uncited rows are not duplicates, not fetches, not format errors, and get a check of their own', () => {
+    const findings = [
+        ...many(20, () => finding()),
+        // A ranked citation finding, so the severity check runs at all.
+        finding({ verdict: 'NOT SUPPORTED', reasonType: 'omission', supportScore: 5, sourceQuote: null, quoteStatus: 'empty', severityTier: 'T2' }),
+        uncitedRow('It was designed by Gustave Eiffel.'),
+        uncitedRow('It is painted red.', { uncitedConfidence: 'medium' }),
+    ];
+    const result = check(findings, { titles: ['Test Article'] });
+    assert.equal(levelOf(result, 'structure'), LEVELS.PASS);
+    assert.equal(result.metrics.citationsWithUrl, 21, 'the article URL on uncited rows is not a fetch');
+    assert.equal(levelOf(result, 'format'), LEVELS.PASS, '"doubtful" is this check\'s reason_type, not a malformed verdict');
+    assert.equal(levelOf(result, 'severity'), LEVELS.PASS, 'uncited findings are never ranked');
+    assert.equal(levelOf(result, 'provenance'), LEVELS.PASS);
+    assert.match(result.checks.find(c => c.id === 'provenance').summary, /uncited-check prompt u1/);
+    assert.equal(levelOf(result, 'uncited_check'), LEVELS.PASS);
+    assert.match(result.checks.find(c => c.id === 'uncited_check').summary, /2 finding\(s\) \(high 1, medium 1\); 0 sentence\(s\) unchecked/);
+    const strata = Object.fromEntries(result.sample.map(s => [s.stratum, s.population]));
+    assert.equal(strata.uncited_doubtful, 2);
+    assert.equal(strata.not_supported_omission, 1, 'only the citation: uncited findings are not sampled as citation failures');
+});
+
+test('a repeated uncited sentence is a duplicate; the same text as a lead row is not', () => {
+    const lead = finding({ checkKind: 'lead_body', citationNumber: null, claimText: 'Same sentence.', promptVersion: 'l1', sourceUrl: 'https://en.wikipedia.org/w/index.php?curid=7' });
+    assert.equal(levelOf(check([...many(5, () => finding()), uncitedRow('Same sentence.'), lead]), 'structure'), LEVELS.PASS);
+    const twice = check([...many(5, () => finding()), uncitedRow('Same sentence.'), uncitedRow('Same sentence.')]);
+    assert.equal(levelOf(twice, 'structure'), LEVELS.FAIL);
+    assert.match(twice.suspects.find(s => s.check === 'duplicate').examples[0].detail, /uncited sentence "Same sentence\." appears more than once/);
+});
+
+test('uncited format: a confidence and a rationale', () => {
+    const [row] = toRows([uncitedRow('x', { uncitedConfidence: 'low', rationale: '' })]);
+    assert.deepEqual(uncitedFormatProblems(row), ['uncited_confidence "low"', 'empty rationale']);
+    const [ok] = toRows([uncitedRow('x')]);
+    assert.deepEqual(uncitedFormatProblems(ok), []);
+    assert.ok(formatProblems(ok).length > 0, 'the verdict prompt\'s rules would misjudge it');
+});
+
+test('articles whose uncited check failed warn, then fail', () => {
+    const articles = n => many(n, i => finding({ pageTitle: `Article ${i}` }));
+    assert.equal(levelOf(check([...articles(40), uncitedError('Lost.', 'Article 0')]), 'uncited_check'), LEVELS.PASS);
+    assert.equal(levelOf(check([...articles(40), ...many(3, i => uncitedError(`Lost ${i}.`, `Article ${i}`))]), 'uncited_check'), LEVELS.WARN);
+    assert.equal(levelOf(check([...articles(10), ...many(3, i => uncitedError(`Lost ${i}.`, `Article ${i}`))]), 'uncited_check'), LEVELS.FAIL);
+});
+
+test('a run without the uncited check has no uncited_check entry', () => {
+    assert.equal(levelOf(check(many(5, () => finding())), 'uncited_check'), undefined);
 });

@@ -918,3 +918,51 @@ test('classifyFetchError gives undecodable sources their own bucket', async () =
   assert.equal(classifyFetchError(UNDECODABLE_SOURCE_ERROR), K.UNDECODABLE);
   assert.equal(isOurFetchFailure(K.UNDECODABLE), false);
 });
+
+// --- Too little visible text (title-only pages padded with invisible characters) ---
+
+// What the Worker returned on 2026-11-08 for the S&P Global Ratings source of
+// en:2026 Paraguay banking crisis [8]: the page <title>, then 77 U+200C each
+// followed by a space. 263 characters, about 90 of them visible.
+const TITLE_ONLY_SOURCE = 'Ueno Bank S.A. Downgraded To &#x27;D&#x27; From &#x27;BB&#x27; On Cen | S&P Global Ratings S&P Global Ratings '
+  + '‌ '.repeat(77);
+
+test('visibleLength ignores whitespace and invisible format characters', async () => {
+  const { visibleLength } = await import('../core/worker.js');
+  assert.ok(TITLE_ONLY_SOURCE.length > 100, 'the raw length passed the old check');
+  assert.ok(visibleLength(TITLE_ONLY_SOURCE) < 100);
+  assert.equal(visibleLength('a​b‍c­d﻿e‎f͏ g\n\th'), 8);
+  assert.equal(visibleLength(''), 0);
+  assert.equal(visibleLength(undefined), 0);
+});
+
+test('a title-only page padded with zero-width characters is a failed fetch, not content', async () => {
+  const mock = mockFetch(async (url) => {
+    if (url.startsWith('https://archive.org/wayback/available')) {
+      return { ok: true, status: 200, json: async () => ({ archived_snapshots: {} }) };
+    }
+    return { ok: true, status: 200, json: async () => ({ content: TITLE_ONLY_SOURCE }) };
+  });
+  try {
+    const result = await fetchSourceContent(
+      'https://www.spglobal.com/ratings/en/regulatory/article/-/view/type/HTML/id/3654529', null,
+      { retry: { sleepFn: async () => {} } });
+    assert.equal(result.content, null);
+    assert.match(result.error, /empty or too short/);
+    assert.ok(mock.calls.some(c => c.url.startsWith('https://archive.org/wayback/available')), 'Wayback fallback tried');
+  } finally {
+    mock.restore();
+  }
+});
+
+test('a real page keeps its invisible characters: only the threshold ignores them', async () => {
+  const body = 'The bank reported a regulatory solvency ratio of 13.8%, above the 12% statutory minimum. ';
+  const padded = `${body}‌ ‌ ${body}`;
+  const mock = mockFetch(async () => ({ ok: true, status: 200, json: async () => ({ content: padded }) }));
+  try {
+    const result = await fetchSourceContent('https://example.com/article', null);
+    assert.ok(result.content.endsWith(padded));
+  } finally {
+    mock.restore();
+  }
+});

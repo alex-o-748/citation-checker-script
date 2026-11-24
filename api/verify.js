@@ -28,12 +28,16 @@ function fetchViaSourceFetcher(url, pageNum) {
 
 export const MAX_CLAIM_CHARS = 10_000;
 export const MAX_SOURCE_CONTENT_CHARS = 50_000;
+// The footnote as the article shows it ("Smith, J. (2024). Title. The
+// Guardian."), which the model uses to tell who published the source and when.
+// A citation is a few hundred characters; this is room for a long one.
+export const MAX_CITATION_CHARS = 2_000;
 // The character limits above are the contract; the byte cap only has to stop
 // abuse without undercutting them. JSON can spend six bytes on one UTF-16 unit
 // (a \uXXXX escape, which Python's json.dumps emits for every non-ASCII
 // character by default), so size for that worst case, plus headroom for field
 // names, page and a source_url.
-export const MAX_BODY_BYTES = (MAX_CLAIM_CHARS + MAX_SOURCE_CONTENT_CHARS) * 6 + 8 * 1024;
+export const MAX_BODY_BYTES = (MAX_CLAIM_CHARS + MAX_SOURCE_CONTENT_CHARS + MAX_CITATION_CHARS) * 6 + 8 * 1024;
 
 export function validateVerifyRequest(body) {
     if (!body || typeof body !== 'object' || Array.isArray(body)) {
@@ -73,7 +77,13 @@ export function validateVerifyRequest(body) {
     if (body.page != null && (!Number.isInteger(body.page) || body.page < 1)) {
         return 'page must be a positive integer';
     }
-    const knownFields = new Set(['claim', 'source_url', 'source_content', 'page']);
+    if (body.citation != null && typeof body.citation !== 'string') {
+        return 'citation must be a string';
+    }
+    if (body.citation?.length > MAX_CITATION_CHARS) {
+        return `citation must not exceed ${MAX_CITATION_CHARS} characters`;
+    }
+    const knownFields = new Set(['claim', 'source_url', 'source_content', 'page', 'citation']);
     const unknown = Object.keys(body).find(field => !knownFields.has(field));
     if (unknown) return `Unknown field: ${unknown}`;
     return null;
@@ -127,6 +137,7 @@ export async function verifyRequest(body, {
         // it: passing it on would skip the source_url fetch and have the model
         // judge the claim against nothing.
         sourceContent: body.source_content?.trim() ? body.source_content : null,
+        citationText: body.citation?.trim() || null,
         provider,
         model,
         fetchSource,

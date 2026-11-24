@@ -16,6 +16,8 @@
 // Non-contiguous quotes joined by an ellipsis ("A ... B") are supported: each
 // segment must occur, in order.
 
+import { canonicalizeVerdict } from './verdicts.js';
+
 // The complete set of values verifyQuote can put in `status`. Mirrors the
 // VERDICTS / VERDICT_LIST pattern in core/verdicts.js.
 //
@@ -282,4 +284,29 @@ const QUOTE_EXPECTED = new Set(['SUPPORTED', 'PARTIALLY SUPPORTED']);
 export function quoteExpectedFor(verdict, reasonType) {
     if (QUOTE_EXPECTED.has(verdict)) return true;
     return verdict === 'NOT SUPPORTED' && reasonType === 'contradiction';
+}
+
+/**
+ * The quote text a renderer may show: the part of the quote located in the
+ * source, and only for a verdict a passage can decide (quoteExpectedFor).
+ *
+ * Since PROMPT_VERSION v4 the model writes source_quote before its verdict,
+ * so it quotes before it knows the source says nothing about the claim: on
+ * the benchmark, Qwen3.8 quoted on ~90% of its NOT SUPPORTED verdicts, and
+ * gpt-oss-20b on about half, almost all of them labelled "omission"
+ * (docs/quote-first-benchmark-2026-11-17.md). Such a passage is really in the
+ * source but is not evidence for anything, and under a NOT SUPPORTED verdict
+ * it reads as the passage that refutes the claim. So it is not shown.
+ *
+ * Display only. The raw quote and its status are still logged on every row
+ * (see "Source quotes" in CLAUDE.md), and the batch CSV keeps them too.
+ * @param {{verifiedText?: string}|null} check - verifyQuote()'s result.
+ * @param {string} verdict - The model's verdict, in any case or spacing.
+ * @param {string|null} reasonType - 'contradiction' | 'omission' | null.
+ * @returns {string} Text to show, or '' to show nothing.
+ */
+export function displayedQuote(check, verdict, reasonType) {
+    const text = (check && check.verifiedText) || '';
+    if (!text) return '';
+    return quoteExpectedFor(canonicalizeVerdict(verdict), reasonType || null) ? text : '';
 }

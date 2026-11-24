@@ -49,6 +49,7 @@ Send a JSON body with `Content-Type: application/json`.
 | `source_url` | string | one of these two | An `http` or `https` URL. The service fetches the page (or PDF) itself. |
 | `source_content` | string | one of these two | The source's text, up to 50,000 characters. Used instead of `source_url` if you send both. Useful for paywalled, offline or already-fetched sources. |
 | `page` | integer ≥ 1 | no | For a PDF at `source_url`: the page to read. |
+| `citation` | string | no | The citation as the article shows it, up to 2,000 characters: `Smith, Jane (18 March 2024). "Title". The Guardian.` The model uses it to tell who published the source, who wrote it and when, and for nothing else in the claim. Without it, a claim like "named market leader by the Handelszeitung" can fail on an article from that paper that never names itself. |
 
 Any other field is rejected, so a typo fails loudly instead of being ignored.
 

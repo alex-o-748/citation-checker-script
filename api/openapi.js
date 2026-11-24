@@ -2,6 +2,7 @@ import {
     MAX_BODY_BYTES,
     MAX_CLAIM_CHARS,
     MAX_SOURCE_CONTENT_CHARS,
+    MAX_CITATION_CHARS,
 } from './verify.js';
 import { MAX_QUERY_CHARS, MAX_RESULTS } from './search.js';
 
@@ -65,6 +66,11 @@ export const OPENAPI_DOCUMENT = Object.freeze({
                                     source_url: { type: 'string', format: 'uri', pattern: '^https?://' },
                                     source_content: { type: 'string', minLength: 1, maxLength: MAX_SOURCE_CONTENT_CHARS },
                                     page: { type: 'integer', minimum: 1 },
+                                    citation: {
+                                        type: 'string',
+                                        maxLength: MAX_CITATION_CHARS,
+                                        description: 'The citation as the article shows it (title, publication, author, date). Tells the model who published the source and when.',
+                                    },
                                 },
                                 additionalProperties: false,
                             },
