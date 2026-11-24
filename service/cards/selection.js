@@ -1,10 +1,10 @@
-// Which findings can become Inaccuracies cards, before any network call.
+// Which findings can become Fact Hunt cards, before any network call.
 //
 // The same rule is written twice, on purpose: once as SQL for ToolsDB
 // (buildCandidateQuery) and once as a predicate for batch CSVs
 // (candidateRejection), because a build can start from either. Both are pinned
 // by tests/cards-selection.test.js so they can't drift apart. See
-// docs/design-plans/2026-11-23-inaccuracies-app.md, "Where cards come from".
+// docs/design-plans/2026-11-23-fact-hunt-app.md, "Where cards come from".
 
 import { createHash } from 'node:crypto';
 import { claimHash, sourceUrlHash } from '../../core/anchor.js';

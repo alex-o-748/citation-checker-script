@@ -1,6 +1,6 @@
-# Inaccuracies
+# Fact Hunt
 
-Find places where a Wikipedia article disagrees with its own cited source, and fix them. Design: [`docs/design-plans/2026-11-23-inaccuracies-app.md`](../docs/design-plans/2026-11-23-inaccuracies-app.md).
+Find and fix inaccuracies on Wikipedia: places where an article disagrees with its own cited source. Design: [`docs/design-plans/2026-11-23-fact-hunt-app.md`](../docs/design-plans/2026-11-23-fact-hunt-app.md).
 
 Two parts:
 
@@ -12,7 +12,7 @@ Two parts:
 ## Run it locally
 
 ```bash
-cd inaccuracies
+cd fact-hunt
 npm install          # optional: only for the PNG link previews (@resvg/resvg-js)
 npm run dev          # http://localhost:8000, on dev/sample-cards.json
 ```
@@ -37,8 +37,8 @@ The builder reuses its previous output: model decisions are cached per card and 
 | `PORT` | Port (Toolforge sets it) |
 | `CARDS_FILE` | The builder's output |
 | `EVENTS_FILE` | The event log (JSON lines). Without it, events are kept in memory only |
-| `BASE_URL` | Public origin, e.g. `https://inaccuracies.toolforge.org`. Link previews need absolute URLs |
-| `PROJECT_PAGE` | On-wiki page linked from every edit summary, e.g. `User:Alaexis/Inaccuracies` |
+| `BASE_URL` | Public origin, e.g. `https://fact-hunt.toolforge.org`. Link previews need absolute URLs |
+| `PROJECT_PAGE` | On-wiki page linked from every edit summary, e.g. `User:Alaexis/Fact Hunt` |
 | `FIX_OVERRIDE` | `on` or `off`: the owner's switch over the stop rule (more than 10 reverted in a block of 50 fixes turns Fix off) |
 | `WIKI_CHECKS` | `off` for local development only |
 | `FONT_DIR` | A folder of `.ttf`/`.otf` files for the preview images, e.g. Inter and Source Serif 4 |
@@ -61,7 +61,7 @@ Every API call carries `X-Session`, a random id the page makes and keeps in `loc
 
 ## Deploying on Toolforge
 
-Two tools take part. The **batch tool** you already run builds the cards, because it holds `citation_findings`, the repo and its dependencies. A new **`inaccuracies` tool** serves the app. The cards file passes between them through the batch tool's home directory.
+Two tools take part. The **batch tool** you already run builds the cards, because it holds `citation_findings`, the repo and its dependencies. A new **`fact-hunt` tool** serves the app. The cards file passes between them through the batch tool's home directory.
 
 The code is on branch `ccr-9be554df-3rlar1` until it is merged; check out `main` below once it is.
 
@@ -70,36 +70,36 @@ The code is on branch `ccr-9be554df-3rlar1` until it is merged; check out `main`
 ```bash
 become <batch-tool>
 cd ~/citation-checker-script && git pull     # the checkout the sweeps run from
-mkdir -p ~/inaccuracies && chmod o+rx ~ ~/inaccuracies
+mkdir -p ~/fact-hunt && chmod o+rx ~ ~/fact-hunt
 toolforge jobs run build-cards-once --image node20 --wait \
-  --command "cd ~/citation-checker-script && node service/run-build-cards.js --from-toolsdb --wiki enwiki --out ~/inaccuracies/cards.json"
+  --command "cd ~/citation-checker-script && node service/run-build-cards.js --from-toolsdb --wiki enwiki --out ~/fact-hunt/cards.json"
 cat ~/build-cards-once.err                   # the counts, and why each finding was dropped
-chmod o+r ~/inaccuracies/cards.json
+chmod o+r ~/fact-hunt/cards.json
 toolforge jobs run build-cards --image node20 --schedule "23 4 * * *" \
-  --command "cd ~/citation-checker-script && node service/run-build-cards.js --from-toolsdb --wiki enwiki --out ~/inaccuracies/cards.json && chmod o+r ~/inaccuracies/cards.json"
+  --command "cd ~/citation-checker-script && node service/run-build-cards.js --from-toolsdb --wiki enwiki --out ~/fact-hunt/cards.json && chmod o+r ~/fact-hunt/cards.json"
 ```
 
-**2. Create the `inaccuracies` tool** at toolsadmin.wikimedia.org (it takes a few minutes to appear), then:
+**2. Create the `fact-hunt` tool** at toolsadmin.wikimedia.org (it takes a few minutes to appear), then:
 
 ```bash
-become inaccuracies
+become fact-hunt
 git clone https://github.com/alex-o-748/citation-checker-script.git ~/src
-ln -s ~/src/inaccuracies ~/www/js            # the Node webservice runs `npm start` here
-head -c 300 /data/project/<batch-tool>/inaccuracies/cards.json   # this tool can read the cards
-toolforge envvars create CARDS_FILE /data/project/<batch-tool>/inaccuracies/cards.json
-toolforge envvars create EVENTS_FILE /data/project/inaccuracies/events.jsonl
-toolforge envvars create BASE_URL https://inaccuracies.toolforge.org
-toolforge envvars create PROJECT_PAGE User:Alaexis/Inaccuracies
+ln -s ~/src/fact-hunt ~/www/js            # the Node webservice runs `npm start` here
+head -c 300 /data/project/<batch-tool>/fact-hunt/cards.json   # this tool can read the cards
+toolforge envvars create CARDS_FILE /data/project/<batch-tool>/fact-hunt/cards.json
+toolforge envvars create EVENTS_FILE /data/project/fact-hunt/events.jsonl
+toolforge envvars create BASE_URL https://fact-hunt.toolforge.org
+toolforge envvars create PROJECT_PAGE User:Alaexis/Fact Hunt
 toolforge webservice node20 shell            # then, inside: cd ~/www/js && npm install && exit
 toolforge webservice node20 start
 ```
 
-`npm install` runs inside the webservice shell so the preview renderer (`@resvg/resvg-js`) gets the binary for the image it will run on. For serif and sans text in the previews, put `.ttf` files (Source Serif 4 and Inter, both OFL) in `~/fonts` and add `FONT_DIR=/data/project/inaccuracies/fonts`.
+`npm install` runs inside the webservice shell so the preview renderer (`@resvg/resvg-js`) gets the binary for the image it will run on. For serif and sans text in the previews, put `.ttf` files (Source Serif 4 and Inter, both OFL) in `~/fonts` and add `FONT_DIR=/data/project/fact-hunt/fonts`.
 
-**3. Check it**: open https://inaccuracies.toolforge.org, then `toolforge webservice logs`. A new value of an envvar reaches the app only after `toolforge webservice restart`.
+**3. Check it**: open https://fact-hunt.toolforge.org, then `toolforge webservice logs`. A new value of an envvar reaches the app only after `toolforge webservice restart`.
 
 **4. Before telling anyone**: play 30 cards yourself, create `PROJECT_PAGE` on the wiki, and post the heads-up (the design doc's guardrails).
 
-**Updating**: `git pull` in `~/src` as the `inaccuracies` tool, then `toolforge webservice restart`. The cards file needs no restart: the app reloads it when it changes.
+**Updating**: `git pull` in `~/src` as the `fact-hunt` tool, then `toolforge webservice restart`. The cards file needs no restart: the app reloads it when it changes.
 
 If the `head` in step 2 is refused, the cards file isn't readable across tools: check the `chmod`s in step 1.

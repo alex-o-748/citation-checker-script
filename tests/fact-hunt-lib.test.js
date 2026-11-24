@@ -1,12 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { tokenize, tapMatches } from '../inaccuracies/lib/tokens.js';
-import { createStore, fixGate, applyEvent, createState, DISMISS_AFTER } from '../inaccuracies/lib/store.js';
-import { TOPICS, publicCard, reveal, judgeTap, nextCard, topicCounts } from '../inaccuracies/lib/cards.js';
-import { fixSummary, editUrl, talkUrl, talkNote, sourceLink, checkSentence, revertedRevisions, SUMMARY_LIMIT } from '../inaccuracies/lib/wiki.js';
-import { fixShareText, metaTags, pageMeta, shareTargets } from '../inaccuracies/lib/share.js';
-import { wrapRuns, contextRuns, fixSvg, puzzleSvg } from '../inaccuracies/lib/og.js';
+import { tokenize, tapMatches } from '../fact-hunt/lib/tokens.js';
+import { createStore, fixGate, applyEvent, createState, DISMISS_AFTER } from '../fact-hunt/lib/store.js';
+import { TOPICS, publicCard, reveal, judgeTap, nextCard, topicCounts } from '../fact-hunt/lib/cards.js';
+import { fixSummary, editUrl, talkUrl, talkNote, sourceLink, checkSentence, revertedRevisions, SUMMARY_LIMIT } from '../fact-hunt/lib/wiki.js';
+import { fixShareText, metaTags, pageMeta, shareTargets } from '../fact-hunt/lib/share.js';
+import { wrapRuns, contextRuns, fixSvg, puzzleSvg } from '../fact-hunt/lib/og.js';
 import { TOPIC_GROUPS } from '../service/cards/wiki.js';
 
 const claim = 'Combat Zone Wrestling (CZW) is an American independent professional wrestling promotion founded in 1999 by John Zandig.';
@@ -135,7 +135,7 @@ test('the card sent before an answer carries no span, and its source link does n
 });
 
 test('reveal gives the spans and both ways to act', () => {
-    const r = reveal(CARD, { projectPage: 'User:Example/Inaccuracies' });
+    const r = reveal(CARD, { projectPage: 'User:Example/Fact Hunt' });
     assert.equal(r.from, '1999');
     assert.equal(r.to, '1998');
     assert.equal(r.fix.findText, 'founded in 1999');
@@ -161,8 +161,8 @@ test('nextCard picks among the most-read available cards in the topic', () => {
 // ---- links into Wikipedia ----
 
 test('the edit summary quotes the source in context, carries the hashtag, and fits in 500 characters', () => {
-    const summary = fixSummary(CARD, { projectPage: 'User:Example/Inaccuracies' });
-    assert.equal(summary, 'Corrected to match the cited source (lastwordonsports.com): "…time, way back in 1998, by John Zandig…" #inaccuracies ([[User:Example/Inaccuracies|what is this?]])');
+    const summary = fixSummary(CARD, { projectPage: 'User:Example/Fact Hunt' });
+    assert.equal(summary, 'Corrected to match the cited source (lastwordonsports.com): "…time, way back in 1998, by John Zandig…" #facthunt ([[User:Example/Fact Hunt|what is this?]])');
     const long = { ...CARD, quote: { text: `${'word '.repeat(150)}1998 ${'more '.repeat(150)}`, span: { start: 750, end: 754 } } };
     assert.ok(fixSummary(long).length <= SUMMARY_LIMIT);
     assert.match(fixSummary(long), /1998/);

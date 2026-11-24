@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Builds the Inaccuracies app's cards from stored findings.
+// Builds the Fact Hunt app's cards from stored findings.
 //
 //   node service/run-build-cards.js --findings-csv batch.csv [--findings-csv more.csv] --out cards.json
 //   node service/run-build-cards.js --from-toolsdb --wiki enwiki --out cards.json
@@ -8,7 +8,7 @@
 // candidate's article, so a card whose sentence was fixed, or whose article
 // was protected, drops out. Model calls are cached in the output file
 // (`decisions`), so a finding is sent to the model once per prompt version,
-// not once a day. See docs/design-plans/2026-11-23-inaccuracies-app.md.
+// not once a day. See docs/design-plans/2026-11-23-fact-hunt-app.md.
 
 import { readFile, writeFile, rename } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
@@ -248,7 +248,7 @@ async function readToolsDbFindings(wiki, limit) {
     }
 }
 
-const HELP = `Builds Inaccuracies cards from stored findings.
+const HELP = `Builds Fact Hunt cards from stored findings.
 
   --findings-csv <path>  A batch findings CSV (repeatable)
   --from-toolsdb         Read findings from ToolsDB instead (on Toolforge)

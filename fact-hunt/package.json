@@ -1,5 +1,5 @@
 {
-  "name": "inaccuracies",
+  "name": "fact-hunt",
   "version": "0.1.0",
   "private": true,
   "description": "Find and fix places where Wikipedia articles disagree with their own sources.",

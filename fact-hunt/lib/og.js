@@ -92,8 +92,8 @@ function textBlock(lines, { x, y, size, lineHeight, family, weight = 400, marks 
 function frame(inner, { corner }) {
     return `<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${HEIGHT}" viewBox="0 0 ${WIDTH} ${HEIGHT}">
 <rect width="${WIDTH}" height="${HEIGHT}" fill="#FFFFFF"/>
-<text x="72" y="96" font-family="${esc(SANS)}" font-size="30" font-weight="600" fill="${INK}">inaccuracies</text>
-<path d="M72 110 q 6 -6 12 0 t 12 0 t 12 0 t 12 0 t 12 0 t 12 0 t 12 0 t 12 0 t 12 0 t 12 0 t 12 0 t 12 0 t 12 0 t 12 0 t 12 0 t 12 0" fill="none" stroke="${ERROR}" stroke-width="2.5"/>
+<text x="72" y="96" font-family="${esc(SANS)}" font-size="30" font-weight="600" fill="${INK}">fact hunt</text>
+<path d="M72 110 q 6 -6 12 0 t 12 0 t 12 0 t 12 0 t 12 0 t 12 0 t 12 0 t 12 0 t 12 0 t 12 0" fill="none" stroke="${ERROR}" stroke-width="2.5"/>
 ${corner}
 ${inner}
 </svg>`;

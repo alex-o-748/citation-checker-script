@@ -6,8 +6,8 @@
 
 import { TOPICS } from './cards.js';
 
-export const APP_NAME = 'Inaccuracies';
-export const TAGLINE = "Wikipedia articles sometimes say things their own sources don't. Find one. Fix it.";
+export const APP_NAME = 'Fact Hunt';
+export const TAGLINE = "Find and fix inaccuracies on Wikipedia: places where an article says something its own source doesn't.";
 
 const spanText = (part) => part.text.slice(part.span.start, part.span.end);
 
@@ -82,5 +82,5 @@ export function pageMeta(kind, { card = null, topicId = null, count = null } = {
         const label = TOPICS.find(t => t.id === topicId)?.label || 'Wikipedia';
         return { title: `${label}: ${APP_NAME}`, description: count == null ? TAGLINE : topicShareText(topicId, count).replace(/:$/, '.') };
     }
-    return { title: `${APP_NAME}: find and fix them on Wikipedia`, description: TAGLINE };
+    return { title: `${APP_NAME}: find and fix inaccuracies on Wikipedia`, description: TAGLINE };
 }

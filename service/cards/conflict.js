@@ -1,10 +1,10 @@
-// The conflict check for Inaccuracies cards: one model call per candidate
+// The conflict check for Fact Hunt cards: one model call per candidate
 // finding that (1) points at the words in the claim and in the source quote
 // that disagree, and (2) says whether both statements could still be true.
 //
 // A card is made only when both spans are found verbatim and
 // both_can_be_true is false. See docs/design-plans/
-// 2026-11-23-inaccuracies-app.md, "A difference is not always an error": on
+// 2026-11-23-fact-hunt-app.md, "A difference is not always an error": on
 // 15 benchmark contradictions, "make the article match its source" was right
 // for 4. The rest were numbers that move over time, a different scope (one
 // year's winners against a career total; a range inside a wider range), or a

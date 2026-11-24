@@ -1,6 +1,6 @@
-# Inaccuracies: an app for anyone to catch and fix places where Wikipedia disagrees with its own sources
+# Fact Hunt: an app for anyone to catch and fix places where Wikipedia disagrees with its own sources
 
-> **Status (2026-11-23):** In progress on branch `ccr-9be554df-3rlar1`. The card builder (`service/run-build-cards.js`, `service/cards/`) and the app (`inaccuracies/`) are built and tested, and the app runs locally on a hand-made sample. Not deployed, and the builder hasn't yet run on real findings. "Inaccuracies" is a working name. Where the build differs from this design: see *As built*, at the end.
+> **Status (2026-11-23):** In progress on branch `ccr-9be554df-3rlar1`. The card builder (`service/run-build-cards.js`, `service/cards/`) and the app (`fact-hunt/`) are built and tested, and the app runs locally on a hand-made sample. Not deployed, and the builder hasn't yet run on real findings. Named Fact Hunt on 2026-11-24 (see *Open questions*, 1). Where the build differs from this design: see *As built*, at the end.
 
 ## Why
 
@@ -170,9 +170,9 @@ If enwiki is thin, run batches for the app itself, picking each topic's most-rea
 - The link is `index.php?title=‹T›&action=edit&section=‹N›&summary=‹…›`, opened in a new tab.
 - **`summary=` is documented for the wikitext editor only.** Whether VisualEditor and the mobile editor keep it is unverified. So the Fix screen also shows the summary with a Copy button, and tracking never depends on it.
 - **The summary quotes the source:**
-  `Corrected to match the cited source (DeRiemer 2022, Last Word on Pro Wrestling): "way back in 1998" #inaccuracies ([[User:Alaexis/Inaccuracies|what is this?]])`.
+  `Corrected to match the cited source (DeRiemer 2022, Last Word on Pro Wrestling): "way back in 1998" #facthunt ([[User:Alaexis/Fact Hunt|what is this?]])`.
   An unexplained change to a number or date from a new or logged-out account looks exactly like sneaky vandalism, and patrollers revert it on sight. With the source's words in the summary, a patroller can check the change without clicking anything. The summary has a 500-character limit.
-- **`#inaccuracies` makes every edit findable.** The Hashtags tool (`hashtags.wmcloud.org`) indexes hashtags in edit summaries, which is how #1Lib1Ref is tracked, so anyone can list every edit the app led to.
+- **`#facthunt` makes every edit findable.** The Hashtags tool (`hashtags.wmcloud.org`) indexes hashtags in edit summaries, which is how #1Lib1Ref is tracked, so anyone can list every edit the app led to.
 - **A tip to log in or create an account** (`Special:CreateAccount?returnto=‹article›`). The Growth team may be able to count account creations by a `campaign` value; that's an open question.
 - **On a phone, editing is the hardest step.** The find text, and *Ask the article's editors* as an easier alternative, are the mitigation. Handoff completion is measured separately for phones and desktops (by viewport, with no user agent stored).
 
@@ -202,7 +202,7 @@ All of these are cheap:
 2. **The tap**: *Fix it* appears only after the person has found the wrong words themselves.
 3. **Freshness**: every card is re-checked against the current revision before it is shown.
 4. **The summary** quotes the source and carries the hashtag.
-5. **A project page** (`User:Alaexis/Inaccuracies`), linked from every summary. It says what the app is, that a person made each call, how to report a problem, and how to list every app edit (a Hashtags link).
+5. **A project page** (`User:Alaexis/Fact Hunt`), linked from every summary. It says what the app is, that a person made each call, how to report a problem, and how to list every app edit (a Hashtags link).
 6. **A heads-up at launch** on the village pump: "here's a thing, here's the page, tell me if it causes problems". It's an announcement, not a request for permission.
 7. **A stop rule, fixed before launch** in the spirit of `GATE` in `feedback-loop/proposer.js`. If more than 1 in 5 of the first 50 fixes is reverted within 7 days, *Fix it* is switched off until the cause is understood, and *Ask the article's editors* stays on. After that it is measured again for every 50 fixes. Like `GATE`, it is never loosened to let a run through.
 8. **Two "they say the same thing" answers retire a card.** The answers are kept, and can be exported to the benchmark or the feedback loop as labels, but nobody is ever asked to label.
@@ -210,7 +210,7 @@ All of these are cheap:
 
 ## Architecture
 
-- **A new Toolforge tool, `inaccuracies`** (`inaccuracies.toolforge.org`). It is a Node webservice serving one static page, a small JSON API, the share pages and their preview images.
+- **A new Toolforge tool, `fact-hunt`** (`fact-hunt.toolforge.org`). It is a Node webservice serving one static page, a small JSON API, the share pages and their preview images.
 - **The card builder** is a daily job in this repo (`service/run-build-cards.js`), next to the batch it reads. It uses `service/toolsdb.js`, the LLM Router and `core/quote.js`. It writes cards to a ToolsDB database whose name ends in `_p`, which every tool can read. Cards hold nothing private, only article text and a public source's words. The answers live in the app tool's own private database.
 - **No model calls in the app**: no API keys, no cost per visitor, the same card for everyone.
 - **The frontend is one page.** No third-party resources: fonts are self-hosted, and there are no analytics. `localStorage` keeps the chosen topic and the tally, and a random session id ties answers together. Every `localStorage` access is wrapped in a try/catch.
@@ -271,7 +271,7 @@ What decides whether it's working:
 
 ## Open questions
 
-1. **The name.** "Inaccuracies" is the working name and would be the Toolforge tool name. Alternatives: "Spot the inaccuracy", or "Inaccuracy Hunt" (only with the blessing of Citation Hunt's maintainers). The name can't contain "Wikipedia" (the Foundation's trademark policy), but describing the app as "for Wikipedia" is fine.
+1. **The name: settled as Fact Hunt** (2026-11-24), in Citation Hunt's pattern, with "find and fix inaccuracies on Wikipedia" as the tagline. "Inaccuracies" was the working name. Fact Hunt was also a 2005 ITV comedy quiz (one series, Al Murray as the Pub Landlord), with no active brand; Error Hunt was the alternative if that mattered. The name can't contain "Wikipedia" (the Foundation's trademark policy). Citation Hunt's maintainers are to be told, on their talk page.
 2. **The launch wiki.** enwiki, for reach on Bluesky and X, or ruwiki, where most findings and an engaged volunteer group already are.
 3. **The puzzle share**: at launch, or a week after.
 4. **Editors.** Which editor the link should open on phones, and which editors keep `summary=` and the talk-page preload.
@@ -292,7 +292,7 @@ What decides whether it's working:
 
 Where the first build differs from the design above, and why:
 
-- **Cards are handed over as a JSON file** (`CARDS_FILE`), not a `_p` ToolsDB table. A file is the simplest thing both sides can test. How the app tool gets the file on Toolforge is the open deployment question in `inaccuracies/README.md`.
+- **Cards are handed over as a JSON file** (`CARDS_FILE`), not a `_p` ToolsDB table. A file is the simplest thing both sides can test. How the app tool gets the file on Toolforge is the open deployment question in `fact-hunt/README.md`.
 - **Answers and fixes are an append-only event log** (`EVENTS_FILE`, JSON lines), not a ToolsDB table. The app is one process, so a log needs no database. And every count can be recomputed by replaying it, so a wrong rule is fixed without patching data.
 - **The source label is the site's host name** (an archive snapshot is labelled by the site it archived), not the publication and date. Neither ToolsDB nor the batch CSV stores the citation text.
 - **Talk-page notes aren't hashtag-tracked.** On `section=new`, MediaWiki makes the edit summary from the heading, so the hashtag can't ride along. The app records a note when the person says they posted it.

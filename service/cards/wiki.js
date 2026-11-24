@@ -9,7 +9,7 @@
 import { DEFAULT_USER_AGENT, hostForWiki, langCodeForWiki } from '../../core/wikipedia.js';
 import { livingPeopleCategoryForWiki } from '../article-picker.js';
 
-export const USER_AGENT = `${DEFAULT_USER_AGENT} inaccuracies-card-builder`;
+export const USER_AGENT = `${DEFAULT_USER_AGENT} fact-hunt-card-builder`;
 
 // Wikitext is large, so fewer titles per request than the 50 the API allows.
 export const PAGE_BATCH_SIZE = 20;

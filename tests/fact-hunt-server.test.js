@@ -2,10 +2,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 
-import { createApp } from '../inaccuracies/server.js';
-import { createDeck } from '../inaccuracies/lib/cards.js';
-import { createStore } from '../inaccuracies/lib/store.js';
-import { tokenize } from '../inaccuracies/lib/tokens.js';
+import { createApp } from '../fact-hunt/server.js';
+import { createDeck } from '../fact-hunt/lib/cards.js';
+import { createStore } from '../fact-hunt/lib/store.js';
+import { tokenize } from '../fact-hunt/lib/tokens.js';
 
 const claim = 'Combat Zone Wrestling (CZW) is an American independent professional wrestling promotion founded in 1999 by John Zandig.';
 const quote = 'CZW was born in a simpler time, way back in 1998, by John Zandig in Philadelphia';
@@ -35,7 +35,7 @@ async function start({ wikitext = 'promotion founded in 1999 by [[John Zandig]]'
     const store = createStore({ now });
     const app = createApp({
         deck: createDeck({ cards: [CARD, OTHER] }), store, fetchImpl, now, random: () => 0,
-        baseUrl: 'https://inaccuracies.example', projectPage: 'User:Example/Inaccuracies',
+        baseUrl: 'https://fact-hunt.example', projectPage: 'User:Example/Fact Hunt',
         readPublic: async name => {
             if (name === 'index.html') return Buffer.from('<head><!--META--></head><body></body>');
             throw new Error('no file');
@@ -77,7 +77,7 @@ test('the whole flow: topics, a card, a tap, a hold, a fix detected, a fix page'
     const caught = await s.call('/api/answer', { method: 'POST', body: { card: CARD.id, kind: 'confirm', value: true } });
     assert.equal(caught.body.result, 'caught');
     assert.equal(caught.body.fixEnabled, true);
-    assert.match(caught.body.fix.summary, /#inaccuracies/);
+    assert.match(caught.body.fix.summary, /#facthunt/);
 
     // Someone else can't take the card while it's held.
     assert.equal((await s.call('/api/hold', { method: 'POST', body: { card: CARD.id, action: 'fix' } })).status, 200);
@@ -99,7 +99,7 @@ test('the whole flow: topics, a card, a tap, a hold, a fix detected, a fix page'
 
     const fixPage = await s.call(`/f/${CARD.id}`);
     assert.match(fixPage.body, /<title>Fixed: Combat Zone Wrestling<\/title>/);
-    assert.match(fixPage.body, /og:image" content="https:\/\/inaccuracies\.example\/og\/f\/27c9765dd902\.png"/);
+    assert.match(fixPage.body, /og:image" content="https:\/\/fact-hunt\.example\/og\/f\/27c9765dd902\.png"/);
     const fixData = await s.call(`/api/card/${CARD.id}`);
     assert.equal(fixData.body.status, 'fixed');
     assert.equal(fixData.body.fixed.to, '1998');
@@ -153,7 +153,7 @@ test('a puzzle link is a page with its own title and preview; the answer is not 
     t.after(s.close);
     const page = await s.call(`/c/${CARD.id}`);
     assert.match(page.body, /<title>This Wikipedia sentence disagrees with its own source\. Can you spot where\?<\/title>/);
-    assert.match(page.body, /og:image" content="https:\/\/inaccuracies\.example\/og\/c\/27c9765dd902\.png"/);
+    assert.match(page.body, /og:image" content="https:\/\/fact-hunt\.example\/og\/c\/27c9765dd902\.png"/);
     assert.doesNotMatch(page.body, /1998/);
     const png = await s.call(`/og/c/${CARD.id}.png`);
     assert.ok(png.status === 200 || png.status === 404, 'a PNG when resvg is installed, else a 404');

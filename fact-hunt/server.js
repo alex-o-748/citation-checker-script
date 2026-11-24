@@ -1,15 +1,15 @@
 #!/usr/bin/env node
-// The Inaccuracies web app: one static page, a small JSON API, share pages
+// The Fact Hunt web app: one static page, a small JSON API, share pages
 // with link previews. No framework, no model calls, no third-party resources.
 //
 // Configuration (environment):
 //   PORT           port to listen on (Toolforge sets it)
 //   CARDS_FILE     the cards file service/run-build-cards.js writes
 //   EVENTS_FILE    where answers and fixes are appended (JSON lines)
-//   BASE_URL       public origin, e.g. https://inaccuracies.toolforge.org
+//   BASE_URL       public origin, e.g. https://fact-hunt.toolforge.org
 //                  (link previews need absolute URLs)
 //   PROJECT_PAGE   on-wiki page linked from edit summaries, e.g.
-//                  User:Alaexis/Inaccuracies
+//                  User:Alaexis/Fact Hunt
 //   FIX_OVERRIDE   "on" or "off": the owner's switch over the stop rule
 //   WIKI_CHECKS    "off" to skip calls to Wikipedia (local development only:
 //                  "Did it work?" then always says yes)
@@ -341,13 +341,13 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     // would serve the hand-made sample, or forget every answer on restart.
     for (const name of ['CARDS_FILE', 'EVENTS_FILE']) {
         if (!env[name] && !dev) {
-            console.error(`inaccuracies: set ${name} (or WIKI_CHECKS=off for local development)`);
+            console.error(`fact-hunt: set ${name} (or WIKI_CHECKS=off for local development)`);
             process.exit(1);
         }
     }
     const deck = createDeck({ file: env.CARDS_FILE || join(HERE, 'dev', 'sample-cards.json') });
     const store = createStore({ file: env.EVENTS_FILE || null });
-    if (!deck.all().length) console.error(`inaccuracies: no cards in ${env.CARDS_FILE || 'the sample'}`);
+    if (!deck.all().length) console.error(`fact-hunt: no cards in ${env.CARDS_FILE || 'the sample'}`);
     const app = createApp({
         deck,
         store,
@@ -358,7 +358,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
         fontDir: env.FONT_DIR || null,
     });
     const port = Number(env.PORT || 8000);
-    createServer(app.handle).listen(port, () => console.log(`inaccuracies: listening on ${port}`));
+    createServer(app.handle).listen(port, () => console.log(`fact-hunt: listening on ${port}`));
     const revertTimer = setInterval(() => app.checkReverts().catch(e => console.error(`revert check: ${e.message}`)), 3600 * 1000);
     revertTimer.unref();
 }

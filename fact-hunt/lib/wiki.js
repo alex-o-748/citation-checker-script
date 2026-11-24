@@ -2,8 +2,8 @@
 // checks it makes afterwards: did the sentence change, and was the fix
 // reverted.
 
-export const USER_AGENT = 'inaccuracies (https://github.com/alex-o-748/citation-checker-script)';
-export const HASHTAG = '#inaccuracies';
+export const USER_AGENT = 'fact-hunt (https://github.com/alex-o-748/citation-checker-script)';
+export const HASHTAG = '#facthunt';
 export const SUMMARY_LIMIT = 500; // MediaWiki's edit summary limit, in characters.
 
 const pageUrl = (host, title) => `https://${host}/wiki/${encodeURIComponent(title.replace(/ /g, '_')).replace(/%2F/g, '/').replace(/%3A/g, ':')}`;

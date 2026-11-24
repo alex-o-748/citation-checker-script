@@ -1,4 +1,4 @@
-// Inaccuracies: the page. One screen at a time, built with DOM calls (never
+// Fact Hunt: the page. One screen at a time, built with DOM calls (never
 // innerHTML with data), talking to the server's small JSON API.
 
 // ---------- Strings: every user-facing string, in one table ----------
@@ -80,7 +80,7 @@ const STRINGS = {
     puzzleBanner: 'Someone shared this sentence. It disagrees with its own source.',
     alreadyFixed: 'This one was fixed already.',
     seeArticle: 'See the article',
-    aboutTitle: 'About',
+    aboutTitle: 'About Fact Hunt',
     aboutBody: 'Each card is a sentence from a Wikipedia article and a passage from the source it cites, where a checker found that the two disagree. You decide whether they do. If they do, you fix the article in Wikipedia’s own editor, or ask its editors. Nothing is changed on Wikipedia except by you.',
     aboutPrivacy: 'This site records what you answer, against a random id your browser makes. No account, no tracking, no third-party scripts.',
     mastodonServer: 'Your Mastodon server (for example mastodon.social)',
@@ -139,20 +139,20 @@ const storage = {
 };
 
 function sessionId() {
-    let id = storage.get('inacc.session', null);
+    let id = storage.get('facthunt.session', null);
     if (!id) {
         id = (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`).replace(/[^A-Za-z0-9-]/g, '');
-        storage.set('inacc.session', id);
+        storage.set('facthunt.session', id);
     }
     return id;
 }
 
 const SESSION = sessionId();
-const memory = { warmedUp: storage.get('inacc.warmedUp', false), tally: storage.get('inacc.tally', { caught: 0, fixed: 0, asked: 0 }) };
+const memory = { warmedUp: storage.get('facthunt.warmedUp', false), tally: storage.get('facthunt.tally', { caught: 0, fixed: 0, asked: 0 }) };
 
 function bump(key) {
     memory.tally[key] = (memory.tally[key] || 0) + 1;
-    storage.set('inacc.tally', memory.tally);
+    storage.set('facthunt.tally', memory.tally);
 }
 
 async function api(path, { method = 'GET', body } = {}) {
@@ -281,10 +281,10 @@ function shareBlock({ text, url, kind, cardId }) {
         h('button', { type: 'button', class: 'small-button', onclick: () => open(`https://x.com/intent/post?text=${encodeURIComponent(current())}`, 'x') }, 'X'),
         h('button', {
             type: 'button', class: 'small-button', onclick: () => {
-                let server = storage.get('inacc.mastodon', '');
+                let server = storage.get('facthunt.mastodon', '');
                 if (!server) server = (window.prompt(t('mastodonServer')) || '').trim().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
                 if (!/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(server)) return;
-                storage.set('inacc.mastodon', server);
+                storage.set('facthunt.mastodon', server);
                 open(`https://${server}/share?text=${encodeURIComponent(current())}`, 'mastodon');
             },
         }, 'Mastodon'),
@@ -315,7 +315,7 @@ async function home() {
         data.latest && h('a', { href: `/f/${data.latest.id}`, onclick: e => { e.preventDefault(); fixPage(data.latest.id); } },
             `${data.latest.pageTitle}: `, h('s', { class: 'struck' }, data.latest.from), ` → ${data.latest.to}`));
     show(
-        h('header', { class: 'bar' }, h('span', { class: 'wordmark' }, 'inaccuracies'), h('a', { class: 'link-quiet', href: '/about', onclick: e => { e.preventDefault(); about(); } }, t('about'))),
+        h('header', { class: 'bar' }, h('span', { class: 'wordmark' }, 'fact hunt'), h('a', { class: 'link-quiet', href: '/about', onclick: e => { e.preventDefault(); about(); } }, t('about'))),
         h('h1', { class: 'hero' }, t('tagline')),
         h('p', { class: 'lede' }, t('taglineSub')),
         h('section', { style: 'margin-top: 36px' }, h('h2', { class: 'label' }, t('chooseTopic')), chips),
@@ -381,7 +381,7 @@ async function answer(body) {
     if (data.result === 'caught') {
         if (state.card.warmUp) {
             memory.warmedUp = true;
-            storage.set('inacc.warmedUp', true);
+            storage.set('facthunt.warmedUp', true);
         } else {
             bump('caught');
         }
@@ -408,7 +408,7 @@ function missScreen() {
 
 function sameScreen() {
     const { from, to } = state.reveal;
-    if (state.card.warmUp) { memory.warmedUp = true; storage.set('inacc.warmedUp', true); }
+    if (state.card.warmUp) { memory.warmedUp = true; storage.set('facthunt.warmedUp', true); }
     show(
         bar(),
         h('h1', { style: 'margin-top: 12px' }, t('sameTitle')),
@@ -642,7 +642,7 @@ async function fixPage(id, preloaded = null) {
     const card = data.card;
     const r = data.fixed;
     show(
-        h('header', { class: 'bar' }, h('a', { class: 'wordmark', href: '/', onclick: e => { e.preventDefault(); home(); } }, 'inaccuracies')),
+        h('header', { class: 'bar' }, h('a', { class: 'wordmark', href: '/', onclick: e => { e.preventDefault(); home(); } }, 'fact hunt')),
         h('div', { style: 'margin-top: 12px; display: flex; flex-direction: column; gap: 12px' },
             checkMark(),
             h('h1', {}, t('fixPageTitle')),
