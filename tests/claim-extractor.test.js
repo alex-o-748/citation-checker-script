@@ -477,5 +477,6 @@ test('processArticle carries the uncited-text check\'s input as plain data', asy
         total: 1,
         capped: false,
         usesLead: false,
+        stats: { paragraphs: 1, sentences: 2, cited: 1, short: 0, leadIns: 0, uncited: 1 },
     }, 'no DOM elements: the batch keeps this per article');
 });

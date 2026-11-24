@@ -2750,7 +2750,13 @@ function uncitedOpening(root) {
  *     total,      // uncited sentences found, before the cap
  *     capped,     // true when total > maxSentences
  *     usesLead,   // true for an article with no headings: its lead was read
+ *     stats,      // what was read, for an editor checking the rule: see below
  *   }
+ *
+ * `stats` counts everything read, not only what is kept: `paragraphs` (prose
+ * paragraphs read), `sentences` (all of their sentences), and how those split
+ * into `cited` (a marker in or after it), `short` (under `minLength`),
+ * `leadIns` (ending in a colon) and `uncited` (the rest, = `total`).
  *
  * `paragraphs` holds only paragraphs with an uncited sentence; `text` is the
  * whole paragraph (citation markers left out) and each sentence's `start` is
@@ -2774,9 +2780,11 @@ function uncitedSentences(root, {
     const sentences = [];
     const paragraphs = [];
     let total = 0;
+    const stats = { paragraphs: 0, sentences: 0, cited: 0, short: 0, leadIns: 0, uncited: 0 };
     for (const { block, sectionTitle } of blocks) {
         const { text, citedChars } = uncitedParagraphText(block);
         if (!text) continue;
+        stats.paragraphs++;
         const found = [];
         let cursor = 0;
         for (const sentence of split(text)) {
@@ -2785,11 +2793,15 @@ function uncitedSentences(root, {
             // located; such a sentence counts as cited rather than guessed at.
             if (at < 0) continue;
             cursor = at + sentence.length;
-            if (at < citedChars || sentence.length < minLength || UNCITED_LEAD_IN_RE.test(sentence)) continue;
+            stats.sentences++;
+            if (at < citedChars) { stats.cited++; continue; }
+            if (sentence.length < minLength) { stats.short++; continue; }
+            if (UNCITED_LEAD_IN_RE.test(sentence)) { stats.leadIns++; continue; }
             found.push({ text: sentence, start: at });
         }
         if (found.length === 0) continue;
         total += found.length;
+        stats.uncited += found.length;
         const room = maxSentences - sentences.length;
         if (room <= 0) continue;
         const paragraphIndex = paragraphs.length;
@@ -2805,6 +2817,7 @@ function uncitedSentences(root, {
         total,
         capped: total > sentences.length,
         usesLead,
+        stats,
     };
 }
 
@@ -5519,6 +5532,18 @@ function useToolforgeSourceFetcher() {
             'Mis en doute : « {text} »',
         'No citation, may be wrong':
             'Sans référence, peut-être faux',
+        'Run only this check on this article':
+            'Exécuter seulement cette vérification sur cet article',
+        'A check is already running.':
+            'Une vérification est déjà en cours.',
+        'Paragraphs read: {paragraphs}; sentences: {sentences} ({cited} with a citation, {uncited} without).':
+            'Paragraphes lus : {paragraphs} ; phrases : {sentences} ({cited} avec une référence, {uncited} sans).',
+        'Left out: {short} too short, {leadIns} introducing a list or quotation.':
+            'Écartées : {short} trop courtes, {leadIns} introduisant une liste ou une citation.',
+        'Model calls: {calls} ({failed} failed); sentences flagged: {flagged}, shown: {shown}.':
+            'Appels au modèle : {calls} ({failed} en échec) ; phrases signalées : {flagged}, affichées : {shown}.',
+        'Sentences checked ({count})':
+            'Phrases vérifiées ({count})',
         'Checking uncited text':
             'Vérification du texte sans référence',
         'Runs one more check on each flagged citation to tell a contradicted key fact from a missing minor detail. Costs one extra model call per flagged citation.':
@@ -5929,6 +5954,18 @@ function useToolforgeSourceFetcher() {
             'Puesto en duda: «{text}»',
         'No citation, may be wrong':
             'Sin referencias, puede ser errónea',
+        'Run only this check on this article':
+            'Ejecutar solo esta comprobación en este artículo',
+        'A check is already running.':
+            'Ya hay una comprobación en curso.',
+        'Paragraphs read: {paragraphs}; sentences: {sentences} ({cited} with a citation, {uncited} without).':
+            'Párrafos leídos: {paragraphs}; oraciones: {sentences} ({cited} con referencia, {uncited} sin ella).',
+        'Left out: {short} too short, {leadIns} introducing a list or quotation.':
+            'Descartadas: {short} demasiado cortas, {leadIns} que introducen una lista o una cita.',
+        'Model calls: {calls} ({failed} failed); sentences flagged: {flagged}, shown: {shown}.':
+            'Llamadas al modelo: {calls} ({failed} fallidas); oraciones señaladas: {flagged}, mostradas: {shown}.',
+        'Sentences checked ({count})':
+            'Oraciones comprobadas ({count})',
         'Checking uncited text':
             'Revisando el texto sin referencias',
         'Runs one more check on each flagged citation to tell a contradicted key fact from a missing minor detail. Costs one extra model call per flagged citation.':
@@ -6335,6 +6372,18 @@ function useToolforgeSourceFetcher() {
             'Под сомнением: «{text}»',
         'No citation, may be wrong':
             'Без сноски, возможно, неверно',
+        'Run only this check on this article':
+            'Запустить только эту проверку для этой статьи',
+        'A check is already running.':
+            'Проверка уже идёт.',
+        'Paragraphs read: {paragraphs}; sentences: {sentences} ({cited} with a citation, {uncited} without).':
+            'Прочитано абзацев: {paragraphs}; предложений: {sentences} (со сноской: {cited}, без сноски: {uncited}).',
+        'Left out: {short} too short, {leadIns} introducing a list or quotation.':
+            'Не проверялись: слишком короткие — {short}, вводящие список или цитату — {leadIns}.',
+        'Model calls: {calls} ({failed} failed); sentences flagged: {flagged}, shown: {shown}.':
+            'Обращений к модели: {calls} (неудачных: {failed}); отмечено предложений: {flagged}, показано: {shown}.',
+        'Sentences checked ({count})':
+            'Проверенные предложения ({count})',
         'Checking uncited text':
             'Проверка текста без сносок',
         'Runs one more check on each flagged citation to tell a contradicted key fact from a missing minor detail. Costs one extra model call per flagged citation.':
@@ -6749,6 +6798,18 @@ function useToolforgeSourceFetcher() {
             'מוטל בספק: ״{text}״',
         'No citation, may be wrong':
             'ללא מקור, ייתכן ששגוי',
+        'Run only this check on this article':
+            'הרצת הבדיקה הזו בלבד על הערך',
+        'A check is already running.':
+            'כבר מתבצעת בדיקה.',
+        'Paragraphs read: {paragraphs}; sentences: {sentences} ({cited} with a citation, {uncited} without).':
+            'פסקאות שנקראו: {paragraphs}; משפטים: {sentences} ({cited} עם הערת שוליים, {uncited} בלי).',
+        'Left out: {short} too short, {leadIns} introducing a list or quotation.':
+            'הושמטו: {short} קצרים מדי, {leadIns} שמציגים רשימה או ציטוט.',
+        'Model calls: {calls} ({failed} failed); sentences flagged: {flagged}, shown: {shown}.':
+            'קריאות למודל: {calls} ({failed} נכשלו); משפטים שסומנו: {flagged}, מוצגים: {shown}.',
+        'Sentences checked ({count})':
+            'משפטים שנבדקו ({count})',
         'Checking uncited text':
             'בדיקת טקסט ללא מקור',
         'Runs one more check on each flagged citation to tell a contradicted key fact from a missing minor detail. Costs one extra model call per flagged citation.':
@@ -7127,6 +7188,18 @@ function useToolforgeSourceFetcher() {
             'In twijfel getrokken: “{text}”',
         'No citation, may be wrong':
             'Zonder bronvermelding, mogelijk onjuist',
+        'Run only this check on this article':
+            'Alleen deze controle uitvoeren op dit artikel',
+        'A check is already running.':
+            'Er loopt al een controle.',
+        'Paragraphs read: {paragraphs}; sentences: {sentences} ({cited} with a citation, {uncited} without).':
+            'Gelezen alinea’s: {paragraphs}; zinnen: {sentences} ({cited} met een bron, {uncited} zonder).',
+        'Left out: {short} too short, {leadIns} introducing a list or quotation.':
+            'Weggelaten: {short} te kort, {leadIns} die een lijst of citaat inleiden.',
+        'Model calls: {calls} ({failed} failed); sentences flagged: {flagged}, shown: {shown}.':
+            'Modelaanroepen: {calls} ({failed} mislukt); gemarkeerde zinnen: {flagged}, getoond: {shown}.',
+        'Sentences checked ({count})':
+            'Gecontroleerde zinnen ({count})',
         'Checking uncited text':
             'Tekst zonder bronvermelding controleren',
         'Runs one more check on each flagged citation to tell a contradicted key fact from a missing minor detail. Costs one extra model call per flagged citation.':
@@ -7565,6 +7638,7 @@ function useToolforgeSourceFetcher() {
             // and how long it took.
             this.reportLead = null;
             this.reportLeadOnly = false;
+            this.reportUncitedOnly = false;
             this.reportUncited = null;
             this.reportStopped = null;
             this.reportDurationMs = 0;
@@ -7674,7 +7748,7 @@ function useToolforgeSourceFetcher() {
                         <div id="verifier-lead-check-container"></div>
                         <div id="verifier-lead-check-note">${this.t('Verify All also checks each sentence of the lead against the rest of the article, since a lead statement may be sourced in the body instead. A lead citation found to support only part of its claim is then set aside rather than counted as a problem. A few extra model calls per article.')}</div>
                         <div id="verifier-uncited-check-container"></div>
-                        <div id="verifier-uncited-check-note">${this.t('Verify All also checks the sentences that have no citation against the model\'s general knowledge, and lists up to three that look wrong, so a source can be found for them. The model can be wrong about a correct sentence, so this is a prompt to look, not a finding. A few extra model calls per article.')} ${this.t('With a free provider this check runs on {model}; with a provider that uses an API key of its own, on that provider\'s model.', { model: uncitedModelFor(UNCITED_FREE_PROVIDER).name })}</div>
+                        <div id="verifier-uncited-check-note">${this.t('Verify All also checks the sentences that have no citation against the model\'s general knowledge, and lists up to three that look wrong, so a source can be found for them. The model can be wrong about a correct sentence, so this is a prompt to look, not a finding. A few extra model calls per article.')} ${this.t('With a free provider this check runs on {model}; with a provider that uses an API key of its own, on that provider\'s model.', { model: uncitedModelFor(UNCITED_FREE_PROVIDER).name })} <a href="#" id="verifier-uncited-only-link">${this.t('Run only this check on this article')}</a></div>
                         <div id="verifier-accuracy-note"></div>
                         <div id="verifier-privacy-note">${this.t('Results are logged for research. Your username is not recorded.')}</div>
                         <div id="verifier-settings-done-container"></div>
@@ -9302,6 +9376,14 @@ function useToolforgeSourceFetcher() {
                     color: var(--sv-ink-4);
                     margin-bottom: 10px;
                 }
+                #verifier-uncited-only-link {
+                    color: var(--sv-accent-fg);
+                    text-decoration: none;
+                    white-space: nowrap;
+                }
+                #verifier-uncited-only-link:hover {
+                    text-decoration: underline;
+                }
                 #verifier-lead-note {
                     margin-top: 8px;
                     font-size: 12px;
@@ -10428,6 +10510,19 @@ function useToolforgeSourceFetcher() {
                 localStorage.setItem('verifier_uncited_check', this.uncitedCheckEnabled ? 'on' : 'off');
             });
 
+            // The uncited-text check alone, kept out of the main view on
+            // purpose: it is for looking at what the check reads and finds,
+            // not an action most editors need.
+            document.getElementById('verifier-uncited-only-link')?.addEventListener('click', (e) => {
+                e.preventDefault();
+                if (this.reportRunning) {
+                    mw.notify(this.t('A check is already running.'), { type: 'warn', autoHide: true });
+                    return;
+                }
+                this.closeSettings();
+                this.verifyAllCitations({ uncitedOnly: true });
+            });
+
             this.buttons.setKey.on('click', () => {
                 this.setApiKey();
             });
@@ -11079,9 +11174,9 @@ function useToolforgeSourceFetcher() {
             this.renderReportMeta();
             const statusEl = document.querySelector('#verifier-report-citations > summary .sv-section-status');
             const noteEl = document.getElementById('verifier-report-hidden-note');
-            // A lead-only report ("Check the lead against the body") has no
-            // citations to count.
-            if (this.reportLeadOnly) {
+            // A report of one check alone (the lead's, or the uncited text's)
+            // has no citations to count.
+            if (this.reportLeadOnly || this.reportUncitedOnly) {
                 summaryEl.innerHTML = '';
                 if (noteEl) noteEl.textContent = '';
                 return;
@@ -12522,7 +12617,7 @@ function useToolforgeSourceFetcher() {
                 console.warn('[Verifier] Could not read the uncited text:', e);
             }
             this._articleUncited = uncited
-                || { sentences: [], paragraphs: [], opening: '', total: 0, capped: false, usesLead: false, readError: true };
+                || { sentences: [], paragraphs: [], opening: '', total: 0, capped: false, usesLead: false, stats: null, readError: true };
             return this._articleUncited;
         }
 
@@ -12553,6 +12648,7 @@ function useToolforgeSourceFetcher() {
             if (!this.reportUncited) return;
             const section = document.createElement('details');
             section.className = 'sv-section';
+            section.open = this.reportUncitedOnly;
             section.innerHTML = `<summary><span class="sv-chevron"></span>`
                 + `<span class="sv-section-title">${this.escapeHtml(this.t('Uncited text'))}</span>`
                 + `<span class="sv-section-status"></span></summary>`
@@ -12569,7 +12665,9 @@ function useToolforgeSourceFetcher() {
             // Re-rendered as the check moves on; a row the editor opened
             // stays open.
             const open = new Set([...body.querySelectorAll('.sv-finding.sv-expanded')].map(row => row.dataset.uncitedIndex));
+            const listOpen = Boolean(body.querySelector('.sv-uncited-read[open]'));
             body.innerHTML = this.uncitedCheckHtml(this.reportUncited);
+            if (listOpen) body.querySelector('.sv-uncited-read')?.setAttribute('open', '');
             body.querySelectorAll('.sv-finding[data-uncited-index]').forEach(row => {
                 if (open.has(row.dataset.uncitedIndex)) this.toggleFinding(row, true);
                 // Opening a row shows its sentence in the article, as a lead
@@ -12627,8 +12725,45 @@ function useToolforgeSourceFetcher() {
             if (uncited.state === 'done' && unchecked.length) {
                 notes.push(this.t(unchecked.length === 1 ? '{count} sentence with no citation could not be checked.' : '{count} sentences with no citation could not be checked.', { count: unchecked.length }));
             }
+            const counts = this.uncitedCountsText(uncited);
             return notes.map(n => `<div class="sv-section-note">${this.escapeHtml(n)}</div>`).join('')
-                + (findings.length ? `<div class="sv-rows">${findings.map(f => this.uncitedFindingHtml(f)).join('')}</div>` : '');
+                + (findings.length ? `<div class="sv-rows">${findings.map(f => this.uncitedFindingHtml(f)).join('')}</div>` : '')
+                + (counts ? `<div class="sv-section-note sv-uncited-counts">${this.escapeHtml(counts)}</div>` : '')
+                + this.uncitedReadListHtml(uncited);
+        }
+
+        // What the check read and did, in numbers, so an editor can tell "the
+        // model doubted nothing" from "there was little to read" or "the
+        // calls failed". From uncitedSentences()'s `stats` and the run's
+        // counts; empty before there is anything to say.
+        uncitedCountsText(uncited) {
+            const parts = [];
+            const st = uncited.stats;
+            if (st) {
+                parts.push(this.t('Paragraphs read: {paragraphs}; sentences: {sentences} ({cited} with a citation, {uncited} without).', st));
+                if (st.short || st.leadIns) {
+                    parts.push(this.t('Left out: {short} too short, {leadIns} introducing a list or quotation.', st));
+                }
+            }
+            if (uncited.state === 'done' && uncited.calls) {
+                parts.push(this.t('Model calls: {calls} ({failed} failed); sentences flagged: {flagged}, shown: {shown}.', {
+                    calls: uncited.calls,
+                    failed: uncited.failedCalls || 0,
+                    flagged: (uncited.findings || []).length + (uncited.dropped || 0),
+                    shown: (uncited.findings || []).length,
+                }));
+            }
+            return parts.join(' ');
+        }
+
+        // The sentences sent to the model, folded: the list an editor needs
+        // to judge whether the rule picked the right ones.
+        uncitedReadListHtml(uncited) {
+            if (!uncited.sentences.length) return '';
+            return `<details class="sv-sublist sv-uncited-read"><summary><span class="sv-chevron"></span><span class="sv-sublist-title">`
+                + `${this.escapeHtml(this.t('Sentences checked ({count})', { count: uncited.sentences.length }))}</span></summary><ul>`
+                + uncited.sentences.map(s => `<li>${this.escapeHtml(s.text)}${s.sectionTitle ? ` <span class="sv-lead-section">(${this.escapeHtml(s.sectionTitle)})</span>` : ''}</li>`).join('')
+                + `</ul></details>`;
         }
 
         // A finding's row. The words the model doubts are in its details only
@@ -12681,14 +12816,29 @@ function useToolforgeSourceFetcher() {
             uncited.done = 0;
             this.updateReportProgress(0, total, phase, startTime);
             this.renderReportUncited();
-            const callModel = (systemPrompt, userContent) => callProviderAPI(provider, {
-                apiKey: this.apiKeyFor(provider),
-                model,
-                systemPrompt,
-                userContent,
-                maxTokens: groupMaxTokens(provider),
-                ...this.llmRouterConfigOverrides(provider)
-            });
+            // Every call's prompt and raw answer, for the console log at the
+            // end: what to look at when the check finds nothing.
+            const callLog = [];
+            uncited.failedCalls = 0;
+            const callModel = async (systemPrompt, userContent) => {
+                const entry = { userContent, answer: null, error: null };
+                callLog.push(entry);
+                try {
+                    const response = await callProviderAPI(provider, {
+                        apiKey: this.apiKeyFor(provider),
+                        model,
+                        systemPrompt,
+                        userContent,
+                        maxTokens: groupMaxTokens(provider),
+                        ...this.llmRouterConfigOverrides(provider)
+                    });
+                    entry.answer = response && response.text;
+                    return response;
+                } catch (e) {
+                    entry.error = e && e.message ? e.message : String(e);
+                    throw e;
+                }
+            };
             let run = null;
             try {
                 run = await runUncitedCheck({ uncited, articleTitle: this.reportArticleTitle() }, {
@@ -12699,6 +12849,7 @@ function useToolforgeSourceFetcher() {
                     pause: () => new Promise(r => setTimeout(r, delayBetweenCalls)),
                     shouldAbort: () => this.reportCancelled,
                     onChunkError: e => {
+                        uncited.failedCalls++;
                         console.warn('[Verifier] Uncited-text check call failed:', e);
                         return 'error';
                     },
@@ -12714,30 +12865,56 @@ function useToolforgeSourceFetcher() {
             if (run) {
                 uncited.findings = run.findings;
                 uncited.unchecked = run.unchecked;
+                uncited.dropped = run.dropped;
+                uncited.calls = run.calls;
                 uncited.done = run.checked + run.unchecked.length;
                 this.reportTokenUsage.input += run.usage.input || 0;
                 this.reportTokenUsage.output += run.usage.output || 0;
             }
+            this.logUncitedRun(uncited, callLog);
             uncited.state = 'done';
             this.renderReportUncited();
             this.renderReportSummary();
+        }
+
+        // The run, in the browser console, folded: the counts, the sentences
+        // sent, and each call's prompt and raw answer. Not the Worker log,
+        // which has no field for a sentence checked against no source.
+        logUncitedRun(uncited, callLog) {
+            try {
+                console.groupCollapsed(`[Verifier] Uncited-text check: ${uncited.sentences.length} sentences, `
+                    + `${callLog.length} calls, ${(uncited.findings || []).length} shown (${uncited.model.name})`);
+                console.log('counts', { ...(uncited.stats || {}), capped: uncited.capped, checked: uncited.done, unchecked: (uncited.unchecked || []).length, failedCalls: uncited.failedCalls, flagged: (uncited.findings || []).length + (uncited.dropped || 0) });
+                console.log('sentences', uncited.sentences.map(s => s.text));
+                callLog.forEach((c, i) => {
+                    console.groupCollapsed(`call ${i + 1}: ${c.error ? `failed: ${c.error}` : (c.answer || '').slice(0, 80)}`);
+                    console.log('prompt', c.userContent);
+                    console.log('answer', c.error ? `(failed) ${c.error}` : c.answer);
+                    console.groupEnd();
+                });
+                console.log('findings', uncited.findings);
+                console.groupEnd();
+            } catch (e) { /* a console without groups: nothing to log */ }
         }
 
         getReportUnits() {
             return mergeReportUnits(this.reportResults, this.reportGroupResults);
         }
 
-        // `leadOnly`: the lead check alone ("Check the lead against the
-        // body"), as a report with no citation rows.
-        async verifyAllCitations({ leadOnly = false } = {}) {
-            const lead = this.leadCheckEnabled ? this.articleLead() : null;
-            const uncited = this.uncitedCheckEnabled && !leadOnly ? this.articleUncited() : null;
+        // `leadOnly`: the lead check alone, as a report with no citation
+        // rows. `uncitedOnly`: the uncited-text check alone, whatever its
+        // setting says (the quiet link under that setting), for an editor
+        // looking at what it reads and finds without a full run.
+        async verifyAllCitations({ leadOnly = false, uncitedOnly = false } = {}) {
+            const noCitations = leadOnly || uncitedOnly;
+            const lead = this.leadCheckEnabled && !uncitedOnly ? this.articleLead() : null;
+            const uncited = uncitedOnly || (this.uncitedCheckEnabled && !leadOnly) ? this.articleUncited() : null;
             if (leadOnly && !lead) {
                 mw.notify(this.t('This article has no body to check the lead against.'), { type: 'warn', autoHide: true });
                 return;
             }
-            const citations = leadOnly ? [] : this.collectAllCitations();
-            if (!leadOnly && citations.length === 0) {
+            const citations = noCitations ? [] : this.collectAllCitations();
+            if (!noCitations && citations.length === 0) {
                 mw.notify(this.t('No citations found on this page.'), { type: 'warn', autoHide: true });
                 return;
             }
@@ -12797,6 +12974,7 @@ function useToolforgeSourceFetcher() {
                 ? { sentences: lead.sentences, body: lead.body, results: [], state: 'pending', bodyTruncated: lead.body.truncated }
                 : null;
             this.reportLeadOnly = leadOnly;
+            this.reportUncitedOnly = uncitedOnly;
             // The uncited-text check's state for this report, or null when it
             // doesn't run. Its provider is fixed for the run, like the lead's.
             this.reportUncited = uncited
@@ -12810,9 +12988,9 @@ function useToolforgeSourceFetcher() {
             document.getElementById('verifier-report-summary').innerHTML = '';
             document.getElementById('verifier-report-meta').innerHTML = '';
             document.getElementById('verifier-report-phase').textContent = '';
-            // The lead check alone has no citations to show.
+            // A check run alone has no citations to show.
             const citationsSection = document.getElementById('verifier-report-citations');
-            citationsSection.hidden = leadOnly;
+            citationsSection.hidden = noCitations;
             citationsSection.open = true;
             this.renderReportBar();
             this.resetReportLead();
@@ -13075,7 +13253,7 @@ function useToolforgeSourceFetcher() {
             // What the run was, for the report to say once: where a stopped
             // run stopped (the citations' section), how long it took (the
             // footer).
-            this.reportStopped = cancelledVerdicts && !leadOnly
+            this.reportStopped = cancelledVerdicts && !noCitations
                 ? { done: this.reportResults.length, total: citations.length }
                 : null;
             this.reportDurationMs = Date.now() - startTime;
