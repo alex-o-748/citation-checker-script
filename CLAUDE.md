@@ -596,10 +596,16 @@ its own model, and every free provider gets Lift Wing Qwen3.8
 (`UNCITED_FREE_PROVIDER`), never gpt-oss-20b. On the 2026-11-20 re-run
 Qwen3.8 caught 8 of 9 injected errors with no false flag; GLM 5.2 caught 9
 with one, not enough to spend the shared HF credits on. The batch uses its
-`--provider`. Like the lead check it is a phase of Verify All with
-no action of its own, its calls go into the confirmation's time estimate, and
-its findings are a closed `.sv-section` above the citations, made of
-`findingHtml()` rows. They are not counted in the summary, not in the
+`--provider`. Like the lead check it is a phase of Verify All, its calls go
+into the confirmation's time estimate, and its findings are a closed
+`.sv-section` above the citations, made of `findingHtml()` rows. Its one
+action of its own is a quiet link in its setting's note, "Run only this check
+on this article" (`verifyAllCitations({ uncitedOnly: true })`), which runs it
+whatever the setting says; it is for looking at the check, so keep it off the
+main view. The section ends with counts (`uncitedSentences()`'s `stats`: what
+was read, cited, left out; then calls, failures, flagged, shown) and a folded
+list of the sentences sent, and each run logs its calls' prompts and raw
+answers to the browser console (`logUncitedRun()`). They are not counted in the summary, not in the
 wikitext/plain-text exports, and not logged. Keep them out of all three until
 the evaluation set exists. Design, gaps and the evaluation
 plan: `docs/design-plans/2026-10-23-uncited-text-check.md`.

@@ -109,7 +109,13 @@ function uncitedOpening(root) {
  *     total,      // uncited sentences found, before the cap
  *     capped,     // true when total > maxSentences
  *     usesLead,   // true for an article with no headings: its lead was read
+ *     stats,      // what was read, for an editor checking the rule: see below
  *   }
+ *
+ * `stats` counts everything read, not only what is kept: `paragraphs` (prose
+ * paragraphs read), `sentences` (all of their sentences), and how those split
+ * into `cited` (a marker in or after it), `short` (under `minLength`),
+ * `leadIns` (ending in a colon) and `uncited` (the rest, = `total`).
  *
  * `paragraphs` holds only paragraphs with an uncited sentence; `text` is the
  * whole paragraph (citation markers left out) and each sentence's `start` is
@@ -133,9 +139,11 @@ export function uncitedSentences(root, {
     const sentences = [];
     const paragraphs = [];
     let total = 0;
+    const stats = { paragraphs: 0, sentences: 0, cited: 0, short: 0, leadIns: 0, uncited: 0 };
     for (const { block, sectionTitle } of blocks) {
         const { text, citedChars } = uncitedParagraphText(block);
         if (!text) continue;
+        stats.paragraphs++;
         const found = [];
         let cursor = 0;
         for (const sentence of split(text)) {
@@ -144,11 +152,15 @@ export function uncitedSentences(root, {
             // located; such a sentence counts as cited rather than guessed at.
             if (at < 0) continue;
             cursor = at + sentence.length;
-            if (at < citedChars || sentence.length < minLength || UNCITED_LEAD_IN_RE.test(sentence)) continue;
+            stats.sentences++;
+            if (at < citedChars) { stats.cited++; continue; }
+            if (sentence.length < minLength) { stats.short++; continue; }
+            if (UNCITED_LEAD_IN_RE.test(sentence)) { stats.leadIns++; continue; }
             found.push({ text: sentence, start: at });
         }
         if (found.length === 0) continue;
         total += found.length;
+        stats.uncited += found.length;
         const room = maxSentences - sentences.length;
         if (room <= 0) continue;
         const paragraphIndex = paragraphs.length;
@@ -164,5 +176,6 @@ export function uncitedSentences(root, {
         total,
         capped: total > sentences.length,
         usesLead,
+        stats,
     };
 }

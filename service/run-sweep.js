@@ -78,7 +78,7 @@ import { uncitedChunkSize, UNCITED_MAX_FINDINGS } from '../core/uncited-check.js
 import { assembleFinding, assembleGroupFinding, assembleLeadFinding, assembleUncitedFinding } from './finding-builder.js';
 import { assessSeverity, needsSeverity, assembleGroupText, groupHasUnreadSource } from './severity-assessor.js';
 import { upsertFinding } from './findings-store.js';
-import { openToolsDbConnection } from './toolsdb.js';
+import { openToolsDbConnection, openReconnectingQuery } from './toolsdb.js';
 import { resolveTitleInfo } from './wikipedia-pageids.js';
 import { csvHeaderLine, appendFinding, csvPageTitles, cleanCsvPath, writeCleanCsv } from './csv-report.js';
 import { PROMPT_VERSION } from '../core/prompts.js';
@@ -688,8 +688,13 @@ export async function runSweep(opts, {
     let toolsDbQuery = null;
     if (opts.store) {
         try {
-            toolsDbConnection = await connectToolsDb(readFile ? { readFile } : {});
-            toolsDbQuery = makeQueryFn(toolsDbConnection);
+            // Reopened when it drops: one connection held for a day-long
+            // sweep stored 183 findings of the November 2026 ruwiki rerun
+            // and failed the next 8,679 (service/toolsdb.js).
+            toolsDbConnection = await openReconnectingQuery(() => connectToolsDb(readFile ? { readFile } : {}), {
+                onReconnect: (error, n) => stderr.write(`sweep: ToolsDB connection lost (${error.message}); reconnected (${n})\n`),
+            });
+            toolsDbQuery = toolsDbConnection.query;
         } catch (error) {
             stderr.write(`sweep: could not connect to ToolsDB: ${error.message} (pass --no-store to write the CSV only)\n`);
             return 1;
@@ -709,7 +714,11 @@ export async function runSweep(opts, {
         provider: opts.provider, apiKey, model: opts.model, workerBase: opts.workerBase,
     });
 
-    const findings = [];
+    // A count, not the findings themselves: each carries claim, rationale,
+    // quote and severity text, and holding a whole sweep's worth (113,680 on
+    // the November 2026 ruwiki rerun) only to print its length is memory the
+    // run can't spare. Every finding is already in the CSV and ToolsDB.
+    let findingsWritten = 0;
     const storeStats = { written: 0, failed: 0 };
     // citationsSeen -> withUrl -> fetched -> verified -> flagged -> published
     // is deliberately citation-denominated and monotonic (each stage's count
@@ -746,7 +755,7 @@ export async function runSweep(opts, {
     // Counted here anyway so the funnel prints a real 0 rather than omitting
     // the column, which is the whole point of measuring the funnel now.
     const record = async finding => {
-        findings.push(finding);
+        findingsWritten++;
         if (finding.published) funnel.published++;
         await appendFindingFn(opts.out, finding);
         if (!toolsDbQuery) return;
@@ -1247,8 +1256,8 @@ export async function runSweep(opts, {
     // Computed after every worker has drained, not at the moment haltError
     // was set — other workers may have finished and recorded findings
     // concurrently between the failure and the pool actually stopping, so
-    // findings.length here is the true final count, not a lower bound.
-    const haltCode = haltError ? describeHalt(stderr, opts.provider, haltError, findings.length) : null;
+    // findingsWritten here is the true final count, not a lower bound.
+    const haltCode = haltError ? describeHalt(stderr, opts.provider, haltError, findingsWritten) : null;
 
     const cleanOut = cleanCsvPath(opts.out);
     let cleanError = null;
@@ -1279,7 +1288,7 @@ export async function runSweep(opts, {
               `${funnel.uncitedUnchecked} unchecked; ${funnel.uncitedCapped} article(s) had more than the sentence cap; ` +
               `${funnel.uncitedCalls} call(s), ${funnel.uncitedTokensIn} tokens in, ${funnel.uncitedTokensOut} out.\n`
             : '') +
-        `sweep: wrote ${findings.length} finding(s) to ${opts.out}` +
+        `sweep: wrote ${findingsWritten} finding(s) to ${opts.out}` +
         `${toolsDbQuery ? ` and ${storeStats.written} to ToolsDB` : ''}` +
         `${resumeSkipped ? ` (${resumeSkipped} article(s) skipped as already done)` : ''}.\n` +
         (storeStats.failed

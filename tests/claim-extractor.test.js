@@ -7,6 +7,7 @@ import {
     processArticle,
     runBatch,
     sourceCacheKey,
+    BoundedSourceCache,
 } from '../service/claim-extractor.js';
 
 const parseHtml = html => new JSDOM(html).window.document;
@@ -425,6 +426,70 @@ test('processArticle splits sentence-scope claims with the article language\'s a
     assert.equal(result.citations[0].claimText, 'Поэму написал А. С. Пушкин в 1833 году.');
 });
 
+// --- The shared source cache is bounded (November 2026 ruwiki OOM) ---
+
+const entry = n => ({ content: 'x'.repeat(n), status: 200, error: null, unavailableReason: null });
+
+test('BoundedSourceCache evicts least recently used entries on trim(), never on set()', () => {
+    const cache = new BoundedSourceCache({ maxChars: 1000 });
+    cache.set('a', entry(400));
+    cache.set('b', entry(400));
+    cache.set('c', entry(400));
+    assert.equal(cache.size, 3, 'set() alone never evicts');
+    cache.get('a'); // a is now the most recently used
+    assert.equal(cache.trim(), 1);
+    assert.deepEqual([...cache.keys()], ['c', 'a'], 'b, least recently used, went first');
+    assert.ok(cache.chars <= 1000);
+});
+
+test('BoundedSourceCache keeps its size accounting through overwrite and delete', () => {
+    const cache = new BoundedSourceCache({ maxChars: 10_000 });
+    cache.set('a', entry(100));
+    cache.set('a', entry(300));
+    cache.delete('missing');
+    assert.equal(cache.chars, BoundedSourceCache.sizeOf(entry(300)));
+    cache.delete('a');
+    assert.equal(cache.chars, 0);
+});
+
+test('runBatch trims the cache between articles, so it stays bounded and every citation still gets its source', async () => {
+    const big = 'y'.repeat(5000);
+    const cache = new BoundedSourceCache({ maxChars: 6000 });
+    const candidates = [1, 2, 3, 4].map(i => ({ pageId: i, title: `T${i}`, revisionId: i }));
+    const results = [];
+    for await (const r of runBatch(candidates, {
+        parseHtml,
+        sourceCache: cache,
+        // Every article cites two distinct 5,000-char sources: more than the
+        // cap within a single article, which must not cost it a source.
+        fetchArticle: async ({ title }) => ({
+            html: article('<p>The treaty was signed in Paris in 1990.@@1@@ It was ratified in 1991.@@2@@</p>',
+                { 1: link(`https://example.com/${title}/a`), 2: link(`https://example.com/${title}/b`) }),
+            status: 200, error: null,
+        }),
+        fetchSource: async () => ({ content: big, status: 200, error: null }),
+    })) {
+        results.push(r);
+    }
+    assert.equal(results.length, 4);
+    for (const r of results) {
+        for (const c of r.citations) assert.equal(c.source.content, big, `${r.title}: every citation got its source`);
+    }
+    // Bounded by the cap plus one article's own sources (trim runs before
+    // each article), and the first articles' sources are gone.
+    const oneArticle = 2 * BoundedSourceCache.sizeOf({ content: big });
+    assert.ok(cache.chars <= 6000 + oneArticle, `cache holds ${cache.chars} chars`);
+    assert.ok(![...cache.keys()].some(k => k.includes('/T1/') || k.includes('/T2/')), 'early articles evicted');
+});
+
+test('runBatch uses a bounded cache when none is passed', async () => {
+    const results = [];
+    for await (const r of runBatch([{ pageId: 1, title: 'A', revisionId: 1 }], {
+        parseHtml, fetchArticle: fetchArticleOk, fetchSource: fetchSourceOk,
+    })) results.push(r);
+    assert.equal(results.length, 1);
+});
+
 test('processArticle carries the lead check\'s input: lead sentences, body, and which citations are in the lead', async () => {
     const html = '<!DOCTYPE html><body>'
         + '<section data-mw-section-id="0"><p>The bridge opened in 1998.'
@@ -477,5 +542,6 @@ test('processArticle carries the uncited-text check\'s input as plain data', asy
         total: 1,
         capped: false,
         usesLead: false,
+        stats: { paragraphs: 1, sentences: 2, cited: 1, short: 0, leadIns: 0, uncited: 1 },
     }, 'no DOM elements: the batch keeps this per article');
 });

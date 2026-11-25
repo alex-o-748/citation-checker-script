@@ -39,6 +39,9 @@ function harness(bodyHtml = '', { callProviderAPI = async () => { throw new Erro
         'uncitedStatusText(uncited) {',
         'uncitedCheckHtml(uncited) {',
         'uncitedFindingHtml(f) {',
+        'uncitedCountsText(uncited) {',
+        'uncitedReadListHtml(uncited) {',
+        'logUncitedRun(uncited, callLog) {',
         'async runReportUncitedCheck(startTime) {',
         'findingHtml({',
         'verdictLabelHtml(label) {',
@@ -46,6 +49,9 @@ function harness(bodyHtml = '', { callProviderAPI = async () => { throw new Erro
         'escapeHtml(str) {',
     ].map(extractMethod).join('\n');
 
+    // The run's console log, kept for the test rather than printed.
+    const quietConsole = { lines: [] };
+    for (const m of ['log', 'warn', 'groupCollapsed', 'groupEnd']) quietConsole[m] = (...args) => quietConsole.lines.push([m, ...args]);
     const dom = new JSDOM(`<!DOCTYPE html><body><div id="mw-content-text">${bodyHtml}</div>`
         + '<div id="verifier-report-view"><div id="verifier-report-uncited"></div></div></body>');
     const localStorage = { getItem: k => (k in storage ? storage[k] : null) };
@@ -75,8 +81,8 @@ function harness(bodyHtml = '', { callProviderAPI = async () => { throw new Erro
 ${methods}
         }
         return Harness;
-    `)(dom.window.document, console, ...Object.values(deps));
-    return { h: new Harness(), doc: dom.window.document };
+    `)(dom.window.document, quietConsole, ...Object.values(deps));
+    return { h: new Harness(), doc: dom.window.document, logged: quietConsole.lines };
 }
 
 const ref = n => `<sup class="reference"><a href="#cite_note-${n}">[${n}]</a></sup>`;
@@ -103,9 +109,15 @@ test('the setting is off by default, and the model follows the sidebar\'s provid
     }
 });
 
-test('there is no uncited-only action: the check is a phase of Verify All, like the lead check', () => {
-    assert.doesNotMatch(SRC, /uncitedOnly/);
-    assert.doesNotMatch(SRC, /this\.t\('Check uncited text'\)/);
+test('running the check alone is a quiet link under its setting, never a main-view button', () => {
+    assert.match(SRC, /<a href="#" id="verifier-uncited-only-link">\$\{this\.t\('Run only this check on this article'\)\}<\/a><\/div>/,
+        'in the setting\'s note');
+    assert.match(SRC, /this\.verifyAllCitations\(\{ uncitedOnly: true \}\)/);
+    assert.doesNotMatch(SRC, /new OO\.ui\.ButtonWidget\(\{\s*label: this\.t\('Run only this check/);
+    // Alone, it runs whatever the setting says, with no citations and no lead check.
+    assert.match(SRC, /const lead = this\.leadCheckEnabled && !uncitedOnly \? this\.articleLead\(\) : null;/);
+    assert.match(SRC, /const uncited = uncitedOnly \|\| \(this\.uncitedCheckEnabled && !leadOnly\) \? this\.articleUncited\(\) : null;/);
+    assert.match(SRC, /const citations = noCitations \? \[\] : this\.collectAllCitations\(\);/);
 });
 
 test('apiKeyFor reads a provider\'s stored key, and none for a keyless one', () => {
@@ -296,4 +308,60 @@ test('a Stop before the phase\'s first call checks nothing and says so', async (
     await h.runReportUncitedCheck(Date.now());
     assert.equal(h.reportUncited.state, 'done');
     assert.equal(h.reportUncited.done, 0);
+});
+
+test('after a run the section says what was read and done, lists the sentences sent, and logs each call to the console', async () => {
+    let n = 0;
+    const callProviderAPI = async () => {
+        n++;
+        if (n === 1) return { text: JSON.stringify({ issues: [{ id: 1, excerpt: 'Gustave Eiffel', comments: 'Anna Holt designed it.', confidence: 'high' }] }), usage: {} };
+        throw Object.assign(new Error('HTTP 400: bad request'), { status: 400 });
+    };
+    const { h, doc, logged } = harness(ARTICLE, { callProviderAPI });
+    const uncited = h.articleUncited();
+    assert.deepEqual(uncited.stats, { paragraphs: 1, sentences: 3, cited: 1, short: 0, leadIns: 0, uncited: 2 });
+    h.reportUncited = { ...uncited, model: h.uncitedModel(), findings: [], unchecked: [], done: 0, state: 'pending' };
+    assert.equal(h.uncitedCountsText(h.reportUncited), 'Paragraphs read: 1; sentences: 3 (1 with a citation, 2 without).',
+        'what was read is known before the run');
+    h.resetReportUncited();
+    await h.runReportUncitedCheck(Date.now());
+
+    const counts = doc.querySelector('#verifier-report-uncited .sv-uncited-counts').textContent;
+    assert.equal(counts, 'Paragraphs read: 1; sentences: 3 (1 with a citation, 2 without). '
+        + 'Model calls: 1 (0 failed); sentences flagged: 1, shown: 1.');
+    const list = doc.querySelector('#verifier-report-uncited details.sv-uncited-read');
+    assert.equal(list.open, false, 'folded');
+    assert.equal(list.querySelector('.sv-sublist-title').textContent, 'Sentences checked (2)');
+    assert.deepEqual([...list.querySelectorAll('li')].map(li => li.textContent),
+        ['It was designed by Gustave Eiffel. (History)', 'It is painted red. (History)']);
+
+    // Opened, the list stays open as the section re-renders.
+    list.open = true;
+    h.renderReportUncited();
+    assert.equal(doc.querySelector('#verifier-report-uncited details.sv-uncited-read').open, true);
+
+    const group = logged.find(l => l[0] === 'groupCollapsed');
+    assert.match(group[1], /^\[Verifier\] Uncited-text check: 2 sentences, 1 calls, 1 shown \(Lift Wing/);
+    const answer = logged.find(l => l[0] === 'log' && l[1] === 'answer');
+    assert.match(answer[2], /Anna Holt designed it/, 'the raw answer, for when nothing is found');
+    assert.equal(logged.filter(l => l[0] === 'groupCollapsed').length, logged.filter(l => l[0] === 'groupEnd').length);
+});
+
+test('a failed call is counted in the section and logged with its error', async () => {
+    const callProviderAPI = async () => { throw Object.assign(new Error('HTTP 400: bad request'), { status: 400 }); };
+    const { h, doc, logged } = harness(ARTICLE, { callProviderAPI });
+    h.reportUncited = { ...h.articleUncited(), model: h.uncitedModel(), findings: [], unchecked: [], done: 0, state: 'pending' };
+    h.resetReportUncited();
+    await h.runReportUncitedCheck(Date.now());
+    assert.match(doc.querySelector('#verifier-report-uncited .sv-uncited-counts').textContent, /Model calls: 1 \(1 failed\); sentences flagged: 0, shown: 0\.$/);
+    assert.equal(doc.querySelector('#verifier-report-uncited .sv-section-status').textContent, 'nothing found in 0 of 2 sentences');
+    assert.ok(logged.some(l => l[0] === 'log' && l[1] === 'answer' && /\(failed\) HTTP 400/.test(l[2])));
+});
+
+test('run alone, the section opens: it is all the report holds', () => {
+    const { h, doc } = harness();
+    h.reportUncitedOnly = true;
+    h.reportUncited = state();
+    h.resetReportUncited();
+    assert.equal(doc.querySelector('#verifier-report-uncited > details.sv-section').open, true);
 });

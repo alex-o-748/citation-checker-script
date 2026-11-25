@@ -198,10 +198,20 @@ default, or "Same as citation checks".)
 
 It follows the rules #387's report rebuild set for an extra check:
 
-- **A phase of Verify All, never an action of its own.** It runs after the lead
-  check, on the chosen model at that model's pace (3 s between Lift Wing
-  calls). "Check the lead against the body" was taken off the start screen for
-  the same reason, so there is no "Check uncited text" either.
+- **A phase of Verify All.** It runs after the lead check, on the chosen
+  model at that model's pace (3 s between Lift Wing calls). "Check the lead
+  against the body" was taken off the start screen, so there is no "Check
+  uncited text" button there either. Since 2026-11-24 there is a quiet link in
+  the setting's note, "Run only this check on this article", which runs it
+  alone (whatever the setting says) as a report with only this section, open.
+  It is for an editor judging the check, not a main-view action.
+- **It shows its working.** Under the findings: what was read (paragraphs,
+  sentences, how many had a citation, how many were left out as too short or
+  as list lead-ins), then the model calls, failed calls, sentences flagged and
+  shown, and a folded "Sentences checked" list. The browser console gets the
+  same counts and every call's prompt and raw answer, folded. Added when a
+  run of "nothing found" could not be told apart from a run that read
+  nothing or whose calls failed.
 - **The confirmation gives only the time estimate**, and its calls are
   counted in it, as the lead check's are.
 - **A section of the lead's shape**, between "Lead vs body" and the citations:
