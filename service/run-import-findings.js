@@ -28,10 +28,9 @@ import { parseArgs } from 'node:util';
 import { stat as fsStat } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
-import { streamCsvRows } from './csv-stream.js';
+import { iterateCsvRows } from './csv-stream.js';
 import { upsertFinding } from './findings-store.js';
-import { openToolsDbConnection } from './toolsdb.js';
-import { makeQueryFn } from './replicas.js';
+import { openToolsDbConnection, openReconnectingQuery } from './toolsdb.js';
 import { FINDING_TTL_DAYS } from './finding-builder.js';
 
 export const HELP_TEXT = `usage: node service/run-import-findings.js <findings.csv>... --wiki <db> [options]
@@ -95,10 +94,17 @@ export function findingFromCsvRow(row, { wiki, fetchedAt, ttlDays = FINDING_TTL_
     };
 }
 
+// Rows are upserted as they are read, never collected first: holding every
+// finding of the 122,542-row November 2026 ruwiki rerun got the 1 GiB job
+// OOM-killed (exit 137) before it wrote a row or printed a line. The
+// connection is reopened if it drops (openReconnectingQuery), and progress is
+// printed every PROGRESS_EVERY rows so a long import is never silent.
+export const PROGRESS_EVERY = 5000;
+
 export async function runImport(opts, {
     stderr = process.stderr,
     connectToolsDb = openToolsDbConnection,
-    streamRows = streamCsvRows,
+    iterateRows = iterateCsvRows,
     stat = fsStat,
 } = {}) {
     if (!opts.wiki) {
@@ -110,12 +116,12 @@ export async function runImport(opts, {
         return 2;
     }
 
-    let connection = null;
-    let query = null;
+    let db = null;
     if (!opts.dryRun) {
         try {
-            connection = await connectToolsDb();
-            query = makeQueryFn(connection);
+            db = await openReconnectingQuery(() => connectToolsDb(), {
+                onReconnect: (error, n) => stderr.write(`import: ToolsDB connection lost (${error.message}); reconnected (${n})\n`),
+            });
         } catch (error) {
             stderr.write(`import: could not connect to ToolsDB: ${error.message}\n`);
             return 1;
@@ -128,23 +134,17 @@ export async function runImport(opts, {
             const fetchedAt = (await stat(file)).mtime;
             const counts = { written: 0, noPageId: 0, malformed: 0, failed: 0 };
             let firstError = null;
-            // streamRows calls onRow synchronously, so a file's findings are
-            // collected first and then upserted one at a time, in order. The
-            // 44k-row ruwiki batch is on the order of 100 MB held at once —
-            // fine for a 2Gi job; split the CSV if one ever isn't.
-            const pending = [];
-            await streamRows(file, {
-                onRow: row => {
-                    const finding = findingFromCsvRow(row, { wiki: opts.wiki, fetchedAt });
-                    if (!finding) { counts.noPageId++; return; }
-                    if (!query) { counts.written++; return; }
-                    pending.push(finding);
-                },
-                onMalformed: () => { counts.malformed++; },
-            });
-            for (const finding of pending.splice(0)) {
+            let seen = 0;
+            for await (const { row, malformed } of iterateRows(file)) {
+                if (++seen % PROGRESS_EVERY === 0) {
+                    stderr.write(`import: ${file}: ${seen} rows read, ${counts.written} written, ${counts.failed} failed\n`);
+                }
+                if (malformed) { counts.malformed++; continue; }
+                const finding = findingFromCsvRow(row, { wiki: opts.wiki, fetchedAt });
+                if (!finding) { counts.noPageId++; continue; }
+                if (!db) { counts.written++; continue; }
                 try {
-                    await upsertFinding(query, finding);
+                    await upsertFinding(db.query, finding);
                     counts.written++;
                 } catch (error) {
                     counts.failed++;
@@ -155,12 +155,13 @@ export async function runImport(opts, {
                 `import: ${file}: ${counts.written} row(s) ${opts.dryRun ? 'would be written' : 'written'}`
                 + `, ${counts.noPageId} without a page id skipped, ${counts.malformed} malformed`
                 + (counts.failed ? `, ${counts.failed} failed (first: ${firstError.message})` : '')
+                + (db?.reconnects ? `, ${db.reconnects} reconnect(s)` : '')
                 + '\n'
             );
             if (counts.failed) failed = true;
         }
     } finally {
-        if (connection) await connection.end();
+        if (db) await db.end();
     }
     return failed ? 1 : 0;
 }

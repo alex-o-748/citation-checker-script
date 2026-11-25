@@ -12,7 +12,12 @@ import {
     cleanCsvText,
     cleanCsvPath,
     parseCsv,
+    writeCleanCsv,
 } from '../service/csv-report.js';
+import { createReadStream } from 'node:fs';
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 const baseFinding = () => ({
     wiki: 'enwiki',
@@ -384,6 +389,66 @@ test('cleaner handles quoted newlines and derives a non-destructive output path'
     assert.equal(parseCsv(cleanCsvText(csv))[1][8], 'line one\nline two, "quoted"');
     assert.equal(cleanCsvPath('reports/run.csv'), 'reports/run-clean.csv');
     assert.equal(cleanCsvPath('findings'), 'findings-clean.csv');
+});
+
+// --- writeCleanCsv streams; its output must not differ from cleanCsvText ---
+
+// Every rule, across several pages (group ids repeat between pages and must
+// not collide), with prose that needs quoting and spans lines.
+function mixedSweepCsv() {
+    const findings = [];
+    const verdicts = [
+        ['SUPPORTED', undefined], ['NOT SUPPORTED', 'omission'], ['NOT SUPPORTED', 'contradiction'],
+        ['PARTIALLY SUPPORTED', undefined], ['SOURCE UNAVAILABLE', undefined], ['ERROR', 'source_too_large'],
+    ];
+    for (let page = 1; page <= 30; page++) {
+        for (let i = 0; i < 12; i++) {
+            const [verdict, reasonType] = verdicts[(page * 7 + i) % verdicts.length];
+            const group = i < 6 ? `g${i % 3}` : null;
+            findings.push({
+                ...baseFinding(), pageId: page, pageTitle: `Статья «${page}», часть`,
+                citationNumber: String(i), groupId: group, verdict, reasonType,
+                sourceTruncated: (page + i) % 5 === 0,
+                claimText: `Утверждение ${i} со "кавычками",\nзапятой и переносом строки`,
+                rationale: `Источник ${verdict}.\r\nВторая строка.`,
+            });
+            if (group && i % 3 === 2) {
+                findings.push({ ...baseFinding(), pageId: page, pageTitle: `Статья «${page}», часть`,
+                    citationNumber: `${i - 2}, ${i - 1}, ${i}`, groupId: group, isCollective: true,
+                    verdict: page % 2 ? 'NOT SUPPORTED' : 'SUPPORTED', reasonType: page % 2 ? 'omission' : undefined,
+                    sourceTruncated: page % 4 === 0 });
+            }
+        }
+    }
+    return rowsToCsv(findings);
+}
+
+test('writeCleanCsv streams to exactly what cleanCsvText produces, including records split across chunks', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'clean-csv-'));
+    const input = join(dir, 'sweep.csv');
+    const csv = mixedSweepCsv();
+    await writeFile(input, csv);
+    const expected = cleanCsvText(csv);
+    assert.ok(parseCsv(expected).length < parseCsv(csv).length, 'the fixture exercises dropping');
+
+    // Tiny reads, so quoted multi-line records straddle chunk boundaries.
+    for (const highWaterMark of [7, 64, 65536]) {
+        const out = join(dir, `clean-${highWaterMark}.csv`);
+        await writeCleanCsv(input, out, {
+            createReadStream: (path, opts) => createReadStream(path, { ...opts, highWaterMark }),
+        });
+        assert.equal(await readFile(out, 'utf8'), expected, `highWaterMark ${highWaterMark}`);
+    }
+});
+
+test('writeCleanCsv rejects an empty file and a CSV missing a rule column', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'clean-csv-'));
+    const empty = join(dir, 'empty.csv');
+    await writeFile(empty, '');
+    await assert.rejects(writeCleanCsv(empty, join(dir, 'o1.csv')), /empty/);
+    const bad = join(dir, 'bad.csv');
+    await writeFile(bad, 'page_title,verdict\nA,SUPPORTED\n');
+    await assert.rejects(writeCleanCsv(bad, join(dir, 'o2.csv')), /missing required column/);
 });
 
 test('a demoted lead citation is left out of the clean CSV; lead rows follow the truncation rule', () => {

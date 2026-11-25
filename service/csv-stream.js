@@ -99,3 +99,36 @@ export async function streamCsvRows(path, { onRow, onMalformed = () => {}, creat
     const { unterminated } = parser.end();
     return { header: header ?? [], rows, malformed, unterminated, lastIndex: index };
 }
+
+/**
+ * The same records as streamCsvRows(), as an async iterator, so the consumer
+ * can await work per row and the file is read no faster than it is used:
+ * at most one chunk's records are held at a time. Yields
+ * `{ row, index }` for a record keyed by header name, or
+ * `{ malformed: fields, index }` for one whose field count is off.
+ */
+export async function* iterateCsvRows(path, { createStream = createReadStream } = {}) {
+    let header = null;
+    let index = 0;
+    let ready = [];
+    const parser = createCsvParser(fields => {
+        if (header === null) {
+            header = fields.map((name, i) => (i === 0 ? name.replace(/^\uFEFF/, '') : name));
+            return;
+        }
+        if (fields.length === 1 && fields[0] === '') return; // blank line
+        index++;
+        if (fields.length !== header.length) { ready.push({ malformed: fields, index }); return; }
+        const row = {};
+        for (let i = 0; i < header.length; i++) row[header[i]] = fields[i];
+        ready.push({ row, index });
+    });
+    for await (const chunk of createStream(path, { encoding: 'utf8' })) {
+        parser.write(chunk);
+        const batch = ready;
+        ready = [];
+        yield* batch;
+    }
+    parser.end();
+    yield* ready;
+}

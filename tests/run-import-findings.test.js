@@ -13,6 +13,9 @@ function csvRows(findings) {
 
 const FETCHED_AT = new Date('2026-10-14T12:00:00Z');
 
+// iterateCsvRows' shape, for an in-memory list of rows.
+const rowsOf = rows => async function* () { for (const [i, row] of rows.entries()) yield { row, index: i + 1 }; };
+
 const verified = {
     wiki: 'ruwiki', pageId: 42, pageTitle: 'Африка', revisionId: 155504239,
     claimText: 'На континенте представлены большие объединения языков.', citationNumber: '69',
@@ -66,7 +69,7 @@ test('runImport upserts every row and reports the counts', async () => {
             execute: async (sql, params) => { executed.push(params); return [{ affectedRows: 1 }]; },
             end: async () => { ended = true; },
         }),
-        streamRows: async (_file, { onRow }) => rows.forEach((r, i) => onRow(r, i + 1)),
+        iterateRows: rowsOf(rows),
         stat: async () => ({ mtime: FETCHED_AT }),
     });
     assert.equal(code, 0);
@@ -81,7 +84,7 @@ test('--dry-run converts and counts without connecting to ToolsDB', async () => 
     const code = await runImport({ wiki: 'ruwiki', files: ['b4.csv'], dryRun: true }, {
         stderr: { write: s => out.push(s) },
         connectToolsDb: async () => { connected = true; },
-        streamRows: async (_file, { onRow }) => csvRows([verified]).forEach((r, i) => onRow(r, i + 1)),
+        iterateRows: rowsOf(csvRows([verified])),
         stat: async () => ({ mtime: FETCHED_AT }),
     });
     assert.equal(code, 0);
@@ -94,7 +97,7 @@ test('a failed upsert is counted and makes the import exit non-zero', async () =
     const code = await runImport({ wiki: 'ruwiki', files: ['b4.csv'], dryRun: false }, {
         stderr: { write: s => out.push(s) },
         connectToolsDb: async () => ({ execute: async () => { throw new Error('Data too long'); }, end: async () => {} }),
-        streamRows: async (_file, { onRow }) => csvRows([verified]).forEach((r, i) => onRow(r, i + 1)),
+        iterateRows: rowsOf(csvRows([verified])),
         stat: async () => ({ mtime: FETCHED_AT }),
     });
     assert.equal(code, 1);
@@ -105,4 +108,51 @@ test('--wiki is required, since the CSV does not record it', async () => {
     const code = await runImport({ files: ['b4.csv'], dryRun: true }, { stderr: { write() {} } });
     assert.equal(code, 2);
     assert.deepEqual(parseCliArgs(['node', 'x', 'a.csv', 'b.csv', '--wiki', 'ruwiki']).files, ['a.csv', 'b.csv']);
+});
+
+test('a dropped connection is reopened and the row retried; other errors are not', async () => {
+    const out = [];
+    let connects = 0;
+    const executed = [];
+    const code = await runImport({ wiki: 'ruwiki', files: ['b4.csv'], dryRun: false }, {
+        stderr: { write: s => out.push(s) },
+        connectToolsDb: async () => {
+            const n = ++connects;
+            return {
+                execute: async (sql, params) => {
+                    // The first connection dies after one statement, as the
+                    // sweep's did after 183.
+                    if (n === 1 && executed.length >= 1) {
+                        throw Object.assign(new Error("Can't add new command when connection is in closed state"), {});
+                    }
+                    executed.push(params);
+                    return [{ affectedRows: 1 }];
+                },
+                end: async () => {},
+            };
+        },
+        iterateRows: rowsOf(csvRows([verified, { ...verified, citationNumber: '71' }, { ...verified, citationNumber: '72' }])),
+        stat: async () => ({ mtime: FETCHED_AT }),
+    });
+    assert.equal(code, 0);
+    assert.equal(connects, 2);
+    assert.equal(executed.length, 3, 'the row that hit the dead connection was retried, not lost');
+    assert.match(out.join(''), /3 row\(s\) written.*1 reconnect/);
+});
+
+test('rows are upserted while the file is still being read, not after', async () => {
+    const events = [];
+    async function* lazyRows() {
+        for (const [i, row] of csvRows([verified, { ...verified, citationNumber: '71' }]).entries()) {
+            events.push(`read ${i}`);
+            yield { row, index: i + 1 };
+        }
+    }
+    await runImport({ wiki: 'ruwiki', files: ['b4.csv'], dryRun: false }, {
+        stderr: { write() {} },
+        connectToolsDb: async () => ({ execute: async () => { events.push('write'); return [{}]; }, end: async () => {} }),
+        iterateRows: lazyRows,
+        stat: async () => ({ mtime: FETCHED_AT }),
+    });
+    assert.deepEqual(events, ['read 0', 'write', 'read 1', 'write']);
 });
