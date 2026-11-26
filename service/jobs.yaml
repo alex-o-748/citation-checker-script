@@ -1,0 +1,28 @@
+# Scheduled Toolforge jobs for the batch pipeline.
+#
+# Load one job (leaves every other job of the tool alone):
+#   toolforge jobs load ~/citation-checker-script/service/jobs.yaml --job ruwiki-sweep
+# Run it once now, outside the schedule:
+#   toolforge jobs run ruwiki-sweep-now --image node18 --mem 2Gi --wait \
+#       --command "node citation-checker-script/service/run-periodic.js --wiki ruwiki --max 100"
+#
+# Jobs start in the tool's home directory, where the repo is checked out as
+# citation-checker-script/ (git pull there to deploy; nothing here pulls).
+# Each run writes ~/sweeps/<wiki>/<UTC time>/, with summary.md first to read;
+# ~/sweeps/<wiki>/latest.json names the newest run. See service/run-periodic.js.
+#
+# emails: onfailure covers a halted run (exit 3/4) and a finished run whose
+# post-run checks failed (exit 5), and a run skipped because the previous one
+# still holds the lock (exit 6).
+#
+# 2Gi: what run-pick-pilot.js needs, and what the sweep fits in since its
+# source cache was bounded (service/claim-extractor.js). Steps run one at a
+# time, each in its own process, so the largest single step sets the size.
+
+- name: ruwiki-sweep
+  command: node citation-checker-script/service/run-periodic.js --wiki ruwiki --max 100
+  image: node18
+  schedule: "0 3 * * 1"   # Mondays 03:00 UTC
+  emails: onfailure
+  mem: 2Gi
+  filelog: true

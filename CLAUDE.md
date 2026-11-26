@@ -320,6 +320,18 @@ Runnable entry points, each a thin wiring layer over the components above:
 | `service/run-sweep.js` | **All six stages**, writing a CSV and upserting every finding into ToolsDB (`--no-store` for CSV only) | Wiki Replicas, Wikipedia REST, model API, ToolsDB, source fetcher (opt-in) |
 | `service/run-checks.js` | Post-run checks over a findings CSV (`run-sweep.js` also runs them at the end of every sweep; see below) | None |
 | `service/run-import-findings.js` | Upserts findings CSVs into ToolsDB: backfills batches run before storing was the default, or after failed writes. Idempotent | ToolsDB |
+| `service/run-periodic.js` | One unattended run, for a scheduled job (`service/jobs.yaml`): pick → sweep → delivery file → second-model rechecks → review, each a child process, into `~/sweeps/<wiki>/<UTC time>/` | Everything the steps use |
+
+### Scheduled runs (`service/run-periodic.js`, `service/jobs.yaml`; read before adding a step)
+
+The wrapper holds no verification logic: only the step order, the file each step hands the next, and what each exit code means. Rules to keep:
+
+- **Each step is a child process**, not an imported `main()`, so a step's memory is returned before the next starts (the sweep and the import were each OOM-killed once on the November 2026 ruwiki rerun).
+- **A sweep exiting 5 doesn't stop the run.** The CSV is complete; the later steps run and the run exits 5 at the end, so `emails: onfailure` reports it. Any other failure of a non-review step stops the run with that step's own code (3 auth/billing, 4 model service down).
+- **Runs never overlap**: `~/sweeps/<wiki>/.lock`, exit 6. A lock older than `--stale-lock-hours` (72) is taken over, since an OOM-killed job runs no cleanup.
+- **The recheck passes are chained**, each reading the previous pass's `-kept.csv`. The defaults (Qwen3-32B, then GLM-5.2, via tf-llm-router `/hf`) are the two-model agreement measured on the 50 labelled ruwiki contradictions (83% precision). GLM-5.2 has to be on the router's allowlist.
+- **`--resume <run id>`** skips finished steps and passes `--resume` to the sweep and rechecks.
+- **It changes no policy.** The pick still leaves out every article with a stored finding, so each run checks only new articles; nothing re-checks expired or edited ones. Nothing is published, and old run directories are never deleted.
 
 ### ToolsDB is the record of what has been checked (read before adding a per-batch exclude list)
 
