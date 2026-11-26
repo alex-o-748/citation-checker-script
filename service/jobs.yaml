@@ -20,7 +20,9 @@
 # time, each in its own process, so the largest single step sets the size.
 
 - name: ruwiki-sweep
-  command: node citation-checker-script/service/run-periodic.js --wiki ruwiki --max 100
+  # 3 articles a week while the schedule is an experiment; raise --max once
+  # a few runs have been read end to end.
+  command: node citation-checker-script/service/run-periodic.js --wiki ruwiki --max 3
   image: node18
   schedule: "0 3 * * 1"   # Mondays 03:00 UTC
   emails: onfailure
