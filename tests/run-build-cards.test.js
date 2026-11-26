@@ -1,9 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { buildCards, parseArgs } from '../service/run-build-cards.js';
+import { buildCards, parseArgs, MAX_CONSECUTIVE_MODEL_FAILURES, CHECKPOINT_EVERY } from '../service/run-build-cards.js';
 import { normalizeFinding } from '../service/cards/selection.js';
 
+const NO_WAIT = { sleepFn: async () => {} };
 const json = (body, status = 200) => ({ ok: status >= 200 && status < 300, status, json: async () => body });
 
 const finding = over => normalizeFinding({
@@ -136,7 +137,7 @@ test('a fixed sentence drops its card on the next build', async () => {
 test('a failed model call skips the finding without caching it; an auth error halts the build', async () => {
     const calls = { pages: 0, topics: 0, views: 0, model: 0 };
     const flaky = await buildCards({
-        findings: [finding()], wiki: 'enwiki', fetchImpl: fakeFetch(calls),
+        findings: [finding()], wiki: 'enwiki', fetchImpl: fakeFetch(calls), retry: NO_WAIT,
         callModel: async () => { throw new Error('Lift Wing API request failed (500): oops'); },
     });
     assert.deepEqual(flaky.dropped, { conflict_call_failed: 1 });
@@ -155,4 +156,53 @@ test('parseArgs needs an input and a known provider', () => {
     assert.deepEqual(opts.findingsCsv, ['a.csv', 'b.csv']);
     assert.equal(opts.out, 'c.json');
     assert.equal(opts.wiki, 'enwiki');
+});
+
+test('articles are read a batch at a time, not all before the first finding', async () => {
+    const calls = { pages: 0, topics: 0, views: 0, model: 0 };
+    const out = await buildCards({ findings: FINDINGS, wiki: 'enwiki', callModel: fakeModel(calls), fetchImpl: fakeFetch(calls), pageBatchSize: 2, retry: NO_WAIT });
+    assert.equal(calls.pages, 3, '6 articles in batches of 2');
+    assert.equal(out.cards.length, 1);
+    assert.equal(out.complete, true);
+});
+
+test('a 503 from the model is retried, and the card still made', async () => {
+    const calls = { pages: 0, topics: 0, views: 0, model: 0 };
+    let attempts = 0;
+    const out = await buildCards({
+        findings: [finding()], wiki: 'enwiki', fetchImpl: fakeFetch(calls), retry: NO_WAIT,
+        callModel: async args => {
+            attempts++;
+            if (attempts < 3) throw new Error('Lift Wing API request failed (503): {"httpCode":503}');
+            return fakeModel(calls)(args);
+        },
+    });
+    assert.equal(attempts, 3);
+    assert.equal(out.cards.length, 1);
+});
+
+test('when the model keeps failing, the build stops calling it and says it is incomplete', async () => {
+    const calls = { pages: 0, topics: 0, views: 0, model: 0 };
+    const many = Array.from({ length: MAX_CONSECUTIVE_MODEL_FAILURES + 5 }, (_, i) => finding({ claim_text: `Combat Zone Wrestling was founded in 1999 by John Zandig, variant ${i}.` }));
+    let attempts = 0;
+    const out = await buildCards({
+        findings: many, wiki: 'enwiki', fetchImpl: fakeFetch(calls), retry: { ...NO_WAIT, maxRetries: 1 },
+        callModel: async () => { attempts++; throw new Error('Lift Wing API request failed (503): down'); },
+    });
+    assert.equal(attempts, MAX_CONSECUTIVE_MODEL_FAILURES, 'no calls after the breaker trips');
+    assert.equal(out.complete, false);
+    assert.match(out.stoppedReason, /503/);
+    assert.deepEqual(out.dropped, { conflict_call_failed: MAX_CONSECUTIVE_MODEL_FAILURES, model_unavailable: 5 });
+});
+
+test('progress is checkpointed, and a checkpoint is reused like a previous build', async () => {
+    const calls = { pages: 0, topics: 0, views: 0, model: 0 };
+    const many = Array.from({ length: CHECKPOINT_EVERY + 3 }, (_, i) => finding({ claim_text: `Combat Zone Wrestling was founded in 1999 by John Zandig, variant ${i}.` }));
+    const checkpoints = [];
+    await buildCards({ findings: many, wiki: 'enwiki', callModel: fakeModel(calls), fetchImpl: fakeFetch(calls), retry: NO_WAIT, onCheckpoint: c => checkpoints.push(c) });
+    assert.equal(checkpoints.length, 1);
+    assert.equal(Object.keys(checkpoints[0].decisions).length, CHECKPOINT_EVERY);
+    const again = { pages: 0, topics: 0, views: 0, model: 0 };
+    await buildCards({ findings: many, wiki: 'enwiki', callModel: fakeModel(again), fetchImpl: fakeFetch(again), retry: NO_WAIT, existing: checkpoints[0] });
+    assert.equal(again.model, 3, 'only the findings the checkpoint had not decided');
 });
