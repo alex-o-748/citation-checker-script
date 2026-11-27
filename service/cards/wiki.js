@@ -187,13 +187,27 @@ export async function fetchMonthlyViews(title, { wiki, fetchImpl = fetch, now = 
 
 // --- Language of the source ---
 
-const ENGLISH_FUNCTION_WORDS = new Set(['the', 'of', 'and', 'in', 'to', 'a', 'was', 'is', 'for', 'on', 'by', 'with', 'as', 'at', 'from', 'that', 'were', 'are', 'has', 'had', 'an', 'it', 'its', 'his', 'her', 'their']);
+const ENGLISH_FUNCTION_WORDS = new Set(['the', 'of', 'and', 'in', 'to', 'a', 'was', 'is', 'for', 'on', 'by', 'with', 'as', 'at', 'from', 'that', 'were', 'are', 'has', 'had', 'an', 'it', 'its', 'his', 'her', 'their', 'this', 'which', 'be', 'been', 'or', 'not']);
+
+// Function words of the other languages English Wikipedia most often cites in
+// Latin script. Words that are also English ("a", "in", "no", "is", "was")
+// are left out, so they can't count for both sides.
+const OTHER_FUNCTION_WORDS = Object.freeze({
+    es: new Set(['el', 'la', 'los', 'las', 'que', 'de', 'del', 'y', 'en', 'un', 'una', 'por', 'con', 'para', 'su', 'sus', 'es', 'era', 'fue', 'se', 'lo', 'al', 'como', 'más', 'pero', 'muy']),
+    fr: new Set(['le', 'la', 'les', 'des', 'du', 'et', 'est', 'une', 'un', 'pour', 'dans', 'que', 'qui', 'sur', 'avec', 'au', 'aux', 'était', 'ses', 'ce', 'cette', 'mais', 'pas', 'été']),
+    de: new Set(['der', 'die', 'das', 'und', 'ist', 'war', 'ein', 'eine', 'mit', 'von', 'zu', 'den', 'dem', 'nicht', 'sich', 'auf', 'für', 'im', 'auch', 'wurde', 'des']),
+    pt: new Set(['o', 'os', 'da', 'do', 'das', 'dos', 'e', 'um', 'uma', 'em', 'para', 'com', 'não', 'foi', 'que', 'seu', 'sua', 'pela', 'pelo', 'mais']),
+    it: new Set(['il', 'gli', 'della', 'del', 'che', 'e', 'è', 'un', 'una', 'per', 'con', 'non', 'sono', 'fu', 'nel', 'alla', 'dei', 'più']),
+    nl: new Set(['de', 'het', 'een', 'en', 'van', 'niet', 'met', 'voor', 'dat', 'zijn', 'werd', 'ook', 'naar', 'bij']),
+});
 
 /**
  * Whether a quote looks like it's in the wiki's language. At launch only
- * English is checked (Latin script and at least one common English word in a
- * quote of five or more words); other languages pass, and need a rule of
- * their own before that wiki launches.
+ * English is checked: mostly Latin script, and in a quote of five words or
+ * more, more English function words than any one other language's. The
+ * first version only asked for one English function word, and a Spanish
+ * source passed on its "a" ("se negó a aceptar"). Other wikis pass, and need
+ * a rule of their own before they launch.
  */
 export function quoteInWikiLanguage(quote, { wiki }) {
     if (langCodeForWiki(wiki) !== 'en') return true;
@@ -203,7 +217,9 @@ export function quoteInWikiLanguage(quote, { wiki }) {
     if (latin / letters.length < 0.9) return false;
     const words = String(quote).toLowerCase().match(/\p{L}+/gu) || [];
     if (words.length < 5) return true;
-    return words.some(w => ENGLISH_FUNCTION_WORDS.has(w));
+    const english = words.filter(w => ENGLISH_FUNCTION_WORDS.has(w)).length;
+    const other = Math.max(...Object.values(OTHER_FUNCTION_WORDS).map(set => words.filter(w => set.has(w)).length));
+    return english > 0 && english > other;
 }
 
 /**

@@ -110,6 +110,12 @@ test('pageviews cover the last complete month, people only', async () => {
 test('only English-language quotes make enwiki cards', () => {
     assert.equal(quoteInWikiLanguage('CZW was born in a simpler time, way back in 1998', { wiki: 'enwiki' }), true);
     assert.equal(quoteInWikiLanguage('Sala Penal ordena anular acciones penales contra Nasry Asfura', { wiki: 'enwiki' }), false);
+    // Reported on the live app: passed the first rule on its "a".
+    assert.equal(quoteInWikiLanguage('ALEXANDRA SVIK (Carey Mulligan) Mucho antes de que alguien la llamara villana, Alexandra era simplemente una madre. La muerte de su hijo pequeño destrozó su mundo tan por completo que se negó a aceptar su definitividad.', { wiki: 'enwiki' }), false);
+    assert.equal(quoteInWikiLanguage("Le groupe a été fondé en 1998 à Paris par trois amis d'enfance.", { wiki: 'enwiki' }), false);
+    assert.equal(quoteInWikiLanguage('Die Band wurde 1998 in Berlin von drei Freunden gegründet und ist seitdem aktiv.', { wiki: 'enwiki' }), false);
+    assert.equal(quoteInWikiLanguage('The drug was approved in 1998 by the agency after trials', { wiki: 'enwiki' }), true);
+    assert.equal(quoteInWikiLanguage('Charles de Gaulle visited the city in 1960 with his wife', { wiki: 'enwiki' }), true, 'a French name in an English sentence');
     assert.equal(quoteInWikiLanguage('Один из активистов предъявил ультиматум', { wiki: 'enwiki' }), false);
     assert.equal(quoteInWikiLanguage('1B+ Downloads', { wiki: 'enwiki' }), true);
     assert.equal(quoteInWikiLanguage('Один из активистов', { wiki: 'ruwiki' }), true);
