@@ -24,7 +24,17 @@
 - name: ruwiki-sweep
   # 3 articles a week while the schedule is an experiment; raise --max once
   # a few runs have been read end to end.
-  command: node citation-checker-script/service/run-periodic.js --wiki ruwiki --max 3
+  #
+  # Rechecks on Lift Wing for now: since 2026-11-26 Hugging Face has answered
+  # every tf-llm-router /hf call with a 429, which would fail both default
+  # passes (Qwen3-32B, GLM-5.2; 83% precision together on the labelled 50).
+  # Lift Wing Qwen3.8 measured 61% there. It is also the model the sweep
+  # flags with, so this is the same model re-reading each flag against a
+  # fresh fetch, not a second model's opinion. Drop the --recheck flag to go
+  # back to the default pair once /hf answers again.
+  command: >-
+    node citation-checker-script/service/run-periodic.js --wiki ruwiki --max 3
+    --recheck qwen38:liftwing:llm-qwen38-27b
   image: node18
   schedule: "0 3 * * 1"   # Mondays 03:00 UTC
   emails: onfailure
