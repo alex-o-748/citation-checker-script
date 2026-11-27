@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
     buildCandidateQuery, normalizeFinding, candidateRejection, isTimeVarying, cardIdFor,
-    CARD_QUOTE_STATUSES,
+    CARD_QUOTE_STATUSES, isCompleteSentence, MIN_CARD_WORDS,
 } from '../service/cards/selection.js';
 
 const base = {
@@ -70,4 +70,19 @@ test('card ids are stable, short, and ignore the provider and prompt version', (
     assert.match(a, /^[0-9a-f]{12}$/);
     assert.equal(cardIdFor(finding({ provider: 'other', prompt_version: 'v9' })), a);
     assert.notEqual(cardIdFor(finding({ claim_text: 'Something else entirely.' })), a);
+});
+
+test('only whole sentences become cards', () => {
+    // Reported on the live app: a citation in the middle of a sentence.
+    assert.equal(candidateRejection(finding({ claim_text: 'Five games against Spain, Northern Ireland,' })), 'not_a_sentence');
+    assert.equal(candidateRejection(finding({ claim_text: 'and the Minister of Interior in the Syrian transitional government since December 2024.' })), 'not_a_sentence');
+    assert.equal(candidateRejection(finding({ claim_text: 'The team won five games in a row during the qualifying campaign...' })), 'not_a_sentence', 'an ellipsis marks text cut off');
+    assert.equal(candidateRejection(finding({ claim_text: 'He retired in 1999.' })), 'claim_too_short');
+    assert.equal(MIN_CARD_WORDS, 6);
+    assert.equal(isCompleteSentence('CZW is a promotion founded in 1999 by John Zandig.'), true);
+    assert.equal(isCompleteSentence('“The best season,” he said, “was 1999.”'), true);
+    assert.equal(isCompleteSentence('1999 was the year the promotion began running shows.'), true);
+    assert.equal(isCompleteSentence('Was it founded in 1999 or in 1998?'), true);
+    assert.equal(isCompleteSentence('(The club later moved to Joliet.)'), true);
+    assert.equal(isCompleteSentence('В 1999 году компания открыла шесть ресторанов.'), true, 'Cyrillic capitals count');
 });

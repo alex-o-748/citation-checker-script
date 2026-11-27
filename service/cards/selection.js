@@ -95,8 +95,34 @@ export function candidateRejection(f) {
     if (f.leadDemoted) return 'lead_demoted';
     if (f.isBlp === true) return 'blp';
     if (!f.claimText || !f.sourceQuote || !f.sourceUrl) return 'missing_text';
+    if (!isCompleteSentence(f.claimText)) return 'not_a_sentence';
+    if (wordCount(f.claimText) < MIN_CARD_WORDS) return 'claim_too_short';
     if (isTimeVarying(f.claimText)) return 'time_varying';
     return null;
+}
+
+// A card shows one whole sentence. A citation in the middle of a sentence
+// ("…against Spain, Northern Ireland,[19] Malta…") gives a claim that stops at
+// the comma: the reader can't tell what it says, and neither can the model
+// (on the live app, "Five games against Spain, Northern Ireland," was set
+// against "faced each other on nine occasions", which counts something else).
+// So a claim must start like a sentence (a capital, a digit, or an opening
+// quote or bracket before one) and end like one (. ! or ?, then any closing
+// quotes or brackets). An ellipsis is not an ending: it marks text cut off.
+const SENTENCE_START = /^["'“‘«(\[]*[\p{Lu}\p{N}]/u;
+const SENTENCE_END = /(?<!\.\.)[.!?]["'”’»)\]]*$/u;
+
+export function isCompleteSentence(claim) {
+    const text = String(claim ?? '').trim();
+    return SENTENCE_START.test(text) && SENTENCE_END.test(text);
+}
+
+// Even a whole sentence this short ("He retired.") gives a card too little
+// to go on.
+export const MIN_CARD_WORDS = 6;
+
+export function wordCount(text) {
+    return (String(text ?? '').match(/\S+/g) || []).length;
 }
 
 // Claims about a moving figure: "As of December 2024, the company operates
