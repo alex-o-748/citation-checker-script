@@ -12,8 +12,10 @@
 # ~/sweeps/<wiki>/latest.json names the newest run. See service/run-periodic.js.
 #
 # emails: onfailure covers a halted run (exit 3/4) and a finished run whose
-# post-run checks failed (exit 5), and a run skipped because the previous one
-# still holds the lock (exit 6).
+# post-run checks failed (exit 5), a run skipped because the previous one
+# still holds the lock (exit 6), and a recheck pass that errored on most of
+# its rows, i.e. its Hugging Face model was unreachable or rate-limited
+# (exit 7; resume the run once it answers).
 #
 # 2Gi: what run-pick-pilot.js needs, and what the sweep fits in since its
 # source cache was bounded (service/claim-extractor.js). Steps run one at a

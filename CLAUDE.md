@@ -328,6 +328,7 @@ The wrapper holds no verification logic: only the step order, the file each step
 
 - **Each step is a child process**, not an imported `main()`, so a step's memory is returned before the next starts (the sweep and the import were each OOM-killed once on the November 2026 ruwiki rerun).
 - **A sweep exiting 5 doesn't stop the run.** The CSV is complete; the later steps run and the run exits 5 at the end, so `emails: onfailure` reports it. Any other failure of a non-review step stops the run with that step's own code (3 auth/billing, 4 model service down).
+- **A recheck pass that mostly errored fails the run** (exit 7, more than `--max-recheck-error-share`, default half, of its rows). `run-recheck.js` records a model call that kept failing as an ERROR row, leaves it out of the kept file and still exits 0, so a Hugging Face outage would otherwise look like a week with nothing to deliver. Resuming redoes that pass from scratch, since `--resume` would skip its ERROR rows as done.
 - **Runs never overlap**: `~/sweeps/<wiki>/.lock`, exit 6. A lock older than `--stale-lock-hours` (72) is taken over, since an OOM-killed job runs no cleanup.
 - **The recheck passes are chained**, each reading the previous pass's `-kept.csv`. The defaults (Qwen3-32B, then GLM-5.2, via tf-llm-router `/hf`) are the two-model agreement measured on the 50 labelled ruwiki contradictions (83% precision). GLM-5.2 has to be on the router's allowlist.
 - **`--resume <run id>`** skips finished steps and passes `--resume` to the sweep and rechecks.

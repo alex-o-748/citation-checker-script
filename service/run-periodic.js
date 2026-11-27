@@ -35,6 +35,12 @@
 //   - any other non-zero exit from pick, sweep, deliver or a recheck stops the
 //     run with that code (3 = model auth/billing, 4 = model service down,
 //     as run-sweep.js defines them).
+//   - a recheck pass that exits 0 but errored on more than
+//     --max-recheck-error-share of its rows (default: half) stops the run
+//     with exit 7. run-recheck.js records a model call that kept failing
+//     (a 429, a 5xx, a timeout) as an ERROR row and leaves it out of the kept
+//     file, so a Hugging Face outage would otherwise leave an empty delivery
+//     file and exit 0. Resuming re-runs such a pass from scratch.
 //   - review is informational: its failure is reported, never fatal.
 //
 // Two runs never overlap: a sweep can take longer than the schedule's period,
@@ -100,7 +106,11 @@ export const DEFAULT_DELIVER_TIER = 'verified-contradiction';
 // Longer than any sweep has taken, shorter than a weekly schedule's period.
 export const DEFAULT_STALE_LOCK_HOURS = 72;
 
-export const EXIT = Object.freeze({ OK: 0, USAGE: 2, CHECKS_FAILED: 5, LOCKED: 6 });
+// A pass erroring on more than this share of its rows is an outage, not bad
+// luck on a few rows.
+export const DEFAULT_MAX_RECHECK_ERROR_SHARE = 0.5;
+
+export const EXIT = Object.freeze({ OK: 0, USAGE: 2, CHECKS_FAILED: 5, LOCKED: 6, RECHECK_ERRORS: 7 });
 
 export const HELP_TEXT = `usage: node service/run-periodic.js --wiki <db> [options]
 
@@ -132,12 +142,19 @@ Options:
   --sweep-arg=<arg>       Extra argument for run-sweep.js, e.g.
                           --sweep-arg=--lead-check --sweep-arg=--concurrency=8.
                           Repeatable. Use the = form: the value starts with --.
+  --max-recheck-error-share <f>
+                          Stop the run when a recheck pass errors on more than
+                          this share of its rows, 0..1 (default: ${DEFAULT_MAX_RECHECK_ERROR_SHARE}). A model
+                          call that keeps failing is an ERROR row and is not
+                          kept, so without this an outage looks like a run
+                          that found nothing.
   --stale-lock-hours <n>  Take over a lock older than this (default: ${DEFAULT_STALE_LOCK_HOURS})
   --dry-run               Print the steps and exit without running anything.
   --help, -h              Show this help and exit.
 
 Exit codes: 0 done; 5 done, but the sweep's post-run checks failed (read
 findings-checks.md before using the files); 6 another run holds the lock;
+7 a recheck pass mostly errored (its model unreachable or rate-limited);
 any other code is the failing step's own (3 = model auth/billing,
 4 = model service down; see run-sweep.js --help).
 `;
@@ -231,6 +248,7 @@ export function buildSteps(opts, paths) {
                 '--worker-base', opts.recheckWorkerBase, '--wiki', opts.wiki,
                 '--prefix', pass.prefix, '--out', pass.out],
             input: { path: input, kind: 'csv' },
+            pass,
             resumable: true,
             fatal: true,
         });
@@ -266,6 +284,26 @@ export function runExitCode(records) {
 
 async function exists(path) {
     try { await access(path); return true; } catch { return false; }
+}
+
+/**
+ * A recheck pass's output: { rows, errors }, an error being a row whose
+ * <prefix>_error column is set (run-recheck.js's ERROR result).
+ */
+export async function countRecheckErrors(path, prefix) {
+    const result = { rows: 0, errors: 0 };
+    if (!(await exists(path))) return result;
+    for await (const { row } of iterateCsvRows(path)) {
+        if (!row) continue;
+        result.rows++;
+        if ((row[`${prefix}_error`] ?? '').trim()) result.errors++;
+    }
+    return result;
+}
+
+/** Whether a pass errored on more than maxShare of its rows. */
+export function recheckMostlyErrored({ rows, errors }, maxShare = DEFAULT_MAX_RECHECK_ERROR_SHARE) {
+    return rows > 0 && errors / rows > maxShare;
 }
 
 /** Data rows in a CSV, or titles in a titles file; 0 for a missing file. */
@@ -338,9 +376,14 @@ function rel(runDir, path) {
 /** summary.md: what ran, what it produced, what to read first. */
 export function renderSummary({ opts, runId, paths, records, counts, exitCode }) {
     const lines = [`# ${opts.wiki} sweep ${runId}`, ''];
+    const stoppedAt = records.find(r => r.outcome === 'stop');
     const status = exitCode === EXIT.OK ? 'finished'
         : exitCode === EXIT.CHECKS_FAILED ? `finished, but the post-run checks failed: read ${rel(paths.runDir, paths.checks)} before using these files`
-            : `stopped at ${records.find(r => r.outcome === 'stop')?.name} (exit ${exitCode})`;
+            : exitCode === EXIT.RECHECK_ERRORS
+                ? `stopped: ${stoppedAt?.name} errored on ${stoppedAt?.errors} of ${stoppedAt?.rows} rows, so its model was `
+                    + `probably unreachable or rate-limited (see ${stoppedAt?.name}.log). The delivery file is incomplete; `
+                    + `resume this run once the model answers`
+                : `stopped at ${stoppedAt?.name} (exit ${exitCode})`;
     lines.push(`Status: ${status}.`, '');
     lines.push('| Step | Result | Exit | Minutes |', '| --- | --- | --- | --- |');
     for (const r of records) {
@@ -429,16 +472,30 @@ export async function runPeriodic(opts, io = {}) {
                     continue;
                 }
             }
-            const args = opts.resume && step.resumable && await exists(step.args[step.args.indexOf('--out') + 1])
+            // A pass that mostly errored is redone from scratch: --resume
+            // would skip its ERROR rows as already done.
+            const previousStatus = previous?.steps?.find(r => r.name === step.name)?.status;
+            const args = opts.resume && step.resumable && previousStatus !== 'errors'
+                && await exists(step.args[step.args.indexOf('--out') + 1])
                 ? [...step.args, '--resume'] : step.args;
             stdout.write(`run-periodic: ${step.name}: node ${step.script} ${args.join(' ')}\n`);
             const started = Date.now();
             const code = await spawnStepFn({ ...step, args }, join(runDir, `${step.name}.log`), { stdout, stderr });
-            const outcome = stepOutcome(step, code);
-            const status = code === 0 ? 'ok' : outcome === 'checks-failed' ? 'checks failed' : 'failed';
-            records.push({ name: step.name, status, code, outcome, ms: Date.now() - started });
+            let outcome = stepOutcome(step, code);
+            let status = code === 0 ? 'ok' : outcome === 'checks-failed' ? 'checks failed' : 'failed';
+            const record = { name: step.name, status, code, outcome, ms: Date.now() - started };
+            if (step.pass && code === 0) {
+                const tally = await countRecheckErrors(step.pass.out, step.pass.prefix);
+                Object.assign(record, tally);
+                if (tally.errors) record.note = `${tally.errors} of ${tally.rows} rows errored`;
+                if (recheckMostlyErrored(tally, opts.maxRecheckErrorShare)) {
+                    Object.assign(record, { status: 'errors', outcome: 'stop', code: EXIT.RECHECK_ERRORS });
+                    stderr.write(`run-periodic: ${step.name} errored on ${tally.errors} of ${tally.rows} rows; stopping\n`);
+                }
+            }
+            records.push(record);
             await saveState();
-            if (outcome === 'stop') stopped = true;
+            if (record.outcome === 'stop') stopped = true;
         }
 
         counts.titles = await countRows(paths.titles, 'titles');
@@ -477,6 +534,7 @@ export function parseOptions(argv) {
             'pick-arg': { type: 'string', multiple: true },
             'sweep-arg': { type: 'string', multiple: true },
             'stale-lock-hours': { type: 'string', default: String(DEFAULT_STALE_LOCK_HOURS) },
+            'max-recheck-error-share': { type: 'string', default: String(DEFAULT_MAX_RECHECK_ERROR_SHARE) },
             'dry-run': { type: 'boolean', default: false },
             help: { type: 'boolean', short: 'h', default: false },
         },
@@ -495,6 +553,10 @@ export function parseOptions(argv) {
     if (new Set(prefixes).size !== prefixes.length) throw new Error('each --recheck needs its own prefix');
     const staleLockHours = Number(values['stale-lock-hours']);
     if (!(staleLockHours > 0)) throw new Error('--stale-lock-hours must be positive');
+    const maxRecheckErrorShare = Number(values['max-recheck-error-share']);
+    if (!(maxRecheckErrorShare >= 0 && maxRecheckErrorShare <= 1)) {
+        throw new Error('--max-recheck-error-share must be between 0 and 1');
+    }
     if (values.resume && values['run-id']) throw new Error('--resume names the run; drop --run-id');
     for (const id of [values.resume, values['run-id']]) {
         if (id != null && !/^[A-Za-z0-9._-]+$/.test(id)) throw new Error(`run id "${id}" must be a plain directory name`);
@@ -512,6 +574,7 @@ export function parseOptions(argv) {
         pickArgs: values['pick-arg'] ?? [],
         sweepArgs: values['sweep-arg'] ?? [],
         staleLockHours,
+        maxRecheckErrorShare,
         dryRun: values['dry-run'],
     };
 }

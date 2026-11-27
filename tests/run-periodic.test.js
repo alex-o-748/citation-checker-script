@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import {
     parseRecheckSpec, parseOptions, buildSteps, runPaths, stepOutcome, runExitCode,
     acquireLock, runPeriodic, defaultRunId, countRows, DEFAULT_RECHECK_PASSES, EXIT,
+    countRecheckErrors, recheckMostlyErrored,
 } from '../service/run-periodic.js';
 
 const sink = () => ({ write() {} });
@@ -26,9 +27,17 @@ function opts(runsDir, extra = {}) {
 
 const CSV = 'claim_text,verdict\n"a, b",NOT SUPPORTED\nc,NOT SUPPORTED\n';
 
+// A recheck pass's output, as run-recheck.js writes it: one <prefix>_error
+// cell per row, set (to the error message) on the rows that errored.
+function recheckCsv(prefix, errors) {
+    const rows = errors.map((e, i) => `c${i},NOT SUPPORTED,${e ? 'HTTP 429' : ''}`);
+    return `claim_text,verdict,${prefix}_error\n${rows.join('\n')}\n`;
+}
+
 // A stand-in for the child processes: writes what each real step would, and
-// exits with the code the test asks for.
-function fakeSteps({ codes = {}, titles = 'Москва\nКиев\n', deliverRows = CSV, keptRows = CSV } = {}) {
+// exits with the code the test asks for. `recheckErrors` maps a pass prefix
+// to one boolean per output row: whether that row errored.
+function fakeSteps({ codes = {}, titles = 'Москва\nКиев\n', deliverRows = CSV, keptRows = CSV, recheckErrors = {} } = {}) {
     const calls = [];
     const fn = async (step) => {
         calls.push(step);
@@ -37,7 +46,8 @@ function fakeSteps({ codes = {}, titles = 'Москва\nКиев\n', deliverRow
         if (step.name === 'sweep') await writeFile(out, CSV);
         if (step.name === 'deliver') await writeFile(out, deliverRows);
         if (step.name.startsWith('recheck-')) {
-            await writeFile(out, CSV);
+            const prefix = step.name.slice('recheck-'.length);
+            await writeFile(out, recheckCsv(prefix, recheckErrors[prefix] ?? [false, false]));
             await writeFile(out.replace(/\.csv$/, '-kept.csv'), keptRows);
         }
         return codes[step.name] ?? 0;
@@ -232,4 +242,48 @@ process.exitCode = 5;\n`);
     assert.equal(stdout, `out:${REPO_ROOT}:arg1\n`);
     assert.equal(stderr, 'err\n');
     assert.match(await readFile(log, 'utf8'), /out:.*arg1\n[\s\S]*err\n/);
+});
+
+test('recheckMostlyErrored: more than half, and never on an empty pass', () => {
+    assert.equal(recheckMostlyErrored({ rows: 0, errors: 0 }), false);
+    assert.equal(recheckMostlyErrored({ rows: 2, errors: 1 }), false);
+    assert.equal(recheckMostlyErrored({ rows: 2, errors: 2 }), true);
+    assert.equal(recheckMostlyErrored({ rows: 3, errors: 2 }), true);
+    assert.equal(recheckMostlyErrored({ rows: 4, errors: 1 }, 0.2), true);
+    assert.throws(() => parseOptions(['--wiki', 'ruwiki', '--max-recheck-error-share', '2']), /between 0 and 1/);
+});
+
+test('countRecheckErrors counts rows whose <prefix>_error is set', async () => {
+    const dir = await tmp();
+    const path = join(dir, 'recheck-qwen.csv');
+    await writeFile(path, recheckCsv('qwen', [true, false, true]));
+    assert.deepEqual(await countRecheckErrors(path, 'qwen'), { rows: 3, errors: 2 });
+    assert.deepEqual(await countRecheckErrors(join(dir, 'missing.csv'), 'qwen'), { rows: 0, errors: 0 });
+});
+
+test('a recheck pass that mostly errored stops the run with 7 and says why', async () => {
+    const dir = await tmp();
+    const { fn, calls } = fakeSteps({ recheckErrors: { qwen: [true, true] } });
+    assert.equal(await runPeriodic(opts(dir), { ...quiet, spawnStepFn: fn }), EXIT.RECHECK_ERRORS);
+    assert.ok(!calls.some(c => c.name === 'recheck-glm'));
+    const summary = await readFile(join(dir, 'r1', 'summary.md'), 'utf8');
+    assert.match(summary, /recheck-qwen errored on 2 of 2 rows/);
+    assert.match(summary, /\| recheck-qwen \| errors \(2 of 2 rows errored\) \| 7 \|/);
+});
+
+test('a few errors are noted but do not fail the run', async () => {
+    const dir = await tmp();
+    const { fn } = fakeSteps({ recheckErrors: { glm: [true, false] } });
+    assert.equal(await runPeriodic(opts(dir), { ...quiet, spawnStepFn: fn }), 0);
+    assert.match(await readFile(join(dir, 'r1', 'summary.md'), 'utf8'), /\| recheck-glm \| ok \(1 of 2 rows errored\) \|/);
+});
+
+test('resuming redoes an errored pass from scratch, not with --resume', async () => {
+    const dir = await tmp();
+    const first = fakeSteps({ recheckErrors: { qwen: [true, true] } });
+    assert.equal(await runPeriodic(opts(dir), { ...quiet, spawnStepFn: first.fn }), EXIT.RECHECK_ERRORS);
+    const again = fakeSteps();
+    assert.equal(await runPeriodic(opts(dir, { runId: null, resume: 'r1' }), { ...quiet, spawnStepFn: again.fn }), 0);
+    assert.deepEqual(again.calls.map(c => c.name), ['recheck-qwen', 'recheck-glm', 'review']);
+    assert.ok(!again.calls[0].args.includes('--resume'));
 });
