@@ -44,6 +44,7 @@ benchmark/
 Benchmarking_data_Citations.csv  # Source ground truth data (Dataset version + WMF override columns)
 service/                         # Toolforge batch pipeline: select -> extract -> fetch -> verify -> store (see Batch Pipeline below)
 feedback-loop/                   # Editor feedback -> confirmed field-set rows + a daily log monitor (see Feedback loop below)
+fact-hunt/                       # Standalone app for non-editors: spot where an article disagrees with its source, fix it (its README; docs/design-plans/2026-11-23-fact-hunt-app.md)
 .github/workflows/               # Scheduled jobs: talk-page scraper, edit-log sweep, feedback triage + monitor (not test/build CI)
 docs/                            # Reference docs + design plans (see docs/README.md)
 ```
@@ -320,6 +321,7 @@ Runnable entry points, each a thin wiring layer over the components above:
 | `service/run-sweep.js` | **All six stages**, writing a CSV and upserting every finding into ToolsDB (`--no-store` for CSV only) | Wiki Replicas, Wikipedia REST, model API, ToolsDB, source fetcher (opt-in) |
 | `service/run-checks.js` | Post-run checks over a findings CSV (`run-sweep.js` also runs them at the end of every sweep; see below) | None |
 | `service/run-import-findings.js` | Upserts findings CSVs into ToolsDB: backfills batches run before storing was the default, or after failed writes. Idempotent | ToolsDB |
+| `service/run-build-cards.js` | Turns stored findings (ToolsDB or batch CSVs) into the Fact Hunt app's cards: the "could both be true?" model call, then protection, BLP and freshness checks against each article's current revision. Daily, cached | Wikipedia API, Lift Wing, Pageviews, model API, ToolsDB (opt-in) |
 | `service/run-periodic.js` | One unattended run, for a scheduled job (`service/jobs.yaml`): pick → sweep → delivery file → second-model rechecks → review, each a child process, into `~/sweeps/<wiki>/<UTC time>/` | Everything the steps use |
 
 ### Scheduled runs (`service/run-periodic.js`, `service/jobs.yaml`; read before adding a step)

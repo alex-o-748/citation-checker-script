@@ -1,0 +1,90 @@
+{
+  "version": 1,
+  "generatedAt": "2026-11-23T00:00:00.000Z",
+  "wiki": "enwiki",
+  "note": "Development sample, written by hand from benchmark rows 186 and 71: claim, source and quote as stored in benchmark/dataset.json, revision ids from its article URLs, topic labels from Lift Wing on 2026-11-23. Not built by run-build-cards.js: no page ids, sections or readers, and findText was not checked against current wikitext. Do not deploy.",
+  "cards": [
+    {
+      "id": "27c9765dd902",
+      "wiki": "enwiki",
+      "host": "en.wikipedia.org",
+      "pageId": null,
+      "pageTitle": "Combat Zone Wrestling",
+      "revisionId": 1329482180,
+      "section": {
+        "index": null,
+        "title": null
+      },
+      "claim": {
+        "text": "Combat Zone Wrestling (CZW) is an American independent professional wrestling promotion founded in 1999 by John Zandig.",
+        "span": {
+          "start": 99,
+          "end": 103
+        }
+      },
+      "quote": {
+        "text": "CZW was born in a simpler time, way back in 1998, by John Zandig in Philadelphia",
+        "span": {
+          "start": 44,
+          "end": 48
+        }
+      },
+      "findText": "founded in 1999",
+      "sourceUrl": "https://lastwordonsports.com/prowrestling/2022/06/28/combat-zone-wrestling/",
+      "sourceLabel": "lastwordonsports.com",
+      "topics": [
+        "film-tv"
+      ],
+      "monthlyViews": null,
+      "reason": null,
+      "finding": {
+        "claimHash": "a2886faaf59444fe870a255be10c8d9c885557c70255f8350001c207c04256c5",
+        "sourceUrlHash": "ff542e7a79d8a5d7cfd1060039e81b359e60281aba9d6483865fe4bf496a4aa2",
+        "provider": null,
+        "promptVersion": null,
+        "revisionId": 1329482180
+      }
+    },
+    {
+      "id": "74de5a9f24f8",
+      "wiki": "enwiki",
+      "host": "en.wikipedia.org",
+      "pageId": null,
+      "pageTitle": "Liberation Tigers of Tamil Eelam",
+      "revisionId": 1325239248,
+      "section": {
+        "index": null,
+        "title": null
+      },
+      "claim": {
+        "text": "In April 1984, the LTTE formally joined a common militant front, the Eelam National Liberation Front (ENLF), a union between LTTE, TELO, EROS, PLOTE and EPRLF.",
+        "span": {
+          "start": 3,
+          "end": 13
+        }
+      },
+      "quote": {
+        "text": "In March 1985, the LTTE, EPRLF, TELO, and EROS formed a united front organization, the Eelam National Liberation Front (ENLF).",
+        "span": {
+          "start": 3,
+          "end": 13
+        }
+      },
+      "findText": "In April 1984, the LTTE",
+      "sourceUrl": "https://web.archive.org/web/20110919182250/http://countrystudies.us/sri-lanka/72.htm",
+      "sourceLabel": "countrystudies.us",
+      "topics": [
+        "places"
+      ],
+      "monthlyViews": null,
+      "reason": null,
+      "finding": {
+        "claimHash": "48f582596d8d84c8e45bc618756b7fc36f70f1d85ea7b95c34ed7abdc6e35a41",
+        "sourceUrlHash": "540a84e2ef0e1302c7dc66bfb0e9a7bc96f75db65ef5c863b93e3a86ac278de1",
+        "provider": null,
+        "promptVersion": null,
+        "revisionId": 1325239248
+      }
+    }
+  ]
+}
