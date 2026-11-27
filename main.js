@@ -1916,17 +1916,35 @@ function sectionIndexOfHeading(heading) {
 // section parameter on 0, which edits the whole page rather than the wrong
 // part of it).
 function findSectionNumber(refElement, doc = refElement && refElement.ownerDocument) {
-    if (!refElement || !doc) return 0;
+    return findSection(refElement, doc).index;
+}
+
+// The heading's anchor: the id MediaWiki gave it (on the <hN> itself since
+// MW 1.43 and in Parsoid output; on an inner .mw-headline span before that).
+function sectionAnchorOfHeading(heading) {
+    if (!heading) return null;
+    if (heading.id) return heading.id;
+    const headline = heading.querySelector('.mw-headline[id]');
+    return headline ? headline.id : null;
+}
+
+// findSectionNumber() plus the anchor of the heading the index was read from,
+// so a caller can find the same section again in a newer revision. The index
+// is only valid for the revision on screen: an edit adding a section above
+// this one shifts it, and the edit form always opens the latest revision.
+function findSection(refElement, doc = refElement && refElement.ownerDocument) {
+    const none = { index: 0, anchor: null };
+    if (!refElement || !doc) return none;
     const root = sectionContentRoot(doc);
-    if (!root) return 0;
+    if (!root) return none;
 
     const before = sectionHeadingsBefore(refElement, root);
-    if (before.length === 0) return 0;
+    if (before.length === 0) return none;
 
     let sawEditLink = false;
     for (let i = before.length - 1; i >= 0; i--) {
         const index = sectionIndexOfHeading(before[i]);
-        if (index !== null) return index;
+        if (index !== null) return { index, anchor: sectionAnchorOfHeading(before[i]) };
         if ((before[i].closest('.mw-heading') || before[i]).querySelector('.mw-editsection')) {
             // A heading with an edit link we deliberately skipped (transcluded,
             // `section=T-n`). Keep walking; the page's own enclosing section is
@@ -1939,7 +1957,26 @@ function findSectionNumber(refElement, doc = refElement && refElement.ownerDocum
     // suppresses edit links entirely or the skin renders them somewhere we
     // don't recognise — fall back to the ordinal count, which is right on the
     // common case of a page whose headings map 1:1 onto its wikitext sections.
-    return sawEditLink ? 0 : before.filter(h => h.tagName !== 'H1').length;
+    if (sawEditLink) return none;
+    const counted = before.filter(h => h.tagName !== 'H1');
+    return counted.length === 0
+        ? none
+        : { index: counted.length, anchor: sectionAnchorOfHeading(counted[counted.length - 1]) };
+}
+
+// The index of the section with this anchor in another revision's section
+// list (the API's action=parse&prop=sections), or null when no section of the
+// page itself has it — the heading was renamed or removed, or only a
+// transcluded template carries it (index `T-n`).
+function sectionIndexForAnchor(sections, anchor) {
+    if (!anchor || !Array.isArray(sections)) return null;
+    for (const s of sections) {
+        if (s && s.anchor === anchor && /^\d+$/.test(String(s.index))) {
+            const index = Number(s.index);
+            if (index > 0) return index;
+        }
+    }
+    return null;
 }
 
 // Debug aid: pairs every heading in the article body with the index a naive
@@ -4902,7 +4939,10 @@ async function runLeadCheck({ sentences, body, articleTitle, only } = {}, {
 
 // Bump whenever the prompt text changes, same contract as PROMPT_VERSION:
 // tests/uncited-check.test.js pins a hash of the prompt against it.
-const UNCITED_PROMPT_VERSION = 'u1';
+// u2 (2026-11-27): the two lines that said none of the statements has a
+// citation now say only that citation status is no reason to report one, so
+// the one prompt is true of flagged cited claims too (core/knowledge-check.js).
+const UNCITED_PROMPT_VERSION = 'u2';
 
 const UNCITED_CONFIDENCE = Object.freeze({ HIGH: 'high', MEDIUM: 'medium' });
 const UNCITED_CONFIDENCE_ORDER = [UNCITED_CONFIDENCE.HIGH, UNCITED_CONFIDENCE.MEDIUM];
@@ -4961,7 +5001,7 @@ function uncitedModelFor(providerId) {
 const UNCITED_CONTEXT_MAX_CHARS = 1500;
 
 function generateUncitedSystemPrompt() {
-    return `You help Wikipedia volunteers find statements that may be factually wrong. You are given numbered STATEMENTS from a Wikipedia article. None of them has a citation, so nothing in the article backs them up. Judge them using your own knowledge.
+    return `You help Wikipedia volunteers find statements that may be factually wrong. You are given numbered STATEMENTS from a Wikipedia article. Judge each statement using your own knowledge, whether or not the article cites a source for it.
 
 Report a statement only when you have a specific reason to believe it is wrong:
 - a wrong date, number, name, place, title or ranking;
@@ -4973,7 +5013,7 @@ Only judge well-established facts: the kind any good reference work on the subje
 Rules:
 - Report at most ${UNCITED_PER_CALL_MAX} statements. Reporting none is a normal answer: most statements in most articles are correct.
 - Never report a statement only because you do not know about it, cannot confirm it, or it may describe events after your knowledge ends. Not knowing something is not a reason to doubt it.
-- Never report a statement because it has no citation. None of them has one.
+- Never report a statement because of whether it has a citation.
 - Do not report opinions, wording, tone, neutrality, or missing detail.
 - The article context and the earlier text of each paragraph are there so you know what a statement refers to ("She later moved to Paris"). Report only the numbered statements.
 - Names from languages using non-Latin scripts may have several valid romanizations. Do not treat transliteration differences as errors.
@@ -5297,6 +5337,178 @@ async function runUncitedCheck({ uncited, articleTitle } = {}, {
     result.dropped = ranked.length - result.findings.length;
     return result;
 }
+
+// --- core/knowledge-check.js ---
+// The knowledge check: flagged cited claims against the model's own knowledge.
+//
+// Every other check on a cited claim asks whether its source supports it. This
+// one asks a second question: does the model, from what it knows, have a
+// specific reason to believe the claim is wrong? A claim can fail its source
+// and still be true (the source just doesn't say it), and for an editor that
+// is a different job: find a better source, not fix the text.
+//
+// It is the uncited-text check (core/uncited-check.js), applied to flagged
+// cited claims: the same prompt (UNCITED_PROMPT_VERSION u2 is worded to be
+// true of cited and uncited statements alike), the same parser, chunking and
+// excerpt location, run through runUncitedCheck(). Not a second prompt.
+//
+// Three rules, from docs/design-plans/2026-11-27-knowledge-check-for-flagged-claims.md:
+//
+// - It reports doubts, not truths. The outcome is DOUBTED or NOT_DOUBTED, and
+//   NOT_DOUBTED covers "probably true" and "no idea" together. A doubted
+//   claim is promoted; a not-doubted one is left as it is, never labelled
+//   "probably true".
+// - It is independent. The model sees the claim, the article's title and
+//   opening, and the paragraph text before the claim. Never the source, the
+//   first verdict or its rationale.
+// - The model's knowledge only routes a finding. Its idea of the right value
+//   stays in its comment and is never offered as an edit.
+//
+// Flagged claims go in calls of their own, not mixed with an article's
+// uncited sentences: the prompt's limit of UNCITED_PER_CALL_MAX reports per
+// call would otherwise be shared between the two, and an uncited sentence
+// could crowd out a flagged claim.
+//
+// Inlined into main.js (scripts/sync-main.js), so top-level names carry a
+// KNOWLEDGE_ / knowledge prefix.
+
+
+const KNOWLEDGE_OUTCOMES = Object.freeze({
+    DOUBTED: 'doubted',
+    NOT_DOUBTED: 'not_doubted',
+    ERROR: 'error',
+});
+const KNOWLEDGE_OUTCOME_LIST = Object.freeze(Object.values(KNOWLEDGE_OUTCOMES));
+
+// The prompt version a knowledge-check result was made under: the uncited
+// check's, since it is the same prompt.
+const KNOWLEDGE_PROMPT_VERSION = UNCITED_PROMPT_VERSION;
+
+// Where a claim starts in its paragraph text, so the text before it can go
+// with the claim as context. -1 when it can't be found (the paragraph text was
+// cut to its maximum length, or extraction differs), in which case no
+// paragraph context is sent rather than the wrong one.
+function knowledgeClaimStart(paragraphText, claimText) {
+    if (!paragraphText || !claimText) return -1;
+    return paragraphText.indexOf(claimText);
+}
+
+/**
+ * Turns flagged claims into runUncitedCheck()'s input.
+ *
+ * @param {Array<{key, claimText, sectionTitle?, paragraphText?}>} claims - In
+ *   article order. `key` is the caller's handle for a claim; two claims with
+ *   the same text (a group's members share one claim) become one statement,
+ *   and the result is reported under every key.
+ * @param {object} [opts]
+ * @param {string} [opts.opening] - The article's opening paragraph.
+ * @returns {{ uncited: {sentences, paragraphs, opening}, keysByIndex: Array<Array> }}
+ */
+function knowledgeStatements(claims, { opening = '' } = {}) {
+    const sentences = [];
+    const paragraphs = [];
+    const keysByIndex = [];
+    const byText = new Map();
+    const paragraphIndexOf = new Map();
+    for (const claim of claims || []) {
+        const text = String(claim?.claimText ?? '').trim();
+        if (!text) continue;
+        if (byText.has(text)) {
+            keysByIndex[byText.get(text)].push(claim.key);
+            continue;
+        }
+        const sectionTitle = claim.sectionTitle ?? null;
+        const paragraphText = claim.paragraphText || '';
+        const start = knowledgeClaimStart(paragraphText, text);
+        // A claim whose paragraph can't be placed gets a paragraph of its
+        // own, holding just the claim: no context, and no context borrowed
+        // from a neighbour.
+        const paragraphKey = start >= 0 ? `${sectionTitle}\u0000${paragraphText}` : `\u0001${sentences.length}`;
+        if (!paragraphIndexOf.has(paragraphKey)) {
+            paragraphIndexOf.set(paragraphKey, paragraphs.length);
+            paragraphs.push({ index: paragraphs.length, sectionTitle, text: start >= 0 ? paragraphText : text });
+        }
+        const index = sentences.length;
+        byText.set(text, index);
+        keysByIndex.push([claim.key]);
+        sentences.push({
+            index,
+            paragraphIndex: paragraphIndexOf.get(paragraphKey),
+            sectionTitle,
+            text,
+            start: start >= 0 ? start : 0,
+        });
+    }
+    return { uncited: { sentences, paragraphs, opening: opening || '' }, keysByIndex };
+}
+
+/**
+ * Runs the knowledge check on an article's flagged claims.
+ *
+ * @param {object} input
+ * @param {Array} input.claims - See knowledgeStatements().
+ * @param {string} [input.articleTitle]
+ * @param {string} [input.opening]
+ * @param {object} deps - runUncitedCheck()'s deps (callModel, systemPrompt,
+ *   chunkSize, retry, pause, shouldAbort, onChunk, onChunkError). maxFindings
+ *   is not taken: every doubted claim is kept, since each one is a finding
+ *   promoted, not an extra row.
+ *
+ * Returns `{ results, calls, usage, promptVersion }`. `results` is a Map from
+ * each claim's key to
+ * `{ outcome, confidence, comment, excerpt, excerptStatus, error }`:
+ * DOUBTED with the model's confidence, comment and excerpt; NOT_DOUBTED; or
+ * ERROR with the error code of the call that left it unchecked. A claim the
+ * run never reached (stopped early) has no entry.
+ */
+async function runKnowledgeCheck({ claims, articleTitle, opening } = {}, deps = {}) {
+    const { uncited, keysByIndex } = knowledgeStatements(claims, { opening });
+    const run = await runUncitedCheck({ uncited, articleTitle }, { ...deps, maxFindings: Infinity });
+
+    const byIndex = new Map();
+    for (const s of uncited.sentences) byIndex.set(s.index, null);
+    const answered = new Set();
+    for (const f of run.findings) {
+        answered.add(f.index);
+        byIndex.set(f.index, {
+            outcome: KNOWLEDGE_OUTCOMES.DOUBTED,
+            confidence: f.confidence,
+            comment: f.comments || null,
+            excerpt: f.excerpt || null,
+            excerptStatus: f.excerptStatus ?? null,
+            error: null,
+        });
+    }
+    const failed = new Map(run.unchecked.map(u => [u.index, u.error]));
+    for (const [index, error] of failed) {
+        byIndex.set(index, {
+            outcome: KNOWLEDGE_OUTCOMES.ERROR, confidence: null, comment: null, excerpt: null, excerptStatus: null, error,
+        });
+    }
+    // Every sentence of a call that answered and didn't report it. A run cut
+    // short leaves the rest unreached: neither answered nor failed. runUncitedCheck()
+    // checks in order, so the first `checked + unchecked` sentences were reached.
+    const reached = run.checked + run.unchecked.length;
+    uncited.sentences.slice(0, reached).forEach(s => {
+        if (!byIndex.get(s.index)) {
+            byIndex.set(s.index, {
+                outcome: KNOWLEDGE_OUTCOMES.NOT_DOUBTED, confidence: null, comment: null, excerpt: null, excerptStatus: null, error: null,
+            });
+        }
+    });
+
+    const results = new Map();
+    for (const [index, result] of byIndex) {
+        if (!result) continue;
+        for (const key of keysByIndex[index]) results.set(key, result);
+    }
+    return { results, calls: run.calls, usage: run.usage, promptVersion: run.promptVersion };
+}
+
+// Whether a knowledge-check result promotes its finding.
+function isKnowledgeDoubted(result) {
+    return result?.outcome === KNOWLEDGE_OUTCOMES.DOUBTED;
+}
 // </core-injected>
 
 // Cap for manually-pasted source text. Unlike fetched sources — which the
@@ -5546,6 +5758,16 @@ function useToolforgeSourceFetcher() {
             'Phrases vérifiées ({count})',
         'Checking uncited text':
             'Vérification du texte sans référence',
+        'Check flagged citations against general knowledge':
+            'Vérifier les citations signalées avec les connaissances générales',
+        'Verify All also asks the model, without showing it the source, whether it has a reason to believe each flagged claim is wrong. Those it doubts are marked "Likely wrong" and listed first under "Most serious first". The others are left as they are: not being doubted does not make a claim true. A few extra model calls per article.':
+            '« Vérifier toutes les citations » demande aussi au modèle, sans lui montrer la source, s’il a une raison de penser que chaque affirmation signalée est fausse. Celles dont il doute sont marquées « Probablement faux » et listées en premier dans l’ordre « Les plus graves d’abord ». Les autres restent telles quelles : une affirmation dont il ne doute pas n’est pas pour autant vraie. Quelques appels au modèle en plus par article.',
+        'Checking flagged claims against general knowledge':
+            'Vérification des affirmations signalées avec les connaissances générales',
+        'Without reading the source, the model believes: {comment}':
+            'Sans lire la source, le modèle pense : {comment}',
+        'Likely wrong':
+            'Probablement faux',
         'Runs one more check on each flagged citation to tell a contradicted key fact from a missing minor detail. Costs one extra model call per flagged citation.':
             'Effectue une vérification supplémentaire sur chaque citation signalée pour distinguer un fait essentiel contredit d’un détail mineur absent. Coûte un appel au modèle de plus par citation signalée.',
         'Checking severity…': 'Évaluation de la gravité…',
@@ -5968,6 +6190,16 @@ function useToolforgeSourceFetcher() {
             'Oraciones comprobadas ({count})',
         'Checking uncited text':
             'Revisando el texto sin referencias',
+        'Check flagged citations against general knowledge':
+            'Contrastar las referencias señaladas con el conocimiento general',
+        'Verify All also asks the model, without showing it the source, whether it has a reason to believe each flagged claim is wrong. Those it doubts are marked "Likely wrong" and listed first under "Most serious first". The others are left as they are: not being doubted does not make a claim true. A few extra model calls per article.':
+            '«Verificar todas las citas» también pregunta al modelo, sin mostrarle la fuente, si tiene motivos para creer que cada afirmación señalada es errónea. Las que pone en duda se marcan como «Probablemente erróneo» y aparecen primero en el orden «Los más graves primero». Las demás quedan como están: que el modelo no dude de una afirmación no la hace verdadera. Se hacen algunas llamadas más al modelo por artículo.',
+        'Checking flagged claims against general knowledge':
+            'Contrastando las afirmaciones señaladas con el conocimiento general',
+        'Without reading the source, the model believes: {comment}':
+            'Sin leer la fuente, el modelo considera: {comment}',
+        'Likely wrong':
+            'Probablemente erróneo',
         'Runs one more check on each flagged citation to tell a contradicted key fact from a missing minor detail. Costs one extra model call per flagged citation.':
             'Hace una comprobación más en cada cita señalada para distinguir un hecho clave contradicho de un detalle menor ausente. Supone una llamada adicional al modelo por cada cita señalada.',
         'Checking severity…': 'Evaluando la gravedad…',
@@ -6386,6 +6618,16 @@ function useToolforgeSourceFetcher() {
             'Проверенные предложения ({count})',
         'Checking uncited text':
             'Проверка текста без сносок',
+        'Check flagged citations against general knowledge':
+            'Проверять отмеченные сноски по общим знаниям',
+        'Verify All also asks the model, without showing it the source, whether it has a reason to believe each flagged claim is wrong. Those it doubts are marked "Likely wrong" and listed first under "Most serious first". The others are left as they are: not being doubted does not make a claim true. A few extra model calls per article.':
+            '«Проверить все сноски» также спрашивает модель, не показывая ей источник, есть ли у неё основания считать каждое отмеченное утверждение ошибочным. Те, в которых она сомневается, помечаются «Вероятно, ошибка» и идут первыми при порядке «Сначала серьёзные». Остальные остаются как есть: то, что модель не сомневается в утверждении, не делает его верным. Несколько дополнительных обращений к модели на статью.',
+        'Checking flagged claims against general knowledge':
+            'Проверка отмеченных утверждений по общим знаниям',
+        'Without reading the source, the model believes: {comment}':
+            'Не читая источник, модель считает: {comment}',
+        'Likely wrong':
+            'Вероятно, ошибка',
         'Runs one more check on each flagged citation to tell a contradicted key fact from a missing minor detail. Costs one extra model call per flagged citation.':
             'Проводит дополнительную проверку каждой проблемной сноски, чтобы отличить опровергнутый ключевой факт от отсутствующей второстепенной детали. Требует одного дополнительного запроса к модели на каждую такую сноску.',
         'Checking severity…': 'Оценка серьёзности…',
@@ -6812,6 +7054,16 @@ function useToolforgeSourceFetcher() {
             'משפטים שנבדקו ({count})',
         'Checking uncited text':
             'בדיקת טקסט ללא מקור',
+        'Check flagged citations against general knowledge':
+            'בדיקת הערות שוליים שסומנו מול ידע כללי',
+        'Verify All also asks the model, without showing it the source, whether it has a reason to believe each flagged claim is wrong. Those it doubts are marked "Likely wrong" and listed first under "Most serious first". The others are left as they are: not being doubted does not make a claim true. A few extra model calls per article.':
+            '"בדיקת כל הערות השוליים" שואלת גם את המודל, בלי להראות לו את המקור, אם יש לו סיבה לחשוב שכל טענה שסומנה שגויה. טענות שהוא מטיל בהן ספק מסומנות "כנראה שגוי" ומוצגות ראשונות בסדר "החמורות ביותר תחילה". השאר נשארות כפי שהן: העובדה שהמודל אינו מטיל ספק בטענה אינה הופכת אותה לנכונה. כמה קריאות נוספות למודל לכל ערך.',
+        'Checking flagged claims against general knowledge':
+            'בדיקת טענות שסומנו מול ידע כללי',
+        'Without reading the source, the model believes: {comment}':
+            'בלי לקרוא את המקור, המודל סבור: {comment}',
+        'Likely wrong':
+            'כנראה שגוי',
         'Runs one more check on each flagged citation to tell a contradicted key fact from a missing minor detail. Costs one extra model call per flagged citation.':
             'בדיקה נוספת לכל הערת שוליים שסומנה, כדי להבחין בין עובדה מרכזית שהמקור סותר לבין פרט שולי שאינו מופיע בו. כרוכה בקריאה נוספת למודל לכל הערה כזו.',
         'Checking severity…': 'בדיקת חומרה…',
@@ -7202,6 +7454,16 @@ function useToolforgeSourceFetcher() {
             'Gecontroleerde zinnen ({count})',
         'Checking uncited text':
             'Tekst zonder bronvermelding controleren',
+        'Check flagged citations against general knowledge':
+            'Gemarkeerde bronvermeldingen toetsen aan algemene kennis',
+        'Verify All also asks the model, without showing it the source, whether it has a reason to believe each flagged claim is wrong. Those it doubts are marked "Likely wrong" and listed first under "Most serious first". The others are left as they are: not being doubted does not make a claim true. A few extra model calls per article.':
+            '‘Alle bronvermeldingen controleren’ vraagt het model ook, zonder het de bron te tonen, of het reden heeft om te denken dat elke gemarkeerde bewering onjuist is. Beweringen waaraan het twijfelt, worden gemarkeerd als ‘Waarschijnlijk onjuist’ en komen bovenaan bij ‘Ernstigste eerst’. De rest blijft zoals hij is: dat het model niet twijfelt, maakt een bewering niet waar. Een paar extra modelaanroepen per artikel.',
+        'Checking flagged claims against general knowledge':
+            'Gemarkeerde beweringen toetsen aan algemene kennis',
+        'Without reading the source, the model believes: {comment}':
+            'Zonder de bron te lezen, denkt het model: {comment}',
+        'Likely wrong':
+            'Waarschijnlijk onjuist',
         'Runs one more check on each flagged citation to tell a contradicted key fact from a missing minor detail. Costs one extra model call per flagged citation.':
             'Voert voor elke gemarkeerde bronvermelding een extra controle uit om een tegengesproken kernfeit te onderscheiden van een ontbrekend detail. Dit kost één extra modelaanroep per gemarkeerde bronvermelding.',
         'Checking severity…': 'Ernst controleren…',
@@ -7586,6 +7848,13 @@ function useToolforgeSourceFetcher() {
             // unvalidated. Its model follows the sidebar's provider:
             // uncitedModel().
             this.uncitedCheckEnabled = localStorage.getItem('verifier_uncited_check') === 'on';
+            // Knowledge check (core/knowledge-check.js): Verify All also asks
+            // the uncited check's model whether it doubts each flagged
+            // citation's claim, without the source. A doubted one is labelled
+            // "Likely wrong" and sorts first; nothing else changes. Off until
+            // the editor turns it on: about one call per article with a
+            // flagged citation, and unvalidated.
+            this.knowledgeCheckEnabled = localStorage.getItem('verifier_knowledge_check') === 'on';
             this.sidebarWidth = localStorage.getItem('verifier_sidebar_width') || '400px';
             this.isVisible = localStorage.getItem('verifier_sidebar_visible') === 'true';
             this.buttons = {};
@@ -7629,6 +7898,9 @@ function useToolforgeSourceFetcher() {
             // text and article context the severity pass needs; reportCardEls
             // maps a result to the element its card content lives in.
             this.reportSeverity = false;
+            // Whether the current report runs the knowledge check, snapshotted
+            // at run start like reportSeverity.
+            this.reportKnowledge = false;
             this.severityInputs = new Map();
             this.reportCardEls = new Map();
             this.reportDocOrder = 0;
@@ -7749,6 +8021,8 @@ function useToolforgeSourceFetcher() {
                         <div id="verifier-lead-check-note">${this.t('Verify All also checks each sentence of the lead against the rest of the article, since a lead statement may be sourced in the body instead. A lead citation found to support only part of its claim is then set aside rather than counted as a problem. A few extra model calls per article.')}</div>
                         <div id="verifier-uncited-check-container"></div>
                         <div id="verifier-uncited-check-note">${this.t('Verify All also checks the sentences that have no citation against the model\'s general knowledge, and lists up to three that look wrong, so a source can be found for them. The model can be wrong about a correct sentence, so this is a prompt to look, not a finding. A few extra model calls per article.')} ${this.t('With a free provider this check runs on {model}; with a provider that uses an API key of its own, on that provider\'s model.', { model: uncitedModelFor(UNCITED_FREE_PROVIDER).name })} <a href="#" id="verifier-uncited-only-link">${this.t('Run only this check on this article')}</a></div>
+                        <div id="verifier-knowledge-check-container"></div>
+                        <div id="verifier-knowledge-check-note">${this.t('Verify All also asks the model, without showing it the source, whether it has a reason to believe each flagged claim is wrong. Those it doubts are marked "Likely wrong" and listed first under "Most serious first". The others are left as they are: not being doubted does not make a claim true. A few extra model calls per article.')}</div>
                         <div id="verifier-accuracy-note"></div>
                         <div id="verifier-privacy-note">${this.t('Results are logged for research. Your username is not recorded.')}</div>
                         <div id="verifier-settings-done-container"></div>
@@ -9376,6 +9650,18 @@ function useToolforgeSourceFetcher() {
                     color: var(--sv-ink-4);
                     margin-bottom: 10px;
                 }
+                /* Knowledge check (core/knowledge-check.js): its setting, and
+                   the model's comment in a doubted row's details. */
+                #verifier-knowledge-check-note {
+                    font-size: 12px;
+                    color: var(--sv-ink-4);
+                    margin-bottom: 10px;
+                }
+                .sv-knowledge-note {
+                    margin-top: 6px;
+                    font-size: 12px;
+                    color: var(--sv-ink-4);
+                }
                 #verifier-uncited-only-link {
                     color: var(--sv-accent-fg);
                     text-decoration: none;
@@ -9623,6 +9909,13 @@ function useToolforgeSourceFetcher() {
                 align: 'inline'
             });
 
+            // Knowledge check toggle
+            this.buttons.knowledgeCheckToggle = new OO.ui.CheckboxInputWidget({ selected: this.knowledgeCheckEnabled });
+            this.buttons.knowledgeCheckField = new OO.ui.FieldLayout(this.buttons.knowledgeCheckToggle, {
+                label: this.t('Check flagged citations against general knowledge'),
+                align: 'inline'
+            });
+
             this.buttons.setKey = new OO.ui.ButtonWidget({
                 label: this.t('Set API Key'),
                 flags: ['primary', 'progressive'],
@@ -9705,6 +9998,7 @@ function useToolforgeSourceFetcher() {
             document.getElementById('verifier-severity-container').appendChild(this.buttons.severityField.$element[0]);
             document.getElementById('verifier-lead-check-container').appendChild(this.buttons.leadCheckField.$element[0]);
             document.getElementById('verifier-uncited-check-container').appendChild(this.buttons.uncitedCheckField.$element[0]);
+            document.getElementById('verifier-knowledge-check-container').appendChild(this.buttons.knowledgeCheckField.$element[0]);
             document.getElementById('verifier-settings-done-container').appendChild(this.buttons.settingsDone.$element[0]);
 
             this.updateProviderInfo();
@@ -10510,6 +10804,11 @@ function useToolforgeSourceFetcher() {
                 localStorage.setItem('verifier_uncited_check', this.uncitedCheckEnabled ? 'on' : 'off');
             });
 
+            this.buttons.knowledgeCheckToggle.on('change', (selected) => {
+                this.knowledgeCheckEnabled = !!selected;
+                localStorage.setItem('verifier_knowledge_check', this.knowledgeCheckEnabled ? 'on' : 'off');
+            });
+
             // The uncited-text check alone, kept out of the main view on
             // purpose: it is for looking at what the check reads and finds,
             // not an action most editors need.
@@ -11259,7 +11558,7 @@ function useToolforgeSourceFetcher() {
                     ${chip('error', counts.error, 'errors')}
                     ${chip('skipped', counts.skipped, 'skipped')}
                 </div>
-                ${this.reportSeverity ? this.reportSortHtml() : ''}
+                ${this.reportSeverity || this.reportKnowledge ? this.reportSortHtml() : ''}
             `;
 
             summaryEl.querySelectorAll('.verifier-filter-chip').forEach(btn => {
@@ -11944,9 +12243,15 @@ function useToolforgeSourceFetcher() {
         applyReportSort() {
             const resultsEl = document.getElementById('verifier-report-results');
             if (!resultsEl) return;
-            const bySeverity = this.reportSeverity && this.reportSort === 'severity';
+            const bySeverity = (this.reportSeverity || this.reportKnowledge) && this.reportSort === 'severity';
             const blocks = Array.from(resultsEl.children).filter(el => el.dataset.docOrder !== undefined);
-            blocks.sort((a, b) => (bySeverity ? compareSeverity(this.blockSeverity(a), this.blockSeverity(b)) : 0)
+            // A block whose claim the knowledge check doubts comes first: the
+            // source contradicts or omits it, and the model, without the
+            // source, independently doubts it. Then the severity order.
+            const doubted = el => (el.dataset.knowledgeDoubted === '1' ? 1 : 0);
+            blocks.sort((a, b) => (bySeverity
+                ? (doubted(b) - doubted(a)) || compareSeverity(this.blockSeverity(a), this.blockSeverity(b))
+                : 0)
                 || (Number(a.dataset.docOrder) - Number(b.dataset.docOrder)));
             const emptyEl = resultsEl.querySelector('.verifier-filter-empty');
             for (const el of blocks) resultsEl.insertBefore(el, emptyEl);
@@ -12412,8 +12717,9 @@ function useToolforgeSourceFetcher() {
                 a.rel = 'noopener noreferrer';
                 a.textContent = text;
                 links.appendChild(a);
+                return a;
             };
-            if (editRef) add(this.buildEditUrl(editRef), this.t('Edit section'), 'sv-link sv-edit-link');
+            if (editRef) this.bindEditLink(add(this.buildEditUrl(editRef), this.t('Edit section'), 'sv-link sv-edit-link'), editRef);
             const host = url ? this.sourceHost(url) : '';
             if (host) add(url, `${host} ↗`, 'sv-link sv-source-link');
         }
@@ -12897,6 +13203,107 @@ function useToolforgeSourceFetcher() {
             } catch (e) { /* a console without groups: nothing to log */ }
         }
 
+        // The knowledge-check phase of Verify All: core/knowledge-check.js's
+        // runKnowledgeCheck() over every flagged report unit's claim, on the
+        // uncited check's model (uncitedModel()), in calls of several claims.
+        // The model sees the claim, the article's title and opening, and the
+        // paragraph before the claim: never the source, verdict or comment.
+        // A doubted unit is labelled "Likely wrong" and sorts first; a
+        // not-doubted one is left exactly as it was. Not logged and not
+        // exported, like the uncited check: the Worker has no field for it.
+        async runReportKnowledgeCheck(startTime) {
+            const units = this.getCountedReportUnits().filter(u => needsSeverity(u) && u.claimText);
+            if (units.length === 0) return;
+            const { provider, model, name } = this.uncitedModel();
+            const delayBetweenCalls = provider === 'publicai' || provider.startsWith('liftwing') ? 3000 : 1000;
+            const phase = this.t('Checking flagged claims against general knowledge');
+            const root = document.getElementById('mw-content-text');
+            // One pass over the article for every unit's section and paragraph.
+            const contexts = units.map(u => ({ refElement: u.refElement }));
+            if (root) attachArticleContext(contexts, root);
+            const claims = units.map((u, i) => ({
+                key: i,
+                claimText: u.claimText,
+                sectionTitle: contexts[i].sectionTitle ?? null,
+                paragraphText: contexts[i].paragraphText ?? null,
+            }));
+            this.updateReportProgress(0, units.length, phase, startTime);
+            const callModel = (systemPrompt, userContent) => callProviderAPI(provider, {
+                apiKey: this.apiKeyFor(provider),
+                model,
+                systemPrompt,
+                userContent,
+                maxTokens: groupMaxTokens(provider),
+                ...this.llmRouterConfigOverrides(provider)
+            });
+            let run = null;
+            try {
+                run = await runKnowledgeCheck({ claims, articleTitle: this.reportArticleTitle(), opening: this.articleUncited().opening }, {
+                    callModel,
+                    systemPrompt: withUncitedCommentLanguage(generateUncitedSystemPrompt(), { lang: this.lang, articleLangCode: this.articleLangCode }),
+                    chunkSize: uncitedChunkSize(provider),
+                    retry: { maxRetries: 4, minBackoffMs: 5000, maxBackoffMs: 30000, jitterMs: 0, shouldAbort: () => this.reportCancelled },
+                    pause: () => new Promise(r => setTimeout(r, delayBetweenCalls)),
+                    shouldAbort: () => this.reportCancelled,
+                    onChunkError: e => {
+                        console.warn('[Verifier] Knowledge check call failed:', e);
+                        return 'error';
+                    },
+                    onChunk: done => this.updateReportProgress(done, units.length, phase, startTime)
+                });
+            } catch (e) {
+                console.warn('[Verifier] Knowledge check failed:', e);
+            }
+            if (run) {
+                this.reportTokenUsage.input += run.usage.input || 0;
+                this.reportTokenUsage.output += run.usage.output || 0;
+                units.forEach((unit, i) => {
+                    const result = run.results.get(i);
+                    if (!result) return;
+                    unit.knowledge = result;
+                    this.renderReportKnowledge(unit);
+                });
+                try {
+                    console.groupCollapsed(`[Verifier] Knowledge check: ${units.length} flagged claims, ${run.calls} calls (${name})`);
+                    console.log('results', units.map(u => ({ citation: u.citationNumber, claim: u.claimText, ...(u.knowledge || {}) })));
+                    console.groupEnd();
+                } catch (e) { /* a console without groups: nothing to log */ }
+            }
+            this.applyReportSort();
+            this.renderReportSummary();
+        }
+
+        // Puts a doubted unit's result on its card: "Likely wrong" in the head
+        // line, and the model's comment in the details, said to be the
+        // model's own knowledge. Never offered as an edit. A not-doubted or
+        // unchecked unit's card is left as it is. Also marks the top-level
+        // block applyReportSort() moves.
+        renderReportKnowledge(unit) {
+            if (!isKnowledgeDoubted(unit.knowledge)) return;
+            const host = this.reportCardEls.get(unit);
+            if (!host) return;
+            const card = host.classList.contains('sv-finding') ? host : host.closest('.sv-finding');
+            const container = host === card ? host.querySelector(':scope > .sv-finding-details') : host;
+            if (container && unit.knowledge.comment) {
+                let slot = container.querySelector(':scope > .sv-knowledge-slot');
+                if (!slot) {
+                    slot = document.createElement('div');
+                    slot.className = 'sv-knowledge-slot sv-knowledge-note';
+                    container.insertBefore(slot, container.querySelector(':scope > .sv-finding-actions'));
+                }
+                slot.textContent = this.t('Without reading the source, the model believes: {comment}', { comment: unit.knowledge.comment });
+            }
+            const verdictEl = card && card.querySelector(':scope > .sv-finding-head .sv-finding-verdict');
+            if (verdictEl && !verdictEl.querySelector('.sv-knowledge-tag')) {
+                const tag = document.createElement('span');
+                tag.className = 'sv-finding-tag sv-knowledge-tag';
+                tag.textContent = this.t('Likely wrong');
+                verdictEl.appendChild(tag);
+            }
+            const block = host.closest('.verifier-report-card, .verifier-report-group');
+            if (block) block.dataset.knowledgeDoubted = '1';
+        }
+
         getReportUnits() {
             return mergeReportUnits(this.reportResults, this.reportGroupResults);
         }
@@ -12962,6 +13369,7 @@ function useToolforgeSourceFetcher() {
             this.hasReport = true;
             this.reportRevisionId = this.getArticleRevisionId();
             this.reportSeverity = this.severityEnabled;
+            this.reportKnowledge = this.knowledgeCheckEnabled && !noCitations;
             this.severityInputs = new Map();
             this.reportCardEls = new Map();
             this.reportDocOrder = 0;
@@ -13236,6 +13644,9 @@ function useToolforgeSourceFetcher() {
             if (this.reportUncited && !this.reportCancelled) {
                 await this.runReportUncitedCheck(startTime);
             }
+            if (this.reportKnowledge && !this.reportCancelled) {
+                await this.runReportKnowledgeCheck(startTime);
+            }
             if (this.reportSeverity && !this.reportCancelled) {
                 await this.rankReportBySeverity(delayBetweenCalls);
             }
@@ -13271,9 +13682,54 @@ function useToolforgeSourceFetcher() {
             return findSectionNumber(el, document);
         }
 
-        buildEditUrl(refElement) {
+        // The section index read off the page is only right for the revision
+        // on screen, and the edit form always opens the latest one. When the
+        // article was edited since it was loaded (a section added above this
+        // one, say), find the same heading by its anchor in the latest
+        // revision's section list. Null when that can't be decided: the
+        // caller keeps the link's own href.
+        async currentSectionNumber(refElement) {
+            const { index, anchor } = findSection(refElement || this.activeRefElement, document);
+            const shown = mw.config.get('wgRevisionId');
+            const data = await new mw.Api().get({
+                action: 'parse',
+                page: mw.config.get('wgPageName'),
+                prop: 'sections|revid',
+                formatversion: 2,
+            });
+            const parsed = data && data.parse;
+            if (!parsed) return null;
+            if (shown && parsed.revid === shown) return index;
+            if (index === 0) return 0;
+            // Renamed or removed heading: edit the whole page rather than a
+            // section that merely has this one's old number.
+            const current = sectionIndexForAnchor(parsed.sections, anchor);
+            return current === null ? 0 : current;
+        }
+
+        // Opens the edit form at the section's index in the latest revision.
+        // The tab is opened synchronously, inside the click, so a popup
+        // blocker lets it through; its URL is set once the lookup returns.
+        bindEditLink(link, refElement) {
+            if (!link) return;
+            link.addEventListener('click', (event) => {
+                if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey) return;
+                const tab = window.open('', '_blank');
+                if (!tab) return; // Blocked anyway: follow the href.
+                event.preventDefault();
+                tab.opener = null;
+                const fallback = link.href;
+                this.currentSectionNumber(refElement)
+                    .then(section => {
+                        tab.location.href = section === null ? fallback : this.buildEditUrl(refElement, section);
+                    })
+                    .catch(() => { tab.location.href = fallback; });
+            });
+        }
+
+        buildEditUrl(refElement, sectionOverride = null) {
             const title = mw.config.get('wgPageName');
-            const section = this.findSectionNumber(refElement);
+            const section = sectionOverride === null ? this.findSectionNumber(refElement) : sectionOverride;
             // Goes into the wiki's edit-summary box, so it follows the UI
             // language like the rest of the interface. The link target stays
             // pointing at the English user page — that is where the script
@@ -13305,6 +13761,7 @@ function useToolforgeSourceFetcher() {
                     target: '_blank'
                 });
                 container.appendChild(btn.$element[0]);
+                this.bindEditLink(btn.$element[0].querySelector('a'), this.activeRefElement);
             }
 
             const feedback = this.buildFeedbackControls({

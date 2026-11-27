@@ -70,12 +70,13 @@ import { runBatch, ARTICLE_OUTCOMES } from './claim-extractor.js';
 import { fetchArticleHtml, hostForWiki, langCodeForWiki } from '../core/wikipedia.js';
 import { fetchSourceContent, STUB_FETCH_ERROR } from '../core/worker.js';
 import { createHostGate, DEFAULT_FETCH_CONCURRENCY } from './host-pool.js';
-import { verifyCitation, verifyGroup, verifyLead, verifyUncited, makeModelCaller, ProviderAuthError } from './verifier.js';
+import { verifyCitation, verifyGroup, verifyLead, verifyUncited, verifyKnowledge, makeModelCaller, ProviderAuthError } from './verifier.js';
 import { isLeadDemotedVerdict } from '../core/lead.js';
 import { isJudgedUnavailable } from '../core/groups.js';
 import { leadChunkSize, LEAD_OUTCOMES } from '../core/lead-check.js';
 import { uncitedChunkSize, UNCITED_MAX_FINDINGS } from '../core/uncited-check.js';
-import { assembleFinding, assembleGroupFinding, assembleLeadFinding, assembleUncitedFinding } from './finding-builder.js';
+import { KNOWLEDGE_OUTCOMES } from '../core/knowledge-check.js';
+import { assembleFinding, assembleGroupFinding, assembleLeadFinding, assembleUncitedFinding, withKnowledge } from './finding-builder.js';
 import { assessSeverity, needsSeverity, assembleGroupText, groupHasUnreadSource } from './severity-assessor.js';
 import { upsertFinding } from './findings-store.js';
 import { openToolsDbConnection, openReconnectingQuery } from './toolsdb.js';
@@ -144,6 +145,7 @@ export function parseCliArgs(argv) {
             'lead-check':        { type: 'boolean', default: false },
             'uncited-check':     { type: 'boolean', default: false },
             'uncited-max-findings': { type: 'string', default: String(UNCITED_MAX_FINDINGS) },
+            'knowledge-check':   { type: 'boolean', default: false },
             'skip-checks':       { type: 'boolean', default: false },
             out:                 { type: 'string', default: 'findings.csv' },
             help:                { type: 'boolean', short: 'h', default: false },
@@ -176,6 +178,7 @@ export function parseCliArgs(argv) {
         leadCheck: values['lead-check'],
         uncitedCheck: values['uncited-check'],
         uncitedMaxFindings: Number(values['uncited-max-findings']),
+        knowledgeCheck: values['knowledge-check'],
         skipChecks: values['skip-checks'],
         out: values.out,
     };
@@ -296,6 +299,17 @@ Options:
                         Findings kept per article by --uncited-check
                          (default: ${UNCITED_MAX_FINDINGS}). Raise it to measure the
                          ranking: the kept rows are the top n.
+  --knowledge-check     Check each article's flagged citation findings (NOT
+                         SUPPORTED / PARTIALLY SUPPORTED, not lead_demoted)
+                         against the model's own knowledge, with the
+                         uncited-text check's prompt (core/knowledge-check.js):
+                         does the model, without the source, have a specific
+                         reason to think the claim is wrong? Fills
+                         knowledge_check (doubted / not_doubted / error),
+                         knowledge_confidence and knowledge_comment. A few
+                         calls per article with a flagged finding; the
+                         article's flagged rows are written once it is done.
+                         "not_doubted" is never "true". Off by default.
   --out <path>          CSV output path (default: findings.csv)
                         A cleaned copy is also written beside it as
                         <name>-clean.csv.
@@ -740,6 +754,8 @@ export async function runSweep(opts, {
         // A call that finds nothing writes no row, so its tokens are counted
         // here or nowhere.
         uncitedCalls: 0, uncitedTokensIn: 0, uncitedTokensOut: 0,
+        knowledgeArticles: 0, knowledgeClaims: 0, knowledgeDoubted: 0, knowledgeNotDoubted: 0,
+        knowledgeErrors: 0, knowledgeCalls: 0, knowledgeTokensIn: 0, knowledgeTokensOut: 0,
     };
     // Severity pass tallies, by tier ('T1'...'disagreement', or 'error').
     const severityCounts = {};
@@ -965,6 +981,20 @@ export async function runSweep(opts, {
             // takes the group task, each member is already running or done:
             // the wait can't deadlock, at any --concurrency.
             const ownChecks = new Map(groups.flatMap(members => firstPerFootnote(members).map(m => [m, settleable()])));
+            // --knowledge-check: the article's flagged findings are held
+            // here instead of recorded, and checked together (and then
+            // recorded) by one 'knowledge' task once every citation and
+            // group task of the article has settled. Yielded after them, so
+            // by the time a worker takes it they are all taken: no deadlock.
+            const knowledge = opts.knowledgeCheck
+                ? { held: [], settles: [], opening: article.uncited?.opening ?? '' }
+                : null;
+            const settle = () => {
+                if (!knowledge) return null;
+                const s = settleable();
+                knowledge.settles.push(s.promise);
+                return s;
+            };
             for (const citation of [...solos, ...groups.flatMap(firstPerFootnote)]) {
                 funnel.citationsSeen++;
                 if (citation.url) funnel.citationsWithUrl++;
@@ -972,18 +1002,20 @@ export async function runSweep(opts, {
                 // Fetch-level only: a member's own finding is ranked as soon
                 // as it is verified, before its siblings' verdicts are in.
                 const unreadSources = citation.groupSize > 1 && unreadGroups.has(citation.groupId);
-                yield { kind: 'solo', wikiCandidate, citation, unreadSources, leadChecked, ownCheck: ownChecks.get(citation) ?? null };
+                yield { kind: 'solo', wikiCandidate, citation, unreadSources, leadChecked, ownCheck: ownChecks.get(citation) ?? null, knowledge, settled: settle() };
             }
             for (const members of groups) {
                 yield {
                     kind: 'group', wikiCandidate, members, leadChecked,
                     ownChecks: firstPerFootnote(members).map(m => ownChecks.get(m).promise),
+                    knowledge, settled: settle(),
                 };
             }
             if (leadChecked) yield { kind: 'lead', wikiCandidate, lead: article.lead };
             if (opts.uncitedCheck && article.uncited?.sentences?.length) {
                 yield { kind: 'uncited', wikiCandidate, uncited: article.uncited };
             }
+            if (knowledge && knowledge.settles.length) yield { kind: 'knowledge', wikiCandidate, knowledge };
         }
     }
 
@@ -1137,107 +1169,192 @@ export async function runSweep(opts, {
         }
     }
 
+    // A finding --knowledge-check will look at is held for its article's
+    // 'knowledge' task, which records it; anything else is recorded now.
+    async function recordOrHold(task, finding, citation) {
+        if (task.knowledge && !finding.leadDemoted && isFlagged(finding.verdict)) {
+            task.knowledge.held.push({
+                finding,
+                claim: {
+                    key: task.knowledge.held.length,
+                    claimText: citation.claimText,
+                    sectionTitle: citation.sectionTitle ?? null,
+                    paragraphText: citation.paragraphText ?? null,
+                },
+            });
+            return;
+        }
+        await record(finding);
+    }
+
+    // The knowledge check for one article's held flagged findings, then their
+    // rows. Waits for every citation and group task of the article first. A
+    // halted run, or a check that failed as a whole, still records every
+    // held finding (without a result): the verdicts are already paid for.
+    // Same failure policy as checkUncited().
+    async function checkKnowledge(task) {
+        await Promise.all(task.knowledge.settles);
+        const { held, opening } = task.knowledge;
+        if (held.length === 0) return;
+        let run = null;
+        if (!halted) {
+            const verifyStartedAt = Date.now();
+            const { onAttemptFailed, finish } = trackRetries();
+            try {
+                run = await verifyKnowledge(held.map(h => h.claim), {
+                    callModel,
+                    articleTitle: task.wikiCandidate.title,
+                    opening,
+                    chunkSize: uncitedChunkSize(opts.provider),
+                    retry: { ...retryOptions, onAttemptFailed },
+                    articleLangCode,
+                    pause: () => sleep(opts.delayMs),
+                    onChunkError: error => {
+                        if (!countTransientFailure(error)) return null;
+                        const perCall = isPerCallModelFailure(error);
+                        if (perCall) perCallFailures++; else transientFailures++;
+                        return perCall ? perCallReasonType(error) : RETRIES_EXHAUSTED;
+                    },
+                });
+            } catch (error) {
+                if (!halted) { halted = true; haltError = error; }
+            } finally {
+                recordVerifyDuration(verifyStartedAt);
+                finish();
+            }
+        }
+        if (run) {
+            funnel.knowledgeArticles++;
+            funnel.knowledgeCalls += run.calls;
+            funnel.knowledgeTokensIn += run.usage.input;
+            funnel.knowledgeTokensOut += run.usage.output;
+            if ([...run.results.values()].some(r => r.outcome !== KNOWLEDGE_OUTCOMES.ERROR)) {
+                consecutiveFailures = 0;
+                await sleep(opts.delayMs);
+            }
+        }
+        for (const { finding, claim } of held) {
+            const result = run?.results.get(claim.key) ?? null;
+            if (result) {
+                funnel.knowledgeClaims++;
+                if (result.outcome === KNOWLEDGE_OUTCOMES.DOUBTED) funnel.knowledgeDoubted++;
+                else if (result.outcome === KNOWLEDGE_OUTCOMES.NOT_DOUBTED) funnel.knowledgeNotDoubted++;
+                else funnel.knowledgeErrors++;
+            }
+            await record(withKnowledge(finding, result, run?.promptVersion));
+        }
+    }
+
     async function worker(tasks) {
         for await (const task of tasks) {
-            if (halted) {
-                // Drain without dispatching new model calls, but release any
-                // group task already waiting on this one.
-                task.ownCheck?.resolve();
-                continue;
-            }
+            try {
+                if (task.kind === 'knowledge') {
+                    await checkKnowledge(task);
+                    continue;
+                }
+                if (halted) {
+                    // Drain without dispatching new model calls, but release any
+                    // group task already waiting on this one.
+                    task.ownCheck?.resolve();
+                    continue;
+                }
 
-            if (task.kind === 'solo') {
-                let verification;
-                const verifyStartedAt = Date.now();
-                const { onAttemptFailed, finish } = trackRetries();
-                try {
-                    verification = await verifyCitation(task.citation.claimText, task.citation.source, {
-                        callModel, retry: { ...retryOptions, onAttemptFailed }, articleLangCode,
-                        citationText: task.citation.referenceText, sourceUrl: task.citation.url,
-                    });
-                } catch (error) {
-                    verification = absorbFailure(error, { fetchStatus: task.citation.source?.status ?? null });
-                    if (!verification && !halted) { halted = true; haltError = error; }
-                } finally {
-                    recordVerifyDuration(verifyStartedAt);
-                    finish();
-                    if (task.ownCheck) {
-                        task.citation.judgedUnavailable = isJudgedUnavailable(verification?.verdict);
-                        task.ownCheck.resolve();
+                if (task.kind === 'solo') {
+                    let verification;
+                    const verifyStartedAt = Date.now();
+                    const { onAttemptFailed, finish } = trackRetries();
+                    try {
+                        verification = await verifyCitation(task.citation.claimText, task.citation.source, {
+                            callModel, retry: { ...retryOptions, onAttemptFailed }, articleLangCode,
+                            citationText: task.citation.referenceText, sourceUrl: task.citation.url,
+                        });
+                    } catch (error) {
+                        verification = absorbFailure(error, { fetchStatus: task.citation.source?.status ?? null });
+                        if (!verification && !halted) { halted = true; haltError = error; }
+                    } finally {
+                        recordVerifyDuration(verifyStartedAt);
+                        finish();
+                        if (task.ownCheck) {
+                            task.citation.judgedUnavailable = isJudgedUnavailable(verification?.verdict);
+                            task.ownCheck.resolve();
+                        }
                     }
-                }
-                if (!verification) continue;
-                if (verification.usage) {
-                    consecutiveFailures = 0;
-                    funnel.verified++;
-                    await sleep(opts.delayMs);
-                }
-                if (recordVerdict(verification.verdict)) funnel.flagged++;
-                const leadDemoted = demotes(task, task.citation, verification);
+                    if (!verification) continue;
+                    if (verification.usage) {
+                        consecutiveFailures = 0;
+                        funnel.verified++;
+                        await sleep(opts.delayMs);
+                    }
+                    if (recordVerdict(verification.verdict)) funnel.flagged++;
+                    const leadDemoted = demotes(task, task.citation, verification);
 
-                const content = task.citation.source?.content ?? null;
-                const severity = await rankFinding({
-                    claimText: task.citation.claimText,
-                    sourceInfo: content,
-                    sourceTruncated: Boolean(content?.includes('\nTruncated: true')),
-                    unreadSources: task.unreadSources,
-                    verification, wikiCandidate: task.wikiCandidate, context: task.citation, leadDemoted,
-                });
-
-                await record(assembleFinding({
-                    candidate: task.wikiCandidate, citation: task.citation, verification,
-                    provider: opts.provider, model: opts.model, promptVersion: PROMPT_VERSION,
-                    severity, leadDemoted,
-                }));
-            } else if (task.kind === 'group') {
-                let verification;
-                const verifyStartedAt = Date.now();
-                const { onAttemptFailed, finish } = trackRetries();
-                await Promise.all(task.ownChecks);
-                if (halted) continue;
-                try {
-                    verification = await verifyGroup(task.members, {
-                        callModel, retry: { ...retryOptions, onAttemptFailed }, articleLangCode,
+                    const content = task.citation.source?.content ?? null;
+                    const severity = await rankFinding({
+                        claimText: task.citation.claimText,
+                        sourceInfo: content,
+                        sourceTruncated: Boolean(content?.includes('\nTruncated: true')),
+                        unreadSources: task.unreadSources,
+                        verification, wikiCandidate: task.wikiCandidate, context: task.citation, leadDemoted,
                     });
-                } catch (error) {
-                    verification = absorbFailure(error, {
-                        skipped: false,
-                        groupId: task.members[0].groupId,
-                        memberCitationNumbers: task.members.map(m => m.citationNumber),
+
+                    await recordOrHold(task, assembleFinding({
+                        candidate: task.wikiCandidate, citation: task.citation, verification,
+                        provider: opts.provider, model: opts.model, promptVersion: PROMPT_VERSION,
+                        severity, leadDemoted,
+                    }), task.citation);
+                } else if (task.kind === 'group') {
+                    let verification;
+                    const verifyStartedAt = Date.now();
+                    const { onAttemptFailed, finish } = trackRetries();
+                    await Promise.all(task.ownChecks);
+                    if (halted) continue;
+                    try {
+                        verification = await verifyGroup(task.members, {
+                            callModel, retry: { ...retryOptions, onAttemptFailed }, articleLangCode,
+                        });
+                    } catch (error) {
+                        verification = absorbFailure(error, {
+                            skipped: false,
+                            groupId: task.members[0].groupId,
+                            memberCitationNumbers: task.members.map(m => m.citationNumber),
+                        });
+                        if (!verification && !halted) { halted = true; haltError = error; }
+                    } finally {
+                        recordVerifyDuration(verifyStartedAt);
+                        finish();
+                    }
+                    if (!verification) continue;
+                    funnel.groupsChecked++;
+                    if (verification.skipped) { funnel.groupsSkipped++; continue; }
+                    if (verification.usage) {
+                        consecutiveFailures = 0;
+                        await sleep(opts.delayMs);
+                    }
+                    if (recordVerdict(verification.verdict)) funnel.groupsFlagged++;
+                    const leadDemoted = demotes(task, task.members[0], verification);
+
+                    const severity = await rankFinding({
+                        claimText: task.members[0].claimText,
+                        // The same assembled text verifyGroup() judged.
+                        sourceInfo: assembleGroupText(task.members),
+                        sourceTruncated: task.members.some(m => m.source?.content?.includes('\nTruncated: true')),
+                        unreadSources: groupHasUnreadSource(task.members),
+                        verification, wikiCandidate: task.wikiCandidate, context: task.members[0], leadDemoted,
                     });
-                    if (!verification && !halted) { halted = true; haltError = error; }
-                } finally {
-                    recordVerifyDuration(verifyStartedAt);
-                    finish();
-                }
-                if (!verification) continue;
-                funnel.groupsChecked++;
-                if (verification.skipped) { funnel.groupsSkipped++; continue; }
-                if (verification.usage) {
-                    consecutiveFailures = 0;
-                    await sleep(opts.delayMs);
-                }
-                if (recordVerdict(verification.verdict)) funnel.groupsFlagged++;
-                const leadDemoted = demotes(task, task.members[0], verification);
 
-                const severity = await rankFinding({
-                    claimText: task.members[0].claimText,
-                    // The same assembled text verifyGroup() judged.
-                    sourceInfo: assembleGroupText(task.members),
-                    sourceTruncated: task.members.some(m => m.source?.content?.includes('\nTruncated: true')),
-                    unreadSources: groupHasUnreadSource(task.members),
-                    verification, wikiCandidate: task.wikiCandidate, context: task.members[0], leadDemoted,
-                });
-
-                await record(assembleGroupFinding({
-                    candidate: task.wikiCandidate, members: task.members, verification,
-                    provider: opts.provider, model: opts.model, promptVersion: PROMPT_VERSION,
-                    severity, leadDemoted,
-                }));
-            } else if (task.kind === 'lead') {
-                await checkLead(task);
-            } else if (task.kind === 'uncited') {
-                await checkUncited(task);
+                    await recordOrHold(task, assembleGroupFinding({
+                        candidate: task.wikiCandidate, members: task.members, verification,
+                        provider: opts.provider, model: opts.model, promptVersion: PROMPT_VERSION,
+                        severity, leadDemoted,
+                    }), task.members[0]);
+                } else if (task.kind === 'lead') {
+                    await checkLead(task);
+                } else if (task.kind === 'uncited') {
+                    await checkUncited(task);
+                }
+            } finally {
+                // Releases the article's knowledge task, whatever this one did.
+                task.settled?.resolve();
             }
         }
     }
@@ -1287,6 +1404,12 @@ export async function runSweep(opts, {
               `${funnel.uncitedFound} finding(s) kept, ${funnel.uncitedDropped} past the per-article limit, ` +
               `${funnel.uncitedUnchecked} unchecked; ${funnel.uncitedCapped} article(s) had more than the sentence cap; ` +
               `${funnel.uncitedCalls} call(s), ${funnel.uncitedTokensIn} tokens in, ${funnel.uncitedTokensOut} out.\n`
+            : '') +
+        (opts.knowledgeCheck
+            ? `sweep: knowledge check: ${funnel.knowledgeClaims} flagged finding(s) in ${funnel.knowledgeArticles} article(s) -> ` +
+              `${funnel.knowledgeDoubted} doubted, ${funnel.knowledgeNotDoubted} not doubted, ${funnel.knowledgeErrors} unchecked; ` +
+              `${funnel.knowledgeCalls} call(s), ${funnel.knowledgeTokensIn} tokens in, ${funnel.knowledgeTokensOut} out.
+`
             : '') +
         `sweep: wrote ${findingsWritten} finding(s) to ${opts.out}` +
         `${toolsDbQuery ? ` and ${storeStats.written} to ToolsDB` : ''}` +

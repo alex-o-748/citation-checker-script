@@ -14,8 +14,11 @@ import { readFile, writeFile, rename, unlink } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-import { hostForWiki } from '../core/wikipedia.js';
-import { callProviderAPI } from '../core/providers.js';
+import { hostForWiki, langCodeForWiki } from '../core/wikipedia.js';
+import { callProviderAPI, groupMaxTokens } from '../core/providers.js';
+import { runKnowledgeCheck, KNOWLEDGE_OUTCOMES, KNOWLEDGE_PROMPT_VERSION } from '../core/knowledge-check.js';
+import { generateUncitedSystemPrompt, withUncitedCommentLanguage, uncitedChunkSize } from '../core/uncited-check.js';
+import { paragraphAt, openingParagraph } from './cards/knowledge.js';
 import { PROVIDER_MODELS, PROVIDER_ENV_VARS } from './provider-config.js';
 import { isAuthOrBillingError } from './verifier.js';
 import { withRetry } from '../core/retry.js';
@@ -68,10 +71,15 @@ export async function buildCards({
     onCheckpoint = null,
     retry = {},
     pageBatchSize = PAGE_BATCH_SIZE,
+    knowledgeCheck = false,
 }) {
     const dropped = {};
     const decisions = {};
     const previousDecisions = existing?.decisions || {};
+    // --knowledge-check results made by this builder, cached per card like
+    // the conflict decisions (a stored finding's own result is used first).
+    const knowledge = {};
+    const previousKnowledge = existing?.knowledge || {};
     const previousPages = existing?.pages || {};
     const month = lastFullMonth(now).start;
 
@@ -104,7 +112,82 @@ export async function buildCards({
     let consecutiveFailures = 0;
     let modelDown = null;
 
-    const snapshot = () => ({ decisions: { ...previousDecisions, ...decisions }, pages: { ...previousPages, ...pages } });
+    const snapshot = () => ({
+        decisions: { ...previousDecisions, ...decisions },
+        pages: { ...previousPages, ...pages },
+        ...(knowledgeCheck ? { knowledge: { ...previousKnowledge, ...knowledge } } : {}),
+    });
+
+    // The knowledge check's result for each ready card of one article, by
+    // card id: the finding's stored result when it is current, else this
+    // builder's cached one, else one call (or a few) for the rest, with the
+    // paragraph context read from the wikitext. A card missing from the map
+    // (the model is down, or its call failed) was not checked: it is not
+    // dealt this build and is tried again on the next.
+    async function knowledgeFor(state, ready) {
+        const out = new Map();
+        const todo = [];
+        for (const r of ready) {
+            const { id, f } = r;
+            if (f.knowledgeCheck && f.knowledgeCheck !== KNOWLEDGE_OUTCOMES.ERROR
+                && f.knowledgePromptVersion === KNOWLEDGE_PROMPT_VERSION) {
+                out.set(id, { outcome: f.knowledgeCheck, confidence: f.knowledgeConfidence, promptVersion: f.knowledgePromptVersion });
+                continue;
+            }
+            const cached = previousKnowledge[id];
+            if (cached && cached.promptVersion === KNOWLEDGE_PROMPT_VERSION && cached.claim === f.claimText) {
+                knowledge[id] = cached;
+                out.set(id, cached);
+                continue;
+            }
+            todo.push(r);
+        }
+        if (todo.length === 0 || modelDown) return out;
+        const claims = todo.map(({ id, f, located }) => ({
+            key: id,
+            claimText: f.claimText,
+            sectionTitle: located.section || null,
+            paragraphText: paragraphAt(state.wikitext, located.offset) || null,
+        }));
+        const articleLangCode = langCodeForWiki(wiki);
+        let run;
+        try {
+            run = await runKnowledgeCheck({ claims, articleTitle: state.title, opening: openingParagraph(state.wikitext) }, {
+                callModel: (systemPrompt, userContent) => callModel({ systemPrompt, userContent, kind: 'knowledge' }),
+                systemPrompt: withUncitedCommentLanguage(generateUncitedSystemPrompt(), { lang: articleLangCode, articleLangCode }),
+                chunkSize: uncitedChunkSize(provider),
+                retry: { maxRetries: 4, minBackoffMs: 2000, maxBackoffMs: 30000, ...retry },
+                onChunkError: error => {
+                    if (isAuthOrBillingError(error)) throw error;
+                    log(`cards: knowledge check failed for ${state.title}: ${error.message}`);
+                    return 'call_failed';
+                },
+            });
+        } catch (error) {
+            if (isAuthOrBillingError(error)) throw error;
+            log(`cards: knowledge check failed for ${state.title}: ${error.message}`);
+            return out;
+        }
+        let anyAnswered = false;
+        for (const { id, f } of todo) {
+            const result = run.results.get(id);
+            if (!result || result.outcome === KNOWLEDGE_OUTCOMES.ERROR) continue; // not cached: tried again next build
+            anyAnswered = true;
+            const entry = { promptVersion: run.promptVersion, claim: f.claimText, outcome: result.outcome, confidence: result.confidence, provider, model };
+            knowledge[id] = entry;
+            out.set(id, entry);
+        }
+        if (anyAnswered) {
+            consecutiveFailures = 0;
+        } else {
+            consecutiveFailures += 1;
+            if (consecutiveFailures >= MAX_CONSECUTIVE_MODEL_FAILURES) {
+                modelDown = 'knowledge check calls kept failing';
+                log(`cards: ${consecutiveFailures} model calls in a row failed; no more model calls this build`);
+            }
+        }
+        return out;
+    }
 
     async function decide(id, f, state) {
         const cached = previousDecisions[id];
@@ -172,6 +255,9 @@ export async function buildCards({
 
         for (const title of batch) {
             const state = states.get(title);
+            // Cards that passed every other rule, held until the article's
+            // knowledge check (when on) has run over all of them at once.
+            const ready = [];
             for (const { id, f } of byTitle.get(title)) {
                 if (!state || state.missing) { tally(dropped, 'page_missing'); continue; }
                 if (state.protection) { tally(dropped, 'protected'); continue; }
@@ -201,7 +287,20 @@ export async function buildCards({
                 if (page.labels === null) { tally(dropped, 'topics_unavailable'); continue; }
                 const { topics, excluded } = topicsFromLabels(page.labels);
                 if (excluded) { tally(dropped, 'excluded_topic'); continue; }
+                ready.push({ id, f, decision, located, page, topics });
+            }
 
+            // 6. --knowledge-check: deal only a card whose claim the model,
+            // without the source, independently doubts. A not-doubted card is
+            // not "probably true", only not dealt.
+            const knowledgeResults = knowledgeCheck && ready.length ? await knowledgeFor(state, ready) : null;
+            for (const { id, f, decision, located, page, topics } of ready) {
+                let knowledgeResult = null;
+                if (knowledgeCheck) {
+                    knowledgeResult = knowledgeResults.get(id);
+                    if (!knowledgeResult) { tally(dropped, 'knowledge_unchecked'); continue; }
+                    if (knowledgeResult.outcome !== KNOWLEDGE_OUTCOMES.DOUBTED) { tally(dropped, 'not_doubted'); continue; }
+                }
                 cards.push({
                     id,
                     wiki,
@@ -219,6 +318,9 @@ export async function buildCards({
                     monthlyViews: page.views,
                     reason: decision.reason,
                     finding: { ...findingHashes(f), provider: f.provider, promptVersion: f.promptVersion, revisionId: f.revisionId },
+                    // Which knowledge check dealt the card. Its comment is
+                    // never on a card: the fix comes only from the source.
+                    ...(knowledgeResult ? { knowledge: { confidence: knowledgeResult.confidence ?? null, promptVersion: knowledgeResult.promptVersion } } : {}),
                 });
             }
         }
@@ -229,12 +331,13 @@ export async function buildCards({
     // Decisions for findings not seen this build are kept, so a finding that
     // drops out for a day (a protected article) doesn't cost a model call when
     // it comes back.
-    const { decisions: allDecisions, pages: allPages } = snapshot();
+    const { decisions: allDecisions, pages: allPages, knowledge: allKnowledge } = snapshot();
     return {
         version: CARDS_FILE_VERSION,
         generatedAt: now.toISOString(),
         wiki,
         conflictPromptVersion: CONFLICT_PROMPT_VERSION,
+        ...(knowledgeCheck ? { knowledgePromptVersion: KNOWLEDGE_PROMPT_VERSION } : {}),
         provider,
         model,
         complete: !modelDown,
@@ -244,11 +347,12 @@ export async function buildCards({
         cards,
         decisions: allDecisions,
         pages: allPages,
+        ...(knowledgeCheck ? { knowledge: allKnowledge } : {}),
     };
 }
 
 export function parseArgs(argv) {
-    const opts = { findingsCsv: [], fromToolsDb: false, wiki: 'enwiki', provider: 'liftwing', model: null, out: 'cards.json', existing: null, limit: null };
+    const opts = { findingsCsv: [], fromToolsDb: false, wiki: 'enwiki', provider: 'liftwing', model: null, out: 'cards.json', existing: null, limit: null, knowledgeCheck: false };
     for (let i = 0; i < argv.length; i++) {
         const arg = argv[i];
         const next = () => {
@@ -264,6 +368,7 @@ export function parseArgs(argv) {
         else if (arg === '--out') opts.out = next();
         else if (arg === '--existing') opts.existing = next();
         else if (arg === '--limit') opts.limit = Number(next());
+        else if (arg === '--knowledge-check') opts.knowledgeCheck = true;
         else if (arg === '--help' || arg === '-h') opts.help = true;
         else throw new Error(`Unknown argument: ${arg}`);
     }
@@ -282,11 +387,11 @@ async function readCsvFindings(paths, wiki) {
     return findings;
 }
 
-async function readToolsDbFindings(wiki, limit) {
+async function readToolsDbFindings(wiki, limit, withKnowledge = false) {
     const { openToolsDbConnection } = await import('./toolsdb.js');
     const connection = await openToolsDbConnection();
     try {
-        const { sql, params } = buildCandidateQuery({ wiki, limit });
+        const { sql, params } = buildCandidateQuery({ wiki, limit, withKnowledge });
         const [rows] = await connection.execute(sql, params);
         return rows.map(row => normalizeFinding(row, { wiki }));
     } finally {
@@ -303,7 +408,12 @@ const HELP = `Builds Fact Hunt cards from stored findings.
   --model <id>           Override the provider's default model
   --out <path>           Cards file to write (default cards.json)
   --existing <path>      Previous cards file to reuse decisions from (default: --out, if it exists)
-  --limit <n>            Read at most n findings from ToolsDB`;
+  --limit <n>            Read at most n findings from ToolsDB
+  --knowledge-check      Deal only cards whose claim the model, without the
+                         source, doubts (core/knowledge-check.js). Uses the
+                         finding's stored result when current, else checks the
+                         article itself. With --from-toolsdb it needs
+                         service/migrations/007-knowledge-check.sql applied.`;
 
 async function main() {
     const opts = parseArgs(process.argv.slice(2));
@@ -313,8 +423,13 @@ async function main() {
     const keyVar = PROVIDER_ENV_VARS[opts.provider];
     const apiKey = keyVar ? process.env[keyVar] : undefined;
     if (keyVar && !apiKey) throw new Error(`${opts.provider} needs ${keyVar} set`);
-    const callModel = ({ systemPrompt, userContent }) =>
-        callProviderAPI(opts.provider, { apiKey, model, systemPrompt, userContent, temperature: 0 });
+    // The knowledge check weighs several claims per call, so it gets the
+    // larger output budget the uncited check gets in the sweep.
+    const callModel = ({ systemPrompt, userContent, kind }) =>
+        callProviderAPI(opts.provider, {
+            apiKey, model, systemPrompt, userContent, temperature: 0,
+            ...(kind === 'knowledge' && groupMaxTokens(opts.provider) ? { maxTokens: groupMaxTokens(opts.provider) } : {}),
+        });
 
     const existingPath = opts.existing || (existsSync(opts.out) ? opts.out : null);
     const existing = existingPath ? JSON.parse(await readFile(existingPath, 'utf8')) : null;
@@ -325,11 +440,12 @@ async function main() {
     const reuse = {
         decisions: { ...(existing?.decisions || {}), ...(checkpoint?.decisions || {}) },
         pages: { ...(existing?.pages || {}), ...(checkpoint?.pages || {}) },
+        knowledge: { ...(existing?.knowledge || {}), ...(checkpoint?.knowledge || {}) },
     };
     if (checkpoint) console.error(`cards: resuming with ${Object.keys(checkpoint.decisions || {}).length} decisions from ${checkpointPath}`);
 
     const findings = opts.fromToolsDb
-        ? await readToolsDbFindings(opts.wiki, opts.limit)
+        ? await readToolsDbFindings(opts.wiki, opts.limit, opts.knowledgeCheck)
         : await readCsvFindings(opts.findingsCsv, opts.wiki);
     console.error(`cards: read ${findings.length} findings`);
 
@@ -341,6 +457,7 @@ async function main() {
 
     const result = await buildCards({
         findings, wiki: opts.wiki, callModel, provider: opts.provider, model, existing: reuse,
+        knowledgeCheck: opts.knowledgeCheck,
         log: message => console.error(message),
         onCheckpoint: data => writeAtomically(checkpointPath, data),
     });
@@ -354,7 +471,7 @@ async function main() {
     if (!result.complete) {
         // The decisions so far are in the cards file too; keep the checkpoint
         // as well, so the next run resumes even if the cards file is replaced.
-        await writeAtomically(checkpointPath, { decisions: result.decisions, pages: result.pages });
+        await writeAtomically(checkpointPath, { decisions: result.decisions, pages: result.pages, knowledge: result.knowledge });
         console.error(`cards: stopped early, the model was unavailable (${result.stoppedReason}). Run again later to finish.`);
         process.exitCode = 3;
     } else if (existsSync(checkpointPath)) {

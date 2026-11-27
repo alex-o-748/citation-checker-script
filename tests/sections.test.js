@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
-import { findSectionNumber, sectionIndexOfHeading, auditSectionNumbering } from '../core/sections.js';
+import { findSectionNumber, findSection, sectionIndexOfHeading, sectionIndexForAnchor, auditSectionNumbering } from '../core/sections.js';
 
 // MW 1.43+ heading output: the <hN> and its [edit] link share a .mw-heading
 // wrapper. `section` is the index MediaWiki assigned; pass null for a heading
@@ -95,4 +95,43 @@ test('auditSectionNumbering flags where the count and MediaWiki disagree', () =>
     const rows = auditSectionNumbering(doc);
     assert.deepEqual(rows.map(r => r.matches), [true, false]);
     assert.deepEqual(rows.map(r => [r.counted, r.actual]), [[1, 1], [2, 5]]);
+});
+
+// Mass media, 2026-11-27: a "Japan" section was added above United Kingdom
+// while a report was open, so the Audiovisual citation's index from the page
+// on screen (9) was Radio's in the latest revision, which is what the edit
+// form opens. The anchor finds the section again.
+test('findSection returns the anchor of the heading the index came from', () => {
+    const doc = build(`
+        ${heading(4, 'Radio', 8)}
+        <p>Radio claim</p>
+        ${heading(4, 'Audiovisual', 9)}
+        <div class="mw-heading mw-heading3"><h3>From a template</h3><span class="mw-editsection"><a href="/w/index.php?title=Template:X&amp;action=edit&amp;section=T-1">edit</a></span></div>
+        <p>Claim ${ref('r')}</p>
+    `);
+    assert.deepEqual(findSection(doc.getElementById('r')), { index: 9, anchor: 'Audiovisual' });
+});
+
+test('findSection reads a pre-1.43 anchor off the .mw-headline span', () => {
+    const doc = build(`<h2><span class="mw-headline" id="Legacy">Legacy</span><span class="mw-editsection"><a href="/w/index.php?title=Test&amp;action=edit&amp;section=3">edit</a></span></h2><p>${ref('r')}</p>`);
+    assert.deepEqual(findSection(doc.getElementById('r')), { index: 3, anchor: 'Legacy' });
+});
+
+test('findSection gives no anchor for the lead', () => {
+    const doc = build(`<p>Lead ${ref('r')}</p>${heading(2, 'History', 1)}`);
+    assert.deepEqual(findSection(doc.getElementById('r')), { index: 0, anchor: null });
+});
+
+test('sectionIndexForAnchor finds the heading in the latest revision', () => {
+    const latest = [
+        { index: '8', anchor: 'Print' },
+        { index: '9', anchor: 'Radio' },
+        { index: '10', anchor: 'Audiovisual' },
+        { index: '11', anchor: 'Radio_2' },
+    ];
+    assert.equal(sectionIndexForAnchor(latest, 'Audiovisual'), 10);
+    assert.equal(sectionIndexForAnchor(latest, 'Radio'), 9);
+    assert.equal(sectionIndexForAnchor(latest, 'Removed'), null);
+    assert.equal(sectionIndexForAnchor(latest, null), null);
+    assert.equal(sectionIndexForAnchor([{ index: 'T-1', anchor: 'X' }], 'X'), null);
 });

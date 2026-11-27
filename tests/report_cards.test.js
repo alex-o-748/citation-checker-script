@@ -68,6 +68,7 @@ function harness() {
             }
             t(en, params = {}) { return en.replace(/\\{(\\w+)\\}/g, (m, k) => (k in params ? String(params[k]) : m)); }
             buildEditUrl() { return 'https://wiki.example/edit'; }
+            bindEditLink() {}
             getRevisionPermalinkUrl(id) { return 'https://wiki.example/rev/' + id; }
             clearHighlights() { this.highlighted = null; document.querySelectorAll('.claim-highlight').forEach(el => el.classList.remove('claim-highlight')); }
             scrollToLeadSentence(index) { this.scrolledLead = index; }

@@ -97,6 +97,7 @@ docs/                            # Reference docs + design plans (see docs/READM
 | `renderReportBar()` / `updateReportProgress()` / `renderReportSummary()` | The report's bar (status and Stop while a run is going; Back and Copy report after), and the citations section's status, distribution bar, filter chips and sort order |
 | `articleUncited()` / `runReportUncitedCheck()` / `renderReportUncited()` | The uncited-text check (`core/uncited-check.js`), opt-in: a phase of Verify All after the lead's, on its own model (`uncitedProvider()`); the report's "Uncited text" section, the lead's shape with `findingHtml()` rows (see "Uncited text is checked" below) |
 | `getCountedReportUnits()` | `getReportUnits()` minus set-aside lead citations: what the summary, the severity ranking and the exports count |
+| `runReportKnowledgeCheck()` / `renderReportKnowledge()` | The knowledge check (`core/knowledge-check.js`), opt-in: a phase of Verify All after the uncited check; a doubted citation gets "Likely wrong" and sorts first (see "The knowledge check" below) |
 
 ## Benchmark Suite
 
@@ -329,7 +330,7 @@ Since 2026-10 `run-sweep.js` stores every finding in ToolsDB by default, and `ru
 
 - **The CSV is still the record; the store follows it.** A failed ToolsDB write is counted and reported, never fatal to the sweep, and the summary prints the `run-import-findings.js` command that backfills it. Halting a day-long batch over a database hiccup costs more than the row.
 - **The pick fails if it can't read ToolsDB**, rather than continuing without the filter: silently re-picking checked articles is the failure the filter exists to prevent.
-- **Apply migrations 003, 004 and 005 (`service/migrations/`) before the first store**, and 006 before the first store or import of any kind once the lead check is deployed, not only a `--lead-check` sweep: it adds `check_kind` and `lead_demoted`, and `buildUpsertQuery()` names both on every row, so without it every write fails with an unknown column (the sweep still finishes and writes its CSV; backfill with `run-import-findings.js` after migrating). 003 (citation_number INT → text) had never been applied to the live table when storing became the default; the first backfill lost ~10% of rows to `Incorrect integer value: 'a'` / `'2, 3'` until it was. 005 makes it TEXT, since a collective row joins every member's number and overflowed 64 characters. 004 widens `reason_type` (the pipeline writes 23-byte reasons into a 16-byte column) and `group_id` (Cyrillic ref names), and makes `provider` `NOT NULL DEFAULT ''`: it is part of the unique key, and MariaDB never matches NULLs there, so every re-store of a no-model row (SOURCE UNAVAILABLE, SKIPPED) used to insert a duplicate. `buildUpsertQuery()` writes `''` for "no model ran" to match.
+- **Apply migrations 003, 004 and 005 (`service/migrations/`) before the first store**, and 006 before the first store or import of any kind once the lead check is deployed, not only a `--lead-check` sweep: it adds `check_kind` and `lead_demoted`, and `buildUpsertQuery()` names both on every row, so without it every write fails with an unknown column (the sweep still finishes and writes its CSV; backfill with `run-import-findings.js` after migrating). 003 (citation_number INT → text) had never been applied to the live table when storing became the default; the first backfill lost ~10% of rows to `Incorrect integer value: 'a'` / `'2, 3'` until it was. 005 makes it TEXT, since a collective row joins every member's number and overflowed 64 characters. 004 widens `reason_type` (the pipeline writes 23-byte reasons into a 16-byte column) and `group_id` (Cyrillic ref names), and makes `provider` `NOT NULL DEFAULT ''`: it is part of the unique key, and MariaDB never matches NULLs there, so every re-store of a no-model row (SOURCE UNAVAILABLE, SKIPPED) used to insert a duplicate. `buildUpsertQuery()` writes `''` for "no model ran" to match. 007 (the knowledge check's columns) is needed only before a `--knowledge-check` sweep or `run-build-cards.js --from-toolsdb --knowledge-check`: unlike 006, its columns are named only on rows the check ran on.
 
 ### `--titles-file` follows redirects (read before touching `resolveTitleInfo`)
 
@@ -609,6 +610,37 @@ answers to the browser console (`logUncitedRun()`). They are not counted in the 
 wikitext/plain-text exports, and not logged. Keep them out of all three until
 the evaluation set exists. Design, gaps and the evaluation
 plan: `docs/design-plans/2026-10-23-uncited-text-check.md`.
+
+### The knowledge check: the uncited check's prompt on flagged citations (`core/knowledge-check.js`; read before touching it)
+
+`runKnowledgeCheck()` asks the uncited check's model, with the uncited
+check's prompt (`UNCITED_PROMPT_VERSION` u2, worded to be true of cited
+statements too), whether it doubts a flagged citation's claim. It runs behind
+opt-in switches only: `run-sweep.js --knowledge-check` (columns
+`knowledge_check` / `_confidence` / `_comment` / `_prompt_version`; migration
+007), `run-build-cards.js --knowledge-check` (deals only doubted cards), and
+the userscript's `verifier_knowledge_check` (off; "Likely wrong" label, first
+under "Most serious first"). Rules to keep:
+
+- **Doubts, not truths.** The outcome is `doubted` / `not_doubted` / `error`.
+  `not_doubted` covers "probably true" and "no idea" together: never label,
+  rank or filter anything as true on it.
+- **Blind.** The model sees the claim, the title, the opening and the
+  paragraph before the claim. Never the source, the first verdict or its
+  rationale; tests in `knowledge-check`, `run-sweep`, `run-build-cards` and
+  `knowledge_ui` fail if one leaks.
+- **Routes, never fixes.** The model's comment may show in the userscript's
+  details; it is never an edit and never on a Fact Hunt card.
+- **Its own calls.** Flagged claims are not mixed into an article's uncited
+  sentences, so the 3-reports-per-call limit isn't shared between them.
+- **The knowledge columns are named only on a row the check ran on**
+  (`buildUpsertQuery()`), so a sweep without the flag never needs 007.
+
+The gates in the design doc did not pass on 2026-11-27: on Qwen3.8 the
+check promoted 1 of 25 genuine ruwiki contradictions, and `u2` vs `u1` on the
+rebuilt smoke test was within run-to-run noise but under the gate's bar for
+both. Read `docs/design-plans/2026-11-27-knowledge-check-for-flagged-claims.md`
+§ What the gates found before turning any of it on by default.
 
 ## Feedback loop (`feedback-loop/`, read before touching it)
 

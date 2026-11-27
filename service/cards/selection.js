@@ -16,14 +16,20 @@ export const CARD_QUOTE_STATUSES = Object.freeze(['exact', 'normalized']);
 /**
  * The ToolsDB query for candidate findings on one wiki. Parameterized; the
  * caller passes { sql, params } straight to mysql2.
+ *
+ * `withKnowledge` also reads the knowledge check's stored result
+ * (service/migrations/007-knowledge-check.sql), which only a table 007 was
+ * applied to has; off by default so a build without --knowledge-check never
+ * needs it.
  */
-export function buildCandidateQuery({ wiki, limit = null } = {}) {
+export function buildCandidateQuery({ wiki, limit = null, withKnowledge = false } = {}) {
     if (!wiki) throw new TypeError('buildCandidateQuery requires a wiki, e.g. "enwiki"');
     const placeholders = CARD_QUOTE_STATUSES.map(() => '?').join(', ');
     let sql = `
         SELECT wiki, page_id, page_title, revision_id, claim_text, source_url,
                verdict, reason_type, source_quote, quote_status, source_truncated,
-               is_collective, check_kind, lead_demoted, provider, prompt_version
+               is_collective, check_kind, lead_demoted, provider, prompt_version${withKnowledge
+        ? ', knowledge_check, knowledge_confidence, knowledge_prompt_version' : ''}
         FROM citation_findings
         WHERE wiki = ?
           AND check_kind = 'citation'
@@ -77,6 +83,11 @@ export function normalizeFinding(row, { wiki: defaultWiki = null } = {}) {
         isBlp: asFlag(row.is_blp),
         provider: asText(row.provider),
         promptVersion: asText(row.prompt_version),
+        // The knowledge check's stored result (core/knowledge-check.js), or
+        // null when the finding has none.
+        knowledgeCheck: asText(row.knowledge_check).trim() || null,
+        knowledgeConfidence: asText(row.knowledge_confidence).trim() || null,
+        knowledgePromptVersion: asText(row.knowledge_prompt_version).trim() || null,
     };
 }
 

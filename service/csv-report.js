@@ -90,6 +90,14 @@ const COLUMNS = [
     // the model's confidence that the sentence is wrong, high or medium.
     // CSV-only, like the severity columns.
     ['uncited_confidence', f => f.uncitedConfidence],
+    // The knowledge check (core/knowledge-check.js, --knowledge-check), on a
+    // flagged citation finding: doubted / not_doubted / error, empty when it
+    // didn't run. A doubted finding is one the model, without seeing the
+    // source, independently believes is wrong; not_doubted is never "true".
+    ['knowledge_check', f => f.knowledgeCheck],
+    ['knowledge_confidence', f => f.knowledgeConfidence],
+    ['knowledge_comment', f => f.knowledgeComment],
+    ['knowledge_prompt_version', f => f.knowledgePromptVersion],
     // Last, not first, despite being the row's identifier — csvPageTitles()
     // below reads the FIRST field of every record as the page title, which is
     // what --resume skips on. Moving check_id to column 1 would silently make

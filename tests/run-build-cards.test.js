@@ -206,3 +206,104 @@ test('progress is checkpointed, and a checkpoint is reused like a previous build
     await buildCards({ findings: many, wiki: 'enwiki', callModel: fakeModel(again), fetchImpl: fakeFetch(again), retry: NO_WAIT, existing: checkpoints[0] });
     assert.equal(again.model, 3, 'only the findings the checkpoint had not decided');
 });
+
+// --- --knowledge-check ---
+
+// The conflict answers as fakeModel() does; the knowledge check (kind
+// 'knowledge') answers with `issues` for every call.
+function knowledgeModel(calls, issues = [{ id: 1, excerpt: '1999', comments: 'It was founded in 1998.', confidence: 'high' }]) {
+    const conflict = fakeModel(calls);
+    return async args => {
+        if (args.kind === 'knowledge') {
+            calls.knowledge = (calls.knowledge || 0) + 1;
+            calls.knowledgePrompts = [...(calls.knowledgePrompts || []), args.userContent];
+            return { text: JSON.stringify({ issues }), usage: { input: 1, output: 1 } };
+        }
+        return conflict(args);
+    };
+}
+
+test('--knowledge-check deals a doubted card, with no comment on it, and is blind to the source', async () => {
+    const calls = { pages: 0, topics: 0, views: 0, model: 0 };
+    const out = await buildCards({
+        findings: FINDINGS, wiki: 'enwiki', callModel: knowledgeModel(calls), provider: 'liftwing', model: 'm',
+        fetchImpl: fakeFetch(calls), now: new Date('2026-11-23T00:00:00Z'), knowledgeCheck: true,
+    });
+    assert.equal(out.cards.length, 1);
+    assert.deepEqual(out.cards[0].knowledge, { confidence: 'high', promptVersion: 'u2' });
+    assert.doesNotMatch(JSON.stringify(out.cards[0]), /founded in 1998/, 'the model\'s idea of the right value is never on a card');
+    assert.equal(calls.knowledge, 1);
+    assert.match(calls.knowledgePrompts[0], /Article: Combat Zone Wrestling/);
+    assert.doesNotMatch(calls.knowledgePrompts[0], /simpler time|1998|NOT SUPPORTED/, 'never the source quote or the verdict');
+    assert.equal(out.knowledgePromptVersion, 'u2');
+    assert.equal(Object.values(out.knowledge)[0].outcome, 'doubted');
+});
+
+test('--knowledge-check: a card the model does not doubt is not dealt', async () => {
+    const calls = { pages: 0, topics: 0, views: 0, model: 0 };
+    const out = await buildCards({
+        findings: FINDINGS, wiki: 'enwiki', callModel: knowledgeModel(calls, []), fetchImpl: fakeFetch(calls),
+        now: new Date('2026-11-23T00:00:00Z'), knowledgeCheck: true,
+    });
+    assert.equal(out.cards.length, 0);
+    assert.equal(out.dropped.not_doubted, 1);
+});
+
+test('--knowledge-check uses a current stored result and the cached one, and calls the model for neither', async () => {
+    const calls = { pages: 0, topics: 0, views: 0, model: 0 };
+    const stored = [finding({ knowledge_check: 'doubted', knowledge_confidence: 'medium', knowledge_prompt_version: 'u2' })];
+    const out = await buildCards({
+        findings: stored, wiki: 'enwiki', callModel: knowledgeModel(calls, []), fetchImpl: fakeFetch(calls),
+        now: new Date('2026-11-23T00:00:00Z'), knowledgeCheck: true,
+    });
+    assert.equal(out.cards.length, 1);
+    assert.equal(out.cards[0].knowledge.confidence, 'medium');
+    assert.equal(calls.knowledge, undefined);
+
+    // An older prompt version's stored result is not used.
+    const stale = [finding({ knowledge_check: 'doubted', knowledge_prompt_version: 'u1' })];
+    const first = await buildCards({
+        findings: stale, wiki: 'enwiki', callModel: knowledgeModel(calls), fetchImpl: fakeFetch(calls),
+        now: new Date('2026-11-23T00:00:00Z'), knowledgeCheck: true,
+    });
+    assert.equal(calls.knowledge, 1);
+    const again = { pages: 0, topics: 0, views: 0, model: 0 };
+    await buildCards({
+        findings: stale, wiki: 'enwiki', callModel: knowledgeModel(again), fetchImpl: fakeFetch(again),
+        now: new Date('2026-11-23T00:00:00Z'), knowledgeCheck: true, existing: first,
+    });
+    assert.equal(again.knowledge, undefined, 'the builder\'s own result is cached per prompt version');
+});
+
+test('--knowledge-check: a failed call leaves the card undealt and uncached', async () => {
+    const calls = { pages: 0, topics: 0, views: 0, model: 0 };
+    const conflict = fakeModel(calls);
+    const callModel = async args => {
+        if (args.kind === 'knowledge') throw new Error('Lift Wing API request failed (503): unavailable');
+        return conflict(args);
+    };
+    const out = await buildCards({
+        findings: FINDINGS, wiki: 'enwiki', callModel, fetchImpl: fakeFetch(calls),
+        now: new Date('2026-11-23T00:00:00Z'), knowledgeCheck: true, retry: NO_WAIT,
+    });
+    assert.equal(out.cards.length, 0);
+    assert.equal(out.dropped.knowledge_unchecked, 1);
+    assert.deepEqual(out.knowledge, {});
+});
+
+test('without --knowledge-check nothing changes: no knowledge call, no knowledge fields', async () => {
+    const calls = { pages: 0, topics: 0, views: 0, model: 0 };
+    const out = await buildCards({
+        findings: FINDINGS, wiki: 'enwiki', callModel: knowledgeModel(calls, []), fetchImpl: fakeFetch(calls),
+        now: new Date('2026-11-23T00:00:00Z'),
+    });
+    assert.equal(out.cards.length, 1);
+    assert.equal(calls.knowledge, undefined);
+    assert.equal('knowledge' in out, false);
+    assert.equal('knowledge' in out.cards[0], false);
+});
+
+test('parseArgs: --knowledge-check is off by default', () => {
+    assert.equal(parseArgs(['--findings-csv', 'a.csv']).knowledgeCheck, false);
+    assert.equal(parseArgs(['--findings-csv', 'a.csv', '--knowledge-check']).knowledgeCheck, true);
+});

@@ -31,7 +31,10 @@ import { PROVIDERS } from './models.js';
 
 // Bump whenever the prompt text changes, same contract as PROMPT_VERSION:
 // tests/uncited-check.test.js pins a hash of the prompt against it.
-export const UNCITED_PROMPT_VERSION = 'u1';
+// u2 (2026-11-27): the two lines that said none of the statements has a
+// citation now say only that citation status is no reason to report one, so
+// the one prompt is true of flagged cited claims too (core/knowledge-check.js).
+export const UNCITED_PROMPT_VERSION = 'u2';
 
 export const UNCITED_CONFIDENCE = Object.freeze({ HIGH: 'high', MEDIUM: 'medium' });
 const UNCITED_CONFIDENCE_ORDER = [UNCITED_CONFIDENCE.HIGH, UNCITED_CONFIDENCE.MEDIUM];
@@ -90,7 +93,7 @@ export function uncitedModelFor(providerId) {
 export const UNCITED_CONTEXT_MAX_CHARS = 1500;
 
 export function generateUncitedSystemPrompt() {
-    return `You help Wikipedia volunteers find statements that may be factually wrong. You are given numbered STATEMENTS from a Wikipedia article. None of them has a citation, so nothing in the article backs them up. Judge them using your own knowledge.
+    return `You help Wikipedia volunteers find statements that may be factually wrong. You are given numbered STATEMENTS from a Wikipedia article. Judge each statement using your own knowledge, whether or not the article cites a source for it.
 
 Report a statement only when you have a specific reason to believe it is wrong:
 - a wrong date, number, name, place, title or ranking;
@@ -102,7 +105,7 @@ Only judge well-established facts: the kind any good reference work on the subje
 Rules:
 - Report at most ${UNCITED_PER_CALL_MAX} statements. Reporting none is a normal answer: most statements in most articles are correct.
 - Never report a statement only because you do not know about it, cannot confirm it, or it may describe events after your knowledge ends. Not knowing something is not a reason to doubt it.
-- Never report a statement because it has no citation. None of them has one.
+- Never report a statement because of whether it has a citation.
 - Do not report opinions, wording, tone, neutrality, or missing detail.
 - The article context and the earlier text of each paragraph are there so you know what a statement refers to ("She later moved to Paris"). Report only the numbered statements.
 - Names from languages using non-Latin scripts may have several valid romanizations. Do not treat transliteration differences as errors.

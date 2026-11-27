@@ -17,7 +17,7 @@ import { PROVIDERS } from '../core/models.js';
 // moves. On a deliberate prompt change: bump UNCITED_PROMPT_VERSION in
 // core/uncited-check.js and replace EXPECTED_HASH with the reported value.
 test('UNCITED_PROMPT_VERSION is bumped whenever the uncited-check prompt changes', () => {
-    const EXPECTED_HASH = '3b17ed4b680b4c0c2c0f9f012486d97d800a948e282dd63c6059eaf1f20bcf5d';
+    const EXPECTED_HASH = '2048ead7e3e430c7a6daf3b50dcdc4ab1432830717d0949aa0748f9a1a64bd66';
     const actual = createHash('sha256').update(generateUncitedSystemPrompt(), 'utf8').digest('hex');
     assert.equal(actual, EXPECTED_HASH,
         `generateUncitedSystemPrompt() changed (hash now ${actual}) but UNCITED_PROMPT_VERSION is still ` +
@@ -29,7 +29,7 @@ test('the prompt asks for exceptions, few of them, and never for not knowing or 
     assert.match(prompt, /Report at most 3 statements/);
     assert.match(prompt, /Reporting none is a normal answer/);
     assert.match(prompt, /Never report a statement only because you do not know about it/);
-    assert.match(prompt, /Never report a statement because it has no citation/);
+    assert.match(prompt, /Never report a statement because of whether it has a citation/);
     assert.match(prompt, /\{"issues": \[\]\}/);
     assert.equal(UNCITED_PER_CALL_MAX, 3);
     assert.doesNotMatch(prompt, /SUPPORTED|SOURCE UNAVAILABLE/, 'no verdict vocabulary: the model reports issues, not verdicts');
