@@ -35,7 +35,6 @@ export function buildCandidateQuery({ wiki, limit = null, withKnowledge = false 
           AND check_kind = 'citation'
           AND verdict = ? AND reason_type = ?
           AND quote_status IN (${placeholders})
-          AND source_truncated = 0
           AND is_collective = 0
           AND lead_demoted = 0
         ORDER BY page_id, created_at`;
@@ -101,10 +100,13 @@ export function candidateRejection(f) {
     if (f.verdict !== CARD_VERDICT) return 'not_not_supported';
     if (f.reasonType !== CARD_REASON) return 'not_a_contradiction';
     if (!CARD_QUOTE_STATUSES.includes(f.quoteStatus)) return 'quote_not_verified';
-    if (f.sourceTruncated) return 'source_truncated';
+    // A cut-off source no longer rules a card out (2026-11-28): truncation
+    // discounts an absence, never a contradiction, and the quote was found in
+    // the part that was read.
     if (f.isCollective) return 'group_finding';
     if (f.leadDemoted) return 'lead_demoted';
-    if (f.isBlp === true) return 'blp';
+    // Biographies of living people are dealt like any other article since
+    // 2026-11-28; they were left out at launch.
     if (!f.claimText || !f.sourceQuote || !f.sourceUrl) return 'missing_text';
     if (!isCompleteSentence(f.claimText)) return 'not_a_sentence';
     if (wordCount(f.claimText) < MIN_CARD_WORDS) return 'claim_too_short';

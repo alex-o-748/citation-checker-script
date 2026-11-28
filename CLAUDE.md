@@ -322,7 +322,7 @@ Runnable entry points, each a thin wiring layer over the components above:
 | `service/run-sweep.js` | **All six stages**, writing a CSV and upserting every finding into ToolsDB (`--no-store` for CSV only) | Wiki Replicas, Wikipedia REST, model API, ToolsDB, source fetcher (opt-in) |
 | `service/run-checks.js` | Post-run checks over a findings CSV (`run-sweep.js` also runs them at the end of every sweep; see below) | None |
 | `service/run-import-findings.js` | Upserts findings CSVs into ToolsDB: backfills batches run before storing was the default, or after failed writes. Idempotent | ToolsDB |
-| `service/run-build-cards.js` | Turns stored findings (ToolsDB or batch CSVs) into the Fact Hunt app's cards: the "could both be true?" model call, then protection, BLP and freshness checks against each article's current revision. Daily, cached | Wikipedia API, Lift Wing, Pageviews, model API, ToolsDB (opt-in) |
+| `service/run-build-cards.js` | Turns stored findings (ToolsDB or batch CSVs) into the Fact Hunt app's cards: the "could both be true?" model call, then protection and freshness checks against each article's current revision (biographies of living people are dealt since 2026-11-28). Daily, cached | Wikipedia API, Lift Wing, Pageviews, model API, ToolsDB (opt-in) |
 
 ### ToolsDB is the record of what has been checked (read before adding a per-batch exclude list)
 

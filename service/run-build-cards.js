@@ -262,8 +262,6 @@ export async function buildCards({
                 if (!state || state.missing) { tally(dropped, 'page_missing'); continue; }
                 if (state.protection) { tally(dropped, 'protected'); continue; }
                 if (state.pendingChanges) { tally(dropped, 'pending_changes'); continue; }
-                if (state.isBlp === true) { tally(dropped, 'blp'); continue; }
-                if (state.isBlp === null && f.isBlp !== false) { tally(dropped, 'blp_unknown'); continue; }
                 if (!state.wikitext) { tally(dropped, 'no_wikitext'); continue; }
                 if (!quoteInWikiLanguage(f.sourceQuote, { wiki })) { tally(dropped, 'source_language'); continue; }
 

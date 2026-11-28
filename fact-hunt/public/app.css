@@ -131,8 +131,6 @@ h1 { margin: 0; font-size: 24px; font-weight: 600; letter-spacing: -0.01em; line
 }
 .tapped { background: var(--line); }
 .evidence { background: var(--highlight); color: var(--highlight-ink); border-radius: 3px; padding: 0 3px; font-weight: 600; }
-.fixed-word { font-weight: 600; text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 5px; }
-.struck { color: var(--error); }
 
 /* Buttons */
 .spacer { flex: 1 1 auto; min-height: 24px; }
@@ -179,7 +177,6 @@ h1 { margin: 0; font-size: 24px; font-weight: 600; letter-spacing: -0.01em; line
     flex: none; width: 44px; height: 44px; border: 0; border-radius: 10px; background: transparent;
     display: flex; align-items: center; justify-content: center; cursor: pointer;
 }
-.change { margin: 0; font-family: var(--serif); font-size: 22px; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
 
 /* Share */
 .share-text {
