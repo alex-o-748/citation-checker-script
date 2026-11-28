@@ -3,7 +3,7 @@
 
 import { readFileSync, statSync } from 'node:fs';
 import { tokenize, tapMatches } from './tokens.js';
-import { articleUrl, sourceLink, editUrl, fixSummary, talkUrl, talkNote, talkTitle } from './wiki.js';
+import { articleUrl, articleLink, sourceLink, editUrl, fixSummary, talkUrl, talkNote, talkTitle } from './wiki.js';
 
 // Mirrors service/cards/wiki.js's TOPIC_GROUPS (ids and labels only). A test
 // keeps the two in step.
@@ -56,6 +56,7 @@ export function publicCard(card, { warmUp = false } = {}) {
         id: card.id,
         pageTitle: card.pageTitle,
         articleUrl: articleUrl(card),
+        articleLink: articleLink(card),
         claim: { text: card.claim.text, tokens: tokenize(card.claim.text) },
         quote: { text: card.quote.text },
         sourceLabel: card.sourceLabel,

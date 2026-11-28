@@ -159,3 +159,23 @@ test('a puzzle link is a page with its own title and preview; the answer is not 
     assert.ok(png.status === 200 || png.status === 404, 'a PNG when resvg is installed, else a 404');
     if (png.status === 200) assert.equal(png.type, 'image/png');
 });
+
+test('following a link to the article or the source is recorded, with whether the card was answered yet', async t => {
+    const s = await start();
+    t.after(s.close);
+    const events = [];
+    const record = s.store.record;
+    s.store.record = e => { if (e.t === 'opened') events.push(e); return record(e); };
+    const opened = body => s.call('/api/opened', { method: 'POST', body });
+    assert.equal((await opened({ card: CARD.id, target: 'article' })).status, 200);
+    await s.call('/api/answer', { method: 'POST', body: { card: CARD.id, kind: 'tap', token: tokenOf('1999') } });
+    assert.equal((await opened({ card: CARD.id, target: 'source' })).status, 200);
+    assert.deepEqual(events.map(e => [e.target, e.answered, e.session]), [['article', false, 'session-one'], ['source', true, 'session-one']]);
+    assert.deepEqual(s.store.card(CARD.id).opened, { article: 1, source: 1 });
+    assert.equal(s.store.state.counts.openedArticle, 1);
+    assert.equal(s.store.state.counts.openedSource, 1);
+    assert.equal((await opened({ card: CARD.id, target: 'talk' })).status, 400);
+    assert.equal((await opened({ card: 'x', target: 'article' })).status, 400);
+    assert.equal((await opened({ card: '000000000000', target: 'article' })).status, 404);
+    assert.equal(events.length, 2, 'refused requests record nothing');
+});

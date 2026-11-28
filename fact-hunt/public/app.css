@@ -112,6 +112,12 @@ h1 { margin: 0; font-size: 24px; font-weight: 600; letter-spacing: -0.01em; line
 .panel.source { border: 1px solid var(--line); margin-top: 12px; }
 .panel-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
 .panel-head .quiet { text-align: end; }
+.article-link {
+    display: inline-flex; align-items: baseline; gap: 4px; color: var(--muted); text-decoration: underline;
+    text-decoration-color: var(--line); text-underline-offset: 3px;
+}
+.article-link:hover { color: var(--ink); text-decoration-color: currentColor; }
+.article-link svg { flex: none; align-self: center; }
 .chunk { white-space: nowrap; }
 .sentence { margin: 0; font-family: var(--serif); font-size: 23px; line-height: 1.5; overflow-wrap: anywhere; }
 .quote { margin: 0; font-family: var(--serif); font-size: 19px; line-height: 1.45; overflow-wrap: anywhere; unicode-bidi: plaintext; }

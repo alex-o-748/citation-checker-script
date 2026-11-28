@@ -82,6 +82,7 @@ const STRINGS = {
     puzzleBanner: 'Someone shared this sentence. It disagrees with its own source.',
     alreadyFixed: 'This one was fixed already.',
     seeArticle: 'See the article',
+    readArticle: 'Read the article',
     aboutTitle: 'About Fact Hunt',
     aboutBody: 'Each card is a sentence from a Wikipedia article and a passage from the source it cites, where a checker found that the two disagree. You decide whether they do. If they do, you fix the article in Wikipedia’s own editor, or ask its editors. Nothing is changed on Wikipedia except by you.',
     aboutPrivacy: 'This site records what you answer, against a random id your browser makes. No account, no tracking, no third-party scripts.',
@@ -253,7 +254,13 @@ function wikiPanel(card, { tappable = false, flagSpan = null, tappedIndex = null
         sentence.append(chunk);
     }
     return h('section', { class: 'panel wiki', 'aria-label': t('wikipediaSays') },
-        h('div', { class: 'panel-head' }, h('span', { class: 'label' }, t('wikipediaSays')), h('span', { class: 'quiet' }, card.pageTitle)),
+        // The article's title is the way to its context: quiet, since the
+        // sentence is the task, but there for whoever wants more.
+        h('div', { class: 'panel-head' }, h('span', { class: 'label' }, t('wikipediaSays')),
+            h('a', {
+                class: 'quiet article-link', href: card.articleLink || card.articleUrl, target: '_blank', rel: 'noopener noreferrer',
+                title: t('readArticle'), onclick: () => recordOpen(card.id, 'article'),
+            }, card.pageTitle, icon(ICONS.out, 13))),
         sentence);
 }
 
@@ -269,7 +276,7 @@ function sourcePanel(card, { evidenceSpan = null, withLink = true } = {}) {
     return h('section', { class: 'panel source', 'aria-label': t('sourceSays') },
         h('div', { class: 'panel-head' }, h('span', { class: 'label' }, t('sourceSays')), h('span', { class: 'quiet' }, card.sourceLabel || '')),
         quote,
-        withLink && h('a', { class: 'inline-button', href: card.sourceLink, target: '_blank', rel: 'noopener noreferrer' }, t('readSource'), icon(ICONS.out, 16)));
+        withLink && h('a', { class: 'inline-button', href: card.sourceLink, target: '_blank', rel: 'noopener noreferrer', onclick: () => recordOpen(card.id, 'source') }, t('readSource'), icon(ICONS.out, 16)));
 }
 
 function shareBlock({ text, url, kind, cardId }) {
@@ -298,6 +305,12 @@ function shareBlock({ text, url, kind, cardId }) {
 }
 
 const origin = () => location.origin;
+
+// A link out of the app, recorded on the way: which cards make people want
+// more than the one sentence, and whether before or after answering.
+function recordOpen(cardId, target) {
+    api('/api/opened', { method: 'POST', body: { card: cardId, target } }).catch(() => {});
+}
 
 // ---------- Screens ----------
 
@@ -664,7 +677,7 @@ async function fixPage(id, preloaded = null) {
             h('p', { class: 'lede' }, t('fixPageDetail', { from: r.from, to: r.to }))),
         wikiPanel(card, { flagSpan: r.claimSpan }),
         sourcePanel(card, { evidenceSpan: r.quoteSpan }),
-        h('p', { style: 'margin-top: 12px' }, h('a', { class: 'inline-button', href: card.articleUrl, target: '_blank', rel: 'noopener noreferrer' }, t('seeArticle'), icon(ICONS.out, 16))),
+        h('p', { style: 'margin-top: 12px' }, h('a', { class: 'inline-button', href: card.articleUrl, target: '_blank', rel: 'noopener noreferrer', onclick: () => recordOpen(card.id, 'article') }, t('seeArticle'), icon(ICONS.out, 16))),
         h('div', { class: 'spacer' }),
         h('div', { class: 'actions' }, h('button', { type: 'button', class: 'button', onclick: () => home() }, t('findOne'), icon(ICONS.next))),
     );

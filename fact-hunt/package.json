@@ -9,6 +9,7 @@
   },
   "scripts": {
     "start": "node server.js",
+    "tally": "node tally.js",
     "dev": "CARDS_FILE=dev/sample-cards.json EVENTS_FILE=dev/events.jsonl WIKI_CHECKS=off node server.js"
   },
   "optionalDependencies": {

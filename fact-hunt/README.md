@@ -54,6 +54,7 @@ The builder reuses its previous output: model decisions are cached per card and 
 | `POST /api/hold` | `{card, action: fix|ask}`: holds the card for 20 minutes |
 | `POST /api/check` | Has the sentence changed? If so, the card is fixed |
 | `POST /api/asked`, `POST /api/shared` | Record a talk-page note, a share |
+| `POST /api/opened` | `{card, target: article\|source}`: a reader followed the link to the article or the source. Recorded with whether they had answered the card yet |
 | `/c/:id`, `/f/:id`, `/t/:topic` | Puzzle, fix and topic pages, with Open Graph tags |
 | `/og/c/:id.png`, `/og/f/:id.png` | Link preview images |
 
@@ -97,6 +98,18 @@ toolforge webservice node20 start
 `npm install` runs inside the webservice shell so the preview renderer (`@resvg/resvg-js`) gets the binary for the image it will run on. For serif and sans text in the previews, put `.ttf` files (Source Serif 4 and Inter, both OFL) in `~/fonts` and add `FONT_DIR=/data/project/fact-hunt/fonts`.
 
 **3. Check it**: open https://fact-hunt.toolforge.org, then `toolforge webservice logs`. A new value of an envvar reaches the app only after `toolforge webservice restart`.
+
+## What people did
+
+`tally.js` counts the event log: sessions that answered, caught, started and finished a fix, asked the editors, shared, and followed the link to the article or the source (split by before and after answering), plus the cards whose links were followed most. Read-only.
+
+```bash
+become fact-hunt
+cd ~/www/js && node tally.js --since 7d          # reads EVENTS_FILE, titles from CARDS_FILE
+node tally.js /data/project/fact-hunt/events.jsonl --since 2026-12-01 --until 2026-12-08 --json
+```
+
+A session is one browser's random id, not a person. Card views aren't recorded, so a card shown and left unanswered doesn't appear.
 
 **4. Before telling anyone**: play 30 cards yourself, create `PROJECT_PAGE` on the wiki, and post the heads-up (the design doc's guardrails).
 
