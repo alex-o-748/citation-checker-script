@@ -16,15 +16,16 @@ import { appendFileSync, existsSync, readFileSync } from 'node:fs';
 export const HOLD_MS = 20 * 60 * 1000;
 export const DISMISS_AFTER = 2; // "They don’t contradict each other" from this many sessions retires a card.
 
-export const EVENT_TYPES = Object.freeze(['answer', 'hold', 'fixed', 'asked', 'shared', 'reverted']);
+export const EVENT_TYPES = Object.freeze(['answer', 'hold', 'fixed', 'asked', 'shared', 'reverted', 'opened']);
+export const OPEN_TARGETS = Object.freeze(['article', 'source']);
 export const ANSWER_KINDS = Object.freeze(['caught', 'miss', 'confirm_yes', 'confirm_no', 'same', 'skip']);
 
 function emptyCard() {
-    return { caught: 0, misses: 0, skips: 0, same: new Set(), sessions: new Set(), status: 'open', hold: null, fix: null, shares: 0 };
+    return { caught: 0, misses: 0, skips: 0, same: new Set(), sessions: new Set(), status: 'open', hold: null, fix: null, shares: 0, opened: { article: 0, source: 0 } };
 }
 
 export function createState() {
-    return { cards: new Map(), sessions: new Map(), fixes: [], counts: { fixed: 0, caught: 0, asked: 0, shared: 0, reverted: 0 } };
+    return { cards: new Map(), sessions: new Map(), fixes: [], counts: { fixed: 0, caught: 0, asked: 0, shared: 0, reverted: 0, openedArticle: 0, openedSource: 0 } };
 }
 
 function cardState(state, id) {
@@ -72,6 +73,13 @@ export function applyEvent(state, e) {
     } else if (e.t === 'shared') {
         c.shares += 1;
         state.counts.shared += 1;
+    } else if (e.t === 'opened') {
+        // A reader following a link out: to the article, for the context
+        // around the sentence, or to the source. Counted, never acted on.
+        if (OPEN_TARGETS.includes(e.target)) {
+            c.opened[e.target] += 1;
+            state.counts[e.target === 'article' ? 'openedArticle' : 'openedSource'] += 1;
+        }
     } else if (e.t === 'reverted') {
         if (c.fix && !c.fix.reverted) {
             c.fix.reverted = true;

@@ -20,7 +20,7 @@ import { readFile } from 'node:fs/promises';
 import { join, dirname, extname, normalize } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-import { createStore, fixGate } from './lib/store.js';
+import { createStore, fixGate, OPEN_TARGETS } from './lib/store.js';
 import { createDeck, publicCard, reveal, judgeTap, topicCounts, nextCard, snapshot, TOPICS, ANY_TOPIC } from './lib/cards.js';
 import { checkSentence, revertedRevisions } from './lib/wiki.js';
 import { metaTags, pageMeta } from './lib/share.js';
@@ -249,6 +249,17 @@ export function createApp({
             const body = await readJson(req);
             if (!CARD_ID.test(String(body.card || '')) || !['fix', 'puzzle', 'topic'].includes(body.kind)) return send(res, 400, { error: 'share' });
             store.record({ t: 'shared', card: body.card, session, kind: body.kind, platform: String(body.platform || '').slice(0, 20) });
+            return send(res, 200, { ok: true });
+        }
+
+        if (req.method === 'POST' && route === 'opened') {
+            const body = await readJson(req);
+            if (!CARD_ID.test(String(body.card || '')) || !OPEN_TARGETS.includes(body.target)) return send(res, 400, { error: 'opened' });
+            if (!deck.get(body.card) && !fixedSnapshot(body.card)) return send(res, 404, { error: 'not_found' });
+            // Whether this reader had answered the card yet: context sought
+            // before deciding reads differently from curiosity after.
+            const answered = Boolean(session && store.answered(session).has(body.card));
+            store.record({ t: 'opened', card: body.card, session, target: body.target, answered });
             return send(res, 200, { ok: true });
         }
 

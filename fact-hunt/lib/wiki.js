@@ -12,6 +12,17 @@ export function articleUrl(card) {
     return pageUrl(card.host, card.pageTitle);
 }
 
+// A text fragment covering the whole of `text`: its first four words to its
+// last four (or all of it, when short). Null when there is nothing to match.
+function wholeTextFragment(text) {
+    const words = text.trim().split(/\s+/);
+    if (words.length < 2) return null;
+    const enc = s => encodeURIComponent(s).replace(/-/g, '%2D').replace(/,/g, '%2C').replace(/&/g, '%26');
+    return words.length <= 8
+        ? enc(words.join(' '))
+        : `${enc(words.slice(0, 4).join(' '))},${enc(words.slice(-4).join(' '))}`;
+}
+
 /**
  * A text-fragment link that opens the source with the whole quote
  * highlighted — the whole quote, never just the flagged words, so the link
@@ -19,14 +30,21 @@ export function articleUrl(card) {
  * fragments just open the page.
  */
 export function sourceLink(card) {
-    const words = card.quote.text.trim().split(/\s+/);
-    if (words.length < 2 || !/^https?:\/\//i.test(card.sourceUrl)) return card.sourceUrl;
-    const enc = s => encodeURIComponent(s).replace(/-/g, '%2D').replace(/,/g, '%2C').replace(/&/g, '%26');
-    const fragment = words.length <= 8
-        ? enc(words.join(' '))
-        : `${enc(words.slice(0, 4).join(' '))},${enc(words.slice(-4).join(' '))}`;
-    const base = card.sourceUrl.split('#')[0];
-    return `${base}#:~:text=${fragment}`;
+    const fragment = wholeTextFragment(card.quote.text);
+    if (!fragment || !/^https?:\/\//i.test(card.sourceUrl)) return card.sourceUrl;
+    return `${card.sourceUrl.split('#')[0]}#:~:text=${fragment}`;
+}
+
+/**
+ * The article, scrolled to the card's sentence with all of it highlighted,
+ * for a reader who wants the context around one sentence. The same rule as
+ * sourceLink(): the whole sentence, so it gives nothing away before an
+ * answer. Where the fragment doesn't match (a citation marker mid-sentence,
+ * a sentence since fixed), the article just opens at the top.
+ */
+export function articleLink(card) {
+    const fragment = wholeTextFragment(card.claim.text);
+    return fragment ? `${articleUrl(card)}#:~:text=${fragment}` : articleUrl(card);
 }
 
 // A few words either side of the flagged words in the quote, so a patroller

@@ -132,6 +132,8 @@ test('the card sent before an answer carries no span, and its source link does n
     assert.ok(pub.claim.tokens.length > 5);
     // The whole quote, from its first four words to its last four.
     assert.equal(pub.sourceLink, `${CARD.sourceUrl}#:~:text=CZW%20was%20born%20in,John%20Zandig%20in%20Philadelphia`);
+    // The article link highlights the whole sentence too, never the flagged words alone.
+    assert.equal(pub.articleLink, 'https://en.wikipedia.org/wiki/Combat_Zone_Wrestling#:~:text=Combat%20Zone%20Wrestling%20(CZW),1999%20by%20John%20Zandig.');
 });
 
 test('reveal gives the spans and both ways to act', () => {
