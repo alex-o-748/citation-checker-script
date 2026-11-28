@@ -77,7 +77,9 @@ export function reveal(card, { projectPage = null, fixEnabled = true } = {}) {
         from,
         to,
         fixEnabled,
-        fix: { editUrl: editUrl(card, { projectPage }), findText: card.findText, summary: fixSummary(card, { projectPage }), from, to },
+        // No replacement text: the person writes the correction (see app.js's
+        // flaggedSentence()).
+        fix: { editUrl: editUrl(card, { projectPage }), findText: card.findText, summary: fixSummary(card, { projectPage }) },
         ask: { talkUrl: talkUrl(card), title: talkTitle(card), note: talkNote(card) },
     };
 }

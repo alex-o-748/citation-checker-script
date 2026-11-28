@@ -33,6 +33,22 @@ export function buildUpsertQuery(finding) {
     const claim_hash = claimHash(finding.claimText);
     const source_url_hash = sourceUrlHash(finding.sourceUrl);
 
+    // The knowledge check's columns (service/migrations/007-knowledge-check.sql)
+    // are named only on a row the check ran on, so a sweep without
+    // --knowledge-check keeps working against a table 007 was never applied
+    // to: 006 showed what naming a new column on every row costs. A re-store
+    // without the check leaves a row's earlier result in place, with its
+    // knowledge_prompt_version to say which check made it.
+    const knowledge = finding.knowledgeCheck != null;
+    const knowledgeColumns = knowledge ? ', knowledge_check, knowledge_confidence, knowledge_prompt_version' : '';
+    const knowledgePlaceholders = knowledge ? ', ?, ?, ?' : '';
+    const knowledgeUpdates = knowledge
+        ? `,
+            knowledge_check = VALUES(knowledge_check),
+            knowledge_confidence = VALUES(knowledge_confidence),
+            knowledge_prompt_version = VALUES(knowledge_prompt_version)`
+        : '';
+
     const sql = `
         INSERT INTO citation_findings (
             wiki, page_id, page_title, revision_id,
@@ -44,8 +60,8 @@ export function buildUpsertQuery(finding) {
             provider, model, prompt_version,
             fetch_status, source_truncated, tokens_in, tokens_out,
             expires_at, published,
-            check_kind, lead_demoted
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            check_kind, lead_demoted${knowledgeColumns}
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?${knowledgePlaceholders})
         ON DUPLICATE KEY UPDATE
             page_title = VALUES(page_title),
             revision_id = VALUES(revision_id),
@@ -71,7 +87,7 @@ export function buildUpsertQuery(finding) {
             expires_at = VALUES(expires_at),
             published = VALUES(published),
             check_kind = VALUES(check_kind),
-            lead_demoted = VALUES(lead_demoted)
+            lead_demoted = VALUES(lead_demoted)${knowledgeUpdates}
     `.trim().replace(/\n {8}/g, '\n');
 
     const params = [
@@ -114,6 +130,9 @@ export function buildUpsertQuery(finding) {
         finding.checkKind ?? 'citation',
         finding.leadDemoted ? 1 : 0,
     ];
+    if (knowledge) {
+        params.push(finding.knowledgeCheck, finding.knowledgeConfidence ?? null, finding.knowledgePromptVersion ?? null);
+    }
 
     return { sql, params };
 }

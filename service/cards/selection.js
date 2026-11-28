@@ -16,20 +16,25 @@ export const CARD_QUOTE_STATUSES = Object.freeze(['exact', 'normalized']);
 /**
  * The ToolsDB query for candidate findings on one wiki. Parameterized; the
  * caller passes { sql, params } straight to mysql2.
+ *
+ * `withKnowledge` also reads the knowledge check's stored result
+ * (service/migrations/007-knowledge-check.sql), which only a table 007 was
+ * applied to has; off by default so a build without --knowledge-check never
+ * needs it.
  */
-export function buildCandidateQuery({ wiki, limit = null } = {}) {
+export function buildCandidateQuery({ wiki, limit = null, withKnowledge = false } = {}) {
     if (!wiki) throw new TypeError('buildCandidateQuery requires a wiki, e.g. "enwiki"');
     const placeholders = CARD_QUOTE_STATUSES.map(() => '?').join(', ');
     let sql = `
         SELECT wiki, page_id, page_title, revision_id, claim_text, source_url,
                verdict, reason_type, source_quote, quote_status, source_truncated,
-               is_collective, check_kind, lead_demoted, provider, prompt_version
+               is_collective, check_kind, lead_demoted, provider, prompt_version${withKnowledge
+        ? ', knowledge_check, knowledge_confidence, knowledge_prompt_version' : ''}
         FROM citation_findings
         WHERE wiki = ?
           AND check_kind = 'citation'
           AND verdict = ? AND reason_type = ?
           AND quote_status IN (${placeholders})
-          AND source_truncated = 0
           AND is_collective = 0
           AND lead_demoted = 0
         ORDER BY page_id, created_at`;
@@ -77,6 +82,11 @@ export function normalizeFinding(row, { wiki: defaultWiki = null } = {}) {
         isBlp: asFlag(row.is_blp),
         provider: asText(row.provider),
         promptVersion: asText(row.prompt_version),
+        // The knowledge check's stored result (core/knowledge-check.js), or
+        // null when the finding has none.
+        knowledgeCheck: asText(row.knowledge_check).trim() || null,
+        knowledgeConfidence: asText(row.knowledge_confidence).trim() || null,
+        knowledgePromptVersion: asText(row.knowledge_prompt_version).trim() || null,
     };
 }
 
@@ -90,10 +100,13 @@ export function candidateRejection(f) {
     if (f.verdict !== CARD_VERDICT) return 'not_not_supported';
     if (f.reasonType !== CARD_REASON) return 'not_a_contradiction';
     if (!CARD_QUOTE_STATUSES.includes(f.quoteStatus)) return 'quote_not_verified';
-    if (f.sourceTruncated) return 'source_truncated';
+    // A cut-off source no longer rules a card out (2026-11-28): truncation
+    // discounts an absence, never a contradiction, and the quote was found in
+    // the part that was read.
     if (f.isCollective) return 'group_finding';
     if (f.leadDemoted) return 'lead_demoted';
-    if (f.isBlp === true) return 'blp';
+    // Biographies of living people are dealt like any other article since
+    // 2026-11-28; they were left out at launch.
     if (!f.claimText || !f.sourceQuote || !f.sourceUrl) return 'missing_text';
     if (!isCompleteSentence(f.claimText)) return 'not_a_sentence';
     if (wordCount(f.claimText) < MIN_CARD_WORDS) return 'claim_too_short';

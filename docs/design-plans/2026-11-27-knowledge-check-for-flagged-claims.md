@@ -1,6 +1,6 @@
 # A knowledge check for flagged claims: the uncited-text check, applied to cited statements
 
-> **Status (2026-11-27):** Proposed. Nothing built.
+> **Status (2026-11-27):** Built behind opt-in switches; **gates 1 and 2 did not pass** (§ What the gates found). Built: the `u2` prompt, `core/knowledge-check.js`, the batch stage (`run-sweep.js --knowledge-check`, CSV columns, migration 007), the card builder's `--knowledge-check`, and the userscript setting (off by default). Not done: gate 2 on Fact Hunt's first build (its data is on Toolforge), gate 3 (the owner's 30-card play), step 6 (the finding-strength module does not exist yet). Nothing here is on by default anywhere; the one change that reaches users on merge is `u2` replacing `u1` in the uncited-text check, which gate 1 does not clear.
 
 ## Why
 
@@ -73,6 +73,45 @@ Each step has a gate, set before the step is tried:
 3. **On Fact Hunt.** The owner plays 30 doubted cards. The deck goes live with this rule only if most are real errors. "Most" is to be fixed before the play, not after.
 
 Expect the Fact Hunt deck to shrink a lot. The prompt tells the model to leave obscure details alone, so an error in an obscure article is not doubted and does not become a card.
+
+## What was built
+
+- **`core/knowledge-check.js`**: `runKnowledgeCheck({ claims, articleTitle, opening })` turns flagged claims into the uncited check's input (`knowledgeStatements()`: the paragraph text before each claim as context, claims sharing a text sent once) and runs `runUncitedCheck()` with every finding kept. It returns, per claim key, `doubted` (with confidence, comment, excerpt), `not_doubted`, or `error`; a claim a stopped run never reached has no result. One deviation from § What changes, item 1: flagged claims go in **calls of their own**, not mixed with an article's uncited sentences, because the prompt's 3-reports-per-call limit would otherwise be shared, and an uncited sentence could crowd out a flagged claim. Same prompt, same parser, same model rule (`uncitedModelFor()`).
+- **Batch**: `run-sweep.js --knowledge-check`. An article's flagged findings (not `lead_demoted`) are held until its citation and group tasks have all settled, checked in one call or a few, then written with `knowledge_check`, `knowledge_confidence`, `knowledge_comment`, `knowledge_prompt_version`. A halted run, or a check that failed as a whole, still writes every held finding, with the columns empty. Migration 007 adds three of the columns to ToolsDB (the comment is CSV-only); `buildUpsertQuery()` names them only on a row the check ran on, so a sweep without the flag works on an unmigrated table.
+- **Card builder**: `run-build-cards.js --knowledge-check` deals only doubted cards (`not_doubted` and `knowledge_unchecked` in the dropped tally). It uses a finding's stored result when its prompt version is current, else its own cached one, else runs the check for that article, with the paragraph and opening read from the wikitext it already fetches (`service/cards/knowledge.js`). The comment is never on a card.
+- **Userscript**: "Check flagged citations against general knowledge" (`verifier_knowledge_check`, off). A phase of Verify All after the uncited check and before severity, on `uncitedModel()`. A doubted row gets "Likely wrong" in its head line and the model's comment in its details ("Without reading the source, the model believes: …"), and sorts first under "Most serious first", which is offered whenever the check ran. Not logged, not exported.
+
+## What the gates found
+
+Both runs on Lift Wing Qwen3.8 (`llm-qwen38-27b`), 2026-11-27. The harnesses were throwaway, like the uncited check's.
+
+### Gate 1: the reworded prompt
+
+The 2026-10-23 harness was not kept, so it was rebuilt from § What the smoke test found of the uncited-check design: the same 7 articles at their current revisions, and the same injections where they can still be placed. 8 of the 9 could; the Podgórze/Vistula sentence is no longer in Kraków Ghetto's uncited text, so that article stays in as a clean one. 106 uncited sentences, 8 injected errors. `u1` and `u2` were run side by side, four times each, every finding kept (no top-3 cut):
+
+| | u1 | u2 |
+|---|---|---|
+| Injected errors caught, per run | 7, 6, 7, 7 (**27 of 32**) | 6, 6, 7, 5 (**24 of 32**) |
+| Untouched sentences flagged, per run | 2, 3, 3, 3 (**11**) | 3, 2, 2, 2 (**9**) |
+| Always missed | Graz → Vienna | Graz → Vienna; Wheatstone → Faraday 3 times of 4 |
+
+**The gate as written (at least 8 of 9 caught, at most 1 false flag) fails for both prompts on today's set**: no run of either had fewer than 2 false flags, so this set no longer reproduces the 2026-11-20 result (8 of 9, none) for `u1` either. The recurring false flags are on sentences the model is itself wrong about: that Mordechai Gebirtig was shot in the Kraków ghetto (he was), Burkhut's "pink coat" (his account does say pink), and the Einstein–de Haas sentence. Between the prompts, `u2` caught 3 fewer of 32 and flagged 2 fewer of 392. Both differences are within the run-to-run spread (u2 ranged from 5 to 7 caught), so the rewording has no effect this test can measure, and a small loss of recall can't be ruled out. Whether to keep `u2` is the owner's call; the gate as set does not license it.
+
+### Gate 2: the 50 labelled ruwiki contradictions
+
+Each claim checked with its title, the article's opening, and the paragraph before it, read from the article at the labelled revision (48 of 50 placed in their paragraph; 2 sent with no context). Two runs, identical:
+
+| Label | Doubted | Not doubted |
+|---|---|---|
+| genuine (25) | **1** | 24 |
+| wrong (21) | 1 | **20** |
+| borderline (4) | 0 | 4 |
+
+So the check leaves 20 of the 21 wrong flags unpromoted, as intended, and **promotes 1 of the 25 genuine errors**. For comparison, `run-recheck.js`'s two-model agreement keeps far more of the genuine ones at 83% precision. The two doubted rows: Kazakhstan's refineries (genuine; the model is right that they are not all in Atyrau) and Orlovsky v Struve at UFC 222 (labelled wrong; the model says the fight was on 17 March, but it was on 3 March, so the model is itself wrong).
+
+This is the shrinkage § Measuring it expected, at its extreme. The prompt tells the model to leave obscure details alone, and the genuine contradictions are almost all details of that kind: release dates, review scores, match results, road lengths, train counts. As a filter on its own, "deal only doubted" would leave about 2% of a ruwiki deck. Open question 1's fallback (doubted first, then the rest) would be a ranking that changes almost nothing. Open question 4 (ruwiki) looks like the deciding one.
+
+Gate 2's second half, Fact Hunt's first build, was not run: its findings and cards are on Toolforge.
 
 ## Open questions
 

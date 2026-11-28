@@ -131,7 +131,6 @@ export function createApp({
                 id: latest[0],
                 pageTitle: latest[1].fix.snapshot.pageTitle,
                 from: latest[1].fix.snapshot.claim.text.slice(latest[1].fix.snapshot.claim.span.start, latest[1].fix.snapshot.claim.span.end),
-                to: latest[1].fix.snapshot.quote.text.slice(latest[1].fix.snapshot.quote.span.start, latest[1].fix.snapshot.quote.span.end),
                 at: latest[1].fix.at,
             } : null,
         };

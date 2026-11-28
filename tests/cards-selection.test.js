@@ -26,15 +26,16 @@ test('the JS rule rejects everything the SQL rule leaves out', () => {
         [{ reason_type: 'omission' }, 'not_a_contradiction'],
         [{ quote_status: 'partial' }, 'quote_not_verified'],
         [{ quote_status: 'not-found' }, 'quote_not_verified'],
-        [{ source_truncated: '1' }, 'source_truncated'],
         [{ is_collective: '1' }, 'group_finding'],
         [{ lead_demoted: '1' }, 'lead_demoted'],
         [{ check_kind: 'lead_body' }, 'not_a_citation_check'],
-        [{ is_blp: '1' }, 'blp'],
         [{ source_quote: '' }, 'missing_text'],
         [{ claim_text: 'As of December 2024, the company operates six locations.' }, 'time_varying'],
     ];
     for (const [over, reason] of cases) assert.equal(candidateRejection(finding(over)), reason, JSON.stringify(over));
+    // Biographies of living people, and contradictions on a cut-off source, are dealt since 2026-11-28.
+    assert.equal(candidateRejection(finding({ source_truncated: '1' })), null);
+    assert.equal(candidateRejection(finding({ is_blp: '1' })), null);
 });
 
 test('the SQL rule binds every value and filters on the same columns', () => {
@@ -44,6 +45,7 @@ test('the SQL rule binds every value and filters on the same columns', () => {
     }
     assert.deepEqual(params, ['enwiki', 'NOT SUPPORTED', 'contradiction', ...CARD_QUOTE_STATUSES, 10]);
     assert.doesNotMatch(sql, /enwiki/);
+    assert.doesNotMatch(sql, /source_truncated = 0/, 'a contradiction on a cut-off source can be a card');
     assert.throws(() => buildCandidateQuery({}), /requires a wiki/);
 });
 

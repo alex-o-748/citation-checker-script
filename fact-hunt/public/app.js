@@ -16,8 +16,8 @@ const STRINGS = {
     wikipediaSays: 'Wikipedia says',
     sourceSays: 'Its source says',
     readSource: 'Read it in the source',
-    same: 'They say the same thing',
-    noDifference: 'Can’t find a difference?',
+    same: 'They don’t contradict each other',
+    noDifference: 'Can’t find one?',
     skip: 'Skip',
     left: '{n} left',
     warmUp: 'Warm-up: someone already fixed this one. Find what was wrong.',
@@ -35,11 +35,12 @@ const STRINGS = {
     missYes: 'Yes, that’s wrong',
     missNo: 'No, they match',
     sameTitle: 'Thanks. We’ll take another look.',
-    sameDetail: 'We had flagged “{from}” against the source’s “{to}”. Two people saying they match takes a card out.',
+    sameDetail: 'We had flagged “{from}” against the source’s “{to}”. Two people saying they don’t contradict each other takes a card out.',
     fixTitle: 'Fix it in three steps',
     fixLede: 'We’ll open the right section of the article in Wikipedia’s editor, in a new tab.',
     stepFind: 'Search the editor for',
-    stepChange: 'Change it',
+    stepChange: 'Correct the marked words',
+    stepChangeDetail: 'Make the sentence say what its source says, in your own words.',
     stepPublish: 'Publish',
     stepPublishDetail: 'The edit summary is filled in for you. If it’s empty, paste this:',
     loginTip: 'Have a Wikipedia account? Log in first. No account? You can still edit, or create one.',
@@ -314,7 +315,7 @@ async function home() {
     const footer = h('footer', { class: 'footer' },
         h('span', { class: 'quiet' }, [t('fixedSoFar', { n: fmt(data.fixed) }), data.latest ? ` · ${t('latest', { when: ago(data.latest.at) })}` : ''].join('')),
         data.latest && h('a', { href: `/f/${data.latest.id}`, onclick: e => { e.preventDefault(); fixPage(data.latest.id); } },
-            `${data.latest.pageTitle}: `, h('s', { class: 'struck' }, data.latest.from), ` → ${data.latest.to}`));
+            `${data.latest.pageTitle}: `, h('span', { class: 'flag' }, data.latest.from)));
     show(
         h('header', { class: 'bar' }, h('span', { class: 'wordmark' }, 'fact hunt'), h('a', { class: 'link-quiet', href: '/about', onclick: e => { e.preventDefault(); about(); } }, t('about'))),
         h('h1', { class: 'hero' }, t('tagline')),
@@ -497,7 +498,7 @@ function fixScreen() {
         h('p', { class: 'lede' }, t('fixLede')),
         h('ol', { class: 'steps' },
             step(1, t('stepFind'), copyBox(fix.findText, { serif: true, label: `${t('copy')}: ${t('stepFind')}` })),
-            step(2, t('stepChange'), h('p', { class: 'change' }, h('s', { class: 'struck' }, fix.from), icon(ICONS.next, 20), h('span', { class: 'fixed-word' }, fix.to))),
+            step(2, t('stepChange'), flaggedSentence(card.claim.text, state.reveal.claimSpan), h('span', { class: 'note muted' }, t('stepChangeDetail'))),
             step(3, t('stepPublish'), h('span', { class: 'note muted' }, t('stepPublishDetail')), copyBox(fix.summary, { label: `${t('copy')}: ${t('stepPublish')}` }))),
         h('p', { class: 'note muted', style: 'margin-top: 22px' }, t('loginTip'), ' ',
             h('a', { href: `https://${new URL(card.articleUrl).host}/wiki/Special:CreateAccount?returnto=${encodeURIComponent(card.pageTitle)}`, target: '_blank', rel: 'noopener noreferrer' }, t('createOne'))),
@@ -545,17 +546,12 @@ function waitScreen({ notYet = false } = {}) {
 function fixedScreen() {
     const card = state.card;
     const r = state.reveal;
-    const text = card.claim.text;
-    const span = r.claimSpan;
-    const before = text.slice(0, span.start).split(/\s+/).slice(-8).join(' ');
-    const after = text.slice(span.end);
     show(
         bar(),
         h('div', { style: 'margin-top: 12px; display: flex; flex-direction: column; gap: 12px' },
             checkMark(),
             h('h1', {}, t('fixedTitle')),
-            h('p', { class: 'sentence', style: 'font-size: 21px' }, `…${before}${/\s$/.test(text.slice(0, span.start)) ? ' ' : ''}`,
-                h('s', { class: 'struck' }, r.from), ' ', h('span', { class: 'fixed-word' }, r.to), after),
+            flaggedSentence(card.claim.text, r.claimSpan),
             h('p', { class: 'lede' }, card.monthlyViews != null ? t('fixedReaders', { n: fmt(card.monthlyViews) }) : t('fixedNoReaders'))),
         shareBlock({
             text: `Wikipedia’s article on ${card.pageTitle} said ${r.from}. Its own source said ${r.to}. I fixed it. Find one yourself:`,
@@ -566,6 +562,21 @@ function fixedScreen() {
             h('span', { class: 'quiet' }, t('tally', { caught: memory.tally.caught || 0, fixed: memory.tally.fixed || 0 })),
             h('button', { type: 'button', class: 'inline-button', onclick: () => nextCard() }, t('next'), icon(ICONS.next))),
     );
+}
+
+// The sentence with its flagged words marked, and up to eight words before
+// them. Only the article's own words: the app never offers replacement text,
+// since the source's words dropped into the sentence rarely read as a
+// sentence, and text an editor didn't write could fall foul of WP:NOLLM. The
+// editor writes the correction.
+function flaggedSentence(text, span) {
+    const lead = text.slice(0, span.start);
+    const words = lead.split(/(?=\s)/);
+    const kept = words.slice(-8).join('').replace(/^\s+/, '');
+    return h('p', { class: 'sentence', style: 'font-size: 21px; margin: 0' },
+        words.length > 8 ? `…${kept}` : kept,
+        h('span', { class: 'flag' }, text.slice(span.start, span.end)),
+        text.slice(span.end));
 }
 
 function checkMark() {

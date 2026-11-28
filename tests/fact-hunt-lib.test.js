@@ -141,6 +141,8 @@ test('reveal gives the spans and both ways to act', () => {
     assert.equal(r.fix.findText, 'founded in 1999');
     assert.match(r.fix.editUrl, /^https:\/\/en\.wikipedia\.org\/w\/index\.php\?title=Combat\+Zone\+Wrestling&action=edit&section=0&summary=/);
     assert.match(r.ask.talkUrl, /title=Talk%3ACombat\+Zone\+Wrestling&action=edit&section=new&preloadtitle=/);
+    // The fix offers no replacement text: the person writes the correction.
+    assert.deepEqual(Object.keys(r.fix).sort(), ['editUrl', 'findText', 'summary']);
 });
 
 test('nextCard picks among the most-read available cards in the topic', () => {

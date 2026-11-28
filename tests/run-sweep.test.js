@@ -1634,3 +1634,132 @@ test('an uncited-check call that keeps failing is recorded on its sentences, and
     }));
     assert.equal(halted, 3, 'auth/billing halts the run, exit 3');
 });
+
+// --- --knowledge-check ---
+
+// Two solo citations in one paragraph; the verdict model flags [2], and the
+// knowledge check doubts the one claim it is shown.
+const knowledgeArticleHtml = article(
+    '<section data-mw-section-id="0"><p>The bridge is a bridge.</p></section>'
+    + '<section data-mw-section-id="1"><h2>History</h2>'
+    + '<p>The bridge opened to traffic in 1998.@@1@@ It was designed by Gustave Eiffel.@@2@@</p></section>',
+    { 1: link('https://a.example/x'), 2: link('https://b.example/x') }
+);
+
+const knowledgeModel = (calls, { knowledgeAnswer } = {}) => () => async (systemPrompt, userContent, opts) => {
+    calls?.push({ kind: opts?.kind ?? 'verdict', userContent });
+    if (opts?.kind === 'knowledge') {
+        if (knowledgeAnswer) return knowledgeAnswer();
+        return {
+            text: JSON.stringify({ issues: [{ id: 1, excerpt: 'Gustave Eiffel', comments: 'Eiffel did not design it.', confidence: 'high' }] }),
+            usage: { input: 100, output: 20 },
+        };
+    }
+    const flagged = userContent.includes('Gustave Eiffel');
+    return {
+        text: JSON.stringify(flagged
+            ? { support_score: 5, verdict: 'NOT SUPPORTED', reason_type: 'contradiction', source_quote: '', comments: 'source says Smith' }
+            : { support_score: 90, verdict: 'SUPPORTED', source_quote: '', comments: 'ok' }),
+        usage: { input: 10, output: 5 },
+    };
+};
+
+test('parseCliArgs: --knowledge-check is off by default', () => {
+    assert.equal(parseCliArgs(['node', 'sweep.js']).knowledgeCheck, false);
+    assert.equal(parseCliArgs(['node', 'sweep.js', '--knowledge-check']).knowledgeCheck, true);
+    assert.match(HELP_TEXT, /--knowledge-check/);
+});
+
+test('--knowledge-check checks flagged findings only, blind to source and verdict, and fills their columns', async () => {
+    const written = [];
+    const calls = [];
+    const stderrChunks = [];
+    const code = await runSweep(baseOpts({ knowledgeCheck: true }), baseIo({
+        fetchArticle: async () => ({ html: knowledgeArticleHtml, status: 200, error: null }),
+        makeModelCallerFn: knowledgeModel(calls),
+        appendFindingFn: async (_path, finding) => { written.push(finding); },
+        stderr: { write: s => stderrChunks.push(s) },
+    }));
+    assert.equal(code, 0);
+    assert.equal(written.length, 2, 'every citation finding is still written once');
+
+    const flagged = written.find(f => f.verdict === 'NOT SUPPORTED');
+    assert.equal(flagged.knowledgeCheck, 'doubted');
+    assert.equal(flagged.knowledgeConfidence, 'high');
+    assert.equal(flagged.knowledgeComment, 'Eiffel did not design it.');
+    assert.equal(flagged.knowledgePromptVersion, 'u2');
+    const supported = written.find(f => f.verdict === 'SUPPORTED');
+    assert.equal(supported.knowledgeCheck, null, 'a supported finding is not checked');
+
+    const knowledgeCalls = calls.filter(c => c.kind === 'knowledge');
+    assert.equal(knowledgeCalls.length, 1);
+    assert.match(knowledgeCalls[0].userContent, /1\. "It was designed by Gustave Eiffel\."/);
+    assert.match(knowledgeCalls[0].userContent, /Earlier in the paragraph, for context:\nThe bridge opened to traffic in 1998\./);
+    assert.doesNotMatch(knowledgeCalls[0].userContent, /text of https|Smith|NOT SUPPORTED/, 'never the source, the verdict or its rationale');
+
+    assert.match(stderrChunks.join(''), /knowledge check: 1 flagged finding\(s\) in 1 article\(s\) -> 1 doubted, 0 not doubted, 0 unchecked; 1 call\(s\), 100 tokens in, 20 out/);
+});
+
+test('--knowledge-check: a claim the model does not report is not_doubted, never "true"', async () => {
+    const written = [];
+    await runSweep(baseOpts({ knowledgeCheck: true }), baseIo({
+        fetchArticle: async () => ({ html: knowledgeArticleHtml, status: 200, error: null }),
+        makeModelCallerFn: knowledgeModel(null, { knowledgeAnswer: () => ({ text: '{"issues": []}', usage: { input: 1, output: 1 } }) }),
+        appendFindingFn: async (_path, finding) => { written.push(finding); },
+    }));
+    const flagged = written.find(f => f.verdict === 'NOT SUPPORTED');
+    assert.equal(flagged.knowledgeCheck, 'not_doubted');
+    assert.equal(flagged.knowledgeConfidence, null);
+});
+
+test('--knowledge-check: a call that keeps failing still writes the finding, as error', async () => {
+    const written = [];
+    const code = await runSweep(baseOpts({ knowledgeCheck: true }), baseIo({
+        fetchArticle: async () => ({ html: knowledgeArticleHtml, status: 200, error: null }),
+        makeModelCallerFn: knowledgeModel(null, { knowledgeAnswer: () => { throw new Error('Lift Wing API request failed (503): unavailable'); } }),
+        appendFindingFn: async (_path, finding) => { written.push(finding); },
+        retryOptions: { sleepFn: async () => {} },
+    }));
+    assert.equal(code, 0);
+    const flagged = written.find(f => f.verdict === 'NOT SUPPORTED');
+    assert.equal(flagged.knowledgeCheck, 'error');
+    assert.match(flagged.knowledgeComment, /retries_exhausted/);
+});
+
+test('--knowledge-check: an auth error halts the run and the held finding is still written', async () => {
+    const written = [];
+    const code = await runSweep(baseOpts({ knowledgeCheck: true }), baseIo({
+        fetchArticle: async () => ({ html: knowledgeArticleHtml, status: 200, error: null }),
+        makeModelCallerFn: knowledgeModel(null, { knowledgeAnswer: () => { throw new Error('Lift Wing API request failed (403): forbidden'); } }),
+        appendFindingFn: async (_path, finding) => { written.push(finding); },
+        retryOptions: { sleepFn: async () => {} },
+    }));
+    assert.equal(code, 3);
+    assert.equal(written.length, 2);
+    assert.equal(written.find(f => f.verdict === 'NOT SUPPORTED').knowledgeCheck, null);
+});
+
+test('--knowledge-check at --concurrency 4 neither deadlocks nor loses a row', async () => {
+    const written = [];
+    const code = await runSweep(baseOpts({ knowledgeCheck: true, concurrency: 4 }), baseIo({
+        makeModelCallerFn: () => async (s, u, opts) => (opts?.kind === 'knowledge'
+            ? { text: '{"issues": []}', usage: { input: 1, output: 1 } }
+            : { text: JSON.stringify({ support_score: 20, verdict: 'PARTIALLY SUPPORTED', source_quote: '', comments: 'part' }), usage: { input: 1, output: 1 } }),
+        appendFindingFn: async (_path, finding) => { written.push(finding); },
+    }));
+    assert.equal(code, 0);
+    assert.equal(written.length, 4);
+    assert.ok(written.every(f => f.knowledgeCheck === 'not_doubted'));
+});
+
+test('without --knowledge-check no knowledge call is made and the columns stay empty', async () => {
+    const calls = [];
+    const written = [];
+    await runSweep(baseOpts(), baseIo({
+        fetchArticle: async () => ({ html: knowledgeArticleHtml, status: 200, error: null }),
+        makeModelCallerFn: knowledgeModel(calls),
+        appendFindingFn: async (_path, finding) => { written.push(finding); },
+    }));
+    assert.ok(!calls.some(c => c.kind === 'knowledge'));
+    assert.ok(written.every(f => f.knowledgeCheck === null));
+});

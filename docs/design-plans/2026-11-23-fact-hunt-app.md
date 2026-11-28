@@ -44,10 +44,10 @@ These were settled while scoping this app, so they are recorded here rather than
 | Screen | Holds | Leads to |
 |---|---|---|
 | **Home** | Wordmark; one line ("Wikipedia articles sometimes say things their own sources don't"); topic chips with open counts; *Surprise me*; a total of fixes so far; the latest fix | A topic starts a card |
-| **Card** | *Wikipedia says*: the sentence. *Its source says*: the verified quote, the publication and date, and *Read it in the source*. The instruction "Tap the words the source contradicts". *They say the same thing*. *Skip* | Tap → Caught |
+| **Card** | *Wikipedia says*: the sentence. *Its source says*: the verified quote, the publication and date, and *Read it in the source*. The instruction "Tap the words the source contradicts". *They don't contradict each other* (until 2026-11-28 *They say the same thing*, which didn't fit the commonest case: two statements that differ but can both be true). *Skip* | Tap → Caught |
 | **Caught** | The tapped words get a red wavy underline and the quote's words a highlighter. "Wikipedia says 1999. Its source says 1998." The article's monthly readers. One line: sources can be wrong too | *Fix it on Wikipedia*, *Ask the article's editors*, *Next*, *Share this puzzle* |
-| **Fix** | Three steps: *Find* (a snippet to search for), *Change* (old → new, which the person types), *Publish* (the summary is filled in, with a Copy button). A tip to log in or create an account | *Open Wikipedia's editor* (new tab) |
-| **Fixed** | Detected when the person comes back. Before and after, the reader count, share buttons, the local tally | *Next* |
+| **Fix** | Three steps: *Find* (a snippet to search for), *Correct the marked words* (the sentence with the wrong words marked; the person writes the correction in their own words. Since 2026-11-28 the app suggests no replacement text: the source's words dropped into the sentence rarely read as a sentence, and suggested article text could fall foul of WP:NOLLM), *Publish* (the summary is filled in, with a Copy button). A tip to log in or create an account | *Open Wikipedia's editor* (new tab) |
+| **Fixed** | Detected when the person comes back. The sentence with the corrected words marked, the reader count, share buttons, the local tally | *Next* |
 
 *Read it in the source* is a text-fragment link (`#:~:text=`), so the source page opens with the quote highlighted. Current Chrome, Safari and Firefox support it; where a browser doesn't, or the source is a PDF, it just opens the page.
 
@@ -58,7 +58,7 @@ The card never marks the conflict before the person answers. They read both text
 - **It's more fun.** It's spot-the-difference, and finding it yourself is the point of the moment.
 - **It's a stronger check.** A yes/no button invites agreeing with whatever the app suggests. Finding the wrong words without being shown them is independent evidence that the finding is real. That matters, because this check is the only one before an edit.
 
-Matching rule: a tap counts when it lands on the flagged words or one word either side. On a miss, the app shows what was flagged and asks "Is this wrong?": *yes* counts as caught, *no* as "they say the same thing". To keep the answer out of the page, the API sends the conflict spans only after an answer is recorded.
+Matching rule: a tap counts when it lands on the flagged words or one word either side. On a miss, the app shows what was flagged and asks "Is this wrong?": *yes* counts as caught, *no* as "they don't contradict each other". To keep the answer out of the page, the API sends the conflict spans only after an answer is recorded.
 
 **Warm-up.** A new visitor's first card is one that has already been fixed, labelled as a warm-up. It teaches the tap with nothing at stake. At launch, these come from the 30 cards the owner plays first (*Phases*, step 0).
 
@@ -105,18 +105,17 @@ WHERE wiki = 'enwiki'
   AND check_kind = 'citation'
   AND verdict = 'NOT SUPPORTED' AND reason_type = 'contradiction'
   AND quote_status IN ('exact', 'normalized')
-  AND source_truncated = 0
   AND is_collective = 0
   AND lead_demoted = 0
 ```
 
-**Only contradictions with a verified quote**, because that's the only kind of finding someone who isn't an editor can check in a minute: two sentences and one difference. An omission means reading the whole source, and omissions are where truncated fetches produce false flags. A verified quote means every word on the card is in the source (`core/quote.js`).
+**Only contradictions with a verified quote**, because that's the only kind of finding someone who isn't an editor can check in a minute: two sentences and one difference. An omission means reading the whole source, and omissions are where truncated fetches produce false flags. A verified quote means every word on the card is in the source (`core/quote.js`). A cut-off source does not rule a contradiction out (since 2026-11-28; it did at launch): truncation discounts an absence, never a contradiction, as everywhere else in the pipeline, and the quote was found in the part that was read. What the unread part can still hide is a passage that reconciles the two, the same risk as a reconciling passage outside the quoted lines of a whole source.
 
 Then each article is fetched once at its current revision, plus one API call for its protection, and that settles five things:
 
 - **Is the sentence still there?** If not, the card is never made.
 - **Can a new editor publish there?** Any edit protection (semi, extended-confirmed or full) or pending changes leaves the article out. Someone logged out, or with a new account, either can't publish there, or their edit waits for review where the app can't see it. Protection comes from `prop=info&inprop=protection`, and pending changes from `prop=flagged`. Talk pages are rarely protected, so these articles could come back later as cards with only *Ask the article's editors*.
-- **Is it a biography of a living person** (`Category:Living people`)? Those are left out at launch, as is the Medicine & Health topic.
+- **Is it about medicine?** The Medicine & Health topic is left out at launch. Biographies of living people were too, until 2026-11-28; they are now dealt like any other article.
 - **Which section is it in?** The edit link needs the section number.
 - **Is the quote in the wiki's language?** At launch, enwiki cards need English sources.
 
@@ -198,14 +197,14 @@ Once a note is posted, the card closes as *asked*. The freshness job retires it 
 
 All of these are cheap:
 
-1. **The selection filter**: contradictions only, where both statements can't be true at once. Verified quotes and whole sources only. No protected articles, no BLPs, no medicine, and no "as of" claims at launch.
+1. **The selection filter**: contradictions only, where both statements can't be true at once. Verified quotes only (whole sources too, until 2026-11-28). No protected articles, no medicine, and no "as of" claims at launch. (BLPs were left out too, until 2026-11-28.)
 2. **The tap**: *Fix it* appears only after the person has found the wrong words themselves.
 3. **Freshness**: every card is re-checked against the current revision before it is shown.
 4. **The summary** quotes the source and carries the hashtag.
 5. **A project page** (`User:Alaexis/Fact Hunt`), linked from every summary. It says what the app is, that a person made each call, how to report a problem, and how to list every app edit (a Hashtags link).
 6. **A heads-up at launch** on the village pump: "here's a thing, here's the page, tell me if it causes problems". It's an announcement, not a request for permission.
 7. **A stop rule, fixed before launch** in the spirit of `GATE` in `feedback-loop/proposer.js`. If more than 1 in 5 of the first 50 fixes is reverted within 7 days, *Fix it* is switched off until the cause is understood, and *Ask the article's editors* stays on. After that it is measured again for every 50 fixes. Like `GATE`, it is never loosened to let a run through.
-8. **Two "they say the same thing" answers retire a card.** The answers are kept, and can be exported to the benchmark or the feedback loop as labels, but nobody is ever asked to label.
+8. **Two "they don't contradict each other" answers retire a card.** The answers are kept, and can be exported to the benchmark or the feedback loop as labels, but nobody is ever asked to label.
 9. **The owner plays the first 30 cards** before anyone else sees one.
 
 ## Architecture
@@ -264,7 +263,7 @@ What decides whether it's working:
 
 - Accounts, points, leaderboards, streaks, notifications.
 - Model calls while anyone is using the app.
-- Omissions, truncated sources, group findings, BLPs, medicine, sources in another language.
+- Omissions, group findings, medicine, sources in another language. (BLPs and truncated sources were on this list until 2026-11-28.)
 - Protected articles, and articles under pending changes. They could come back as cards with only *Ask the article's editors*.
 - Claims with "as of" or "currently", and other numbers that change over time.
 - Edits through OAuth.

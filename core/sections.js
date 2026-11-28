@@ -65,17 +65,35 @@ export function sectionIndexOfHeading(heading) {
 // section parameter on 0, which edits the whole page rather than the wrong
 // part of it).
 export function findSectionNumber(refElement, doc = refElement && refElement.ownerDocument) {
-    if (!refElement || !doc) return 0;
+    return findSection(refElement, doc).index;
+}
+
+// The heading's anchor: the id MediaWiki gave it (on the <hN> itself since
+// MW 1.43 and in Parsoid output; on an inner .mw-headline span before that).
+export function sectionAnchorOfHeading(heading) {
+    if (!heading) return null;
+    if (heading.id) return heading.id;
+    const headline = heading.querySelector('.mw-headline[id]');
+    return headline ? headline.id : null;
+}
+
+// findSectionNumber() plus the anchor of the heading the index was read from,
+// so a caller can find the same section again in a newer revision. The index
+// is only valid for the revision on screen: an edit adding a section above
+// this one shifts it, and the edit form always opens the latest revision.
+export function findSection(refElement, doc = refElement && refElement.ownerDocument) {
+    const none = { index: 0, anchor: null };
+    if (!refElement || !doc) return none;
     const root = sectionContentRoot(doc);
-    if (!root) return 0;
+    if (!root) return none;
 
     const before = sectionHeadingsBefore(refElement, root);
-    if (before.length === 0) return 0;
+    if (before.length === 0) return none;
 
     let sawEditLink = false;
     for (let i = before.length - 1; i >= 0; i--) {
         const index = sectionIndexOfHeading(before[i]);
-        if (index !== null) return index;
+        if (index !== null) return { index, anchor: sectionAnchorOfHeading(before[i]) };
         if ((before[i].closest('.mw-heading') || before[i]).querySelector('.mw-editsection')) {
             // A heading with an edit link we deliberately skipped (transcluded,
             // `section=T-n`). Keep walking; the page's own enclosing section is
@@ -88,7 +106,26 @@ export function findSectionNumber(refElement, doc = refElement && refElement.own
     // suppresses edit links entirely or the skin renders them somewhere we
     // don't recognise — fall back to the ordinal count, which is right on the
     // common case of a page whose headings map 1:1 onto its wikitext sections.
-    return sawEditLink ? 0 : before.filter(h => h.tagName !== 'H1').length;
+    if (sawEditLink) return none;
+    const counted = before.filter(h => h.tagName !== 'H1');
+    return counted.length === 0
+        ? none
+        : { index: counted.length, anchor: sectionAnchorOfHeading(counted[counted.length - 1]) };
+}
+
+// The index of the section with this anchor in another revision's section
+// list (the API's action=parse&prop=sections), or null when no section of the
+// page itself has it — the heading was renamed or removed, or only a
+// transcluded template carries it (index `T-n`).
+export function sectionIndexForAnchor(sections, anchor) {
+    if (!anchor || !Array.isArray(sections)) return null;
+    for (const s of sections) {
+        if (s && s.anchor === anchor && /^\d+$/.test(String(s.index))) {
+            const index = Number(s.index);
+            if (index > 0) return index;
+        }
+    }
+    return null;
 }
 
 // Debug aid: pairs every heading in the article body with the index a naive

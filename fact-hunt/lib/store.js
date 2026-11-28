@@ -14,7 +14,7 @@
 import { appendFileSync, existsSync, readFileSync } from 'node:fs';
 
 export const HOLD_MS = 20 * 60 * 1000;
-export const DISMISS_AFTER = 2; // "They say the same thing" from this many sessions retires a card.
+export const DISMISS_AFTER = 2; // "They don’t contradict each other" from this many sessions retires a card.
 
 export const EVENT_TYPES = Object.freeze(['answer', 'hold', 'fixed', 'asked', 'shared', 'reverted']);
 export const ANSWER_KINDS = Object.freeze(['caught', 'miss', 'confirm_yes', 'confirm_no', 'same', 'skip']);

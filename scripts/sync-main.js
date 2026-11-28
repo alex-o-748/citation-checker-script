@@ -34,6 +34,7 @@ const CORE_ORDER = [
   'severity.js',
   'lead-check.js',
   'uncited-check.js',
+  'knowledge-check.js',
 ];
 
 function stripEsm(source) {

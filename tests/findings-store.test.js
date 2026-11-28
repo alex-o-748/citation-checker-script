@@ -252,3 +252,23 @@ test('buildUpsertQuery writes a lead row\'s check_kind and a demoted citation\'s
     assert.deepEqual(buildUpsertQuery({ ...base, leadDemoted: true }).params.slice(-2), ['citation', 1]);
     assert.match(buildUpsertQuery(base).sql, /check_kind = VALUES\(check_kind\),\n\s*lead_demoted = VALUES\(lead_demoted\)/);
 });
+
+// service/migrations/007-knowledge-check.sql: named only on a row the check
+// ran on, so a sweep without --knowledge-check works on an unmigrated table.
+test('buildUpsertQuery names the knowledge columns only when the check ran', () => {
+    const plain = buildUpsertQuery({ claimText: 'c', sourceUrl: 'https://a.example' });
+    assert.doesNotMatch(plain.sql, /knowledge/);
+    assert.equal(plain.params.length, (plain.sql.match(/\?/g) || []).length);
+
+    const checked = buildUpsertQuery({
+        claimText: 'c', sourceUrl: 'https://a.example',
+        knowledgeCheck: 'doubted', knowledgeConfidence: 'high', knowledgePromptVersion: 'u2',
+    });
+    assert.match(checked.sql, /lead_demoted, knowledge_check, knowledge_confidence, knowledge_prompt_version\n\) VALUES/);
+    assert.match(checked.sql, /knowledge_check = VALUES\(knowledge_check\)/);
+    assert.equal(checked.params.length, (checked.sql.match(/\?/g) || []).length);
+    assert.deepEqual(checked.params.slice(-3), ['doubted', 'high', 'u2']);
+
+    const notDoubted = buildUpsertQuery({ claimText: 'c', sourceUrl: 'https://a.example', knowledgeCheck: 'not_doubted' });
+    assert.deepEqual(notDoubted.params.slice(-3), ['not_doubted', null, null]);
+});

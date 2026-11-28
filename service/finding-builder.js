@@ -108,6 +108,14 @@ function finishFinding(base, { verification, provider, model, promptVersion, has
         severitySubclaims: severity?.subclaims ?? null,
         severityError: severity?.error ?? null,
         severityPromptVersion: severity?.promptVersion ?? null,
+        // Knowledge check (core/knowledge-check.js), set by withKnowledge()
+        // once an article's flagged findings have been checked. All null when
+        // it didn't run for this finding, so "not checked" never reads as
+        // "not doubted".
+        knowledgeCheck: null,
+        knowledgeConfidence: null,
+        knowledgeComment: null,
+        knowledgePromptVersion: null,
         verdict: verification.verdict,
         supportScore: verification.supportScore,
         reasonType: verification.reasonType,
@@ -424,4 +432,23 @@ export function assembleUncitedFinding({
         },
         { verification, provider, model, promptVersion, hasContent: true, fetchedAt, ttlDays, checkId }
     );
+}
+
+/**
+ * A flagged citation finding with its knowledge-check result
+ * (core/knowledge-check.js's runKnowledgeCheck() `results` entry) attached:
+ * `knowledge_check` is doubted / not_doubted / error, with the model's
+ * confidence and comment when doubted. The comment routes the finding; it is
+ * never an edit. A null `result` (the run stopped before reaching the claim)
+ * leaves the columns empty, as for a finding the check never ran on.
+ */
+export function withKnowledge(finding, result, promptVersion) {
+    if (!result) return finding;
+    return {
+        ...finding,
+        knowledgeCheck: result.outcome,
+        knowledgeConfidence: result.confidence ?? null,
+        knowledgeComment: result.comment ?? (result.error ? `Knowledge check gave no usable answer: ${result.error}` : null),
+        knowledgePromptVersion: promptVersion ?? null,
+    };
 }

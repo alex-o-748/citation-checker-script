@@ -29,6 +29,7 @@ import { withRetry, isSourceTooLargeError } from '../core/retry.js';
 import { groupSourceEntries, shouldSkipCollective, hasUnreadSource } from '../core/groups.js';
 import { runLeadCheck, generateLeadSystemPrompt } from '../core/lead-check.js';
 import { runUncitedCheck, generateUncitedSystemPrompt, withUncitedCommentLanguage } from '../core/uncited-check.js';
+import { runKnowledgeCheck } from '../core/knowledge-check.js';
 import { sourceCacheKey } from './claim-extractor.js';
 
 // Thrown when the model call fails with 401/402/403. Distinct from a
@@ -71,7 +72,7 @@ export function makeModelCaller({ provider, apiKey, model, workerBase }) {
     if (!provider) throw new TypeError('makeModelCaller requires a provider name');
     // `kind: 'group'` raises the output budget for a collective check
     // (core/providers.js's groupMaxTokens()), and `kind: 'lead'` /
-    // `'uncited'` for the lead and uncited-text checks, which each weigh
+    // `'uncited'` / `'knowledge'` for the lead, uncited-text and knowledge checks, which each weigh
     // several sentences in one call; anything else keeps the provider's
     // default.
     return (systemPrompt, userContent, { kind } = {}) => callProviderAPI(provider, {
@@ -79,7 +80,7 @@ export function makeModelCaller({ provider, apiKey, model, workerBase }) {
         model,
         systemPrompt,
         userContent,
-        ...(['group', 'lead', 'uncited'].includes(kind) && groupMaxTokens(provider) ? { maxTokens: groupMaxTokens(provider) } : {}),
+        ...(['group', 'lead', 'uncited', 'knowledge'].includes(kind) && groupMaxTokens(provider) ? { maxTokens: groupMaxTokens(provider) } : {}),
         ...(workerBase ? { workerBase } : {}),
     });
 }
@@ -472,6 +473,57 @@ export async function verifyUncited(uncited, {
         systemPrompt,
         chunkSize,
         ...(maxFindings !== undefined ? { maxFindings } : {}),
+        retry: retryOptions,
+        pause,
+        shouldAbort: signal ? () => Boolean(signal.aborted) : undefined,
+        onChunkError: error => {
+            if (isAuthOrBillingError(error)) {
+                const status = Number((error.message || '').match(/\((\d{3})\)/)?.[1]) || null;
+                throw new ProviderAuthError(error.message, { status, cause: error });
+            }
+            return typeof onChunkError === 'function' ? onChunkError(error) : null;
+        },
+    });
+}
+
+/**
+ * The knowledge check for one article's flagged claims: the uncited-text
+ * check's prompt and sequence, applied to cited claims a first verdict
+ * flagged (core/knowledge-check.js's runKnowledgeCheck()), with the
+ * comment-language directive for the wiki.
+ *
+ * `claims` are `{ key, claimText, sectionTitle, paragraphText }`, in article
+ * order; `opening` is the article's opening paragraph
+ * (service/claim-extractor.js's `article.uncited.opening`). The model sees
+ * those and the title, never a source, verdict or rationale.
+ *
+ * Same error contract as verifyUncited().
+ */
+export async function verifyKnowledge(claims, {
+    callModel,
+    articleTitle,
+    opening,
+    chunkSize,
+    signal,
+    retry = {},
+    articleLangCode,
+    onChunkError,
+    pause,
+} = {}) {
+    if (typeof callModel !== 'function') {
+        throw new TypeError('verifyKnowledge requires a callModel(systemPrompt, userContent) function');
+    }
+    const retryOptions = { ...retry };
+    if (signal && !retryOptions.shouldAbort) {
+        retryOptions.shouldAbort = () => Boolean(signal.aborted);
+    }
+    const systemPrompt = withUncitedCommentLanguage(generateUncitedSystemPrompt(), { lang: articleLangCode, articleLangCode });
+    return runKnowledgeCheck({ claims, articleTitle, opening }, {
+        // Told apart from the uncited check's calls in logs and tests; the
+        // same output budget.
+        callModel: (system, user, options = {}) => callModel(system, user, { ...options, kind: 'knowledge' }),
+        systemPrompt,
+        chunkSize,
         retry: retryOptions,
         pause,
         shouldAbort: signal ? () => Boolean(signal.aborted) : undefined,

@@ -6,7 +6,7 @@ Two parts:
 
 | Part | Where | Does |
 |---|---|---|
-| **Card builder** | `service/run-build-cards.js`, `service/cards/` | Daily. Turns stored findings into cards. It runs the "could both be true?" model call, re-reads each article (protection, pending changes, living people, is the sentence still there), and adds topics and monthly readers. Writes `cards.json` |
+| **Card builder** | `service/run-build-cards.js`, `service/cards/` | Daily. Turns stored findings into cards. It runs the "could both be true?" model call, re-reads each article (protection, pending changes, is the sentence still there), and adds topics and monthly readers. Writes `cards.json` |
 | **The app** | this folder | Serves the cards: a Node server with no runtime dependencies, one static page, share pages with link previews. Records answers and fixes in an append-only event log. Calls no model |
 
 ## Run it locally
